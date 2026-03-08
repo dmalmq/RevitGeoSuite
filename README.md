@@ -1,12 +1,20 @@
 # Revit Geo Suite
 
-A modular Revit add-in suite for georeferencing, mesh/grid lookup, PLATEAU context workflows, and export pipelines (CityGML, 3D Tiles). Built around a shared geospatial core so that independent tools work together through common project metadata without depending on one another.
+A modular Revit add-in suite for georeferencing, mesh/grid lookup, PLATEAU context workflows, and future export pipelines such as CityGML and 3D Tiles. The suite is built around a shared geospatial core so that independent tools can work together through common project metadata without depending on one another.
 
-## Features (V1)
+## Current V1 Focus
 
-- **Georeference Module:** Visual CRS selection, map-based site placement, preview before apply, persisted geo metadata
+Codex-first V1 is intentionally staged so the riskiest behavior lands last.
+
+- **Milestone A - Foundation:** Solution skeleton, core contracts, storage/versioning contracts, static shell wiring, and fixture-backed tests
+- **Milestone B - Read + Preview:** CRS selection, map-based point picking, current-state read, validation warnings, and a mandatory preview with no document mutation
+- **Milestone C - Apply + Persist:** Revit project location write path, confirmation flow, persisted geo metadata, and audit summary
+
+Follow-on modules remain planned after the georeference workflow is stable:
+
 - **Mesh Inspector:** Japanese mesh code lookup and neighbor display
 - **Validation:** Project health checks for coordinate setup
+- **PLATEAU / Export Modules:** Later phases after the shared foundation is proven
 
 ## Prerequisites
 
@@ -33,14 +41,14 @@ All output DLLs are written to `bin/Deploy/`.
 ## Install
 
 1. Build the solution
-2. Copy `bin/Deploy/` contents to a folder (e.g., `C:\RevitGeoSuite\`)
+2. Copy `bin/Deploy/` contents to a folder (for example `C:\RevitGeoSuite\`)
 3. Copy `RevitGeoSuite.addin` to `%AppData%\Autodesk\Revit\Addins\2024\`
 4. Update the `<Assembly>` path in the `.addin` file to point to `RevitGeoSuite.Shell.dll`
 5. Launch Revit 2024
 
 ## Project Structure
 
-```
+```text
 RevitGeoSuite/
 ├── src/
 │   ├── RevitGeoSuite.Core/              # Generic geo foundation (no Revit)
@@ -53,7 +61,7 @@ RevitGeoSuite/
 │   ├── RevitGeoSuite.Validation/        # Project validation module
 │   ├── RevitGeoSuite.PlateauImport/     # PLATEAU context import
 │   ├── RevitGeoSuite.Tiles3DExport/     # 3D Tiles export
-│   └── RevitGeoSuite.CityGmlExport/    # CityGML export
+│   └── RevitGeoSuite.CityGmlExport/     # CityGML export
 ├── tests/
 │   ├── RevitGeoSuite.Core.Tests/
 │   └── ...
@@ -62,11 +70,11 @@ RevitGeoSuite/
 
 ## Architecture
 
-Modules are independent. They depend on Core and RevitInterop but never on each other. Communication happens through shared `GeoProjectInfo` metadata.
+The target architecture keeps modules independent over a shared foundation. The initial Codex-first implementation keeps the shell simpler by statically wiring the Georeference module first, then defers assembly scanning until the workflow is stable.
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
-│ Shell (Ribbon UI + Module Discovery)            │
+│ Shell (Ribbon UI + static V1 module wiring)     │
 ├─────────┬──────────┬──────────┬────────┬────────┤
 │ Geo     │ Mesh     │ PLATEAU  │ 3D     │ CityGML│
 │Reference│ Inspector│ Import   │ Tiles  │ Export │
@@ -81,17 +89,17 @@ Modules are independent. They depend on Core and RevitInterop but never on each 
 
 See the `docs/` folder for detailed documentation:
 
-- [Architecture](docs/Architecture.md) — Module structure and dependency graph
-- [Technical Decisions](docs/DECISIONS.md) — Locked decisions for development
-- [Product Overview](docs/01-product-overview.md) — Vision and goals
-- [Scope V1](docs/03-scope-v1.md) — What ships in V1
-- [Technical Architecture](docs/04-technical-architecture.md) — Layer responsibilities
-- [Revit API Notes](docs/05-revit-api-notes.md) — Revit 2024 API patterns
-- [Geo/CRS Rules](docs/06-geo-and-coordinate-system-rules.md) — Coordinate system handling
-- [UI Flow](docs/07-ui-flow.md) — User workflow design
-- [Implementation Phases](docs/08-implementation-phases.md) — Build order
-- [Test Plan](docs/09-test-plan.md) — Testing strategy
-- [Codex Task Index](docs/Codex-Task-Index.md) — Task breakdown for development
+- [Architecture](docs/Architecture.md) - Module structure and dependency graph
+- [Technical Decisions](docs/DECISIONS.md) - Locked decisions for development
+- [Product Overview](docs/01-product-overview.md) - Vision and goals
+- [Scope V1](docs/03-scope-v1.md) - Codex-first V1 milestones and boundaries
+- [Technical Architecture](docs/04-technical-architecture.md) - Layer responsibilities and runtime contracts
+- [Revit API Notes](docs/05-revit-api-notes.md) - Revit 2024 API patterns
+- [Geo/CRS Rules](docs/06-geo-and-coordinate-system-rules.md) - Coordinate system handling
+- [UI Flow](docs/07-ui-flow.md) - User workflow design
+- [Implementation Phases](docs/08-implementation-phases.md) - Build order
+- [Test Plan](docs/09-test-plan.md) - Testing strategy
+- [Codex Task Index](docs/Codex-Task-Index.md) - Task breakdown for development
 
 ## Running Tests
 

@@ -122,7 +122,7 @@ This keeps the Revit layer focused and avoids mixing API concerns with presentat
 
 ### 5. Georeferencing Logic Is a Real Service, But It Is the Execution Boundary
 
-Survey point / project base point / orientation logic is critical and subtle.
+Project location and orientation logic is critical and subtle.
 
 It should be modeled as a proper domain-facing service:
 - `IRevitGeoPlacementService`
@@ -471,11 +471,11 @@ The Shell is the only thing registered with Revit through one `.addin` file.
 
 ### Discovery Strategy
 
-Keep module discovery simple at first:
-- Shell scans a known modules folder
-- load assemblies matching a predictable naming convention
-- each module exposes one `IRevitGeoModule`
-- incompatible modules are skipped and logged
+Keep the V1 shell simpler than the long-term architecture:
+- Shell statically registers the Georeference module in `App.cs`
+- keep `IRevitGeoModule` so later modules fit the same contract
+- defer assembly scanning until the Georeference workflow is stable
+- when discovery is introduced later, incompatible modules are skipped and logged
 
 Avoid overcomplicated plugin/discovery infrastructure early.
 

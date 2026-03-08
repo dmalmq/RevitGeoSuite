@@ -1,6 +1,6 @@
-# Codex Task Index — Revit Geo Suite
+# Codex Task Index - Revit Geo Suite
 
-**Purpose:** A single, compact execution guide for Codex. Each task is issue‑style, tightly scoped, and links back to the detailed spec docs. For phase-specific tests, see `docs/09-test-plan.md` → “Tests by Phase.”
+**Purpose:** A compact execution guide for Codex. Each task is tightly scoped, points at the relevant docs, and ends in a visible artifact. The V1 sequence is intentionally split into `foundation`, `read + preview`, and `apply` so document mutation is not mixed into early setup work.
 
 ---
 
@@ -12,8 +12,19 @@
 - `RevitGeoSuite.RevitInterop` is API-only (no UI).
 - `RevitGeoSuite.SharedUI` is presentational only (no workflow logic).
 - `GeoProjectInfo` is small and stable (canonical facts only).
+- `PlacementPreview` is never persisted.
 - All storage is versioned.
-- Modules declare Core/Revit compatibility.
+- The shell uses static Georeference module registration in V1.
+- Dynamic assembly scanning is a post-V1 infrastructure task.
+
+---
+
+## Milestone Map
+
+- **Milestone A - Foundation:** Tasks 0-4
+- **Milestone B - Read + Preview:** Tasks 5-9
+- **Milestone C - Apply + Persist:** Task 10
+- **Phase 2+:** Tasks 11 and later
 
 ---
 
@@ -41,7 +52,7 @@ Tests:
 
 ---
 
-## Task 0 — Solution Skeleton
+## Task 0 - Solution Skeleton
 
 Title: Create solution and project shells
 
@@ -49,7 +60,7 @@ Background:
 See `docs/04-technical-architecture.md`, `docs/Architecture.md`, and `docs/DECISIONS.md`.
 
 Scope:
-- Create `RevitGeoSuite.sln` and all project `.csproj` files
+- Create `RevitGeoSuite.sln` and project `.csproj` files
 - Set up `Directory.Build.props` with shared settings
 - Create `.gitignore` for build artifacts
 - Create `.addin` manifest in Shell project
@@ -64,140 +75,85 @@ Constraints:
 - Revit API references use local DLL paths via `$(RevitInstallDir)`
 - Common output path: `bin/Deploy/`
 
-Files/Paths:
-
-```
-RevitGeoSuite.sln
-Directory.Build.props
-.gitignore
-src/RevitGeoSuite.Core/RevitGeoSuite.Core.csproj
-src/RevitGeoSuite.Core.Plateau/RevitGeoSuite.Core.Plateau.csproj
-src/RevitGeoSuite.RevitInterop/RevitGeoSuite.RevitInterop.csproj
-src/RevitGeoSuite.SharedUI/RevitGeoSuite.SharedUI.csproj
-src/RevitGeoSuite.Shell/RevitGeoSuite.Shell.csproj
-src/RevitGeoSuite.Shell/RevitGeoSuite.addin
-src/RevitGeoSuite.Georeference/RevitGeoSuite.Georeference.csproj
-src/RevitGeoSuite.MeshInspector/RevitGeoSuite.MeshInspector.csproj
-src/RevitGeoSuite.Validation/RevitGeoSuite.Validation.csproj
-src/RevitGeoSuite.PlateauImport/RevitGeoSuite.PlateauImport.csproj
-src/RevitGeoSuite.Tiles3DExport/RevitGeoSuite.Tiles3DExport.csproj
-src/RevitGeoSuite.CityGmlExport/RevitGeoSuite.CityGmlExport.csproj
-tests/RevitGeoSuite.Core.Tests/RevitGeoSuite.Core.Tests.csproj
-tests/RevitGeoSuite.Core.Plateau.Tests/RevitGeoSuite.Core.Plateau.Tests.csproj
-tests/RevitGeoSuite.Georeference.Tests/RevitGeoSuite.Georeference.Tests.csproj
-```
-
-NuGet packages per project:
-
-| Project | NuGet Packages |
-|---|---|
-| Core | `ProjNet`, `Newtonsoft.Json` |
-| Core.Plateau | `Newtonsoft.Json` |
-| RevitInterop | `Newtonsoft.Json` (Revit API via local DLLs) |
-| SharedUI | `Microsoft.Web.WebView2` |
-| Shell | (Revit API via local DLLs) |
-| All modules | (none beyond project refs) |
-| All test projects | `xunit`, `xunit.runner.visualstudio`, `Moq`, `Microsoft.NET.Test.Sdk` |
-
-Project reference graph:
-
-```
-Core                    → (none)
-Core.Plateau            → Core
-RevitInterop            → Core, Revit API DLLs
-SharedUI                → Core
-Shell                   → Core, RevitInterop, SharedUI
-Georeference            → Core, RevitInterop, SharedUI
-MeshInspector           → Core, RevitInterop, SharedUI
-Validation              → Core, RevitInterop, SharedUI
-PlateauImport           → Core, Core.Plateau, RevitInterop, SharedUI
-Tiles3DExport           → Core, RevitInterop, SharedUI
-CityGmlExport           → Core, Core.Plateau, RevitInterop, SharedUI
-```
-
-`Directory.Build.props` must include:
-
-```xml
-<Project>
-  <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
-    <LangVersion>latest</LangVersion>
-    <OutputPath>$(SolutionDir)bin\Deploy\</OutputPath>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitInstallDir>
-  </PropertyGroup>
-</Project>
-```
-
-`.gitignore` must include:
-
-```
-bin/
-obj/
-*.user
-*.suo
-.vs/
-packages/
-*.nupkg
-TestResults/
-```
-
-`.addin` manifest template — see `docs/DECISIONS.md`.
-
-Inputs:
-- `docs/DECISIONS.md`
-- `docs/Architecture.md`
-
 Outputs:
-- Solution builds with zero errors (no implementation, just empty shells)
+- Solution builds with zero errors using empty shells
 
 Acceptance Criteria:
-- `dotnet build` succeeds (or `msbuild` for .NET Framework)
-- References match the dependency graph above exactly
-- No cross-module project references
-- All test projects reference xunit and their corresponding source project
+- `msbuild` or `dotnet build` succeeds for the skeleton
+- References match the dependency graph exactly
+- No module-to-module references exist
 
 Tests:
-- Build succeeds with no errors or warnings about missing references
+- Build succeeds with no missing reference errors
 
 ---
 
-## Task 1 — Core Contracts
+## Task 1 - Fixture Pack
 
-Title: Implement Core contracts and interfaces
+Title: Create coordinate, CRS, and migration fixtures
 
 Background:
-See `docs/04-technical-architecture.md`, `docs/06-geo-and-coordinate-system-rules.md`.
+See `docs/06-geo-and-coordinate-system-rules.md` and `docs/09-test-plan.md`.
 
 Scope:
-- `GeoProjectInfo`, `CrsReference`, `ProjectOrigin`, `GeoConfidenceLevel`.
-- Interfaces: `ICrsRegistry`, `ICoordinateTransformer`, `IMeshCalculator`, `IGeoProjectInfoStore`, `IModuleStateStore`.
+- Add known CRS samples for Japanese presets
+- Add known lat/lon to projected coordinate samples
+- Add mesh calculation samples
+- Add serialized metadata and migration fixtures
+- Document tolerance expectations in fixture README or comments
 
 Non-goals:
-- No Revit or UI code.
+- No Revit write behavior yet
 
 Constraints:
-- Persist only canonical geo facts.
-- Do not persist full CRS definitions.
-
-Files/Paths:
-- `src/RevitGeoSuite.Core/`
-
-Inputs:
-- `docs/06-geo-and-coordinate-system-rules.md`
+- Fixtures should be stable and human-readable where practical
+- Each fixture should map to at least one test case
 
 Outputs:
-- Core contract types and interfaces.
+- Fixture files committed under `tests/` or a dedicated fixtures folder
 
 Acceptance Criteria:
-- `GeoProjectInfo` contains only canonical facts.
+- Fixtures cover CRS lookup, transforms, mesh, and migration basics
 
 Tests:
-- Serialization/deserialization tests for `GeoProjectInfo`.
+- Fixture loading tests pass
 
 ---
 
-## Task 2 — Storage Versioning
+## Task 2 - Core Contracts
+
+Title: Implement core contracts and interfaces
+
+Background:
+See `docs/04-technical-architecture.md` and `docs/06-geo-and-coordinate-system-rules.md`.
+
+Scope:
+- `GeoProjectInfo`, `CrsReference`, `ProjectOrigin`, `GeoConfidenceLevel`
+- `PlacementIntent` and `PlacementPreview`
+- Interfaces: `ICrsRegistry`, `ICoordinateTransformer`, `IMeshCalculator`, `IGeoProjectInfoStore`, `IModuleStateStore`
+
+Non-goals:
+- No Revit or UI code
+
+Constraints:
+- Persist only canonical geo facts
+- Do not persist full CRS definitions
+- Do not persist `PlacementPreview`
+
+Outputs:
+- Core contract types and interfaces
+
+Acceptance Criteria:
+- `GeoProjectInfo` contains canonical facts only
+- `PlacementIntent` and `PlacementPreview` are explicitly non-persisted workflow models
+
+Tests:
+- Serialization tests for `GeoProjectInfo`
+- Contract construction/default tests for preview and intent models
+
+---
+
+## Task 3 - Storage Versioning
 
 Title: Add schema versioning and migration runner
 
@@ -207,296 +163,292 @@ See `docs/04-technical-architecture.md` and `docs/09-test-plan.md`.
 Scope:
 - Schema version field
 - Migration runner
+- Storage envelope shape for versioned objects
 
 Constraints:
-- All stored objects include a version.
-
-Files/Paths:
-- `src/RevitGeoSuite.Core/Versioning/`
+- All stored objects include a version
+- Migration behavior is test-backed from the first revision
 
 Outputs:
-- Versioning utilities.
+- Versioning utilities and storage contracts
 
 Acceptance Criteria:
-- v0 → v1 migration path exists.
+- v0 -> v1 migration path exists
 
 Tests:
-- Migration unit test.
+- Migration unit test using fixtures
 
 ---
 
-## Task 3 — RevitInterop Boundary
+## Task 4 - Shell and Static Georeference Registration
 
-Title: Implement Revit interop services
-
-Background:
-See `docs/05-revit-api-notes.md`.
-
-Scope:
-- `IRevitGeoPlacementService`
-- Project location reader/writer
-- Storage helpers
-
-Constraints:
-- No UI references.
-
-Files/Paths:
-- `src/RevitGeoSuite.RevitInterop/`
-
-Acceptance Criteria:
-- Interop compiles without WPF references.
-
----
-
-## Task 4 — SharedUI Controls
-
-Title: Implement SharedUI controls and styles
-
-Background:
-See `docs/07-ui-flow.md`.
-
-Scope:
-- `MapControl`, `CrsPickerControl`, `StatusBarControl`, styles.
-
-Constraints:
-- No workflow logic.
-
-Files/Paths:
-- `src/RevitGeoSuite.SharedUI/`
-
-Acceptance Criteria:
-- SharedUI contains no storage or workflow logic.
-
----
-
-## Task 5 — Shell and Module Discovery
-
-Title: Implement module discovery and ribbon
+Title: Implement shell composition root and static Georeference command wiring
 
 Background:
 See `docs/04-technical-architecture.md` and `docs/08-implementation-phases.md`.
 
 Scope:
 - `IRevitGeoModule`
-- Module registry and version checks
-- Ribbon layout
-
-Constraints:
-- Incompatible modules are skipped and logged.
-
-Files/Paths:
-- `src/RevitGeoSuite.Shell/`
-
-Acceptance Criteria:
-- Module compatibility checks work as defined.
-
----
-
-## Task 6A — CRS Picker UI + CrsRegistry Implementation
-
-Title: Build CRS selection with ProjNet backend
-
-Background:
-See `docs/03-scope-v1.md`, `docs/07-ui-flow.md`, and `docs/06-geo-and-coordinate-system-rules.md`.
-
-Scope:
-- Implement `CrsRegistry` using ProjNet4GeoAPI with Japanese CRS presets (EPSG:6669–6687)
-- Implement `CoordinateTransformer` using ProjNet
-- Build `CrsPickerControl` UI (search/filter EPSG codes, show CRS details)
-- Wire CRS picker into `GeoreferenceViewModel`
+- shell composition root in `App.cs`
+- ribbon layout
+- static registration of the Georeference module
 
 Non-goals:
-- No map, no placement, no Revit interaction yet.
+- No assembly scanning yet
 
 Constraints:
-- CRS picker is a SharedUI control, reusable by other modules
-- ProjNet is the only CRS library
+- Preserve the future module boundary
+- Do not add dynamic plugin infrastructure in V1
 
-Files/Paths:
-- `src/RevitGeoSuite.Core/Coordinates/CrsRegistry.cs`
-- `src/RevitGeoSuite.Core/Coordinates/CoordinateTransformer.cs`
-- `src/RevitGeoSuite.Core/Coordinates/JapanCrsPresets.cs`
-- `src/RevitGeoSuite.SharedUI/Controls/CrsPickerControl.xaml`
-- `src/RevitGeoSuite.Georeference/GeoreferenceViewModel.cs` (CRS selection portion)
+Outputs:
+- Shell loads and exposes one Georeference command
 
 Acceptance Criteria:
-- User can search and select a CRS from the picker
-- Selected CRS resolves to a valid ProjNet coordinate system
-- Japanese presets appear prominently
+- shell composes the Georeference module without scanning directories
+- ribbon command opens the module entry point
 
 Tests:
-- Unit: `CrsRegistry` resolves known EPSG codes
-- Unit: `CoordinateTransformer` converts known sample points within tolerance
-- Unit: Japanese presets are all loadable
+- build test
+- shell composition test where practical
 
 ---
 
-## Task 6B — Map Control (WebView2 + Leaflet) + Point Selection
+## Task 5 - CRS Registry and Transformer
 
-Title: Build embedded map with point selection
+Title: Build CRS selection backend with ProjNet
+
+Background:
+See `docs/03-scope-v1.md`, `docs/06-geo-and-coordinate-system-rules.md`, and `docs/DECISIONS.md`.
+
+Scope:
+- Implement `CrsRegistry` using ProjNet with Japanese presets (EPSG:6669-6687)
+- Implement `CoordinateTransformer`
+- expose search/filter-friendly CRS models for UI use
+
+Non-goals:
+- No map or Revit interaction yet
+
+Constraints:
+- ProjNet is the only CRS library
+- axis normalization rules must be documented in code/tests
+
+Outputs:
+- Working CRS lookup and transform services
+
+Acceptance Criteria:
+- known EPSG presets resolve correctly
+- known coordinate samples transform within tolerance
+
+Tests:
+- unit tests for lookup, presets, invalid input, and transform tolerances
+
+---
+
+## Task 6 - SharedUI Controls
+
+Title: Implement CRS picker and shared map host controls
 
 Background:
 See `docs/07-ui-flow.md` and `docs/DECISIONS.md`.
 
 Scope:
-- Implement `MapControl` using WebView2 + Leaflet.js + OSM tiles
-- Bundle HTML/JS/CSS as embedded resources
-- C# ↔ JS bridge for click events and marker placement
-- `SiteSelectionService` to manage selected point state
-- Wire into `GeoreferenceViewModel`
+- `CrsPickerControl`
+- `MapControl` using WebView2 + Leaflet + OSM
+- shared styles and display converters
+- C# <-> JS bridge for click events and marker placement
 
 Non-goals:
-- No placement preview or Revit interaction yet.
+- No workflow logic in SharedUI
+- No apply behavior
 
 Constraints:
-- Map is a SharedUI control
-- Communication via `PostWebMessageAsJson` / `WebMessageReceived`
+- map is hosted as a reusable control
+- communication uses `PostWebMessageAsJson` and `WebMessageReceived`
 
-Files/Paths:
-- `src/RevitGeoSuite.SharedUI/Controls/MapControl.xaml`
-- `src/RevitGeoSuite.SharedUI/Controls/MapControl.xaml.cs`
-- `src/RevitGeoSuite.SharedUI/Resources/map.html`
-- `src/RevitGeoSuite.Georeference/SiteSelectionService.cs`
+Outputs:
+- reusable CRS picker and map control
 
 Acceptance Criteria:
-- Map loads and displays OSM tiles
-- User can click to place a marker
-- Selected lat/lon coordinates are returned to C#
-- Coordinates are converted to the selected CRS and displayed
+- map loads and returns clicked coordinates to C#
+- picker can search and select Japanese presets
 
 Tests:
-- Manual: map loads, click returns coordinates
-- Unit: `SiteSelectionService` stores and converts selected point
+- manual smoke test for map load and click behavior
+- unit test coverage for UI-independent helper code only
 
 ---
 
-## Task 6C — Placement Preview Service
+## Task 7 - Current State Reader
 
-Title: Build preview calculations and before/after comparison UI
+Title: Implement Revit current-state reading and existing-setup detection
 
 Background:
-See `docs/07-ui-flow.md` and `docs/05-revit-api-notes.md`.
+See `docs/05-revit-api-notes.md`.
 
 Scope:
-- `PlacementPreviewService`: calculate proposed changes without modifying the document
-- Read current project location via `ProjectLocationReader`
-- Generate before/after comparison data
-- Build preview panel in `GeoreferenceWindow`
+- `ProjectLocationReader`
+- current project location summary model
+- detection of existing non-default setup
+- read-only mapping from Revit state into preview input models
 
 Non-goals:
-- Does not apply changes to the Revit document.
+- No write behavior
 
 Constraints:
-- Preview logic stays above the Revit interop layer
-- Uses `TransactionGroup` with rollback for read-only preview if needed
+- Revit API access stays inside RevitInterop
+- reader must be safe on unsupported states and return understandable failures
 
-Files/Paths:
-- `src/RevitGeoSuite.Georeference/PlacementPreviewService.cs`
-- `src/RevitGeoSuite.Georeference/GeoreferenceWindow.xaml` (preview panel)
-- `src/RevitGeoSuite.RevitInterop/GeoPlacement/ProjectLocationReader.cs`
+Outputs:
+- current-state read service for the Georeference workflow
 
 Acceptance Criteria:
-- Preview shows current vs. proposed: origin, CRS, true north angle
-- Preview does not modify the Revit document
-- Existing coordinate setup triggers a warning
+- current state can be shown before the user starts preview
+- existing setup warning appears when current state is non-default or metadata exists
 
 Tests:
-- Unit: `PlacementPreviewService` generates correct diff from mock inputs
-- Manual: preview panel shows before/after values
+- mock-based tests for workflow consumption of current-state data
 
 ---
 
-## Task 6D — Apply Placement Workflow + Persist GeoProjectInfo
+## Task 8 - Preview Models and Services
 
-Title: Apply geo placement and save project metadata
+Title: Build `PlacementIntent` -> `PlacementPreview` generation
 
 Background:
-See `docs/05-revit-api-notes.md`, `docs/06-geo-and-coordinate-system-rules.md`.
+See `docs/04-technical-architecture.md`, `docs/05-revit-api-notes.md`, and `docs/07-ui-flow.md`.
 
 Scope:
-- `ProjectLocationWriter`: apply survey point / project base point changes in a Revit `Transaction`
-- Wire Apply button in `GeoreferenceWindow` with confirmation dialog
-- Save `GeoProjectInfo` to Extensible Storage via `GeoProjectInfoStorage`
-- Log the operation via `AuditLogger`
-- Detect and warn about existing coordinate setup before overwriting
+- `SiteSelectionService`
+- `PlacementPreviewService`
+- warning generation for suspicious coordinate ranges
+- persistence summary generation
 
 Non-goals:
-- No linked model support in V1.
+- No document mutation
 
 Constraints:
-- All document modifications in a single `Transaction`
-- Failed changes must not leave the model partially updated
-- Confirmation required before apply
+- preview logic stays above RevitInterop where possible
+- use transaction rollback preview only if pure-math preview proves insufficient
 
-Files/Paths:
-- `src/RevitGeoSuite.RevitInterop/GeoPlacement/ProjectLocationWriter.cs`
-- `src/RevitGeoSuite.RevitInterop/GeoPlacement/RevitGeoPlacementService.cs`
-- `src/RevitGeoSuite.RevitInterop/Storage/GeoProjectInfoStorage.cs`
-- `src/RevitGeoSuite.Georeference/GeoreferenceCommand.cs`
+Outputs:
+- before/after preview model for the wizard
 
 Acceptance Criteria:
-- User confirms before apply
-- Survey point / project base point are updated correctly
+- preview shows current vs proposed origin, CRS, and angle
+- preview states exactly what apply will and will not change
+- preview does not modify the Revit document
+
+Tests:
+- unit tests for preview diff generation and warning logic using fixtures
+
+---
+
+## Task 9 - Georeference Wizard (Preview-Only Build)
+
+Title: Wire the full georeference wizard through the preview step
+
+Background:
+See `docs/07-ui-flow.md` and `docs/08-implementation-phases.md`.
+
+Scope:
+- current-state screen
+- CRS step
+- map point step
+- setup intent step
+- preview screen
+- command gating and navigation
+
+Non-goals:
+- No apply behavior yet
+
+Constraints:
+- preview is mandatory before any future apply action
+- workflow copy must explain that V1 does not rotate building geometry directly
+
+Outputs:
+- working internal build that ends at preview
+
+Acceptance Criteria:
+- user can complete the workflow up to preview without changing the document
+- apply is absent or explicitly disabled in this milestone
+
+Tests:
+- view model tests for state transitions
+- manual preview-only workflow test in Revit
+
+---
+
+## Task 10 - Apply Placement + Persist GeoProjectInfo
+
+Title: Apply project location changes and save shared metadata
+
+Background:
+See `docs/05-revit-api-notes.md`, `docs/06-geo-and-coordinate-system-rules.md`, and `docs/07-ui-flow.md`.
+
+Scope:
+- `ProjectLocationWriter`
+- `RevitGeoPlacementService.ApplyPlacement(...)`
+- `GeoProjectInfo` persistence through versioned storage
+- audit summary logging
+- confirmation dialog and failure handling
+
+Non-goals:
+- No linked model support in V1
+- No geometry rotation
+- No separate arbitrary direct base point editing tool
+
+Constraints:
+- apply via `ProjectLocation.SetProjectPosition()`
+- `ProjectPosition.Angle` is the only rotation behavior in V1
+- all document modifications happen in a single transaction
+- failed changes must not leave the model partially updated
+
+Outputs:
+- full V1 georeference workflow with confirmation and persistence
+
+Acceptance Criteria:
+- user confirms before apply
+- project location changes are applied safely
 - `GeoProjectInfo` is persisted with correct schema version
-- Operation is logged
-- Existing setup warning appears when metadata already exists
+- operation is logged
+- existing setup warning appears before overwrite
 
 Tests:
-- Unit: `RevitGeoPlacementService` calls correct writer methods (mocked)
-- Manual: full workflow in Revit — CRS → map → preview → apply → verify
+- mock-based unit tests for service orchestration
+- manual end-to-end Revit workflow: CRS -> map -> preview -> apply -> verify
 
 ---
 
-## Task 7 — Mesh Inspector
+## Task 11 - Mesh Inspector
 
 Title: Implement mesh inspection
 
 Background:
-See `docs/08-implementation-phases.md`, `docs/06-geo-and-coordinate-system-rules.md` (mesh boundary formulas), and `docs/DECISIONS.md` (Mesh Grid Display section).
+See `docs/08-implementation-phases.md`, `docs/06-geo-and-coordinate-system-rules.md`, and `docs/DECISIONS.md`.
 
 Scope:
-- Compute primary mesh code from project origin via `JapanMeshCalculator`
-- Compute 8 neighbor codes via `MeshNeighborResolver`
-- Convert each mesh code to a lat/lon bounding box (see boundary formulas in `docs/06-geo-and-coordinate-system-rules.md`)
-- Build a GeoJSON `FeatureCollection` (9 `Polygon` features with `meshCode` and `isPrimary` properties)
-- Send GeoJSON to SharedUI `MapControl` via `PostWebMessageAsJson` with message type `showMeshGrid`
-- MapControl JS receives `showMeshGrid`, renders the GeoJSON layer using `L.geoJSON()`, styles primary vs. neighbor cells, and adds mesh code labels
-- Click interaction: clicking a mesh cell shows its code and (future) PLATEAU data availability
-- Display primary and neighbor mesh info in the MeshInspector UI panel
-- Update `PrimaryMeshCode` in `GeoProjectInfo`
-
-Non-goals:
-- No PLATEAU data download or import (that is Task 9).
-- No modification of other canonical geo facts.
+- compute primary mesh code from project origin
+- compute 8 neighbor codes
+- build GeoJSON for shared map overlay
+- display primary and neighbor mesh info in the Mesh Inspector UI
+- update `PrimaryMeshCode` in `GeoProjectInfo`
 
 Constraints:
-- Do not modify other canonical geo facts.
-- Mesh grid is an optional overlay on the shared `MapControl`, not a separate map instance.
-- GeoJSON construction happens in C# (MeshInspector module), not in JavaScript.
-
-Files/Paths:
-- `src/RevitGeoSuite.Core/Mesh/JapanMeshCalculator.cs`
-- `src/RevitGeoSuite.Core/Mesh/MeshNeighborResolver.cs`
-- `src/RevitGeoSuite.MeshInspector/MeshInspectorViewModel.cs`
-- `src/RevitGeoSuite.MeshInspector/MeshInspectorWindow.xaml`
-- `src/RevitGeoSuite.SharedUI/Resources/map.html` (add `showMeshGrid` handler)
+- only `PrimaryMeshCode` is persisted
+- mesh overlay reuses the shared map control
 
 Acceptance Criteria:
-- Only `PrimaryMeshCode` is persisted.
-- Map shows 9 mesh cells (1 primary + 8 neighbors) as styled polygons.
-- Primary cell is visually distinct from neighbors.
-- Each cell displays its mesh code label.
-- Clicking a cell shows mesh code details.
+- map shows 9 mesh cells
+- primary cell is visually distinct
+- mesh details can be inspected without changing other canonical facts
 
 Tests:
-- Unit: `JapanMeshCalculator` returns correct bounding box for known mesh codes
-- Unit: `MeshNeighborResolver` returns 8 valid neighbors for interior and edge cases
-- Unit: GeoJSON builder produces valid FeatureCollection with correct properties
-- Manual: mesh grid displays correctly on the map centered on project origin
+- mesh calculation and GeoJSON builder tests
+- manual overlay test on the shared map
 
 ---
 
-## Task 8 — Validation Module
+## Task 12 - Validation Module
 
 Title: Implement project health checks
 
@@ -504,98 +456,50 @@ Background:
 See `docs/09-test-plan.md`.
 
 Scope:
-- Basic checks: CRS, origin, confidence, suspicious coords.
+- basic checks: CRS, origin, confidence, suspicious coordinates, stale mesh state
 
 Constraints:
-- No persistence of validation results.
-
-Files/Paths:
-- `src/RevitGeoSuite.Validation/`
+- validation results are derived only
+- no persistence of validation snapshots
 
 Acceptance Criteria:
-- Validation results are derived only.
+- validation warnings are understandable and non-destructive
+
+Tests:
+- unit tests for validation rules
+- manual test for warning display
 
 ---
 
-## Task 9 — Core.Plateau + PLATEAU Import
+## Task 13 - Optional Post-V1 Shell Discovery Infrastructure
 
-Title: Implement PLATEAU shared logic and import
+Title: Add assembly-scanning module discovery after V1 is stable
 
 Background:
-See `docs/08-implementation-phases.md`.
+See `docs/04-technical-architecture.md` and `docs/Architecture.md`.
 
 Scope:
-- Core.Plateau: codelists, tile index, schema helpers
-- Plateau import state
+- scan known module directories
+- load assemblies matching naming convention
+- perform module compatibility checks
+- skip and log incompatible modules
 
 Constraints:
-- Core.Plateau depends only on Core.
-
-Files/Paths:
-- `src/RevitGeoSuite.Core.Plateau/`
-- `src/RevitGeoSuite.PlateauImport/`
+- must preserve behavior of statically registered modules during migration
+- should be added only after V1 workflow is working end-to-end
 
 Acceptance Criteria:
-- No Revit references in Core.Plateau.
+- shell can discover compatible modules without destabilizing the georeference workflow
+
+Tests:
+- compatibility handshake tests
+- manual smoke test with multiple modules present
 
 ---
 
-## Task 10 — 3D Tiles Export
+## Later Phases
 
-Title: Implement 3D Tiles export
-
-Background:
-See `docs/08-implementation-phases.md`.
-
-Scope:
-- Geometry extraction
-- glTF/GLB
-- Tileset generation
-
-Constraints:
-- No cross-module dependencies.
-
-Files/Paths:
-- `src/RevitGeoSuite.Tiles3DExport/`
-
----
-
-## Task 11 — CityGML Export
-
-Title: Implement CityGML export
-
-Background:
-See `docs/08-implementation-phases.md`.
-
-Scope:
-- Semantic mapping
-- Codelist mapping
-- Writer
-
-Constraints:
-- Use Core.Plateau only.
-
-Files/Paths:
-- `src/RevitGeoSuite.CityGmlExport/`
-
----
-
-## Cross-Cutting Checks (Run After Each Task)
-
-Title: Dependency graph check
-
-Scope:
-- List project references and flag violations.
-
-Acceptance Criteria:
-- No module depends on another module.
-
----
-
-Title: Storage schema check
-
-Scope:
-- Enumerate persisted fields and confirm only canonical facts exist in `GeoProjectInfo`.
-
-Acceptance Criteria:
-- No module-specific fields in `GeoProjectInfo`.
+- `Core.Plateau` + PLATEAU import
+- `Tiles3DExport`
+- `CityGmlExport`
+- optional advanced overlays and official base maps

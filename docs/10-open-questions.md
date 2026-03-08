@@ -2,6 +2,8 @@
 
 Items marked **RESOLVED** have binding decisions. Items marked **DEFERRED** are intentionally postponed past V1.
 
+At this stage there are no active V1 blocker questions. The remaining open items are future polish or post-V1 infrastructure.
+
 ---
 
 ## Product / UX
@@ -10,13 +12,13 @@ Items marked **RESOLVED** have binding decisions. Items marked **DEFERRED** are 
   **RESOLVED:** Revit Geo Suite. Internal namespace: `RevitGeoSuite`.
 
 - **Should the georeferencing workflow be wizard-style or a single advanced dialog?**
-  **RESOLVED:** Wizard-style. Steps: CRS selection → map point selection → preview → confirm → apply.
+  **RESOLVED:** Wizard-style. Steps: current state -> CRS selection -> map point selection -> preview -> confirm -> apply.
 
 - **How much explanation should be visible by default for beginner users?**
-  Open. Decide during UI implementation. Default to more guidance; consider a "compact mode" later.
+  **RESOLVED:** Default to more guidance in V1. No compact mode in the first implementation.
 
 - **Should the first module support "review existing setup" separately from "create new setup" in V1?**
-  **RESOLVED:** No separate "review" mode in V1. The workflow always starts by reading current state and showing it in the preview step. If existing setup exists, a warning is displayed before apply.
+  **RESOLVED:** No separate review mode in V1. The workflow always starts by reading current state and showing it in the preview step. If existing setup exists, a warning is displayed before apply.
 
 ---
 
@@ -26,7 +28,7 @@ Items marked **RESOLVED** have binding decisions. Items marked **DEFERRED** are 
   **RESOLVED:** Embedded WebView2 control in SharedUI (`MapControl.xaml`). Uses Leaflet.js + OSM tiles. See `docs/DECISIONS.md`.
 
 - **Which CRS library or EPSG data source should be used?**
-  **RESOLVED:** ProjNet4GeoAPI (NuGet package: `ProjNet`). Japanese CRS presets (EPSG:6669–6687) hardcoded in `JapanCrsPresets.cs`.
+  **RESOLVED:** ProjNet4GeoAPI (NuGet package: `ProjNet`). Japanese CRS presets (EPSG:6669-6687) hardcoded in `JapanCrsPresets.cs`.
 
 - **What is the exact persisted CRS reference shape?**
   **RESOLVED:** `CrsReference` with `EpsgCode` (int) and optional `NameSnapshot` (string). Full CRS definitions are resolved at runtime from `ICrsRegistry`. See `Architecture.md`.
@@ -34,18 +36,18 @@ Items marked **RESOLVED** have binding decisions. Items marked **DEFERRED** are 
 - **What Revit versions should be supported first?**
   **RESOLVED:** Revit 2024 only for V1. .NET Framework 4.8.
 
-- **How should the shell perform module discovery in the simplest reliable way?**
-  **RESOLVED:** Shell scans a known modules folder for assemblies matching `RevitGeoSuite.*.dll`. Each module exposes one `IRevitGeoModule` implementation. Incompatible modules are skipped and logged.
+- **How should the shell handle modules in the first implementation?**
+  **RESOLVED:** For Codex-first V1, the shell statically registers the Georeference module in `App.cs`. Keep the `IRevitGeoModule` contract, but defer assembly scanning until after the georeference workflow is stable.
 
 ---
 
 ## Revit API
 
-- **What is the safest exact API strategy for survey point or project base point related operations?**
+- **What is the safest exact API strategy for coordinate-related operations?**
   **RESOLVED:** Use `BasePoint.GetSurveyPoint(doc)` and `BasePoint.GetProjectBasePoint(doc)` for reading. Use `ProjectLocation.SetProjectPosition()` for writing. See `docs/05-revit-api-notes.md` for full details.
 
 - **How should the tool detect meaningful pre-existing coordinate setup?**
-  **RESOLVED:** Read `ProjectPosition` from `doc.ActiveProjectLocation`. If any of EastWest, NorthSouth, or Angle are non-zero, or if `GeoProjectInfo` already exists in Extensible Storage, warn the user.
+  **RESOLVED:** Read `ProjectPosition` from `doc.ActiveProjectLocation`. If any of `EastWest`, `NorthSouth`, or `Angle` are non-zero, or if `GeoProjectInfo` already exists in Extensible Storage, warn the user.
 
 - **What type of rotation should V1 actually perform?**
   **RESOLVED:** V1 sets `ProjectPosition.Angle` (true north rotation). This rotates the coordinate system reference, not the building geometry. The UI must clearly explain this.
@@ -61,25 +63,27 @@ Items marked **RESOLVED** have binding decisions. Items marked **DEFERRED** are 
 ## Data / Accuracy
 
 - **What confidence language should be shown when placement is based only on OSM?**
-  **RESOLVED:** `GeoConfidenceLevel.Approximate` with display text: "Approximate (map-based selection)". The UI must show this clearly in the preview and after apply.
+  **RESOLVED:** `GeoConfidenceLevel.Approximate` with display text: `Approximate (map-based selection)`. The UI must show this clearly in the preview and after apply.
 
 - **Should the tool explicitly label OSM-based placement as approximate?**
   **RESOLVED:** Yes. Always. The confidence level is persisted in `GeoProjectInfo.Confidence`.
 
 - **What validation thresholds count as suspicious for offsets and coordinate ranges?**
   **RESOLVED for V1:**
-  - Coordinates outside Japan bounding box (lat 20–46, lon 122–154): warning
-  - Offset from origin > 100km: warning
-  - Elevation outside -500m to +5000m: warning
+  - Coordinates outside Japan bounding box (lat 20-46, lon 122-154): warning
+  - Offset from origin greater than 100 km: warning
+  - Elevation outside -500 m to +5000 m: warning
   - These are soft warnings, not hard blocks
 
 ---
 
-## Future Expansion (DEFERRED past V1)
+## Future Expansion (DEFERRED Past V1)
 
+- When should dynamic assembly-scanning module discovery be introduced? **DEFERRED**
+- When should a compact mode for advanced users be introduced? **DEFERRED**
 - When should PLATEAU import move from lightweight context to more advanced semantics? **DEFERRED**
 - When should parcel, shapefile, or GeoPackage overlays be introduced? **DEFERRED**
 - Should official base maps or aerial imagery be supported later? **DEFERRED** (likely yes)
 - Should footprint extraction from Revit geometry become a later phase? **DEFERRED**
-- Should the GeoPackage exporter be migrated into the suite after the first modules are stable? **DEFERRED** (likely yes, as Phase 7+)
-- Should IMDF-related tooling eventually become a suite module? **DEFERRED** (likely yes, as Phase 7+)
+- Should the GeoPackage exporter be migrated into the suite after the first modules are stable? **DEFERRED** (likely yes, as Phase 6+)
+- Should IMDF-related tooling eventually become a suite module? **DEFERRED** (likely yes, as Phase 6+)
