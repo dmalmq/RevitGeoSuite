@@ -205,6 +205,90 @@ Before release or major refactor:
 - module-specific state remains isolated
 - version checks still behave correctly
 
+## Mock and Test Strategy by Layer
+
+### Core Tests — Pure Unit Tests
+
+Core has zero external dependencies. Tests run without Revit, without UI, without file system access.
+
+**What to test:**
+- `CrsRegistry`: EPSG lookup, Japanese presets, invalid code handling
+- `CoordinateTransformer`: known sample point conversions with tolerance assertions
+- `JapanMeshCalculator`: mesh code calculation for known lat/lon pairs
+- `MeshNeighborResolver`: neighbor mesh list for sample codes
+- `GeoProjectInfo`: serialization round-trip with Newtonsoft.Json
+- `MigrationRunner`: v0 → v1 migration produces valid output
+- `CoordinateValidator`: suspicious coordinate detection
+
+**How:**
+```csharp
+[Fact]
+public void CrsRegistry_ResolveEpsg6677_ReturnsValidCrs()
+{
+    var registry = new CrsRegistry();
+    var crs = registry.GetById(6677);
+    Assert.NotNull(crs);
+    Assert.Equal("JGD2011 / Japan Plane Rectangular CS IX", crs.Name);
+}
+```
+
+### RevitInterop Tests — Interface Mocks Only
+
+RevitInterop wraps Revit API calls behind interfaces. Tests for code that depends on RevitInterop should mock these interfaces. **No Revit runtime is needed in CI.**
+
+**Key interfaces to mock:**
+- `IRevitGeoPlacementService`
+- `IGeoProjectInfoStore`
+- `IModuleStateStore`
+
+**What NOT to test in CI:**
+- Actual Revit API behavior (covered by manual tests)
+- Extensible Storage read/write (requires Revit document)
+
+**How:**
+```csharp
+[Fact]
+public void GeoreferenceViewModel_Apply_CallsPlacementService()
+{
+    var mockPlacement = new Mock<IRevitGeoPlacementService>();
+    var mockStore = new Mock<IGeoProjectInfoStore>();
+    var vm = new GeoreferenceViewModel(mockPlacement.Object, mockStore.Object, ...);
+
+    vm.ApplyCommand.Execute(null);
+
+    mockPlacement.Verify(p => p.ApplyPlacement(It.IsAny<PlacementIntent>()), Times.Once);
+}
+```
+
+### Module Tests — ViewModel and Service Tests
+
+Test module logic (ViewModels, services) against mocked Core and RevitInterop interfaces. These tests verify workflow logic without Revit.
+
+**What to test:**
+- ViewModel state transitions (CRS selected → point selected → preview ready → applied)
+- `PlacementPreviewService` generates correct before/after data from mock inputs
+- `SiteSelectionService` stores and converts coordinates
+- Command availability (e.g., Apply disabled until preview confirmed)
+
+### Manual Tests — Require Revit 2024
+
+Manual tests follow the scenarios defined earlier in this document. They require:
+- Revit 2024 installed
+- A sample `.rvt` project file
+- Human verification of UI behavior and Revit document state
+
+**When to run:**
+- Before each release
+- After changes to RevitInterop layer
+- After changes to placement workflow
+
+---
+
 ## Tolerance / Precision Note
 
 Tests should document acceptable tolerance rather than assuming exact equality for all coordinate conversions.
+
+Recommended tolerances:
+- Coordinate transforms: 0.001 meters (1mm)
+- Angle comparisons: 0.0001 radians
+- Mesh code calculations: exact match (discrete values)
