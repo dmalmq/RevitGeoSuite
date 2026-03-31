@@ -1,0 +1,15 @@
+{
+  "SchemaVersion": 0,
+  "ProjectCrs": {
+    "EpsgCode": 6677,
+    "NameSnapshot": "Legacy CRS"
+  },
+  "Origin": {
+    "Latitude": 35.681236,
+    "Longitude": 139.767125,
+    "ElevationMeters": 12.5
+  },
+  "TrueNorthAngle": 0.0,
+  "Confidence": 1,
+  "SetupSource": "LegacyFixture"
+}

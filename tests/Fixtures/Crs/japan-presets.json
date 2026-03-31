@@ -1,0 +1,21 @@
+[
+  { "epsgCode": 6669, "zoneNumber": 1, "zoneLabel": "I", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS I" },
+  { "epsgCode": 6670, "zoneNumber": 2, "zoneLabel": "II", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS II" },
+  { "epsgCode": 6671, "zoneNumber": 3, "zoneLabel": "III", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS III" },
+  { "epsgCode": 6672, "zoneNumber": 4, "zoneLabel": "IV", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS IV" },
+  { "epsgCode": 6673, "zoneNumber": 5, "zoneLabel": "V", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS V" },
+  { "epsgCode": 6674, "zoneNumber": 6, "zoneLabel": "VI", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS VI" },
+  { "epsgCode": 6675, "zoneNumber": 7, "zoneLabel": "VII", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS VII" },
+  { "epsgCode": 6676, "zoneNumber": 8, "zoneLabel": "VIII", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS VIII" },
+  { "epsgCode": 6677, "zoneNumber": 9, "zoneLabel": "IX", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS IX" },
+  { "epsgCode": 6678, "zoneNumber": 10, "zoneLabel": "X", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS X" },
+  { "epsgCode": 6679, "zoneNumber": 11, "zoneLabel": "XI", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XI" },
+  { "epsgCode": 6680, "zoneNumber": 12, "zoneLabel": "XII", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XII" },
+  { "epsgCode": 6681, "zoneNumber": 13, "zoneLabel": "XIII", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XIII" },
+  { "epsgCode": 6682, "zoneNumber": 14, "zoneLabel": "XIV", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XIV" },
+  { "epsgCode": 6683, "zoneNumber": 15, "zoneLabel": "XV", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XV" },
+  { "epsgCode": 6684, "zoneNumber": 16, "zoneLabel": "XVI", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XVI" },
+  { "epsgCode": 6685, "zoneNumber": 17, "zoneLabel": "XVII", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XVII" },
+  { "epsgCode": 6686, "zoneNumber": 18, "zoneLabel": "XVIII", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XVIII" },
+  { "epsgCode": 6687, "zoneNumber": 19, "zoneLabel": "XIX", "nameSnapshot": "JGD2011 / Japan Plane Rectangular CS XIX" }
+]

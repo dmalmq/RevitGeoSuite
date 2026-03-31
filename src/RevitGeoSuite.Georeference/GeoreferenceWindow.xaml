@@ -1,0 +1,381 @@
+<Window x:Class="RevitGeoSuite.Georeference.GeoreferenceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shared="clr-namespace:RevitGeoSuite.SharedUI.Controls;assembly=RevitGeoSuite.SharedUI"
+        Title="Georeference Setup"
+        Height="900"
+        Width="1160"
+        MinWidth="980"
+        MinHeight="720"
+        Loaded="OnLoaded"
+        WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/RevitGeoSuite.SharedUI;component/Styles/SuiteTheme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+      <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ResourceDictionary>
+  </Window.Resources>
+
+  <DockPanel Margin="18">
+    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+      <TextBlock FontSize="24" FontWeight="Bold" Text="{Binding WindowTitle}" />
+      <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding StepTitle}" />
+      <TextBlock Margin="0,4,0,0" Foreground="#5C6670" Text="{Binding StepDescription}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+      <Button Style="{StaticResource SecondaryButtonStyle}" Content="Back" Click="OnBackClick" IsEnabled="{Binding CanGoBack}" />
+      <Button x:Name="NextButton" Content="{Binding NextButtonText}" Click="OnNextClick" IsEnabled="{Binding CanGoNext}" Visibility="{Binding ShowNextButton, Converter={StaticResource BoolToVisibilityConverter}}" />
+      <Button Content="Apply" Click="OnApplyClick" IsEnabled="{Binding CanApply}" Visibility="{Binding IsPreviewStepVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+      <Button Style="{StaticResource SecondaryButtonStyle}" Content="Close" Click="OnCloseClick" />
+    </StackPanel>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <Grid>
+        <Border Visibility="{Binding IsCurrentStateStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+          <StackPanel>
+            <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasExistingSetupMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+              <TextBlock Text="{Binding ExistingSetupMessage}" TextWrapping="Wrap" />
+            </Border>
+            <Border Margin="0,10,0,12" Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+              <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+            </Border>
+            <TextBlock Margin="0,0,0,10" Text="V1 works with project location and true north. It does not rotate building geometry directly." TextWrapping="Wrap" />
+            <ItemsControl ItemsSource="{Binding CurrentStateRows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="240" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Visibility="{Binding IsChooseCrsStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+          <shared:CrsPickerControl AvailableDefinitions="{Binding AvailableCrs}" SelectedDefinition="{Binding SelectedCrs, Mode=TwoWay}" />
+        </Border>
+
+        <Border Visibility="{Binding IsSelectPointStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+          <StackPanel>
+            <TextBlock FontWeight="SemiBold" Text="{Binding SelectedCrsSummary}" TextWrapping="Wrap" />
+            <TextBlock Margin="0,6,0,10" Foreground="#5C6670" Text="OpenStreetMap is visual context only. Use survey or drawing data when it conflicts." TextWrapping="Wrap" />
+
+            <Grid Margin="0,0,0,12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260" />
+                <ColumnDefinition Width="260" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <TextBlock FontWeight="SemiBold" Text="Capture Target" />
+                <ComboBox Margin="0,8,12,0"
+                          ItemsSource="{Binding CaptureTargetOptions}"
+                          SelectedItem="{Binding SelectedCaptureTargetOption, Mode=TwoWay}"
+                          DisplayMemberPath="Title" />
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock FontWeight="SemiBold" Text="Selection Method" />
+                <ComboBox Margin="0,8,12,0"
+                          ItemsSource="{Binding SiteSelectionModeOptions}"
+                          SelectedItem="{Binding SelectedSiteSelectionModeOption, Mode=TwoWay}"
+                          DisplayMemberPath="Title" />
+              </StackPanel>
+              <TextBlock Grid.Column="2" Margin="0,24,0,0" Foreground="#5C6670" Text="{Binding SelectedCaptureTargetDescription}" TextWrapping="Wrap" />
+            </Grid>
+            <TextBlock Margin="0,0,0,12" Foreground="#5C6670" Text="{Binding SelectedSiteSelectionModeDescription}" TextWrapping="Wrap" />
+
+            <Border Margin="0,0,0,12" Padding="12" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9" Visibility="{Binding IsKnownCoordinateMode, Converter={StaticResource BoolToVisibilityConverter}}">
+              <StackPanel>
+                <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasKnownCoordinateErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <TextBlock Text="{Binding KnownCoordinateErrorMessage}" TextWrapping="Wrap" />
+                </Border>
+                <TextBlock FontWeight="SemiBold" Text="Known CRS Coordinates" />
+                <TextBlock Margin="0,8,0,12" Foreground="#5C6670" Text="Enter normalized Easting / Northing values in the selected CRS. For EPSG:6677, the natural origin is Easting 0, Northing 0 at latitude 36°, longitude 139°50'." TextWrapping="Wrap" />
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="180" />
+                    <ColumnDefinition Width="180" />
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0">
+                    <TextBlock FontWeight="SemiBold" Text="Easting (m)" />
+                    <TextBox Margin="0,8,10,0" Text="{Binding KnownCoordinateEastingInput, UpdateSourceTrigger=PropertyChanged}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock FontWeight="SemiBold" Text="Northing (m)" />
+                    <TextBox Margin="0,8,10,0" Text="{Binding KnownCoordinateNorthingInput, UpdateSourceTrigger=PropertyChanged}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Visibility="{Binding IsCapturingPrimaryApplyAnchor, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock FontWeight="SemiBold" Text="Primary Anchor Target" />
+                    <ComboBox Margin="0,8,10,0"
+                              ItemsSource="{Binding AnchorTargetOptions}"
+                              SelectedItem="{Binding SelectedAnchorTargetOption, Mode=TwoWay}"
+                              DisplayMemberPath="Title" />
+                  </StackPanel>
+                  <Button Grid.Column="3" VerticalAlignment="Bottom" Content="Use Coordinates" Click="OnUseKnownCoordinatesClick" />
+                </Grid>
+                <TextBlock Margin="0,8,0,0" Foreground="#5C6670" Text="{Binding SelectedAnchorTargetDescription}" TextWrapping="Wrap" Visibility="{Binding IsCapturingPrimaryApplyAnchor, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Margin="0,8,0,0" Foreground="#5C6670" Text="Working Project Base Point entries are saved as a secondary reference for later workflows. They do not replace the main apply anchor." TextWrapping="Wrap" Visibility="{Binding IsCapturingWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
+              </StackPanel>
+            </Border>
+
+            <Grid Margin="0,0,0,10">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="360" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBox x:Name="MapSearchTextBox"
+                       Grid.Column="0"
+                       Height="32"
+                       VerticalContentAlignment="Center"
+                       KeyDown="OnMapSearchKeyDown"
+                       ToolTip="Search by Japanese place/address or paste latitude, longitude." />
+              <Button Grid.Column="1" Margin="8,0,0,0" Content="Search" Click="OnMapSearchClick" />
+              <Button Grid.Column="2"
+                      Margin="8,0,0,0"
+                      Style="{StaticResource SecondaryButtonStyle}"
+                      Content="Zoom To Site"
+                      Click="OnZoomToSiteClick"
+                      IsEnabled="{Binding HasSiteLocation}" />
+              <Button Grid.Column="3"
+                      Margin="8,0,0,0"
+                      Style="{StaticResource SecondaryButtonStyle}"
+                      Content="{Binding ProjectBasePointZoomButtonText}"
+                      Click="OnZoomToProjectBasePointClick"
+                      IsEnabled="{Binding HasProjectBasePointLocation}" />
+            </Grid>
+            <TextBlock Margin="0,0,0,12" Foreground="#5C6670" Text="Map search and zoom remain available for context. The capture target above decides whether the next click or coordinate entry becomes the primary apply anchor or the optional working Project Base Point." TextWrapping="Wrap" />
+            <shared:MapControl x:Name="SiteMap" Height="500" MapPointSelected="OnMapPointSelected" />
+            <TextBlock Margin="0,12,0,0" Text="Click the map or use known coordinates to capture a point. The next step will show the primary apply anchor and the optional working Project Base Point separately." TextWrapping="Wrap" />
+
+            <Grid Margin="0,16,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="20" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Grid.Column="0" Padding="12" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
+                <StackPanel>
+                  <TextBlock FontWeight="SemiBold" Text="Primary Apply Anchor" />
+                  <TextBlock Margin="0,8,0,10" Foreground="#5C6670" Text="This point drives the Revit apply step and the canonical geo metadata." TextWrapping="Wrap" />
+                  <ItemsControl ItemsSource="{Binding SelectedPointRows}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid Margin="0,0,0,8">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="*" />
+                          </Grid.ColumnDefinitions>
+                          <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                          <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="2" Padding="12" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
+                <StackPanel>
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" FontWeight="SemiBold" Text="Working Project Base Point" />
+                    <Button DockPanel.Dock="Right"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Content="Clear"
+                            Click="OnClearWorkingProjectBasePointClick"
+                            IsEnabled="{Binding CanClearWorkingProjectBasePoint}" />
+                  </DockPanel>
+                  <TextBlock Margin="0,8,0,10" Foreground="#5C6670" Text="Optional secondary reference for later suite workflows such as imports, exports, or future grid-based local coordinates." TextWrapping="Wrap" />
+                  <ItemsControl ItemsSource="{Binding WorkingProjectBasePointRows}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid Margin="0,0,0,8">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="*" />
+                          </Grid.ColumnDefinitions>
+                          <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                          <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock Foreground="#5C6670" Text="No working Project Base Point selected yet." TextWrapping="Wrap" Visibility="{Binding HasNoWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
+                </StackPanel>
+              </Border>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Visibility="{Binding IsReviewPointStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+          <StackPanel>
+            <TextBlock FontWeight="SemiBold" Text="Primary Apply Anchor" />
+            <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding SelectedPointRows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border Margin="0,18,0,0" Padding="12" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="Working Project Base Point" />
+                <TextBlock Margin="0,8,0,10" Foreground="#5C6670" Text="This secondary reference is optional and is stored for later workflows. It does not replace the main apply anchor." TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding WorkingProjectBasePointRows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="220" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Foreground="#5C6670" Text="No working Project Base Point selected for this run." TextWrapping="Wrap" Visibility="{Binding HasNoWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
+              </StackPanel>
+            </Border>
+            <TextBlock Margin="0,14,0,0" Foreground="#5C6670" Text="Continue to choose what the apply step should change, or go back to re-pick the map point or enter different coordinates." TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <Border Visibility="{Binding IsSetupIntentStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+          <StackPanel>
+            <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasSetupIntentErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+              <TextBlock Text="{Binding SetupIntentErrorMessage}" TextWrapping="Wrap" />
+            </Border>
+            <Grid Margin="0,12,0,12">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <TextBlock FontWeight="SemiBold" Text="Selected CRS" />
+              <TextBlock Grid.Column="1" Text="{Binding SelectedCrsSummary}" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="1" Margin="0,10,0,0" FontWeight="SemiBold" Text="Primary Anchor" />
+              <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Text="{Binding SelectedPointSummary}" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="2" Margin="0,10,0,0" FontWeight="SemiBold" Text="Working Project Base Point" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,10,0,0" Text="{Binding WorkingProjectBasePointSummary}" TextWrapping="Wrap" />
+            </Grid>
+            <TextBlock FontWeight="SemiBold" Text="Setup Intent" />
+            <ComboBox Margin="0,8,0,0"
+                      ItemsSource="{Binding ApplyModeOptions}"
+                      SelectedItem="{Binding SelectedApplyModeOption, Mode=TwoWay}"
+                      DisplayMemberPath="Title" />
+            <TextBlock Margin="0,8,0,0" Foreground="#5C6670" Text="{Binding SelectedApplyModeDescription}" TextWrapping="Wrap" />
+            <TextBlock Margin="0,18,0,0" FontWeight="SemiBold" Text="Setup Source Note" />
+            <TextBox Margin="0,8,0,0" Text="{Binding SetupSource, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Margin="0,8,0,0" Foreground="#5C6670" Text="This note becomes the provenance summary for the apply step and stored metadata." TextWrapping="Wrap" />
+            <StackPanel Margin="0,18,0,0" Visibility="{Binding RequiresTrueNorthAngleInput, Converter={StaticResource BoolToVisibilityConverter}}">
+              <TextBlock FontWeight="SemiBold" Text="True North Angle (degrees)" />
+              <TextBox Margin="0,8,0,0" Width="180" Text="{Binding TrueNorthAngleInput, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBlock Margin="0,8,0,0" Foreground="#5C6670" Text="V1 adjusts the true north reference only. It does not rotate the model geometry itself." TextWrapping="Wrap" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Visibility="{Binding IsPreviewStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+          <StackPanel>
+            <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasPreviewWarnings, Converter={StaticResource BoolToVisibilityConverter}}">
+              <ItemsControl ItemsSource="{Binding PreviewWarnings}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Margin="0,0,0,6" Text="{Binding}" TextWrapping="Wrap" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Border>
+
+            <Border Margin="0,12,0,12" BorderBrush="#D7D0C2" BorderThickness="1" CornerRadius="6" Padding="12" Background="#FFFDF9">
+              <StackPanel>
+                <Grid Margin="0,0,0,10">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="1" FontWeight="SemiBold" Text="Current" />
+                  <TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Proposed" />
+                </Grid>
+                <ItemsControl ItemsSource="{Binding PreviewFields}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="220" />
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                        <TextBlock Grid.Column="1" Margin="10,0,16,0" Text="{Binding CurrentValue}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="2" Margin="10,0,0,0" Text="{Binding ProposedValue}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+
+            <TextBlock FontWeight="SemiBold" Text="What Will Change" />
+            <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding PreviewWhatWillChange}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Margin="0,0,0,6" Text="{Binding}" TextWrapping="Wrap" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Text="What Will Not Change" />
+            <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding PreviewWhatWillNotChange}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Margin="0,0,0,6" Text="{Binding}" TextWrapping="Wrap" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Text="Persistence Summary" />
+            <TextBlock Margin="0,8,0,0" Text="{Binding PreviewPersistenceSummary}" TextWrapping="Wrap" />
+            <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Text="Impact Summary" />
+            <TextBlock Margin="0,8,0,0" Text="{Binding PreviewChangeImpactSummary}" TextWrapping="Wrap" />
+            <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Text="Confidence / Provenance" />
+            <TextBlock Margin="0,8,0,0" Text="{Binding PreviewConfidenceSummary}" TextWrapping="Wrap" />
+
+            <Border Margin="0,16,0,0" Style="{StaticResource WarningBorderStyle}">
+              <TextBlock Text="Apply is manual and never automatic. Use Back to revise the workflow, or Apply to commit the previewed changes in a single Revit transaction." TextWrapping="Wrap" />
+            </Border>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </ScrollViewer>
+  </DockPanel>
+</Window>
+
+

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>RevitGeoSuite.Core</RootNamespace>
+    <AssemblyName>RevitGeoSuite.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="ProjNET" Version="2.1.0" GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <Target Name="CopyReferenceAssembliesToCommonOutput" AfterTargets="Build">
+    <Copy
+      SourceFiles="@(ReferenceCopyLocalPaths)"
+      DestinationFolder="$(OutputPath)"
+      SkipUnchangedFiles="true"
+      Condition="'@(ReferenceCopyLocalPaths)' != ''" />
+  </Target>
+</Project>

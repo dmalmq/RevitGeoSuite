@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Tokyo Station sample",
+    "source": "GSI SurveyCalc bl2xy refFrame=2 zone=9",
+    "epsgCode": 6677,
+    "latitude": 35.681236,
+    "longitude": 139.767125,
+    "expectedEasting": -5992.9196,
+    "expectedNorthing": -35363.2377,
+    "toleranceMeters": 0.001
+  },
+  {
+    "name": "Osaka sample",
+    "source": "GSI SurveyCalc bl2xy refFrame=2 zone=6",
+    "epsgCode": 6674,
+    "latitude": 34.693725,
+    "longitude": 135.502254,
+    "expectedEasting": -45602.6213,
+    "expectedNorthing": -144799.9949,
+    "toleranceMeters": 0.001
+  }
+]

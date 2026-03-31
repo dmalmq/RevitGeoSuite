@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>RevitGeoSuite.Core.Plateau</RootNamespace>
+    <AssemblyName>RevitGeoSuite.Core.Plateau</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+</Project>

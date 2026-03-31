@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Revit Geo Suite Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      font-family: Segoe UI, sans-serif;
+    }
+
+    #map {
+      background: #f2ede4;
+    }
+
+    #status {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      z-index: 500;
+      background: rgba(255, 252, 246, 0.92);
+      border: 1px solid #d7d0c2;
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: #24303a;
+      min-width: 220px;
+      max-width: 360px;
+    }
+
+    #error {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 500;
+      display: none;
+      background: rgba(255, 241, 235, 0.96);
+      border: 1px solid #b7604b;
+      border-radius: 6px;
+      padding: 10px 12px;
+      max-width: 360px;
+      color: #7a3022;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="error"></div>
+  <div id="status">Loading map…</div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    let map;
+    let marker;
+    let meshGridLayer;
+    let selectedMeshLayer;
+    let pointSelectionEnabled = true;
+
+    function updateStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
+
+    function hideError() {
+      document.getElementById('error').style.display = 'none';
+    }
+
+    function showError(text) {
+      const error = document.getElementById('error');
+      error.style.display = 'block';
+      error.textContent = text;
+      updateStatus('Map unavailable');
+    }
+
+    function setMarker(lat, lon) {
+      if (!map) {
+        return;
+      }
+
+      if (!marker) {
+        marker = L.marker([lat, lon]).addTo(map);
+      } else {
+        marker.setLatLng([lat, lon]);
+      }
+    }
+
+    function clearMarker() {
+      if (marker) {
+        marker.remove();
+        marker = null;
+      }
+    }
+
+    function clearMeshGrid() {
+      if (meshGridLayer) {
+        meshGridLayer.remove();
+        meshGridLayer = null;
+      }
+
+      selectedMeshLayer = null;
+    }
+
+    function baseMeshGridStyle(feature) {
+      const isPrimary = !!(feature && feature.properties && feature.properties.isPrimary);
+      return isPrimary
+        ? {
+            color: '#2f6fb0',
+            weight: 2,
+            fillColor: '#4f8dcb',
+            fillOpacity: 0.25,
+            opacity: 1,
+            dashArray: null
+          }
+        : {
+            color: '#5e6a72',
+            weight: 1.5,
+            fillColor: '#aeb7bd',
+            fillOpacity: 0.10,
+            opacity: 0.85,
+            dashArray: '6 4'
+          };
+    }
+
+    function highlightMeshLayer(layer) {
+      if (!layer) {
+        return;
+      }
+
+      if (selectedMeshLayer && selectedMeshLayer !== layer) {
+        selectedMeshLayer.setStyle(baseMeshGridStyle(selectedMeshLayer.feature));
+      }
+
+      selectedMeshLayer = layer;
+      layer.setStyle({
+        color: '#d2691e',
+        weight: 3,
+        fillColor: '#f4a259',
+        fillOpacity: 0.18,
+        opacity: 1,
+        dashArray: null
+      });
+
+      if (layer.bringToFront) {
+        layer.bringToFront();
+      }
+    }
+
+    function showMeshGrid(geoJsonText) {
+      if (!map || !geoJsonText) {
+        return;
+      }
+
+      clearMeshGrid();
+
+      let geoJson;
+      try {
+        geoJson = JSON.parse(geoJsonText);
+      } catch {
+        showError('Mesh grid overlay could not be parsed.');
+        return;
+      }
+
+      meshGridLayer = L.geoJSON(geoJson, {
+        style: baseMeshGridStyle,
+        onEachFeature: function(feature, layer) {
+          const meshCode = feature && feature.properties ? feature.properties.meshCode : '';
+          const isPrimary = !!(feature && feature.properties && feature.properties.isPrimary);
+          if (meshCode) {
+            layer.bindTooltip(meshCode, {
+              permanent: true,
+              direction: 'center',
+              className: 'mesh-code-label'
+            });
+          }
+
+          layer.on('click', function(event) {
+            L.DomEvent.stop(event);
+            highlightMeshLayer(layer);
+            updateStatus(`Selected mesh: ${meshCode || 'Unknown'}${isPrimary ? ' (primary)' : ''}`);
+          });
+
+          if (isPrimary) {
+            selectedMeshLayer = layer;
+          }
+        }
+      }).addTo(map);
+
+      if (selectedMeshLayer) {
+        highlightMeshLayer(selectedMeshLayer);
+      }
+    }
+
+    async function searchLocation(query) {
+      if (!map || !query) {
+        return;
+      }
+
+      hideError();
+      updateStatus(`Searching for "${query}"…`);
+
+      try {
+        const url = new URL('https://nominatim.openstreetmap.org/search');
+        url.searchParams.set('format', 'jsonv2');
+        url.searchParams.set('limit', '1');
+        url.searchParams.set('countrycodes', 'jp');
+        url.searchParams.set('q', query);
+
+        const response = await fetch(url.toString(), {
+          headers: {
+            'Accept-Language': navigator.language || 'ja,en'
+          }
+        });
+
+        if (!response.ok) {
+          showError('Search could not be completed. Check internet access or try a more specific place name.');
+          return;
+        }
+
+        const results = await response.json();
+        if (!Array.isArray(results) || results.length === 0) {
+          showError('No matching place was found. Try a more specific query or paste latitude, longitude.');
+          return;
+        }
+
+        const first = results[0];
+        const lat = Number.parseFloat(first.lat);
+        const lon = Number.parseFloat(first.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          showError('The search result did not include usable coordinates.');
+          return;
+        }
+
+        map.setView([lat, lon], 16);
+        setMarker(lat, lon);
+        hideError();
+        updateStatus(`Search result: ${first.display_name}. Click the map to confirm the point.`);
+      } catch (error) {
+        showError('Search could not be completed. Check internet access or paste latitude, longitude instead.');
+      }
+    }
+
+    function initMap() {
+      if (!window.L) {
+        showError('Leaflet could not be loaded. Check internet access for the embedded map resources.');
+        return;
+      }
+
+      map = L.map('map', { zoomControl: true }).setView([35.681236, 139.767125], 11);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      map.on('mousemove', event => {
+        updateStatus(`Cursor: ${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`);
+      });
+
+      map.on('click', event => {
+        if (!pointSelectionEnabled) {
+          return;
+        }
+
+        hideError();
+        setMarker(event.latlng.lat, event.latlng.lng);
+        updateStatus(`Selected: ${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`);
+        window.chrome.webview.postMessage({
+          type: 'mapClick',
+          latitude: event.latlng.lat,
+          longitude: event.latlng.lng
+        });
+      });
+
+      window.chrome.webview.addEventListener('message', event => {
+        const message = event.data || {};
+        if (message.type === 'setView') {
+          hideError();
+          map.setView([message.latitude, message.longitude], message.zoom || map.getZoom());
+        }
+
+        if (message.type === 'setMarker') {
+          hideError();
+          setMarker(message.latitude, message.longitude);
+        }
+
+        if (message.type === 'clearMarker') {
+          clearMarker();
+        }
+
+        if (message.type === 'setPointSelectionEnabled') {
+          pointSelectionEnabled = !!message.enabled;
+          if (!pointSelectionEnabled) {
+            clearMarker();
+          }
+        }
+
+        if (message.type === 'searchLocation') {
+          searchLocation(message.query);
+        }
+
+        if (message.type === 'showMeshGrid') {
+          hideError();
+          showMeshGrid(message.geoJson);
+          updateStatus('Mesh grid overlay loaded. Click a mesh cell to highlight it.');
+        }
+
+        if (message.type === 'clearMeshGrid') {
+          clearMeshGrid();
+        }
+      });
+
+      updateStatus('Pan or zoom to the site, then click to select a reference point.');
+      window.chrome.webview.postMessage({ type: 'ready' });
+    }
+
+    window.addEventListener('load', initMap);
+  </script>
+</body>
+</html>

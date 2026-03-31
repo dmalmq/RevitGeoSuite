@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>RevitGeoSuite.Shell</RootNamespace>
+    <AssemblyName>RevitGeoSuite.Shell</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.RevitInterop\RevitGeoSuite.RevitInterop.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.SharedUI\RevitGeoSuite.SharedUI.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.Georeference\RevitGeoSuite.Georeference.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.MeshInspector\RevitGeoSuite.MeshInspector.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.Validation\RevitGeoSuite.Validation.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.PlateauImport\RevitGeoSuite.PlateauImport.csproj" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitInstallDir)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitInstallDir)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="RevitGeoSuite.addin" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

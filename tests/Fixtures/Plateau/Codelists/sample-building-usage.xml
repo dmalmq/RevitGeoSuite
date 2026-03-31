@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gml:Dictionary xmlns:gml="http://www.opengis.net/gml">
+  <gml:dictionaryEntry>
+    <gml:Definition gml:id="401">
+      <gml:name>Residential Building</gml:name>
+      <gml:description>Example residential building usage.</gml:description>
+    </gml:Definition>
+  </gml:dictionaryEntry>
+  <gml:dictionaryEntry>
+    <gml:Definition gml:id="402">
+      <gml:name>Office Building</gml:name>
+      <gml:description>Example office building usage.</gml:description>
+    </gml:Definition>
+  </gml:dictionaryEntry>
+</gml:Dictionary>

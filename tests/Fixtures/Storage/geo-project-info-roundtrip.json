@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "ProjectCrs": {
+    "EpsgCode": 6677,
+    "NameSnapshot": "JGD2011 / Japan Plane Rectangular CS IX"
+  },
+  "Origin": {
+    "Latitude": 35.681236,
+    "Longitude": 139.767125,
+    "ElevationMeters": 12.5
+  },
+  "TrueNorthAngle": 0.0,
+  "PrimaryMeshCode": {
+    "Value": "53394611"
+  },
+  "Confidence": 1,
+  "SetupSource": "FixtureSample",
+  "GeoSetupDate": "2026-03-01T00:00:00Z"
+}

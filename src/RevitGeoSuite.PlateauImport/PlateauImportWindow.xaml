@@ -1,0 +1,178 @@
+<Window x:Class="RevitGeoSuite.PlateauImport.PlateauImportWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:corePlateau="clr-namespace:RevitGeoSuite.Core.Plateau.Tiles;assembly=RevitGeoSuite.Core.Plateau"
+        Title="PLATEAU Context Import"
+        Height="860"
+        Width="1180"
+        MinWidth="980"
+        MinHeight="700"
+        WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/RevitGeoSuite.SharedUI;component/Styles/SuiteTheme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+      <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ResourceDictionary>
+  </Window.Resources>
+
+  <DockPanel Margin="18">
+    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+      <TextBlock FontSize="24" FontWeight="Bold" Text="{Binding WindowTitle}" />
+      <TextBlock Margin="0,6,0,0" FontSize="16" FontWeight="SemiBold" Text="{Binding DocumentTitle}" />
+      <TextBlock Margin="0,4,0,0" Foreground="#5C6670" Text="Load a lightweight PLATEAU CityGML file, preview the resolved local context geometry, and import it into the active project without polluting shared GeoProjectInfo state." TextWrapping="Wrap" />
+    </StackPanel>
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+      <Button Style="{StaticResource SecondaryButtonStyle}" Content="Load Preview" Click="OnLoadPreviewClick" IsEnabled="{Binding CanLoadPreview}" />
+      <Button Content="Import Context" Click="OnImportClick" IsEnabled="{Binding CanImport}" />
+      <Button Style="{StaticResource SecondaryButtonStyle}" Content="Close" Click="OnCloseClick" />
+    </StackPanel>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel>
+        <Border Padding="12" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9" Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+          <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+        </Border>
+
+        <Border Margin="0,12,0,0" Padding="12" CornerRadius="6" BorderBrush="#B8D1C6" BorderThickness="1" Background="#F4FBF7" Visibility="{Binding HasActionMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+          <TextBlock Text="{Binding ActionMessage}" TextWrapping="Wrap" />
+        </Border>
+
+        <Grid Margin="0,14,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="430" />
+            <ColumnDefinition Width="20" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+
+          <StackPanel Grid.Column="0">
+            <Border Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="Reference Context" />
+                <ComboBox Margin="0,10,0,0"
+                          ItemsSource="{Binding ReferenceSourceOptions}"
+                          SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
+                          DisplayMemberPath="Title" />
+                <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding ReferenceSourceTitle}" />
+                <TextBlock Margin="0,4,0,0" Foreground="#5C6670" Text="{Binding ReferenceSourceDescription}" TextWrapping="Wrap" />
+                <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding CurrentStateRows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="170" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+
+            <Border Margin="0,14,0,0" Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="Suggested PLATEAU Tiles" />
+                <TextBlock Margin="0,8,0,10" Foreground="#5C6670" Text="Nearby tertiary mesh cells are resolved from the selected reference context so the module defaults to the local point closest to the Revit geometry." TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding SuggestedTiles}" Visibility="{Binding HasSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type corePlateau:PlateauTileCandidate}">
+                      <Border Margin="0,0,8,8" Padding="8,6" CornerRadius="4" BorderBrush="#D7D0C2" BorderThickness="1" Background="#F7F5F0">
+                        <StackPanel>
+                          <TextBlock FontFamily="Consolas" Text="{Binding TileId}" />
+                          <TextBlock FontSize="11" Foreground="#5C6670" Text="{Binding Source}" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Foreground="#5C6670" Text="No tile candidates are available until the selected reference context can be resolved." TextWrapping="Wrap" Visibility="{Binding HasNoSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}" />
+              </StackPanel>
+            </Border>
+
+            <Border Margin="0,14,0,0" Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="Last Import State" />
+                <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding LastImportRows}" Visibility="{Binding HasLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="150" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Foreground="#5C6670" Text="No PLATEAU import has been recorded in module state yet." TextWrapping="Wrap" Visibility="{Binding HasNoLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel Grid.Column="2">
+            <Border Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="CityGML File" />
+                <Grid Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="130" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox Grid.Column="0" Text="{Binding SelectedFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                  <Button Grid.Column="2" Content="Browse..." Click="OnBrowseFileClick" />
+                </Grid>
+                <TextBlock Margin="0,10,0,0" Foreground="#5C6670" Text="Lightweight V1 import expects the CityGML CRS to match the stored project CRS. Imported elements are created as Generic Models through DirectShape." TextWrapping="Wrap" />
+                <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding FileRows}" Visibility="{Binding HasFileRows, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="150" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Foreground="#5C6670" Text="No CityGML preview is loaded yet." TextWrapping="Wrap" Visibility="{Binding HasNoFileRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+              </StackPanel>
+            </Border>
+
+            <Border Margin="0,14,0,0" Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="Parsed Features" />
+                <TextBlock Margin="0,8,0,10" Foreground="#5C6670" Text="The preview below lists the features that will become lightweight context solids in Revit." TextWrapping="Wrap" />
+                <TextBlock FontWeight="SemiBold" Text="{Binding PreparedSolidCount, StringFormat=Importable solids: {0}}" />
+                <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding FeatureNames}" Visibility="{Binding HasFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Margin="0,0,0,8" Padding="10" CornerRadius="4" BorderBrush="#D7D0C2" BorderThickness="1" Background="#F7F5F0">
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Foreground="#5C6670" Text="Load a preview to inspect the parsed feature names before import." TextWrapping="Wrap" Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>
