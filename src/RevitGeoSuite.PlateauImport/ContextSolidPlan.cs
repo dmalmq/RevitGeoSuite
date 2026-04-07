@@ -8,6 +8,12 @@ public sealed class ContextSolidPlan
 
     public string SourceFeatureId { get; set; } = string.Empty;
 
+    public PlateauFeatureType FeatureType { get; set; }
+
+    public string TileId { get; set; } = string.Empty;
+
+    public string SourceFilePath { get; set; } = string.Empty;
+
     public IReadOnlyCollection<(double XFeet, double YFeet)> FootprintPointsFeet { get; set; } = new (double XFeet, double YFeet)[0];
 
     public double BaseElevationFeet { get; set; }

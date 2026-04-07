@@ -16,9 +16,19 @@ public sealed class PlateauImportReferenceContext
 
     public double AnchorLongitude { get; set; }
 
+    public double AnchorElevationMeters { get; set; }
+
     public double AnchorXFeet { get; set; }
 
     public double AnchorYFeet { get; set; }
 
     public double AnchorZFeet { get; set; }
+
+    public double SharedEastToLocalX { get; set; } = 1d;
+
+    public double SharedEastToLocalY { get; set; }
+
+    public double SharedNorthToLocalX { get; set; }
+
+    public double SharedNorthToLocalY { get; set; } = 1d;
 }

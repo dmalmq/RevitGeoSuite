@@ -1,48 +1,88 @@
 using System;
+using System.ComponentModel;
+using System.Globalization;
+using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
-using Microsoft.Win32;
+using Autodesk.Revit.DB;
+using Forms = System.Windows.Forms;
 using RevitGeoSuite.Core.Storage;
+using RevitGeoSuite.SharedUI.Controls;
 
 namespace RevitGeoSuite.PlateauImport;
 
 public partial class PlateauImportWindow : Window
 {
     private readonly PlateauImportCoordinator importCoordinator;
+    private readonly Document? document;
     private readonly IDocumentHandle? documentHandle;
+    private readonly RevitModelFootprintOverlayService modelFootprintOverlayService;
+    private string? modelOverlayCacheKey;
+    private ModelFootprintOverlayResult? modelOverlayCacheResult;
 
     public PlateauImportWindow(
         PlateauImportViewModel viewModel,
+        Document? document,
         IDocumentHandle? documentHandle,
-        PlateauImportCoordinator importCoordinator)
+        PlateauImportCoordinator importCoordinator,
+        RevitModelFootprintOverlayService modelFootprintOverlayService)
     {
         InitializeComponent();
         ViewModel = viewModel;
+        this.document = document;
         this.documentHandle = documentHandle;
         this.importCoordinator = importCoordinator;
+        this.modelFootprintOverlayService = modelFootprintOverlayService;
         DataContext = viewModel;
+        Loaded += OnWindowLoaded;
+        Closed += OnWindowClosed;
+        ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        TilePreviewMap.OverlayFeatureClicked += OnTilePreviewOverlayFeatureClicked;
+        ModuleNavRail.ModuleRequested += OnModuleRequested;
     }
 
     public PlateauImportViewModel ViewModel { get; }
+
+    public string? PendingModuleNavigationKey { get; private set; }
 
     public void SetOwner(IntPtr ownerHandle)
     {
         new WindowInteropHelper(this).Owner = ownerHandle;
     }
 
-    private void OnBrowseFileClick(object sender, RoutedEventArgs e)
+    private async void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
-        OpenFileDialog dialog = new OpenFileDialog
+        await RefreshTilePreviewAsync(true, true);
+    }
+
+    private void OnWindowClosed(object? sender, EventArgs e)
+    {
+        ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        TilePreviewMap.OverlayFeatureClicked -= OnTilePreviewOverlayFeatureClicked;
+        ModuleNavRail.ModuleRequested -= OnModuleRequested;
+    }
+
+    private void OnBrowseFolderClick(object sender, RoutedEventArgs e)
+    {
+        using Forms.FolderBrowserDialog dialog = new Forms.FolderBrowserDialog
         {
-            Title = "Select PLATEAU CityGML File",
-            Filter = "CityGML files (*.gml;*.xml)|*.gml;*.xml|All files (*.*)|*.*",
-            FileName = ViewModel.SelectedFilePath
+            Description = "Select PLATEAU Import Folder",
+            ShowNewFolderButton = false,
+            SelectedPath = ViewModel.SelectedFolderPath
         };
 
-        bool? result = dialog.ShowDialog(this);
-        if (result == true)
+        if (dialog.ShowDialog() == Forms.DialogResult.OK)
         {
-            ViewModel.SelectedFilePath = dialog.FileName;
+            ViewModel.SelectedFolderPath = dialog.SelectedPath;
+        }
+    }
+
+    private async void OnScanFolderClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.TryScanFolder())
+        {
+            await RefreshTilePreviewAsync(true, false);
         }
     }
 
@@ -79,9 +119,12 @@ public partial class PlateauImportWindow : Window
                 ViewModel.SelectedReferenceSource,
                 ViewModel.ImportState);
             ViewModel.MarkImportSucceeded(result);
+            string details = result.WarningMessages.Count == 0
+                ? "The import state was saved in module storage separately from GeoProjectInfo."
+                : $"The import state was saved in module storage separately from GeoProjectInfo.\n\nWarnings recorded: {result.WarningMessages.Count}";
             MessageBox.Show(
                 this,
-                result.SummaryMessage + "\n\nThe import state was saved in module storage separately from GeoProjectInfo.",
+                result.SummaryMessage + "\n\n" + details,
                 "Import Succeeded",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -92,10 +135,166 @@ public partial class PlateauImportWindow : Window
         }
     }
 
+    private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (string.Equals(e.PropertyName, nameof(PlateauImportViewModel.TilePreviewGeoJson), StringComparison.Ordinal)
+            || string.Equals(e.PropertyName, nameof(PlateauImportViewModel.TilePreviewStatusText), StringComparison.Ordinal)
+            || string.Equals(e.PropertyName, nameof(PlateauImportViewModel.SelectedTileCount), StringComparison.Ordinal)
+            || string.Equals(e.PropertyName, nameof(PlateauImportViewModel.SelectedCategoryCount), StringComparison.Ordinal))
+        {
+            await RefreshTilePreviewAsync(false, false);
+            return;
+        }
+
+        if (string.Equals(e.PropertyName, nameof(PlateauImportViewModel.TilePreviewReferenceLatitude), StringComparison.Ordinal)
+            || string.Equals(e.PropertyName, nameof(PlateauImportViewModel.TilePreviewReferenceLongitude), StringComparison.Ordinal)
+            || string.Equals(e.PropertyName, nameof(PlateauImportViewModel.TilePreviewReferenceTitle), StringComparison.Ordinal)
+            || string.Equals(e.PropertyName, nameof(PlateauImportViewModel.SelectedReferenceSourceOption), StringComparison.Ordinal))
+        {
+            await RefreshTilePreviewAsync(true, true);
+            return;
+        }
+
+        if (string.Equals(e.PropertyName, nameof(PlateauImportViewModel.ShowModelOverlay), StringComparison.Ordinal))
+        {
+            await RefreshTilePreviewAsync(false, false);
+        }
+    }
+
+    private async void OnTilePreviewOverlayFeatureClicked(object? sender, MapOverlayFeatureClickedEventArgs e)
+    {
+        if (ViewModel.ToggleTileSelection(e.FeatureId))
+        {
+            await RefreshTilePreviewAsync(false, false);
+        }
+    }
+
+    private void OnModuleRequested(object? sender, ModuleNavigationRequestedEventArgs e)
+    {
+        if (HasPendingNavigationChanges())
+        {
+            MessageBoxResult confirmation = MessageBox.Show(
+                this,
+                $"Switch to '{e.ModuleTitle}'?\n\nCurrent PLATEAU scan, tile selections, and preview state will be discarded.",
+                "Switch Module",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Question,
+                MessageBoxResult.Cancel);
+
+            if (confirmation != MessageBoxResult.OK)
+            {
+                return;
+            }
+        }
+
+        PendingModuleNavigationKey = e.ModuleKey;
+        Close();
+    }
+
+    private bool HasPendingNavigationChanges()
+    {
+        return ViewModel.HasScanRows
+            || ViewModel.HasPreviewRows
+            || ViewModel.CanImport
+            || ViewModel.SelectedTileCount > 0
+            || ViewModel.SelectedCategoryCount > 0;
+    }
+
+    private async Task RefreshTilePreviewAsync(bool fitToBounds, bool rebuildModelOverlay)
+    {
+        await TilePreviewMap.SetPointSelectionEnabledAsync(false);
+        await TilePreviewMap.ClearMeshGridAsync();
+
+        if (ViewModel.TilePreviewReferenceLatitude.HasValue && ViewModel.TilePreviewReferenceLongitude.HasValue)
+        {
+            await TilePreviewMap.SetMarkerAsync(
+                ViewModel.TilePreviewReferenceLatitude.Value,
+                ViewModel.TilePreviewReferenceLongitude.Value,
+                ViewModel.TilePreviewReferenceTitle);
+        }
+        else
+        {
+            await TilePreviewMap.ClearMarkerAsync();
+        }
+
+        bool hasModelOverlay = await RefreshModelOverlayAsync(fitToBounds, rebuildModelOverlay);
+
+        if (ViewModel.HasTilePreview)
+        {
+            await TilePreviewMap.ShowFeatureSelectionOverlayAsync(
+                ViewModel.TilePreviewGeoJson,
+                fitToBounds,
+                ViewModel.TilePreviewReferenceLatitude,
+                ViewModel.TilePreviewReferenceLongitude,
+                ViewModel.TilePreviewStatusText);
+            return;
+        }
+
+        await TilePreviewMap.ClearFeatureSelectionOverlayAsync();
+        if (fitToBounds && !hasModelOverlay && ViewModel.TilePreviewReferenceLatitude.HasValue && ViewModel.TilePreviewReferenceLongitude.HasValue)
+        {
+            await TilePreviewMap.SetViewAsync(ViewModel.TilePreviewReferenceLatitude.Value, ViewModel.TilePreviewReferenceLongitude.Value, 15);
+        }
+    }
+
+    private async Task<bool> RefreshModelOverlayAsync(bool fitToBounds, bool rebuildModelOverlay)
+    {
+        if (!ViewModel.ShowModelOverlay)
+        {
+            ViewModel.SetModelOverlayStatus("Host model overlay hidden.");
+            await TilePreviewMap.ClearModelFootprintOverlayAsync();
+            return false;
+        }
+
+        string cacheKey = BuildModelOverlayCacheKey();
+        if (rebuildModelOverlay || modelOverlayCacheResult is null || !string.Equals(modelOverlayCacheKey, cacheKey, StringComparison.Ordinal))
+        {
+            modelOverlayCacheResult = modelFootprintOverlayService.Build(document, ViewModel.CurrentReferenceContext);
+            modelOverlayCacheKey = cacheKey;
+        }
+
+        ModelFootprintOverlayResult result = modelOverlayCacheResult;
+        ViewModel.SetModelOverlayStatus(result.StatusMessage);
+        if (!result.HasOverlay)
+        {
+            await TilePreviewMap.ClearModelFootprintOverlayAsync();
+            return false;
+        }
+
+        await TilePreviewMap.ShowModelFootprintOverlayAsync(
+            result.GeoJson,
+            fitToBounds && !ViewModel.HasTilePreview,
+            ViewModel.TilePreviewReferenceLatitude,
+            ViewModel.TilePreviewReferenceLongitude);
+        return true;
+    }
+
+    private string BuildModelOverlayCacheKey()
+    {
+        PlateauImportReferenceContext? context = ViewModel.CurrentReferenceContext;
+        if (context is null)
+        {
+            return "no-context";
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "{0}|{1}|{2:F3}|{3:F3}|{4:F3}|{5:F3}|{6:F3}",
+            context.ProjectCrs.EpsgCode,
+            context.Title,
+            context.AnchorProjectedCoordinate.Easting,
+            context.AnchorProjectedCoordinate.Northing,
+            context.AnchorXFeet,
+            context.AnchorYFeet,
+            context.AnchorZFeet);
+    }
+
     private string BuildImportConfirmationMessage()
     {
-        string fileName = System.IO.Path.GetFileName(ViewModel.SelectedFilePath);
-        return $"Import {ViewModel.PreparedSolidCount} lightweight PLATEAU context solids from '{fileName}' into '{ViewModel.DocumentTitle}'?\n\nThis creates Generic Model DirectShape elements and saves module-specific import state separately from GeoProjectInfo.";
+        string folderName = string.IsNullOrWhiteSpace(ViewModel.SelectedFolderPath)
+            ? "selected folder"
+            : Path.GetFileName(ViewModel.SelectedFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return $"Import {ViewModel.PreparedSolidCount} lightweight PLATEAU context solids from '{folderName}' into '{ViewModel.DocumentTitle}'?\n\nThis replaces prior PLATEAU imports for the same tile and category scopes, then groups the new imported elements by tile and category for easier selection afterward.";
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)

@@ -26,7 +26,8 @@ public sealed class ValidationModule : IRevitGeoModule
                 ButtonText = "Check\nProject",
                 ToolTip = "Run a read-only health check against the shared geo metadata and derived readiness rules.",
                 CommandClassName = "RevitGeoSuite.Validation.ValidationCommand",
-                AssemblyPath = Assembly.GetExecutingAssembly().Location
+                AssemblyPath = Assembly.GetExecutingAssembly().Location,
+                IconKind = RibbonIconKind.Validation
             }
         };
     }

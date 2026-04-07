@@ -2,11 +2,13 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:corePlateau="clr-namespace:RevitGeoSuite.Core.Plateau.Tiles;assembly=RevitGeoSuite.Core.Plateau"
+        xmlns:loc="clr-namespace:RevitGeoSuite.SharedUI.Localization;assembly=RevitGeoSuite.SharedUI"
+        xmlns:sharedUi="clr-namespace:RevitGeoSuite.SharedUI.Controls;assembly=RevitGeoSuite.SharedUI"
         Title="PLATEAU Context Import"
-        Height="860"
-        Width="1180"
-        MinWidth="980"
-        MinHeight="700"
+        Height="980"
+        Width="1500"
+        MinWidth="1180"
+        MinHeight="800"
         WindowStartupLocation="CenterOwner">
   <Window.Resources>
     <ResourceDictionary>
@@ -17,162 +19,339 @@
     </ResourceDictionary>
   </Window.Resources>
 
-  <DockPanel Margin="18">
-    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
-      <TextBlock FontSize="24" FontWeight="Bold" Text="{Binding WindowTitle}" />
-      <TextBlock Margin="0,6,0,0" FontSize="16" FontWeight="SemiBold" Text="{Binding DocumentTitle}" />
-      <TextBlock Margin="0,4,0,0" Foreground="#5C6670" Text="Load a lightweight PLATEAU CityGML file, preview the resolved local context geometry, and import it into the active project without polluting shared GeoProjectInfo state." TextWrapping="Wrap" />
-    </StackPanel>
+  <Grid Margin="18">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="94" />
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="308" />
+    </Grid.ColumnDefinitions>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
 
-    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-      <Button Style="{StaticResource SecondaryButtonStyle}" Content="Load Preview" Click="OnLoadPreviewClick" IsEnabled="{Binding CanLoadPreview}" />
-      <Button Content="Import Context" Click="OnImportClick" IsEnabled="{Binding CanImport}" />
-      <Button Style="{StaticResource SecondaryButtonStyle}" Content="Close" Click="OnCloseClick" />
-    </StackPanel>
+    <sharedUi:ModuleNavRailControl x:Name="ModuleNavRail" Grid.RowSpan="3" CurrentModuleKey="PlateauImport" />
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <Border Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource ShellHeaderBorderStyle}">
+      <DockPanel>
+        <sharedUi:LanguageToggleControl DockPanel.Dock="Right" />
+        <StackPanel Margin="0,0,18,0">
+          <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[App.ProductTitle]}" />
+          <TextBlock Margin="0,6,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.PlateauImport]}" />
+          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding WindowTitle}" />
+          <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding DocumentTitle}" />
+          <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Header]}" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto">
       <StackPanel>
-        <Border Padding="12" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9" Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+        <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
           <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
         </Border>
 
-        <Border Margin="0,12,0,0" Padding="12" CornerRadius="6" BorderBrush="#B8D1C6" BorderThickness="1" Background="#F4FBF7" Visibility="{Binding HasActionMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+        <Border Style="{StaticResource SuccessBorderStyle}" Visibility="{Binding HasActionMessage, Converter={StaticResource BoolToVisibilityConverter}}">
           <TextBlock Text="{Binding ActionMessage}" TextWrapping="Wrap" />
         </Border>
 
-        <Grid Margin="0,14,0,0">
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <StackPanel>
+            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Package]}" />
+            <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="Choose the PLATEAU package root or source folder once, scan it, and keep the file-discovery details tucked away unless you need them." />
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="118" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="138" />
+              </Grid.ColumnDefinitions>
+              <TextBox Grid.Column="0" Text="{Binding SelectedFolderPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+              <Button Grid.Column="2" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Browse]}" Click="OnBrowseFolderClick" />
+              <Button Grid.Column="4" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ScanFolder]}" Click="OnScanFolderClick" IsEnabled="{Binding CanScanFolder}" />
+            </Grid>
+            <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="Select a PLATEAU package root when available. The scanner automatically uses the package's udx folder; otherwise it scans the selected folder directly." />
+            <ItemsControl Margin="0,14,0,0" ItemsSource="{Binding ScanRows}" Visibility="{Binding HasScanRows, Converter={StaticResource BoolToVisibilityConverter}}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="150" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No folder has been scanned yet." Visibility="{Binding HasNoScanRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+          </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <StackPanel>
+            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.TileMap]}" />
+            <TextBlock Margin="0,8,0,12" Style="{StaticResource BodyMutedTextStyle}" Text="The marker shows the active project reference. Click detected PLATEAU grid cells to toggle the exact import area, then use the synchronized checklist only if you want to fine-tune the selection." />
+            <Grid Margin="0,0,0,12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <CheckBox Grid.Column="0" VerticalAlignment="Center" IsChecked="{Binding ShowModelOverlay, Mode=TwoWay}" Content="Show Revit model overlay" />
+              <TextBlock Grid.Column="2" VerticalAlignment="Center" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ModelOverlayStatusMessage}" TextWrapping="Wrap" />
+            </Grid>
+            <sharedUi:MapControl x:Name="TilePreviewMap" Height="420" />
+            <Border Margin="0,12,0,0" Style="{StaticResource ShellCardBorderStyle}" Padding="12" Background="#F7F5F0">
+              <TextBlock Text="{Binding TilePreviewStatusText}" TextWrapping="Wrap" />
+            </Border>
+          </StackPanel>
+        </Border>
+
+        <Grid>
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="430" />
-            <ColumnDefinition Width="20" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="16" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
 
-          <StackPanel Grid.Column="0">
-            <Border Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
-              <StackPanel>
-                <TextBlock FontWeight="SemiBold" Text="Reference Context" />
-                <ComboBox Margin="0,10,0,0"
-                          ItemsSource="{Binding ReferenceSourceOptions}"
-                          SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
-                          DisplayMemberPath="Title" />
-                <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding ReferenceSourceTitle}" />
-                <TextBlock Margin="0,4,0,0" Foreground="#5C6670" Text="{Binding ReferenceSourceDescription}" TextWrapping="Wrap" />
-                <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding CurrentStateRows}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="170" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
-                        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </Border>
+          <Border Grid.Column="0" Style="{StaticResource ShellCardBorderStyle}">
+            <StackPanel>
+              <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Filters]}" />
+              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="Pick the categories you actually need. The default interaction is the map; the cards below are the secondary review surface." />
+              <ItemsControl ItemsSource="{Binding FeatureTypeOptions}" Visibility="{Binding HasFeatureTypeOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
+                      <StackPanel>
+                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
+                          <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Title}" />
+                        </CheckBox>
+                        <TextBlock Margin="22,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Description}" />
+                        <TextBlock Margin="22,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFileCount, StringFormat=Files: {0}}" />
+                        <TextBlock Margin="22,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFilesSummary}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Scan a folder to populate category filters." Visibility="{Binding HasNoFeatureTypeOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+          </Border>
 
-            <Border Margin="0,14,0,0" Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
-              <StackPanel>
-                <TextBlock FontWeight="SemiBold" Text="Suggested PLATEAU Tiles" />
-                <TextBlock Margin="0,8,0,10" Foreground="#5C6670" Text="Nearby tertiary mesh cells are resolved from the selected reference context so the module defaults to the local point closest to the Revit geometry." TextWrapping="Wrap" />
-                <ItemsControl ItemsSource="{Binding SuggestedTiles}" Visibility="{Binding HasSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <WrapPanel />
-                    </ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type corePlateau:PlateauTileCandidate}">
-                      <Border Margin="0,0,8,8" Padding="8,6" CornerRadius="4" BorderBrush="#D7D0C2" BorderThickness="1" Background="#F7F5F0">
-                        <StackPanel>
-                          <TextBlock FontFamily="Consolas" Text="{Binding TileId}" />
-                          <TextBlock FontSize="11" Foreground="#5C6670" Text="{Binding Source}" />
+          <Border Grid.Column="2" Style="{StaticResource ShellCardBorderStyle}">
+            <StackPanel>
+              <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="Tile Selection Summary" />
+              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="The tile checklist stays synchronized with the map so you can review the exact selected area without losing context." />
+              <ItemsControl ItemsSource="{Binding TileOptions}" Visibility="{Binding HasTileOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
+                      <StackPanel Orientation="Horizontal">
+                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Top" />
+                        <StackPanel Margin="10,0,0,0">
+                          <TextBlock FontFamily="Consolas" FontWeight="SemiBold" Text="{Binding TileId}" />
+                          <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding FeatureCount, StringFormat=Features: {0}}" />
+                          <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFileCount, StringFormat=Files: {0}}" />
+                          <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFilesSummary}" />
+                          <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Suggested from reference context" Visibility="{Binding IsSuggested, Converter={StaticResource BoolToVisibilityConverter}}" />
                         </StackPanel>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock Foreground="#5C6670" Text="No tile candidates are available until the selected reference context can be resolved." TextWrapping="Wrap" Visibility="{Binding HasNoSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}" />
-              </StackPanel>
-            </Border>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Scan a folder to populate tile selections." Visibility="{Binding HasNoTileOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+          </Border>
+        </Grid>
 
-            <Border Margin="0,14,0,0" Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
-              <StackPanel>
-                <TextBlock FontWeight="SemiBold" Text="Last Import State" />
-                <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding LastImportRows}" Visibility="{Binding HasLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="150" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
-                        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock Foreground="#5C6670" Text="No PLATEAU import has been recorded in module state yet." TextWrapping="Wrap" Visibility="{Binding HasNoLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
-              </StackPanel>
-            </Border>
-          </StackPanel>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="16" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
 
-          <StackPanel Grid.Column="2">
-            <Border Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
-              <StackPanel>
-                <TextBlock FontWeight="SemiBold" Text="CityGML File" />
-                <Grid Margin="0,10,0,0">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="130" />
-                  </Grid.ColumnDefinitions>
-                  <TextBox Grid.Column="0" Text="{Binding SelectedFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                  <Button Grid.Column="2" Content="Browse..." Click="OnBrowseFileClick" />
-                </Grid>
-                <TextBlock Margin="0,10,0,0" Foreground="#5C6670" Text="Lightweight V1 import expects the CityGML CRS to match the stored project CRS. Imported elements are created as Generic Models through DirectShape." TextWrapping="Wrap" />
-                <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding FileRows}" Visibility="{Binding HasFileRows, Converter={StaticResource BoolToVisibilityConverter}}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="150" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
-                        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock Foreground="#5C6670" Text="No CityGML preview is loaded yet." TextWrapping="Wrap" Visibility="{Binding HasNoFileRows, Converter={StaticResource BoolToVisibilityConverter}}" />
-              </StackPanel>
-            </Border>
+          <Border Grid.Column="0" Style="{StaticResource ShellCardBorderStyle}">
+            <StackPanel>
+              <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Preview]}" />
+              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="Load Preview resolves the filtered features into local Revit context solids. Import groups the created elements by tile and category for easier selection later." />
+              <TextBlock Margin="0,12,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding SelectedCategoryCount, StringFormat=Selected categories: {0}}" />
+              <TextBlock Margin="0,4,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding SelectedTileCount, StringFormat=Selected tiles: {0}}" />
+              <TextBlock Margin="0,4,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding PreparedSolidCount, StringFormat=Importable solids: {0}}" />
+              <ItemsControl Margin="0,14,0,0" ItemsSource="{Binding PreviewRows}" Visibility="{Binding HasPreviewRows, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,10">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="No preview is loaded yet." Visibility="{Binding HasNoPreviewRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+          </Border>
 
-            <Border Margin="0,14,0,0" Padding="14" CornerRadius="6" BorderBrush="#D7D0C2" BorderThickness="1" Background="#FFFDF9">
-              <StackPanel>
-                <TextBlock FontWeight="SemiBold" Text="Parsed Features" />
-                <TextBlock Margin="0,8,0,10" Foreground="#5C6670" Text="The preview below lists the features that will become lightweight context solids in Revit." TextWrapping="Wrap" />
-                <TextBlock FontWeight="SemiBold" Text="{Binding PreparedSolidCount, StringFormat=Importable solids: {0}}" />
-                <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding FeatureNames}" Visibility="{Binding HasFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Border Margin="0,0,0,8" Padding="10" CornerRadius="4" BorderBrush="#D7D0C2" BorderThickness="1" Background="#F7F5F0">
-                        <TextBlock Text="{Binding}" TextWrapping="Wrap" />
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock Foreground="#5C6670" Text="Load a preview to inspect the parsed feature names before import." TextWrapping="Wrap" Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
-              </StackPanel>
-            </Border>
-          </StackPanel>
+          <Border Grid.Column="2" Style="{StaticResource ShellCardBorderStyle}">
+            <StackPanel>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Preview Features" />
+              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="The preview list shows the filtered PLATEAU features that will become lightweight context solids in Revit." />
+              <ItemsControl ItemsSource="{Binding FeatureNames}" Visibility="{Binding HasFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
+                      <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Load a preview to inspect the filtered feature list before import." Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+          </Border>
         </Grid>
       </StackPanel>
     </ScrollViewer>
-  </DockPanel>
+
+    <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource ShellDetailsPanelBorderStyle}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+          <Border Style="{StaticResource StatusPillBorderStyle}">
+            <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Shell.RightPanel]}" />
+          </Border>
+
+          <Expander IsExpanded="True">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.Reference]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <ComboBox ItemsSource="{Binding ReferenceSourceOptions}"
+                        SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
+                        DisplayMemberPath="Title" />
+              <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding ReferenceSourceTitle}" />
+              <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReferenceSourceDescription}" />
+              <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding CurrentStateRows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,10">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Expander>
+
+          <Expander IsExpanded="False">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Suggested PLATEAU Tiles" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <ItemsControl ItemsSource="{Binding SuggestedTiles}" Visibility="{Binding HasSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="{x:Type corePlateau:PlateauTileCandidate}">
+                    <Border Style="{StaticResource ChipBorderStyle}">
+                      <StackPanel>
+                        <TextBlock FontFamily="Consolas" Text="{Binding TileId}" />
+                        <TextBlock FontSize="11" Foreground="{StaticResource SuiteMutedBrush}" Text="{Binding Source}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No tile candidates are available until the selected reference context can be resolved." Visibility="{Binding HasNoSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+          </Expander>
+
+          <Expander IsExpanded="False">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.LastImport]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <ItemsControl ItemsSource="{Binding LastImportRows}" Visibility="{Binding HasLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,10">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No PLATEAU import has been recorded in module state yet." Visibility="{Binding HasNoLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+          </Expander>
+
+          <Expander IsExpanded="False">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.SourceFiles]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <ItemsControl ItemsSource="{Binding DetectedSourceFiles}" Visibility="{Binding HasDetectedSourceFiles, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Margin="0,0,0,6" FontFamily="Consolas" Text="{Binding}" TextWrapping="Wrap" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No detected source files are available until a package has been scanned." Visibility="{Binding HasNoDetectedSourceFiles, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+          </Expander>
+
+          <Expander IsExpanded="True">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.Warnings]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <ItemsControl ItemsSource="{Binding WarningMessages}" Visibility="{Binding HasWarningMessages, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Style="{StaticResource WarningBorderStyle}" Margin="0,0,0,10">
+                      <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No warnings are recorded for the current scan or preview." Visibility="{Binding HasNoWarningMessages, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+          </Expander>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <Border Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource FooterBarBorderStyle}">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.LoadPreview]}" Click="OnLoadPreviewClick" IsEnabled="{Binding CanLoadPreview}" />
+        <Button Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ImportContext]}" Click="OnImportClick" IsEnabled="{Binding CanImport}" />
+        <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Close]}" Click="OnCloseClick" />
+      </StackPanel>
+    </Border>
+  </Grid>
 </Window>
+
+
+
+
+

@@ -1,0 +1,68 @@
+<UserControl x:Class="RevitGeoSuite.SharedUI.Controls.ModuleNavRailControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:RevitGeoSuite.SharedUI.Controls"
+             x:Name="Root">
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/RevitGeoSuite.SharedUI;component/Styles/SuiteTheme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <Border Style="{StaticResource ShellRailBorderStyle}">
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+        <TextBlock HorizontalAlignment="Center"
+                   FontFamily="Bahnschrift"
+                   FontWeight="SemiBold"
+                   FontSize="16"
+                   Foreground="{StaticResource SuiteNavTextBrush}"
+                   Text="RGS" />
+        <Border Margin="8,10,8,0" Height="1" Background="#2D505A" />
+      </StackPanel>
+
+      <ItemsControl ItemsSource="{Binding NavigationItems, ElementName=Root}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="{x:Type local:ModuleNavItem}">
+            <Button Click="OnNavItemClick"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="0"
+                    Margin="0"
+                    Cursor="Hand"
+                    Focusable="False"
+                    ToolTip="{Binding Title}">
+              <Border x:Name="NavItemBorder"
+                      Style="{StaticResource RailNavItemBorderStyle}"
+                      MinHeight="72"
+                      Width="60">
+                <StackPanel HorizontalAlignment="Center">
+                  <Image Width="20"
+                         Height="20"
+                         Stretch="Uniform"
+                         Source="{Binding Icon}" />
+                  <TextBlock Margin="0,7,0,0"
+                             HorizontalAlignment="Center"
+                             TextAlignment="Center"
+                             FontFamily="Bahnschrift"
+                             FontSize="10"
+                             FontWeight="SemiBold"
+                             Foreground="{StaticResource SuiteNavTextBrush}"
+                             Text="{Binding ShortTitle}" />
+                </StackPanel>
+              </Border>
+            </Button>
+            <DataTemplate.Triggers>
+              <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                <Setter TargetName="NavItemBorder" Property="Background" Value="#21434E" />
+                <Setter TargetName="NavItemBorder" Property="BorderBrush" Value="{StaticResource SuiteAccentBrush}" />
+              </DataTrigger>
+            </DataTemplate.Triggers>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </DockPanel>
+  </Border>
+</UserControl>

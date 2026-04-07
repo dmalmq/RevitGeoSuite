@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
@@ -50,8 +51,8 @@ public sealed class PlateauImportCoordinator
         transaction.Start();
         try
         {
-            int importedElementCount = contextImporter.Import(revitDocument, plan);
-            PlateauImportState updatedState = BuildUpdatedState(existingState, plan, importedElementCount, referenceSource);
+            PlateauContextImportExecutionResult execution = contextImporter.Import(revitDocument, plan);
+            PlateauImportState updatedState = BuildUpdatedState(existingState, plan, execution, referenceSource);
             stateService.Save(handle, updatedState);
 
             TransactionStatus status = transaction.Commit();
@@ -62,9 +63,11 @@ public sealed class PlateauImportCoordinator
 
             return new PlateauImportResult
             {
-                ImportedElementCount = importedElementCount,
+                ImportedElementCount = execution.ImportedElementCount,
+                CreatedGroupCount = execution.CreatedGroupCount,
                 UpdatedState = updatedState,
-                SummaryMessage = BuildSummaryMessage(plan, importedElementCount, referenceSource, updatedState)
+                WarningMessages = execution.WarningMessages,
+                SummaryMessage = BuildSummaryMessage(plan, execution, referenceSource)
             };
         }
         catch (Exception ex)
@@ -81,22 +84,29 @@ public sealed class PlateauImportCoordinator
     internal static PlateauImportState BuildUpdatedState(
         PlateauImportState? existingState,
         ContextImportPlan plan,
-        int importedElementCount,
+        PlateauContextImportExecutionResult execution,
         PlateauImportReferenceSource referenceSource)
     {
         PlateauImportState updatedState = new PlateauImportState
         {
             ImportedTileIds = new List<string>((IEnumerable<string>?)existingState?.ImportedTileIds ?? Array.Empty<string>()),
             LastImportDateUtc = DateTime.UtcNow,
-            LastImportedFilePath = plan.CityModel.SourcePath,
+            LastImportedFilePath = plan.SourceModels.Count == 1 ? plan.SourceModels.First().SourcePath : string.Empty,
+            LastImportedFolderPath = plan.SourceFolderPath,
             LastReferenceSource = referenceSource,
-            LastImportedFeatureCount = importedElementCount
+            LastImportedFeatureCount = execution.ImportedElementCount,
+            LastImportedGroupCount = execution.CreatedGroupCount,
+            LastSelectedTileIds = plan.SelectedTileIds.OrderBy(tileId => tileId, StringComparer.Ordinal).ToList(),
+            LastSelectedFeatureTypes = plan.SelectedFeatureTypes.Select(type => type.ToString()).OrderBy(name => name, StringComparer.Ordinal).ToList(),
+            LastImportSummary = string.Format(CultureInfo.InvariantCulture, "Imported {0} elements in {1} groups.", execution.ImportedElementCount, execution.CreatedGroupCount)
         };
 
-        if (!string.IsNullOrWhiteSpace(plan.CityModel.FileTileId)
-            && !updatedState.ImportedTileIds.Contains(plan.CityModel.FileTileId!, StringComparer.Ordinal))
+        foreach (string tileId in plan.SelectedTileIds)
         {
-            updatedState.ImportedTileIds.Add(plan.CityModel.FileTileId!);
+            if (!updatedState.ImportedTileIds.Contains(tileId, StringComparer.Ordinal))
+            {
+                updatedState.ImportedTileIds.Add(tileId);
+            }
         }
 
         return updatedState;
@@ -104,18 +114,36 @@ public sealed class PlateauImportCoordinator
 
     private static string BuildSummaryMessage(
         ContextImportPlan plan,
-        int importedElementCount,
-        PlateauImportReferenceSource referenceSource,
-        PlateauImportState updatedState)
+        PlateauContextImportExecutionResult execution,
+        PlateauImportReferenceSource referenceSource)
     {
-        string fileName = Path.GetFileName(plan.CityModel.SourcePath);
+        string folderName = string.IsNullOrWhiteSpace(plan.SourceFolderPath)
+            ? "selected folder"
+            : Path.GetFileName(plan.SourceFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         string sourceText = referenceSource == PlateauImportReferenceSource.WorkingProjectBasePoint
-            ? "Working Project Base Point"
+            ? "Project Base Point"
             : "Canonical Origin";
-        string tileText = updatedState.ImportedTileIds.Count == 0
-            ? "No tile id was detected from the file name."
-            : "Tracked tile ids: " + string.Join(", ", updatedState.ImportedTileIds);
+        string tileText = plan.SelectedTileIds.Count == 0
+            ? "No tile filter was recorded."
+            : "Tiles: " + string.Join(", ", plan.SelectedTileIds);
+        string categoryText = plan.SelectedFeatureTypes.Count == 0
+            ? "No category filter was recorded."
+            : "Categories: " + string.Join(", ", plan.SelectedFeatureTypes.Select(type => type.GetPluralDisplayName()));
+        string warningText = execution.WarningMessages.Count == 0
+            ? string.Empty
+            : string.Format(CultureInfo.InvariantCulture, " {0} warning(s) were recorded.", execution.WarningMessages.Count);
 
-        return $"Imported {importedElementCount} PLATEAU context elements from '{fileName}' using {sourceText}. {tileText}";
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "Imported {0} PLATEAU context elements from '{1}' using {2} and created {3} Revit group(s). {4} {5}{6}",
+            execution.ImportedElementCount,
+            folderName,
+            sourceText,
+            execution.CreatedGroupCount,
+            categoryText,
+            tileText,
+            warningText);
     }
 }
+
+

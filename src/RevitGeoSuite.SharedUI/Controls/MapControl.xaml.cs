@@ -26,6 +26,8 @@ public partial class MapControl : UserControl
 
     public event EventHandler<MapPointSelectedEventArgs>? MapPointSelected;
 
+    public event EventHandler<MapOverlayFeatureClickedEventArgs>? OverlayFeatureClicked;
+
     public async Task SearchAsync(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -49,14 +51,38 @@ public partial class MapControl : UserControl
         await PostMessageAsync(new { type = "setView", latitude, longitude, zoom });
     }
 
-    public async Task SetMarkerAsync(double latitude, double longitude)
+    public async Task SetMarkerAsync(double latitude, double longitude, string? title = null)
     {
-        await PostMessageAsync(new { type = "setMarker", latitude, longitude });
+        await PostMessageAsync(new { type = "setMarker", latitude, longitude, title });
     }
 
     public async Task ClearMarkerAsync()
     {
         await PostMessageAsync(new { type = "clearMarker" });
+    }
+
+    public async Task ShowReferenceMarkersAsync(IEnumerable<MapReferenceMarker>? markers)
+    {
+        MapReferenceMarker[] normalizedMarkers = (markers ?? Array.Empty<MapReferenceMarker>())
+            .Where(marker => marker is not null)
+            .ToArray();
+
+        await PostMessageAsync(new
+        {
+            type = "showReferenceMarkers",
+            markers = normalizedMarkers.Select(marker => new
+            {
+                latitude = marker.Latitude,
+                longitude = marker.Longitude,
+                title = marker.Title,
+                kind = marker.Kind
+            }).ToArray()
+        });
+    }
+
+    public async Task ClearReferenceMarkersAsync()
+    {
+        await PostMessageAsync(new { type = "clearReferenceMarkers" });
     }
 
     public async Task SetPointSelectionEnabledAsync(bool enabled)
@@ -77,6 +103,60 @@ public partial class MapControl : UserControl
     public async Task ClearMeshGridAsync()
     {
         await PostMessageAsync(new { type = "clearMeshGrid" });
+    }
+
+    public async Task ShowFeatureSelectionOverlayAsync(
+        string geoJson,
+        bool fitToBounds,
+        double? focusLatitude = null,
+        double? focusLongitude = null,
+        string? statusText = null)
+    {
+        if (string.IsNullOrWhiteSpace(geoJson))
+        {
+            return;
+        }
+
+        await PostMessageAsync(new
+        {
+            type = "showFeatureSelectionOverlay",
+            geoJson,
+            fitToBounds,
+            focusLatitude,
+            focusLongitude,
+            statusText
+        });
+    }
+
+    public async Task ClearFeatureSelectionOverlayAsync()
+    {
+        await PostMessageAsync(new { type = "clearFeatureSelectionOverlay" });
+    }
+
+    public async Task ShowModelFootprintOverlayAsync(
+        string geoJson,
+        bool fitToBounds,
+        double? focusLatitude = null,
+        double? focusLongitude = null)
+    {
+        if (string.IsNullOrWhiteSpace(geoJson))
+        {
+            return;
+        }
+
+        await PostMessageAsync(new
+        {
+            type = "showModelFootprintOverlay",
+            geoJson,
+            fitToBounds,
+            focusLatitude,
+            focusLongitude
+        });
+    }
+
+    public async Task ClearModelFootprintOverlayAsync()
+    {
+        await PostMessageAsync(new { type = "clearModelFootprintOverlay" });
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -155,6 +235,13 @@ public partial class MapControl : UserControl
             && message.Longitude.HasValue)
         {
             MapPointSelected?.Invoke(this, new MapPointSelectedEventArgs(message.Latitude.Value, message.Longitude.Value));
+            return;
+        }
+
+        if (string.Equals(message.Type, "overlayClick", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(message.FeatureId))
+        {
+            OverlayFeatureClicked?.Invoke(this, new MapOverlayFeatureClickedEventArgs(message.FeatureId));
         }
     }
 
@@ -192,3 +279,4 @@ public partial class MapControl : UserControl
         FallbackOverlay.Visibility = Visibility.Visible;
     }
 }
+

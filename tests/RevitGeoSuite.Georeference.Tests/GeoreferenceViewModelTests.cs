@@ -90,6 +90,55 @@ public sealed class GeoreferenceViewModelTests
     }
 
     [Fact]
+    public void Existing_revit_setup_is_preloaded_after_crs_selection_for_confirmation_only_flow()
+    {
+        GeoreferenceViewModel viewModel = CreateViewModel(CreateSupportedSummary());
+
+        viewModel.GoNext();
+        viewModel.SelectedCrs = viewModel.AvailableCrs.Single(definition => definition.EpsgCode == 6677);
+        viewModel.GoNext();
+
+        Assert.Equal(GeoreferenceStep.SelectPoint, viewModel.CurrentStep);
+        Assert.Equal(SiteSelectionInputMode.CurrentRevitSetup, viewModel.SelectedSiteSelectionModeOption!.Mode);
+        Assert.True(viewModel.HasSelectedPoint);
+        Assert.True(viewModel.HasWorkingProjectBasePoint);
+        Assert.True(viewModel.CanGoNext);
+        Assert.Contains(viewModel.SelectedPointRows, row => row.Label == "Source" && row.Value.Contains("current Revit Survey Point"));
+        Assert.Contains(viewModel.WorkingProjectBasePointRows, row => row.Label == "Source" && row.Value.Contains("current Revit Project Base Point"));
+    }
+
+    [Fact]
+    public void Current_revit_setup_can_define_primary_anchor_from_existing_survey_point()
+    {
+        CurrentProjectStateSummary summary = CreateSupportedSummary();
+        summary.SurveyPoint = new BasePointSnapshot
+        {
+            Name = "Survey Point",
+            EstimatedLatitudeDegrees = 35.681100,
+            EstimatedLongitudeDegrees = 139.767200
+        };
+
+        GeoreferenceViewModel viewModel = CreateViewModel(summary);
+        viewModel.GoNext();
+        viewModel.SelectedCrs = viewModel.AvailableCrs.Single(definition => definition.EpsgCode == 6677);
+        viewModel.GoNext();
+        viewModel.SelectedSiteSelectionModeOption = viewModel.SiteSelectionModeOptions.Single(option => option.Mode == SiteSelectionInputMode.CurrentRevitSetup);
+        viewModel.SelectedAnchorTargetOption = viewModel.AnchorTargetOptions.Single(option => option.Target == PlacementAnchorTarget.SurveyPoint);
+
+        bool success = viewModel.TryUseCurrentRevitSetup();
+
+        Assert.True(success);
+        Assert.NotNull(viewModel.SelectedPoint);
+        Assert.Equal(35.681100, viewModel.SelectedPoint!.Latitude, 6);
+        Assert.Equal(139.767200, viewModel.SelectedPoint.Longitude, 6);
+        Assert.Equal(PlacementAnchorTarget.SurveyPoint, viewModel.SelectedPoint.AnchorTarget);
+        Assert.False(viewModel.SelectedPoint.IsKnownCoordinateInput);
+        Assert.Contains(viewModel.SelectedPointRows, row => row.Label == "Source" && row.Value.Contains("current Revit Survey Point"));
+        Assert.Contains(viewModel.CurrentStateRows, row => row.Label == "Survey Point Estimate");
+        Assert.Contains(viewModel.CurrentStateRows, row => row.Label == "Project North");
+    }
+
+    [Fact]
     public void Working_project_base_point_can_be_captured_without_replacing_primary_anchor()
     {
         GeoreferenceViewModel viewModel = CreateViewModel(CreateSupportedSummary());
@@ -99,17 +148,16 @@ public sealed class GeoreferenceViewModelTests
 
         viewModel.SetSelectedMapPoint(35.681236, 139.767125);
         viewModel.SelectedCaptureTargetOption = viewModel.CaptureTargetOptions.Single(option => option.Target == ReferenceCaptureTarget.WorkingProjectBasePoint);
-        viewModel.SelectedSiteSelectionModeOption = viewModel.SiteSelectionModeOptions.Single(option => option.Mode == SiteSelectionInputMode.KnownCoordinates);
-        viewModel.KnownCoordinateEastingInput = "120";
-        viewModel.KnownCoordinateNorthingInput = "340";
+        viewModel.SelectedSiteSelectionModeOption = viewModel.SiteSelectionModeOptions.Single(option => option.Mode == SiteSelectionInputMode.CurrentRevitSetup);
 
-        bool success = viewModel.TryUseKnownCoordinates();
+        bool success = viewModel.TryUseCurrentRevitSetup();
 
         Assert.True(success);
         Assert.NotNull(viewModel.SelectedPoint);
         Assert.True(viewModel.HasWorkingProjectBasePoint);
         Assert.NotNull(viewModel.WorkingProjectBasePoint);
         Assert.Contains(viewModel.WorkingProjectBasePointRows, row => row.Label == "Role" && row.Value == "Working Project Base Point");
+        Assert.Contains(viewModel.WorkingProjectBasePointRows, row => row.Label == "Source" && row.Value.Contains("current Revit Project Base Point"));
         Assert.NotEqual(viewModel.SelectedPointSummary, viewModel.WorkingProjectBasePointSummary);
     }
 
@@ -165,6 +213,73 @@ public sealed class GeoreferenceViewModelTests
         Assert.Equal(139.700413, workingLongitude, 6);
         Assert.False(withoutAnchors.HasSiteLocation);
         Assert.False(withoutAnchors.HasProjectBasePointLocation);
+    }
+
+    [Fact]
+    public void Step_navigation_allows_back_navigation_but_blocks_unreachable_forward_steps()
+    {
+        GeoreferenceViewModel viewModel = CreateViewModel(CreateSupportedSummary());
+
+        Assert.True(viewModel.CanNavigateToCurrentState);
+        Assert.True(viewModel.CanNavigateToChooseCrs);
+        Assert.False(viewModel.CanNavigateToSelectPoint);
+
+        viewModel.NavigateToStep(GeoreferenceStep.ChooseCrs);
+
+        Assert.Equal(GeoreferenceStep.ChooseCrs, viewModel.CurrentStep);
+
+        viewModel.NavigateToStep(GeoreferenceStep.ReviewPoint);
+
+        Assert.Equal(GeoreferenceStep.ChooseCrs, viewModel.CurrentStep);
+
+        viewModel.SelectedCrs = viewModel.AvailableCrs.Single(definition => definition.EpsgCode == 6677);
+
+        Assert.True(viewModel.CanNavigateToSelectPoint);
+        Assert.False(viewModel.CanNavigateToReviewPoint);
+
+        viewModel.NavigateToStep(GeoreferenceStep.SelectPoint);
+        viewModel.SetSelectedMapPoint(35.681236, 139.767125);
+
+        Assert.True(viewModel.CanNavigateToReviewPoint);
+        Assert.True(viewModel.CanNavigateToSetupIntent);
+
+        viewModel.NavigateToStep(GeoreferenceStep.ReviewPoint);
+
+        Assert.Equal(GeoreferenceStep.ReviewPoint, viewModel.CurrentStep);
+
+        viewModel.NavigateToStep(GeoreferenceStep.ChooseCrs);
+
+        Assert.Equal(GeoreferenceStep.ChooseCrs, viewModel.CurrentStep);
+    }
+
+    [Fact]
+    public void Stored_origin_is_preferred_for_site_zoom_and_survey_context()
+    {
+        CurrentProjectStateSummary summary = CreateSupportedSummary();
+        summary.SiteLatitudeDegrees = 42.358723;
+        summary.SiteLongitudeDegrees = -71.056763;
+        summary.StoredOrigin = new ProjectOrigin
+        {
+            Latitude = 36.0,
+            Longitude = 139.833333,
+            ElevationMeters = 0d
+        };
+        summary.SurveyPoint = new BasePointSnapshot
+        {
+            Name = "Survey Point",
+            EstimatedLatitudeDegrees = 42.358723,
+            EstimatedLongitudeDegrees = -71.056763
+        };
+
+        GeoreferenceViewModel viewModel = CreateViewModel(summary);
+
+        Assert.True(viewModel.HasSiteLocation);
+        Assert.True(viewModel.TryGetPreferredSiteLocation(out double preferredLatitude, out double preferredLongitude));
+        Assert.Equal(36.0, preferredLatitude, 6);
+        Assert.Equal(139.833333, preferredLongitude, 6);
+        Assert.True(viewModel.TryGetSurveyPointContextLocation(out double surveyLatitude, out double surveyLongitude));
+        Assert.Equal(36.0, surveyLatitude, 6);
+        Assert.Equal(139.833333, surveyLongitude, 6);
     }
 
     [Fact]
@@ -267,6 +382,12 @@ public sealed class GeoreferenceViewModelTests
             SiteLatitudeDegrees = 35.681236,
             SiteLongitudeDegrees = 139.767125,
             ProjectPosition = new ProjectPositionSnapshot(),
+            SurveyPoint = new BasePointSnapshot
+            {
+                Name = "Survey Point",
+                EstimatedLatitudeDegrees = 35.681236,
+                EstimatedLongitudeDegrees = 139.767125
+            },
             ProjectBasePoint = new BasePointSnapshot
             {
                 Name = "Project Base Point",
@@ -276,6 +397,10 @@ public sealed class GeoreferenceViewModelTests
         };
     }
 }
+
+
+
+
 
 
 

@@ -7,6 +7,7 @@ using RevitGeoSuite.Core.Plateau.Tiles;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
+using RevitGeoSuite.RevitInterop.Navigation;
 using RevitGeoSuite.RevitInterop.Storage;
 
 namespace RevitGeoSuite.PlateauImport;
@@ -34,17 +35,25 @@ public sealed class PlateauImportCommand : IExternalCommand
             currentState,
             info,
             state,
-            new PlateauImportReferenceResolver(coordinateTransformer),
+            new PlateauImportReferenceResolver(coordinateTransformer, document is null ? null : new RevitPlateauImportLocalBasisProvider(document)),
             new PlateauTileIndex(),
-            new CityGmlParser(),
+            new PlateauFolderScanService(new CityGmlParser()),
             new ContextGeometryBuilder());
 
         PlateauImportWindow window = new PlateauImportWindow(
             viewModel,
+            document,
             documentHandle,
-            new PlateauImportCoordinator(new PlateauContextImporter(), stateService));
+            new PlateauImportCoordinator(new PlateauContextImporter(), stateService),
+            new RevitModelFootprintOverlayService(coordinateTransformer));
         new WindowInteropHelper(window).Owner = uiApplication.MainWindowHandle;
         window.ShowDialog();
+
+        if (!string.IsNullOrWhiteSpace(window.PendingModuleNavigationKey))
+        {
+            return new ModuleWindowNavigator().Navigate(commandData, window.PendingModuleNavigationKey!, ref message);
+        }
+
         return Result.Succeeded;
     }
 }

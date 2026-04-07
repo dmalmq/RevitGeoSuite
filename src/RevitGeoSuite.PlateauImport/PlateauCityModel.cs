@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RevitGeoSuite.PlateauImport;
 
@@ -12,5 +13,7 @@ public sealed class PlateauCityModel
 
     public string? FileTileId { get; set; }
 
-    public IReadOnlyCollection<PlateauBuildingFeature> Buildings { get; set; } = new PlateauBuildingFeature[0];
+    public IReadOnlyCollection<PlateauContextFeature> Features { get; set; } = new PlateauContextFeature[0];
+
+    public IReadOnlyCollection<PlateauBuildingFeature> Buildings => Features.OfType<PlateauBuildingFeature>().ToArray();
 }

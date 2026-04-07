@@ -1,3 +1,4 @@
+using RevitGeoSuite.Core.Modules;
 using RevitGeoSuite.MeshInspector;
 using Xunit;
 
@@ -15,6 +16,7 @@ public sealed class MeshInspectorModuleTests
         Assert.Equal("Project Setup", module.PanelName);
         Assert.Equal("MeshInspector", command.CommandId);
         Assert.Equal("RevitGeoSuite.MeshInspector.MeshInspectorCommand", command.CommandClassName);
+        Assert.Equal(RibbonIconKind.MeshInspector, command.IconKind);
         Assert.EndsWith("RevitGeoSuite.MeshInspector.dll", command.AssemblyPath);
     }
 }

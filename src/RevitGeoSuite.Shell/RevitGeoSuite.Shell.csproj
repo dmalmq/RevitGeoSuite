@@ -1,17 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RootNamespace>RevitGeoSuite.Shell</RootNamespace>
+    <UseWPF>true</UseWPF>
+    <OutputType>Library</OutputType>
     <AssemblyName>RevitGeoSuite.Shell</AssemblyName>
+    <RootNamespace>RevitGeoSuite.Shell</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\RevitGeoSuite.RevitInterop\RevitGeoSuite.RevitInterop.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\RevitGeoSuite.SharedUI\RevitGeoSuite.SharedUI.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\RevitGeoSuite.Georeference\RevitGeoSuite.Georeference.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\RevitGeoSuite.MeshInspector\RevitGeoSuite.MeshInspector.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\RevitGeoSuite.Validation\RevitGeoSuite.Validation.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\RevitGeoSuite.PlateauImport\RevitGeoSuite.PlateauImport.csproj" SkipGetTargetFrameworkProperties="true" />
+    <None Include="RevitGeoSuite.addin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>RevitGeoSuite.addin</TargetPath>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +25,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="RevitGeoSuite.addin" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" />
+    <ProjectReference Include="..\RevitGeoSuite.SharedUI\RevitGeoSuite.SharedUI.csproj" />
+    <ProjectReference Include="..\RevitGeoSuite.Georeference\RevitGeoSuite.Georeference.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.MeshInspector\RevitGeoSuite.MeshInspector.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.Validation\RevitGeoSuite.Validation.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.PlateauImport\RevitGeoSuite.PlateauImport.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.Tiles3DExport\RevitGeoSuite.Tiles3DExport.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.CityGmlExport\RevitGeoSuite.CityGmlExport.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 </Project>

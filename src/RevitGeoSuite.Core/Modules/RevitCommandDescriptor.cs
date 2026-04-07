@@ -11,4 +11,6 @@ public sealed class RevitCommandDescriptor
     public string CommandClassName { get; set; } = string.Empty;
 
     public string AssemblyPath { get; set; } = string.Empty;
+
+    public RibbonIconKind IconKind { get; set; } = RibbonIconKind.Default;
 }

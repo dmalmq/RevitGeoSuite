@@ -26,7 +26,8 @@ public sealed class GeoreferenceModule : IRevitGeoModule
                 ButtonText = "Georeference\nSetup",
                 ToolTip = "Open the read-only georeference workflow for current-state review, CRS selection, and map point capture.",
                 CommandClassName = "RevitGeoSuite.Georeference.GeoreferenceCommand",
-                AssemblyPath = Assembly.GetExecutingAssembly().Location
+                AssemblyPath = Assembly.GetExecutingAssembly().Location,
+                IconKind = RibbonIconKind.Georeference
             }
         };
     }

@@ -8,6 +8,7 @@ using RevitGeoSuite.Core.Validation;
 using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
+using RevitGeoSuite.RevitInterop.Navigation;
 using RevitGeoSuite.RevitInterop.Storage;
 
 namespace RevitGeoSuite.Georeference;
@@ -24,6 +25,7 @@ public sealed class GeoreferenceCommand : IExternalCommand
         CoordinateTransformer coordinateTransformer = new CoordinateTransformer(crsRegistry);
         CoordinateValidator coordinateValidator = new CoordinateValidator(crsRegistry, coordinateTransformer, new JapanMeshCalculator());
         PlacementPreviewService placementPreviewService = new PlacementPreviewService(coordinateValidator);
+        SplitSurveyProjectBasePointPreviewService splitPreviewService = new SplitSurveyProjectBasePointPreviewService(coordinateValidator);
         GeoProjectInfoStorage geoProjectInfoStore = new GeoProjectInfoStorage();
         ModuleStateStorage moduleStateStore = new ModuleStateStorage();
         ProjectLocationReader reader = new ProjectLocationReader(geoProjectInfoStore, moduleStateStore: moduleStateStore);
@@ -33,15 +35,30 @@ public sealed class GeoreferenceCommand : IExternalCommand
             crsRegistry.GetAvailableDefinitions(),
             coordinateTransformer,
             new SiteSelectionService(),
-            placementPreviewService);
+            placementPreviewService,
+            splitPreviewService);
 
         RevitGeoPlacementService placementService = new RevitGeoPlacementService(new ProjectLocationWriter(), geoProjectInfoStore, moduleStateStore: moduleStateStore);
         GeoreferenceApplyCoordinator applyCoordinator = new GeoreferenceApplyCoordinator(placementService);
+        SplitSurveyProjectBasePointApplyCoordinator splitApplyCoordinator = new SplitSurveyProjectBasePointApplyCoordinator(new SplitSurveyProjectBasePointService(geoProjectInfoStore, moduleStateStore: moduleStateStore));
+        ProjectBasePointMoveCoordinator projectBasePointMoveCoordinator = new ProjectBasePointMoveCoordinator(new ProjectBasePointMoveService(moduleStateStore));
         RevitDocumentHandle? documentHandle = document is null ? null : new RevitDocumentHandle(document);
 
-        GeoreferenceWindow window = new GeoreferenceWindow(viewModel, applyCoordinator, documentHandle);
+        GeoreferenceWindow window = new GeoreferenceWindow(viewModel, applyCoordinator, splitApplyCoordinator, projectBasePointMoveCoordinator, documentHandle);
         new WindowInteropHelper(window).Owner = uiApplication.MainWindowHandle;
         window.ShowDialog();
+
+        if (!string.IsNullOrWhiteSpace(window.PendingModuleNavigationKey))
+        {
+            return new ModuleWindowNavigator().Navigate(commandData, window.PendingModuleNavigationKey!, ref message);
+        }
+
         return Result.Succeeded;
     }
 }
+
+
+
+
+
+

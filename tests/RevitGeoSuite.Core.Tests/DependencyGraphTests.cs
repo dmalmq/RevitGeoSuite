@@ -43,13 +43,25 @@ public sealed class DependencyGraphTests
             "RevitGeoSuite.RevitInterop.csproj",
             "RevitGeoSuite.SharedUI.csproj");
         AssertProjectReferences(
+            "src/RevitGeoSuite.Tiles3DExport/RevitGeoSuite.Tiles3DExport.csproj",
+            "RevitGeoSuite.Core.csproj",
+            "RevitGeoSuite.RevitInterop.csproj",
+            "RevitGeoSuite.SharedUI.csproj");
+        AssertProjectReferences(
+            "src/RevitGeoSuite.CityGmlExport/RevitGeoSuite.CityGmlExport.csproj",
+            "RevitGeoSuite.Core.csproj",
+            "RevitGeoSuite.Core.Plateau.csproj",
+            "RevitGeoSuite.RevitInterop.csproj",
+            "RevitGeoSuite.SharedUI.csproj");
+        AssertProjectReferences(
             "src/RevitGeoSuite.Shell/RevitGeoSuite.Shell.csproj",
             "RevitGeoSuite.Core.csproj",
+            "RevitGeoSuite.CityGmlExport.csproj",
             "RevitGeoSuite.Georeference.csproj",
             "RevitGeoSuite.MeshInspector.csproj",
             "RevitGeoSuite.PlateauImport.csproj",
-            "RevitGeoSuite.RevitInterop.csproj",
             "RevitGeoSuite.SharedUI.csproj",
+            "RevitGeoSuite.Tiles3DExport.csproj",
             "RevitGeoSuite.Validation.csproj");
     }
 
@@ -94,3 +106,5 @@ public sealed class DependencyGraphTests
         throw new DirectoryNotFoundException("Could not locate repo root from test output directory.");
     }
 }
+
+

@@ -20,5 +20,7 @@ public sealed class SelectedMapPoint
 
     public PlacementAnchorTarget AnchorTarget { get; set; } = PlacementAnchorTarget.Unspecified;
 
+    public bool ReprojectWithSelectedCrs { get; set; } = true;
+
     public bool IsKnownCoordinateInput { get; set; }
 }

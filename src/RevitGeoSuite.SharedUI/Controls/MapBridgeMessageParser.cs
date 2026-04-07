@@ -12,7 +12,8 @@ public static class MapBridgeMessageParser
         {
             Type = (string?)payload["type"] ?? string.Empty,
             Latitude = (double?)payload["latitude"],
-            Longitude = (double?)payload["longitude"]
+            Longitude = (double?)payload["longitude"],
+            FeatureId = (string?)payload["featureId"] ?? string.Empty
         };
     }
 }

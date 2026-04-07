@@ -1,3 +1,4 @@
+using RevitGeoSuite.Core.Modules;
 using RevitGeoSuite.Validation;
 using Xunit;
 
@@ -15,6 +16,7 @@ public sealed class ValidationModuleTests
         Assert.Equal("Project Setup", module.PanelName);
         Assert.Equal("CheckProject", command.CommandId);
         Assert.Equal("RevitGeoSuite.Validation.ValidationCommand", command.CommandClassName);
+        Assert.Equal(RibbonIconKind.Validation, command.IconKind);
         Assert.EndsWith("RevitGeoSuite.Validation.dll", command.AssemblyPath);
     }
 }

@@ -8,6 +8,7 @@ using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.Core.Validation;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
+using RevitGeoSuite.RevitInterop.Navigation;
 using RevitGeoSuite.RevitInterop.Storage;
 
 namespace RevitGeoSuite.Validation;
@@ -35,6 +36,13 @@ public sealed class ValidationCommand : IExternalCommand
         ValidationWindow window = new ValidationWindow(new ValidationViewModel(summary));
         new WindowInteropHelper(window).Owner = uiApplication.MainWindowHandle;
         window.ShowDialog();
+
+        if (!string.IsNullOrWhiteSpace(window.PendingModuleNavigationKey))
+        {
+            return new ModuleWindowNavigator().Navigate(commandData, window.PendingModuleNavigationKey!, ref message);
+        }
+
         return Result.Succeeded;
     }
 }
+

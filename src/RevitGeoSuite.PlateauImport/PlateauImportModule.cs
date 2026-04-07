@@ -10,7 +10,7 @@ public sealed class PlateauImportModule : IRevitGeoModule
 
     public string ModuleName => "PLATEAU Context Import";
 
-    public string ModuleVersion => "0.7.0-phase3";
+    public string ModuleVersion => "0.8.0-phase4";
 
     public string PanelName => "PLATEAU";
 
@@ -24,9 +24,10 @@ public sealed class PlateauImportModule : IRevitGeoModule
             {
                 CommandId = "PlateauImportContext",
                 ButtonText = "Import\nContext",
-                ToolTip = "Load a lightweight PLATEAU CityGML file, preview the resolved context geometry, and import it into the active Revit project.",
+                ToolTip = "Scan a PLATEAU folder, preview selected categories and grid tiles, and import grouped lightweight context geometry into the active Revit project.",
                 CommandClassName = "RevitGeoSuite.PlateauImport.PlateauImportCommand",
-                AssemblyPath = Assembly.GetExecutingAssembly().Location
+                AssemblyPath = Assembly.GetExecutingAssembly().Location,
+                IconKind = RibbonIconKind.PlateauImport
             }
         };
     }

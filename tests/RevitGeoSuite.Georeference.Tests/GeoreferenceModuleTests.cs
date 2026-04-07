@@ -1,4 +1,5 @@
 using System.Linq;
+using RevitGeoSuite.Core.Modules;
 using RevitGeoSuite.Georeference;
 using RevitGeoSuite.Shell;
 using Xunit;
@@ -17,6 +18,7 @@ public sealed class GeoreferenceModuleTests
         Assert.Equal("Project Setup", module.PanelName);
         Assert.Equal("GeoreferenceSetup", command.CommandId);
         Assert.Equal("RevitGeoSuite.Georeference.GeoreferenceCommand", command.CommandClassName);
+        Assert.Equal(RibbonIconKind.Georeference, command.IconKind);
         Assert.EndsWith("RevitGeoSuite.Georeference.dll", command.AssemblyPath);
     }
 
@@ -26,6 +28,7 @@ public sealed class GeoreferenceModuleTests
         var modules = ModuleRegistry.CreateModules();
         string[] moduleIds = modules.Select(module => module.ModuleId).ToArray();
 
-        Assert.Equal(new[] { "georeference", "mesh-inspector", "validation", "plateau-import" }, moduleIds);
+        Assert.Equal(new[] { "georeference", "mesh-inspector", "validation", "plateau-import", "tiles3d-export", "citygml-export" }, moduleIds);
     }
 }
+

@@ -43,6 +43,17 @@
       max-width: 360px;
       color: #7a3022;
     }
+
+    .context-marker-label {
+      background: rgba(255, 252, 246, 0.94);
+      border: 1px solid #d7d0c2;
+      border-radius: 4px;
+      color: #24303a;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      box-shadow: none;
+    }
   </style>
 </head>
 <body>
@@ -53,8 +64,11 @@
   <script>
     let map;
     let marker;
+    let referenceMarkerLayer;
     let meshGridLayer;
     let selectedMeshLayer;
+    let featureSelectionLayer;
+    let modelFootprintLayer;
     let pointSelectionEnabled = true;
 
     function updateStatus(text) {
@@ -72,7 +86,7 @@
       updateStatus('Map unavailable');
     }
 
-    function setMarker(lat, lon) {
+    function setMarker(lat, lon, title) {
       if (!map) {
         return;
       }
@@ -82,6 +96,16 @@
       } else {
         marker.setLatLng([lat, lon]);
       }
+
+      if (title) {
+        marker.bindTooltip(title, {
+          direction: 'top',
+          offset: [0, -8],
+          opacity: 0.92
+        });
+      } else if (marker.getTooltip()) {
+        marker.unbindTooltip();
+      }
     }
 
     function clearMarker() {
@@ -89,6 +113,71 @@
         marker.remove();
         marker = null;
       }
+    }
+
+    function clearReferenceMarkers() {
+      if (referenceMarkerLayer) {
+        referenceMarkerLayer.remove();
+        referenceMarkerLayer = null;
+      }
+    }
+
+    function getReferenceMarkerStyle(kind) {
+      if (kind === 'survey') {
+        return {
+          radius: 8,
+          color: '#1f6ca8',
+          weight: 2,
+          fillColor: '#6fb2ea',
+          fillOpacity: 0.92
+        };
+      }
+
+      if (kind === 'projectBasePoint') {
+        return {
+          radius: 8,
+          color: '#b7641b',
+          weight: 2,
+          fillColor: '#f0ae63',
+          fillOpacity: 0.92
+        };
+      }
+
+      return {
+        radius: 7,
+        color: '#5e6a72',
+        weight: 2,
+        fillColor: '#c7d0d6',
+        fillOpacity: 0.88
+      };
+    }
+
+    function showReferenceMarkers(markers) {
+      clearReferenceMarkers();
+      if (!map || !Array.isArray(markers) || markers.length === 0) {
+        return;
+      }
+
+      referenceMarkerLayer = L.layerGroup().addTo(map);
+      markers.forEach(markerInfo => {
+        if (!Number.isFinite(markerInfo.latitude) || !Number.isFinite(markerInfo.longitude)) {
+          return;
+        }
+
+        const circleMarker = L.circleMarker(
+          [markerInfo.latitude, markerInfo.longitude],
+          getReferenceMarkerStyle(markerInfo.kind)).addTo(referenceMarkerLayer);
+
+        if (markerInfo.title) {
+          circleMarker.bindTooltip(markerInfo.title, {
+            permanent: true,
+            direction: 'top',
+            offset: [0, -10],
+            opacity: 0.92,
+            className: 'context-marker-label'
+          });
+        }
+      });
     }
 
     function clearMeshGrid() {
@@ -100,6 +189,67 @@
       selectedMeshLayer = null;
     }
 
+    function clearFeatureSelectionOverlay() {
+      if (featureSelectionLayer) {
+        featureSelectionLayer.remove();
+        featureSelectionLayer = null;
+      }
+    }
+
+    function clearModelFootprintOverlay() {
+      if (modelFootprintLayer) {
+        modelFootprintLayer.remove();
+        modelFootprintLayer = null;
+      }
+    }
+
+    function baseModelFootprintStyle() {
+      return {
+        color: '#145f66',
+        weight: 2,
+        fillColor: '#56a7ad',
+        fillOpacity: 0.12,
+        opacity: 0.94,
+        dashArray: null,
+        interactive: false
+      };
+    }
+
+    function showModelFootprintOverlay(geoJsonText, fitToBounds, focusLatitude, focusLongitude) {
+      if (!map || !geoJsonText) {
+        return false;
+      }
+
+      clearModelFootprintOverlay();
+
+      let geoJson;
+      try {
+        geoJson = JSON.parse(geoJsonText);
+      } catch {
+        showError('Revit model overlay could not be parsed.');
+        return false;
+      }
+
+      modelFootprintLayer = L.geoJSON(geoJson, {
+        style: baseModelFootprintStyle,
+        interactive: false
+      }).addTo(map);
+
+      if (fitToBounds) {
+        const bounds = modelFootprintLayer.getBounds();
+        if (Number.isFinite(focusLatitude) && Number.isFinite(focusLongitude)) {
+          bounds.extend([focusLatitude, focusLongitude]);
+        }
+
+        if (bounds.isValid()) {
+          map.fitBounds(bounds.pad(0.08));
+        } else if (Number.isFinite(focusLatitude) && Number.isFinite(focusLongitude)) {
+          map.setView([focusLatitude, focusLongitude], 15);
+        }
+      }
+
+      return true;
+    }
     function baseMeshGridStyle(feature) {
       const isPrimary = !!(feature && feature.properties && feature.properties.isPrimary);
       return isPrimary
@@ -119,6 +269,40 @@
             opacity: 0.85,
             dashArray: '6 4'
           };
+    }
+
+    function baseFeatureSelectionStyle(feature) {
+      const properties = feature && feature.properties ? feature.properties : {};
+      if (properties.isSelected) {
+        return {
+          color: '#ca6a21',
+          weight: 2.5,
+          fillColor: '#f0a24b',
+          fillOpacity: 0.32,
+          opacity: 1,
+          dashArray: null
+        };
+      }
+
+      if (properties.isSuggested) {
+        return {
+          color: '#2f6fb0',
+          weight: 2,
+          fillColor: '#5e9ad4',
+          fillOpacity: 0.14,
+          opacity: 0.95,
+          dashArray: '6 4'
+        };
+      }
+
+      return {
+        color: '#5e6a72',
+        weight: 1.4,
+        fillColor: '#c8d0d5',
+        fillOpacity: 0.08,
+        opacity: 0.85,
+        dashArray: '4 4'
+      };
     }
 
     function highlightMeshLayer(layer) {
@@ -190,6 +374,69 @@
       }
     }
 
+    function showFeatureSelectionOverlay(geoJsonText, fitToBounds, focusLatitude, focusLongitude, statusText) {
+      if (!map || !geoJsonText) {
+        return;
+      }
+
+      clearFeatureSelectionOverlay();
+
+      let geoJson;
+      try {
+        geoJson = JSON.parse(geoJsonText);
+      } catch {
+        showError('Tile preview overlay could not be parsed.');
+        return;
+      }
+
+      featureSelectionLayer = L.geoJSON(geoJson, {
+        style: baseFeatureSelectionStyle,
+        onEachFeature: function(feature, layer) {
+          const properties = feature && feature.properties ? feature.properties : {};
+          const tileId = properties.tileId || properties.featureId || '';
+          const featureId = properties.featureId || tileId;
+          const featureCount = Number.isFinite(properties.featureCount) ? properties.featureCount : null;
+
+          if (tileId) {
+            const tooltip = featureCount === null
+              ? tileId
+              : `${tileId} (${featureCount} features)`;
+            layer.bindTooltip(tooltip, {
+              direction: 'center',
+              opacity: 0.92,
+              sticky: true
+            });
+          }
+
+          layer.on('click', function(event) {
+            L.DomEvent.stop(event);
+            updateStatus(tileId ? `Toggled tile: ${tileId}` : 'Toggled tile selection');
+            window.chrome.webview.postMessage({
+              type: 'overlayClick',
+              featureId: featureId
+            });
+          });
+        }
+      }).addTo(map);
+
+      if (fitToBounds) {
+        const bounds = featureSelectionLayer.getBounds();
+        if (Number.isFinite(focusLatitude) && Number.isFinite(focusLongitude)) {
+          bounds.extend([focusLatitude, focusLongitude]);
+        }
+
+        if (bounds.isValid()) {
+          map.fitBounds(bounds.pad(0.08));
+        } else if (Number.isFinite(focusLatitude) && Number.isFinite(focusLongitude)) {
+          map.setView([focusLatitude, focusLongitude], 15);
+        }
+      }
+
+      if (statusText) {
+        updateStatus(statusText);
+      }
+    }
+
     async function searchLocation(query) {
       if (!map || !query) {
         return;
@@ -231,7 +478,7 @@
         }
 
         map.setView([lat, lon], 16);
-        setMarker(lat, lon);
+        setMarker(lat, lon, first.display_name);
         hideError();
         updateStatus(`Search result: ${first.display_name}. Click the map to confirm the point.`);
       } catch (error) {
@@ -261,7 +508,7 @@
         }
 
         hideError();
-        setMarker(event.latlng.lat, event.latlng.lng);
+        setMarker(event.latlng.lat, event.latlng.lng, 'Selected Point');
         updateStatus(`Selected: ${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`);
         window.chrome.webview.postMessage({
           type: 'mapClick',
@@ -279,11 +526,20 @@
 
         if (message.type === 'setMarker') {
           hideError();
-          setMarker(message.latitude, message.longitude);
+          setMarker(message.latitude, message.longitude, message.title || 'Reference Point');
         }
 
         if (message.type === 'clearMarker') {
           clearMarker();
+        }
+
+        if (message.type === 'showReferenceMarkers') {
+          hideError();
+          showReferenceMarkers(message.markers || []);
+        }
+
+        if (message.type === 'clearReferenceMarkers') {
+          clearReferenceMarkers();
         }
 
         if (message.type === 'setPointSelectionEnabled') {
@@ -306,6 +562,33 @@
         if (message.type === 'clearMeshGrid') {
           clearMeshGrid();
         }
+
+        if (message.type === 'showFeatureSelectionOverlay') {
+          hideError();
+          showFeatureSelectionOverlay(
+            message.geoJson,
+            !!message.fitToBounds,
+            message.focusLatitude,
+            message.focusLongitude,
+            message.statusText || 'Detected PLATEAU tiles loaded. Click a tile to select or deselect it.');
+        }
+
+        if (message.type === 'clearFeatureSelectionOverlay') {
+          clearFeatureSelectionOverlay();
+        }
+
+        if (message.type === 'showModelFootprintOverlay') {
+          hideError();
+          showModelFootprintOverlay(
+            message.geoJson,
+            !!message.fitToBounds,
+            message.focusLatitude,
+            message.focusLongitude);
+        }
+
+        if (message.type === 'clearModelFootprintOverlay') {
+          clearModelFootprintOverlay();
+        }
       });
 
       updateStatus('Pan or zoom to the site, then click to select a reference point.');
@@ -316,3 +599,10 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+

@@ -6,6 +6,7 @@ using RevitGeoSuite.Core.Mesh;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
+using RevitGeoSuite.RevitInterop.Navigation;
 using RevitGeoSuite.RevitInterop.Storage;
 
 namespace RevitGeoSuite.MeshInspector;
@@ -29,6 +30,13 @@ public sealed class MeshInspectorCommand : IExternalCommand
         MeshInspectorWindow window = new MeshInspectorWindow(viewModel, documentHandle, new MeshCodePersistenceService(geoProjectInfoStore));
         new WindowInteropHelper(window).Owner = uiApplication.MainWindowHandle;
         window.ShowDialog();
+
+        if (!string.IsNullOrWhiteSpace(window.PendingModuleNavigationKey))
+        {
+            return new ModuleWindowNavigator().Navigate(commandData, window.PendingModuleNavigationKey!, ref message);
+        }
+
         return Result.Succeeded;
     }
 }
+

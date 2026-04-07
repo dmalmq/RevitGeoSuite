@@ -3,6 +3,7 @@
     <RootNamespace>RevitGeoSuite.PlateauImport</RootNamespace>
     <AssemblyName>RevitGeoSuite.PlateauImport</AssemblyName>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>

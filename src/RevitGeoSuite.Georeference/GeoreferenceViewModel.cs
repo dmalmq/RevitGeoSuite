@@ -6,18 +6,21 @@ using System.Globalization;
 using System.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
+using RevitGeoSuite.Core.Mesh;
+using RevitGeoSuite.Core.Validation;
 using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
 
 namespace RevitGeoSuite.Georeference;
 
-public sealed class GeoreferenceViewModel : INotifyPropertyChanged
+public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
 {
     private readonly ICoordinateTransformer coordinateTransformer;
     private readonly PlacementPreviewService placementPreviewService;
     private readonly PlacementIntentValidator intentValidator;
     private readonly SiteSelectionService siteSelectionService;
     private readonly PlacementCurrentState placementCurrentState;
+
 
     private CrsDefinition? selectedCrs;
     private GeoreferenceStep currentStep;
@@ -44,12 +47,31 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         SiteSelectionService siteSelectionService,
         PlacementPreviewService placementPreviewService,
         PlacementIntentValidator? intentValidator = null)
+        : this(
+            currentState,
+            availableCrs,
+            coordinateTransformer,
+            siteSelectionService,
+            placementPreviewService,
+            new SplitSurveyProjectBasePointPreviewService(new CoordinateValidator(new CrsRegistry(), coordinateTransformer, new JapanMeshCalculator())),
+            intentValidator)
+    {
+    }
+    public GeoreferenceViewModel(
+        CurrentProjectStateSummary currentState,
+        IReadOnlyCollection<CrsDefinition> availableCrs,
+        ICoordinateTransformer coordinateTransformer,
+        SiteSelectionService siteSelectionService,
+        PlacementPreviewService placementPreviewService,
+        SplitSurveyProjectBasePointPreviewService splitSurveyProjectBasePointPreviewService,
+        PlacementIntentValidator? intentValidator = null)
     {
         CurrentState = currentState ?? throw new ArgumentNullException(nameof(currentState));
         AvailableCrs = availableCrs?.OrderBy(definition => definition.EpsgCode).ToArray() ?? throw new ArgumentNullException(nameof(availableCrs));
         this.coordinateTransformer = coordinateTransformer ?? throw new ArgumentNullException(nameof(coordinateTransformer));
         this.siteSelectionService = siteSelectionService ?? throw new ArgumentNullException(nameof(siteSelectionService));
         this.placementPreviewService = placementPreviewService ?? throw new ArgumentNullException(nameof(placementPreviewService));
+        this.splitSurveyProjectBasePointPreviewService = splitSurveyProjectBasePointPreviewService ?? throw new ArgumentNullException(nameof(splitSurveyProjectBasePointPreviewService));
         this.intentValidator = intentValidator ?? new PlacementIntentValidator();
         placementCurrentState = PlacementCurrentStateFactory.Create(CurrentState);
         currentStep = GeoreferenceStep.CurrentState;
@@ -67,15 +89,16 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         SiteSelectionModeOptions = new ObservableCollection<SiteSelectionModeOption>(CreateSiteSelectionModeOptions());
         AnchorTargetOptions = new ObservableCollection<AnchorTargetOption>(CreateAnchorTargetOptions());
         CaptureTargetOptions = new ObservableCollection<CaptureTargetOption>(CreateCaptureTargetOptions());
+        InitializeWorkflowModes();
         PreviewFields = new ObservableCollection<PlacementPreviewField>();
         PreviewWarnings = new ObservableCollection<string>();
         PreviewWhatWillChange = new ObservableCollection<string>();
         PreviewWhatWillNotChange = new ObservableCollection<string>();
 
         SelectedApplyModeOption = ApplyModeOptions[0];
-        SelectedSiteSelectionModeOption = SiteSelectionModeOptions[0];
         SelectedAnchorTargetOption = AnchorTargetOptions[0];
         SelectedCaptureTargetOption = CaptureTargetOptions[0];
+        SelectedSiteSelectionModeOption = SiteSelectionModeOptions.First(option => option.Mode == (CurrentState.SurveyPoint.HasEstimatedLocation ? SiteSelectionInputMode.CurrentRevitSetup : SiteSelectionInputMode.MapPoint));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -135,18 +158,27 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             RaisePropertyChanged(nameof(SelectedCrs));
             RaisePropertyChanged(nameof(SelectedCrsSummary));
 
-            if (selectedPoint is not null && selectedCrs is not null && !selectedPoint.IsKnownCoordinateInput)
+            if (selectedPoint is not null && selectedCrs is not null && selectedPoint.ReprojectWithSelectedCrs)
             {
-                SelectedPoint = BuildPrimaryMapPoint(selectedPoint.Latitude, selectedPoint.Longitude);
+                SelectedPoint = ReprojectCapturedPoint(selectedPoint);
             }
 
-            if (workingProjectBasePoint is not null && selectedCrs is not null && !workingProjectBasePoint.IsKnownCoordinateInput)
+            if (workingProjectBasePoint is not null && selectedCrs is not null && workingProjectBasePoint.ReprojectWithSelectedCrs)
             {
-                WorkingProjectBasePoint = BuildWorkingProjectBasePoint(workingProjectBasePoint.Latitude, workingProjectBasePoint.Longitude, false);
+                WorkingProjectBasePoint = ReprojectCapturedPoint(workingProjectBasePoint);
             }
 
+            InitializeCurrentRevitSetupSelections(false, false);
+            InitializeSplitWorkflowDefaults();
             InvalidatePreview();
             RefreshSetupIntentValidation();
+            RaisePropertyChanged(nameof(ActualProjectBasePointMoveRows));
+            RaisePropertyChanged(nameof(CanMoveActualProjectBasePoint));
+            RaisePropertyChanged(nameof(IsActualProjectBasePointMoveNoOp));
+            RaisePropertyChanged(nameof(HasActualProjectBasePointMoveTarget));
+            RaisePropertyChanged(nameof(HasActualProjectBasePointMoveWarningMessage));
+            RaisePropertyChanged(nameof(ActualProjectBasePointMoveWarningMessage));
+            RaisePropertyChanged(nameof(ActualProjectBasePointMoveStatusMessage));
             RaisePropertyChanged(nameof(CanGoNext));
             RaisePropertyChanged(nameof(CanApply));
         }
@@ -187,6 +219,15 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             RaisePropertyChanged(nameof(HasNoWorkingProjectBasePoint));
             RaisePropertyChanged(nameof(CanClearWorkingProjectBasePoint));
             RaisePropertyChanged(nameof(WorkingProjectBasePointSummary));
+            RaisePropertyChanged(nameof(CanGoNext));
+            RaisePropertyChanged(nameof(CanApply));
+            RaisePropertyChanged(nameof(ActualProjectBasePointMoveRows));
+            RaisePropertyChanged(nameof(HasActualProjectBasePointMoveTarget));
+            RaisePropertyChanged(nameof(CanMoveActualProjectBasePoint));
+            RaisePropertyChanged(nameof(IsActualProjectBasePointMoveNoOp));
+            RaisePropertyChanged(nameof(HasActualProjectBasePointMoveWarningMessage));
+            RaisePropertyChanged(nameof(ActualProjectBasePointMoveWarningMessage));
+            RaisePropertyChanged(nameof(ActualProjectBasePointMoveStatusMessage));
         }
     }
 
@@ -233,11 +274,17 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
             selectedSiteSelectionModeOption = value;
             KnownCoordinateErrorMessage = string.Empty;
+            CurrentRevitSetupErrorMessage = string.Empty;
             InvalidatePreview();
             RaisePropertyChanged(nameof(SelectedSiteSelectionModeOption));
             RaisePropertyChanged(nameof(SelectedSiteSelectionModeDescription));
             RaisePropertyChanged(nameof(IsMapSelectionMode));
             RaisePropertyChanged(nameof(IsKnownCoordinateMode));
+            RaisePropertyChanged(nameof(IsCurrentRevitSetupMode));
+            RaisePropertyChanged(nameof(CanUseCurrentRevitSetup));
+            RaisePropertyChanged(nameof(CurrentRevitSetupButtonText));
+            RaisePropertyChanged(nameof(CurrentRevitSetupHint));
+            InitializeCurrentRevitSetupSelections(true, true);
         }
     }
 
@@ -252,9 +299,14 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             }
 
             selectedAnchorTargetOption = value;
+            CurrentRevitSetupErrorMessage = string.Empty;
             InvalidatePreview();
             RaisePropertyChanged(nameof(SelectedAnchorTargetOption));
             RaisePropertyChanged(nameof(SelectedAnchorTargetDescription));
+            RaisePropertyChanged(nameof(CanUseCurrentRevitSetup));
+            RaisePropertyChanged(nameof(CurrentRevitSetupButtonText));
+            RaisePropertyChanged(nameof(CurrentRevitSetupHint));
+            InitializeCurrentRevitSetupSelections(true, false);
         }
     }
 
@@ -270,10 +322,15 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
             selectedCaptureTargetOption = value;
             KnownCoordinateErrorMessage = string.Empty;
+            CurrentRevitSetupErrorMessage = string.Empty;
             RaisePropertyChanged(nameof(SelectedCaptureTargetOption));
             RaisePropertyChanged(nameof(SelectedCaptureTargetDescription));
             RaisePropertyChanged(nameof(IsCapturingPrimaryApplyAnchor));
             RaisePropertyChanged(nameof(IsCapturingWorkingProjectBasePoint));
+            RaisePropertyChanged(nameof(CanUseCurrentRevitSetup));
+            RaisePropertyChanged(nameof(CurrentRevitSetupButtonText));
+            RaisePropertyChanged(nameof(CurrentRevitSetupHint));
+            InitializeCurrentRevitSetupSelections(false, IsCapturingWorkingProjectBasePoint);
         }
     }
 
@@ -402,7 +459,11 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     public bool HasNoWorkingProjectBasePoint => !HasWorkingProjectBasePoint;
 
-    public bool HasSiteLocation => CurrentState.SiteLatitudeDegrees.HasValue && CurrentState.SiteLongitudeDegrees.HasValue;
+    public bool HasSiteLocation => TryGetPreferredSiteLocation(out _, out _);
+
+    public bool HasSurveyPointContextLocation => TryGetSurveyPointContextLocation(out _, out _);
+
+    public bool HasCurrentProjectBasePointContextLocation => CurrentState.ProjectBasePoint.HasEstimatedLocation;
 
     public bool HasProjectBasePointLocation => WorkingProjectBasePoint is not null
         || CurrentState.StoredWorkingProjectBasePoint?.IsValid == true
@@ -419,6 +480,8 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
     public bool IsMapSelectionMode => SelectedSiteSelectionModeOption?.Mode == SiteSelectionInputMode.MapPoint;
 
     public bool IsKnownCoordinateMode => SelectedSiteSelectionModeOption?.Mode == SiteSelectionInputMode.KnownCoordinates;
+
+    public bool IsCurrentRevitSetupMode => SelectedSiteSelectionModeOption?.Mode == SiteSelectionInputMode.CurrentRevitSetup;
 
     public bool IsCapturingPrimaryApplyAnchor => SelectedCaptureTargetOption?.Target != ReferenceCaptureTarget.WorkingProjectBasePoint;
 
@@ -442,10 +505,16 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
     public string StepDescription => CurrentStep switch
     {
         GeoreferenceStep.CurrentState => "Review the current project location status before any georeference workflow continues.",
-        GeoreferenceStep.ChooseCrs => "Select the project CRS before choosing a primary anchor and an optional working Project Base Point.",
-        GeoreferenceStep.SelectPoint => "Use the map or enter known Easting/Northing coordinates in the selected CRS to define the primary apply anchor and, if needed, a separate working Project Base Point.",
-        GeoreferenceStep.ReviewPoint => "Review the selected geographic and projected coordinates that will feed the apply step and later working-coordinate workflows.",
-        GeoreferenceStep.SetupIntent => "Choose what the apply step should change. The next screen is the final confirmation gate before any document modification.",
+        GeoreferenceStep.ChooseCrs => IsSplitWorkflowMode
+            ? "Select the project CRS before defining the local Project Base Point and the far-away shared Survey target."
+            : "Select the project CRS before choosing a primary anchor and an optional working Project Base Point.",
+        GeoreferenceStep.SelectPoint => IsSplitWorkflowMode
+            ? "Define the shared Survey target and the local Project Base Point separately. The actual Revit Project Base Point stays local while the Survey Point carries the far-away shared-coordinate target."
+            : "Use the map, enter known Easting/Northing coordinates, or read the current Revit setup into the selected CRS to define the primary apply anchor and, if needed, a separate working Project Base Point.",
+        GeoreferenceStep.ReviewPoint => IsSplitWorkflowMode
+            ? "Review the split local Project Base Point and shared Survey roles before choosing the Revit apply intent."
+            : "Review the selected geographic and projected coordinates that will feed the apply step and later working-coordinate workflows.",
+        GeoreferenceStep.SetupIntent => SetupIntentHelpText,
         GeoreferenceStep.Preview => "Review the current vs proposed state, then confirm before applying changes to the Revit document.",
         _ => string.Empty
     };
@@ -464,11 +533,11 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     public string SelectedApplyModeDescription => SelectedApplyModeOption?.Description ?? string.Empty;
 
-    public string SelectedSiteSelectionModeDescription => SelectedSiteSelectionModeOption?.Description ?? string.Empty;
+    public string SelectedSiteSelectionModeDescription => BuildSelectedSiteSelectionModeDescription();
 
-    public string SelectedAnchorTargetDescription => SelectedAnchorTargetOption?.Description ?? string.Empty;
+    public string SelectedAnchorTargetDescription => BuildSelectedAnchorTargetDescription();
 
-    public string SelectedCaptureTargetDescription => SelectedCaptureTargetOption?.Description ?? string.Empty;
+    public string SelectedCaptureTargetDescription => BuildSelectedCaptureTargetDescription();
 
     public string PreviewPersistenceSummary => Preview?.PersistenceSummary ?? string.Empty;
 
@@ -507,12 +576,24 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
     {
         GeoreferenceStep.CurrentState => CurrentState.IsSupportedDocument,
         GeoreferenceStep.ChooseCrs => SelectedCrs is not null,
-        GeoreferenceStep.SelectPoint => SelectedPoint is not null,
-        GeoreferenceStep.ReviewPoint => SelectedPoint is not null,
+        GeoreferenceStep.SelectPoint => IsSplitWorkflowMode ? SelectedPoint is not null && WorkingProjectBasePoint is not null : SelectedPoint is not null,
+        GeoreferenceStep.ReviewPoint => IsSplitWorkflowMode ? SelectedPoint is not null && WorkingProjectBasePoint is not null : SelectedPoint is not null,
         GeoreferenceStep.SetupIntent => BuildIntentValidationResult().IsValid,
         GeoreferenceStep.Preview => false,
         _ => false
     };
+
+    public bool CanNavigateToCurrentState => CanNavigateToStep(GeoreferenceStep.CurrentState);
+
+    public bool CanNavigateToChooseCrs => CanNavigateToStep(GeoreferenceStep.ChooseCrs);
+
+    public bool CanNavigateToSelectPoint => CanNavigateToStep(GeoreferenceStep.SelectPoint);
+
+    public bool CanNavigateToReviewPoint => CanNavigateToStep(GeoreferenceStep.ReviewPoint);
+
+    public bool CanNavigateToSetupIntent => CanNavigateToStep(GeoreferenceStep.SetupIntent);
+
+    public bool CanNavigateToPreview => CanNavigateToStep(GeoreferenceStep.Preview);
 
     public bool IsCurrentStateStepVisible => CurrentStep == GeoreferenceStep.CurrentState;
 
@@ -562,6 +643,11 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             GeoreferenceStep.ReviewPoint => GeoreferenceStep.SetupIntent,
             _ => CurrentStep
         };
+
+        if (CurrentStep == GeoreferenceStep.SelectPoint)
+        {
+            InitializeCurrentRevitSetupSelections(false, false);
+        }
     }
 
     public void GoBack()
@@ -580,6 +666,36 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             GeoreferenceStep.Preview => GeoreferenceStep.SetupIntent,
             _ => CurrentStep
         };
+    }
+
+    public bool CanNavigateToStep(GeoreferenceStep step)
+    {
+        return step <= GetFurthestNavigableStep();
+    }
+
+    public void NavigateToStep(GeoreferenceStep step)
+    {
+        if (step == CurrentStep || !CanNavigateToStep(step))
+        {
+            return;
+        }
+
+        if (step == GeoreferenceStep.Preview)
+        {
+            BuildPreview();
+            if (Preview is not null)
+            {
+                CurrentStep = GeoreferenceStep.Preview;
+            }
+
+            return;
+        }
+
+        CurrentStep = step;
+        if (CurrentStep == GeoreferenceStep.SelectPoint)
+        {
+            InitializeCurrentRevitSetupSelections(false, false);
+        }
     }
 
     public void SetSelectedMapPoint(double latitude, double longitude)
@@ -636,6 +752,77 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             DisplayedMapPoint = SelectedPoint;
         }
     }
+
+    public bool TryGetPreferredSiteLocation(out double latitude, out double longitude)
+    {
+        if (CurrentState.StoredOrigin is not null)
+        {
+            latitude = CurrentState.StoredOrigin.Latitude;
+            longitude = CurrentState.StoredOrigin.Longitude;
+            return true;
+        }
+
+        if (CurrentState.SurveyPoint.HasEstimatedLocation)
+        {
+            latitude = CurrentState.SurveyPoint.EstimatedLatitudeDegrees!.Value;
+            longitude = CurrentState.SurveyPoint.EstimatedLongitudeDegrees!.Value;
+            return true;
+        }
+
+        if (CurrentState.SiteLatitudeDegrees.HasValue && CurrentState.SiteLongitudeDegrees.HasValue)
+        {
+            latitude = CurrentState.SiteLatitudeDegrees.Value;
+            longitude = CurrentState.SiteLongitudeDegrees.Value;
+            return true;
+        }
+
+        latitude = 0d;
+        longitude = 0d;
+        return false;
+    }
+
+    public bool TryGetSurveyPointContextLocation(out double latitude, out double longitude)
+    {
+        if (CurrentState.StoredOrigin is not null)
+        {
+            latitude = CurrentState.StoredOrigin.Latitude;
+            longitude = CurrentState.StoredOrigin.Longitude;
+            return true;
+        }
+
+        if (CurrentState.SurveyPoint.HasEstimatedLocation)
+        {
+            latitude = CurrentState.SurveyPoint.EstimatedLatitudeDegrees!.Value;
+            longitude = CurrentState.SurveyPoint.EstimatedLongitudeDegrees!.Value;
+            return true;
+        }
+
+        if (CurrentState.SiteLatitudeDegrees.HasValue && CurrentState.SiteLongitudeDegrees.HasValue)
+        {
+            latitude = CurrentState.SiteLatitudeDegrees.Value;
+            longitude = CurrentState.SiteLongitudeDegrees.Value;
+            return true;
+        }
+
+        latitude = 0d;
+        longitude = 0d;
+        return false;
+    }
+
+    public bool TryGetCurrentProjectBasePointContextLocation(out double latitude, out double longitude)
+    {
+        if (CurrentState.ProjectBasePoint.HasEstimatedLocation)
+        {
+            latitude = CurrentState.ProjectBasePoint.EstimatedLatitudeDegrees!.Value;
+            longitude = CurrentState.ProjectBasePoint.EstimatedLongitudeDegrees!.Value;
+            return true;
+        }
+
+        latitude = 0d;
+        longitude = 0d;
+        return false;
+    }
+
     public bool TryGetProjectBasePointLocation(out double latitude, out double longitude)
     {
         if (WorkingProjectBasePoint is not null)
@@ -692,15 +879,16 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             SourceLabel = "Selected from OSM map",
             ConfidenceLabel = "Approximate (map-based selection)",
             ConfidenceLevel = GeoConfidenceLevel.Approximate,
-            AnchorTarget = PlacementAnchorTarget.Unspecified,
+            AnchorTarget = ResolvePrimaryAnchorTarget(),
+            ReprojectWithSelectedCrs = true,
             IsKnownCoordinateInput = false
         };
     }
 
     private SelectedMapPoint BuildPrimaryKnownCoordinatePoint(double latitude, double longitude, ProjectedCoordinate projectedCoordinate)
     {
-        PlacementAnchorTarget anchorTarget = SelectedAnchorTargetOption?.Target ?? PlacementAnchorTarget.SurveyPoint;
-        string anchorTitle = SelectedAnchorTargetOption?.Title ?? "Survey Point";
+        PlacementAnchorTarget anchorTarget = ResolvePrimaryAnchorTarget();
+        string anchorTitle = anchorTarget == PlacementAnchorTarget.ProjectBasePoint ? "Project Base Point" : "Survey Point";
 
         return new SelectedMapPoint
         {
@@ -711,6 +899,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             ConfidenceLabel = "Verified (user-entered CRS coordinates)",
             ConfidenceLevel = GeoConfidenceLevel.Verified,
             AnchorTarget = anchorTarget,
+            ReprojectWithSelectedCrs = false,
             IsKnownCoordinateInput = true
         };
     }
@@ -736,6 +925,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             ConfidenceLabel = confidenceLabel,
             ConfidenceLevel = confidence,
             AnchorTarget = PlacementAnchorTarget.ProjectBasePoint,
+            ReprojectWithSelectedCrs = !isKnownCoordinateInput,
             IsKnownCoordinateInput = isKnownCoordinateInput
         };
     }
@@ -747,14 +937,27 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         if (!validationResult.IsValid)
         {
             previewIntent = null;
+            splitPreviewIntent = null;
             Preview = null;
             ResetPreviewCollections();
             return;
         }
 
-        PlacementIntent intent = BuildIntent();
-        previewIntent = intent;
-        Preview = placementPreviewService.CreatePreview(placementCurrentState, intent);
+        if (IsSplitWorkflowMode)
+        {
+            SplitSurveyProjectBasePointIntent splitIntent = BuildSplitIntent();
+            splitPreviewIntent = splitIntent;
+            previewIntent = null;
+            Preview = splitSurveyProjectBasePointPreviewService.CreatePreview(CurrentState, splitIntent);
+        }
+        else
+        {
+            PlacementIntent intent = BuildIntent();
+            previewIntent = intent;
+            splitPreviewIntent = null;
+            Preview = placementPreviewService.CreatePreview(placementCurrentState, intent);
+        }
+
         ReplaceCollection(PreviewFields, Preview.Fields);
         ReplaceCollection(PreviewWarnings, Preview.Warnings);
         ReplaceCollection(PreviewWhatWillChange, Preview.WhatWillChange);
@@ -771,6 +974,10 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         }
 
         SelectedPointRows.Add(new SummaryRow("Latitude / Longitude", $"{SelectedPoint.Latitude:F6}, {SelectedPoint.Longitude:F6}"));
+        if (IsSplitWorkflowMode)
+        {
+            SelectedPointRows.Add(new SummaryRow("Role", "Shared Survey Target"));
+        }
         SelectedPointRows.Add(new SummaryRow("Projected Easting", $"{SelectedPoint.ProjectedCoordinate.Easting:F4} m"));
         SelectedPointRows.Add(new SummaryRow("Projected Northing", $"{SelectedPoint.ProjectedCoordinate.Northing:F4} m"));
         if (SelectedPoint.AnchorTarget != PlacementAnchorTarget.Unspecified)
@@ -797,7 +1004,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         WorkingProjectBasePointRows.Add(new SummaryRow("Latitude / Longitude", $"{WorkingProjectBasePoint.Latitude:F6}, {WorkingProjectBasePoint.Longitude:F6}"));
         WorkingProjectBasePointRows.Add(new SummaryRow("Projected Easting", $"{WorkingProjectBasePoint.ProjectedCoordinate.Easting:F4} m"));
         WorkingProjectBasePointRows.Add(new SummaryRow("Projected Northing", $"{WorkingProjectBasePoint.ProjectedCoordinate.Northing:F4} m"));
-        WorkingProjectBasePointRows.Add(new SummaryRow("Role", "Working Project Base Point"));
+        WorkingProjectBasePointRows.Add(new SummaryRow("Role", IsSplitWorkflowMode ? "Local Project Base Point" : "Working Project Base Point"));
         WorkingProjectBasePointRows.Add(new SummaryRow("Source", WorkingProjectBasePoint.SourceLabel));
         WorkingProjectBasePointRows.Add(new SummaryRow("Confidence", WorkingProjectBasePoint.ConfidenceLabel));
         if (SelectedCrs is not null)
@@ -820,6 +1027,11 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     private PlacementIntentValidationResult BuildIntentValidationResult()
     {
+        if (IsSplitWorkflowMode)
+        {
+            return BuildSplitIntentValidationResult();
+        }
+
         if (SelectedCrs is null || SelectedPoint is null || SelectedApplyModeOption is null)
         {
             PlacementIntentValidationResult missingResult = new PlacementIntentValidationResult();
@@ -884,9 +1096,11 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
     private void InvalidatePreview()
     {
         previewIntent = null;
+        splitPreviewIntent = null;
         Preview = null;
         ResetPreviewCollections();
         RaisePropertyChanged(nameof(CanApply));
+        RaiseStepNavigationProperties();
     }
 
     private static bool TryParseCoordinateValue(string? text, out double value)
@@ -958,6 +1172,12 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             Title = "Known CRS Coordinates",
             Description = "Enter explicit Easting/Northing values in the selected CRS and convert them into a geographic point for review."
         };
+        yield return new SiteSelectionModeOption
+        {
+            Mode = SiteSelectionInputMode.CurrentRevitSetup,
+            Title = "Current Revit Setup",
+            Description = "Read the current Revit Survey Point or Project Base Point, keep the current true north value, and convert that existing setup into the selected CRS."
+        };
     }
 
     private static IEnumerable<AnchorTargetOption> CreateAnchorTargetOptions()
@@ -1011,7 +1231,18 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         yield return new SummaryRow("Project Elevation", FormatLength(summary.ProjectPosition.ElevationFeet));
         yield return new SummaryRow("True North Angle", $"{summary.ProjectPosition.AngleDegrees:F3}°");
         yield return new SummaryRow(summary.SurveyPoint.Name, FormatPoint(summary.SurveyPoint));
+        if (summary.SurveyPoint.HasEstimatedLocation)
+        {
+            yield return new SummaryRow("Survey Point Estimate", FormatEstimatedLocation(summary.SurveyPoint));
+        }
+
         yield return new SummaryRow(summary.ProjectBasePoint.Name, FormatPoint(summary.ProjectBasePoint));
+        if (summary.ProjectBasePoint.HasEstimatedLocation)
+        {
+            yield return new SummaryRow("Project Base Point Estimate", FormatEstimatedLocation(summary.ProjectBasePoint));
+        }
+
+        yield return new SummaryRow("Project North", "Current model axes reference. Revit V1 does not expose a separate stored project north angle here.");
         if (summary.StoredCrs is not null)
         {
             yield return new SummaryRow("Stored CRS", $"EPSG:{summary.StoredCrs.EpsgCode}  {summary.StoredCrs.NameSnapshot}");
@@ -1048,9 +1279,39 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         return $"{feet:F3} ft / {feet * 0.3048:F3} m";
     }
 
+    private GeoreferenceStep GetFurthestNavigableStep()
+    {
+        if (!CurrentState.IsSupportedDocument)
+        {
+            return GeoreferenceStep.CurrentState;
+        }
+
+        if (SelectedCrs is null)
+        {
+            return GeoreferenceStep.ChooseCrs;
+        }
+
+        if (SelectedPoint is null || (IsSplitWorkflowMode && WorkingProjectBasePoint is null))
+        {
+            return GeoreferenceStep.SelectPoint;
+        }
+
+        if (!BuildIntentValidationResult().IsValid)
+        {
+            return GeoreferenceStep.SetupIntent;
+        }
+
+        return GeoreferenceStep.Preview;
+    }
+
     private static string FormatPoint(BasePointSnapshot point)
     {
         return $"X {point.XFeet:F3} ft, Y {point.YFeet:F3} ft, Z {point.ZFeet:F3} ft";
+    }
+
+    private static string FormatEstimatedLocation(BasePointSnapshot point)
+    {
+        return $"Lat {point.EstimatedLatitudeDegrees!.Value:F6}, Lon {point.EstimatedLongitudeDegrees!.Value:F6}";
     }
 
     private static string FormatAnchorTarget(PlacementAnchorTarget anchorTarget)
@@ -1084,6 +1345,19 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         RaisePropertyChanged(nameof(IsReviewPointStepVisible));
         RaisePropertyChanged(nameof(IsSetupIntentStepVisible));
         RaisePropertyChanged(nameof(IsPreviewStepVisible));
+        RaiseStepNavigationProperties();
+    }
+
+    private void RaiseStepNavigationProperties()
+    {
+        RaisePropertyChanged(nameof(CanNavigateToCurrentState));
+        RaisePropertyChanged(nameof(CanNavigateToChooseCrs));
+        RaisePropertyChanged(nameof(CanNavigateToSelectPoint));
+        RaisePropertyChanged(nameof(CanNavigateToReviewPoint));
+        RaisePropertyChanged(nameof(CanNavigateToSetupIntent));
+        RaisePropertyChanged(nameof(CanNavigateToPreview));
+        RaisePropertyChanged(nameof(HasSiteLocation));
+        RaisePropertyChanged(nameof(HasSurveyPointContextLocation));
     }
 
     private void RaisePropertyChanged(string propertyName)
@@ -1091,6 +1365,23 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

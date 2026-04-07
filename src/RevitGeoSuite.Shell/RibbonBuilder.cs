@@ -25,7 +25,9 @@ public sealed class RibbonBuilder
                     command.AssemblyPath,
                     command.CommandClassName)
                 {
-                    ToolTip = command.ToolTip
+                    ToolTip = command.ToolTip,
+                    Image = RibbonIconFactory.CreateSmall(command.IconKind),
+                    LargeImage = RibbonIconFactory.CreateLarge(command.IconKind)
                 };
 
                 bool alreadyExists = panel.GetItems()

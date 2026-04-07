@@ -69,11 +69,14 @@ public sealed class ProjectLocationReader : IProjectLocationReader
             };
 
             ExistingSetupDetectionResult detection = existingSetupDetector.Detect(positionSnapshot, hasStoredGeoInfo);
-            GeographicCoordinate? siteCoordinate = siteLocation is null
+            GeographicCoordinate? rawSiteCoordinate = siteLocation is null
                 ? null
                 : new GeographicCoordinate(
                     siteLocation.Latitude * (180.0 / Math.PI),
                     siteLocation.Longitude * (180.0 / Math.PI));
+            GeographicCoordinate? pointEstimateCoordinate = storedGeoInfo?.Origin is null
+                ? rawSiteCoordinate
+                : new GeographicCoordinate(storedGeoInfo.Origin.Latitude, storedGeoInfo.Origin.Longitude);
 
             return new CurrentProjectStateSummary
             {
@@ -92,12 +95,12 @@ public sealed class ProjectLocationReader : IProjectLocationReader
                 StoredConfidence = storedGeoInfo?.Confidence,
                 SetupSource = storedGeoInfo?.SetupSource ?? string.Empty,
                 StoredWorkingProjectBasePoint = moduleState?.WorkingProjectBasePoint,
-                SiteLatitudeDegrees = siteCoordinate?.Latitude,
-                SiteLongitudeDegrees = siteCoordinate?.Longitude,
+                SiteLatitudeDegrees = rawSiteCoordinate?.Latitude,
+                SiteLongitudeDegrees = rawSiteCoordinate?.Longitude,
                 SiteTimeZoneHours = siteLocation?.TimeZone,
                 ProjectPosition = positionSnapshot,
-                SurveyPoint = CreateBasePointSnapshot("Survey Point", surveyPoint, projectLocation, siteCoordinate),
-                ProjectBasePoint = CreateBasePointSnapshot("Project Base Point", projectBasePoint, projectLocation, siteCoordinate)
+                SurveyPoint = CreateBasePointSnapshot("Survey Point", surveyPoint, projectLocation, pointEstimateCoordinate),
+                ProjectBasePoint = CreateBasePointSnapshot("Project Base Point", projectBasePoint, projectLocation, pointEstimateCoordinate)
             };
         }
         catch (Exception ex)
@@ -132,6 +135,10 @@ public sealed class ProjectLocationReader : IProjectLocationReader
         }
 
         ProjectPosition pointPosition = projectLocation.GetProjectPosition(position);
+        snapshot.SharedEastWestFeet = pointPosition.EastWest;
+        snapshot.SharedNorthSouthFeet = pointPosition.NorthSouth;
+        snapshot.SharedElevationFeet = pointPosition.Elevation;
+
         GeographicCoordinate estimatedCoordinate = LocalCoordinateOffsetProjector.Offset(
             siteCoordinate.Value,
             pointPosition.EastWest * FeetToMeters,
@@ -142,3 +149,5 @@ public sealed class ProjectLocationReader : IProjectLocationReader
         return snapshot;
     }
 }
+
+

@@ -1,3 +1,4 @@
+using RevitGeoSuite.Core.Modules;
 using RevitGeoSuite.PlateauImport;
 using Xunit;
 
@@ -15,6 +16,7 @@ public sealed class PlateauImportModuleTests
         Assert.Equal("PLATEAU", module.PanelName);
         Assert.Equal("PlateauImportContext", command.CommandId);
         Assert.Equal("RevitGeoSuite.PlateauImport.PlateauImportCommand", command.CommandClassName);
+        Assert.Equal(RibbonIconKind.PlateauImport, command.IconKind);
         Assert.EndsWith("RevitGeoSuite.PlateauImport.dll", command.AssemblyPath);
     }
 }

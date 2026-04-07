@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Threading.Tasks;
 using System.Windows;
@@ -6,6 +7,7 @@ using System.Windows.Interop;
 using RevitGeoSuite.Core.Mesh;
 using RevitGeoSuite.Core.Storage;
 using RevitGeoSuite.RevitInterop.Storage;
+using RevitGeoSuite.SharedUI.Controls;
 
 namespace RevitGeoSuite.MeshInspector;
 
@@ -22,9 +24,13 @@ public partial class MeshInspectorWindow : Window
         this.persistenceService = persistenceService;
         DataContext = viewModel;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        ModuleNavRail.ModuleRequested += OnModuleRequested;
+        Closed += OnWindowClosed;
     }
 
     public MeshInspectorViewModel ViewModel { get; }
+
+    public string? PendingModuleNavigationKey { get; private set; }
 
     public void SetOwner(System.IntPtr ownerHandle)
     {
@@ -35,6 +41,13 @@ public partial class MeshInspectorWindow : Window
     {
         await MeshMap.SetPointSelectionEnabledAsync(false);
         await LoadMapAsync();
+    }
+
+    private void OnWindowClosed(object? sender, EventArgs e)
+    {
+        ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        ModuleNavRail.ModuleRequested -= OnModuleRequested;
+        Closed -= OnWindowClosed;
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)
@@ -102,6 +115,12 @@ public partial class MeshInspectorWindow : Window
         {
             await LoadMapAsync();
         }
+    }
+
+    private void OnModuleRequested(object? sender, ModuleNavigationRequestedEventArgs e)
+    {
+        PendingModuleNavigationKey = e.ModuleKey;
+        Close();
     }
 
     private async Task LoadMapAsync()

@@ -11,7 +11,17 @@ public sealed class PlateauImportState
 
     public string LastImportedFilePath { get; set; } = string.Empty;
 
+    public string LastImportedFolderPath { get; set; } = string.Empty;
+
     public PlateauImportReferenceSource LastReferenceSource { get; set; } = PlateauImportReferenceSource.WorkingProjectBasePoint;
 
     public int LastImportedFeatureCount { get; set; }
+
+    public int LastImportedGroupCount { get; set; }
+
+    public List<string> LastSelectedTileIds { get; set; } = new List<string>();
+
+    public List<string> LastSelectedFeatureTypes { get; set; } = new List<string>();
+
+    public string LastImportSummary { get; set; } = string.Empty;
 }

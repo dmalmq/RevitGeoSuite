@@ -26,7 +26,8 @@ public sealed class MeshInspectorModule : IRevitGeoModule
                 ButtonText = "Mesh\nInspector",
                 ToolTip = "Inspect the primary tertiary mesh, surrounding mesh cells, and the saved shared mesh key.",
                 CommandClassName = "RevitGeoSuite.MeshInspector.MeshInspectorCommand",
-                AssemblyPath = Assembly.GetExecutingAssembly().Location
+                AssemblyPath = Assembly.GetExecutingAssembly().Location,
+                IconKind = RibbonIconKind.MeshInspector
             }
         };
     }

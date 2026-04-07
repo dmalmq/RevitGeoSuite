@@ -10,9 +10,17 @@ public sealed class BasePointSnapshot
 
     public double ZFeet { get; set; }
 
+    public double? SharedEastWestFeet { get; set; }
+
+    public double? SharedNorthSouthFeet { get; set; }
+
+    public double? SharedElevationFeet { get; set; }
+
     public double? EstimatedLatitudeDegrees { get; set; }
 
     public double? EstimatedLongitudeDegrees { get; set; }
+
+    public bool HasSharedPosition => SharedEastWestFeet.HasValue && SharedNorthSouthFeet.HasValue && SharedElevationFeet.HasValue;
 
     public bool HasEstimatedLocation => EstimatedLatitudeDegrees.HasValue && EstimatedLongitudeDegrees.HasValue;
 }
