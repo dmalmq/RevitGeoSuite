@@ -10,6 +10,7 @@ using RevitGeoSuite.Core.Mesh;
 using RevitGeoSuite.Core.Validation;
 using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
+using RevitGeoSuite.SharedUI.Localization;
 
 namespace RevitGeoSuite.Georeference;
 
@@ -489,33 +490,35 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
 
     public bool CanClearWorkingProjectBasePoint => HasWorkingProjectBasePoint;
 
-    public string WindowTitle => "Georeference Setup";
+    private static string L(string key) => UiLocalizer.Instance.Get(key);
+
+    public string WindowTitle => L("Module.Georeference");
 
     public string StepTitle => CurrentStep switch
     {
-        GeoreferenceStep.CurrentState => "1. Current State",
-        GeoreferenceStep.ChooseCrs => "2. Choose CRS",
-        GeoreferenceStep.SelectPoint => "3. Select Site Reference",
-        GeoreferenceStep.ReviewPoint => "4. Review Selected Point",
-        GeoreferenceStep.SetupIntent => "5. Choose Setup Intent",
-        GeoreferenceStep.Preview => "6. Preview Changes",
+        GeoreferenceStep.CurrentState => $"1. {L("Georef.Step.CurrentState")}",
+        GeoreferenceStep.ChooseCrs => $"2. {L("Georef.Step.Crs")}",
+        GeoreferenceStep.SelectPoint => $"3. {L("Georef.Step.SiteReference")}",
+        GeoreferenceStep.ReviewPoint => $"4. {L("Georef.Step.Review")}",
+        GeoreferenceStep.SetupIntent => $"5. {L("Georef.Step.Intent")}",
+        GeoreferenceStep.Preview => $"6. {L("Georef.Step.Preview")}",
         _ => string.Empty
     };
 
     public string StepDescription => CurrentStep switch
     {
-        GeoreferenceStep.CurrentState => "Review the current project location status before any georeference workflow continues.",
+        GeoreferenceStep.CurrentState => L("Georef.StepDescription.CurrentState"),
         GeoreferenceStep.ChooseCrs => IsSplitWorkflowMode
-            ? "Select the project CRS before defining the local Project Base Point and the far-away shared Survey target."
-            : "Select the project CRS before choosing a primary anchor and an optional working Project Base Point.",
+            ? L("Georef.StepDescription.Crs.Split")
+            : L("Georef.StepDescription.Crs.Standard"),
         GeoreferenceStep.SelectPoint => IsSplitWorkflowMode
-            ? "Define the shared Survey target and the local Project Base Point separately. The actual Revit Project Base Point stays local while the Survey Point carries the far-away shared-coordinate target."
-            : "Use the map, enter known Easting/Northing coordinates, or read the current Revit setup into the selected CRS to define the primary apply anchor and, if needed, a separate working Project Base Point.",
+            ? L("Georef.StepDescription.SiteReference.Split")
+            : L("Georef.StepDescription.SiteReference.Standard"),
         GeoreferenceStep.ReviewPoint => IsSplitWorkflowMode
-            ? "Review the split local Project Base Point and shared Survey roles before choosing the Revit apply intent."
-            : "Review the selected geographic and projected coordinates that will feed the apply step and later working-coordinate workflows.",
+            ? L("Georef.StepDescription.Review.Split")
+            : L("Georef.StepDescription.Review.Standard"),
         GeoreferenceStep.SetupIntent => SetupIntentHelpText,
-        GeoreferenceStep.Preview => "Review the current vs proposed state, then confirm before applying changes to the Revit document.",
+        GeoreferenceStep.Preview => L("Georef.StepDescription.Preview"),
         _ => string.Empty
     };
 
@@ -528,7 +531,7 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
     public bool HasStatusMessage => !string.IsNullOrWhiteSpace(StatusMessage);
 
     public string SelectedCrsSummary => SelectedCrs is null
-        ? "No CRS selected yet."
+        ? L("Georef.SelectedCrsEmpty")
         : $"EPSG:{SelectedCrs.EpsgCode}  {SelectedCrs.Name}";
 
     public string SelectedApplyModeDescription => SelectedApplyModeOption?.Description ?? string.Empty;
@@ -546,20 +549,20 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
     public string PreviewConfidenceSummary => Preview?.ConfidenceSummary ?? string.Empty;
 
     public string SelectedPointSummary => SelectedPoint is null
-        ? "Not selected"
+        ? L("Georef.NotSelected")
         : $"{SelectedPoint.Latitude:F6}, {SelectedPoint.Longitude:F6}";
 
     public string WorkingProjectBasePointSummary => WorkingProjectBasePoint is null
         ? CurrentState.StoredWorkingProjectBasePoint is null
-            ? "Not selected"
+            ? L("Georef.NotSelected")
             : FormatWorkingProjectBasePoint(CurrentState.StoredWorkingProjectBasePoint)
         : $"{WorkingProjectBasePoint.Latitude:F6}, {WorkingProjectBasePoint.Longitude:F6}";
 
     public string ProjectBasePointZoomButtonText => WorkingProjectBasePoint is not null || CurrentState.StoredWorkingProjectBasePoint?.IsValid == true
-        ? "Zoom To Working Project Base Point"
-        : "Zoom To Project Base Point";
+        ? L("Georef.Action.ZoomWorkingProjectPoint")
+        : L("Georef.Action.ZoomProjectPoint");
 
-    public string NextButtonText => CurrentStep == GeoreferenceStep.SetupIntent ? "Preview" : "Next";
+    public string NextButtonText => CurrentStep == GeoreferenceStep.SetupIntent ? L("Common.Preview") : L("Common.Next");
 
     public bool ShowNextButton => CurrentStep != GeoreferenceStep.Preview;
 
@@ -716,7 +719,7 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
     {
         if (SelectedCrs is null)
         {
-            KnownCoordinateErrorMessage = "Select a coordinate reference system before entering known coordinates.";
+            KnownCoordinateErrorMessage = L("Georef.Error.SelectCrsBeforeCoordinates");
             return false;
         }
 
@@ -1037,17 +1040,17 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
             PlacementIntentValidationResult missingResult = new PlacementIntentValidationResult();
             if (SelectedCrs is null)
             {
-                missingResult.Errors.Add("Select a coordinate reference system before generating a preview.");
+                missingResult.Errors.Add(L("Georef.Error.Preview.SelectCrs"));
             }
 
             if (SelectedPoint is null)
             {
-                missingResult.Errors.Add("Select a primary map point or enter known coordinates before generating a preview.");
+                missingResult.Errors.Add(L("Georef.Error.Preview.SelectPoint"));
             }
 
             if (SelectedApplyModeOption is null)
             {
-                missingResult.Errors.Add("Choose a setup intent before generating a preview.");
+                missingResult.Errors.Add(L("Georef.Error.Preview.SelectApplyMode"));
             }
 
             return missingResult;
@@ -1141,20 +1144,20 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         yield return new ApplyModeOption
         {
             Mode = PlacementApplyMode.MetadataOnly,
-            Title = "Metadata Only",
-            Description = "Save canonical CRS, origin, confidence, and provenance without changing Revit project location values."
+            Title = L("Georef.ApplyMode.MetadataOnly.Title"),
+            Description = L("Georef.ApplyMode.MetadataOnly.Description")
         };
         yield return new ApplyModeOption
         {
             Mode = PlacementApplyMode.ProjectLocation,
-            Title = "Project Location",
-            Description = "Update Revit project location values from the selected point while keeping the current true north angle."
+            Title = L("Georef.ApplyMode.ProjectLocation.Title"),
+            Description = L("Georef.ApplyMode.ProjectLocation.Description")
         };
         yield return new ApplyModeOption
         {
             Mode = PlacementApplyMode.ProjectLocationAndAngle,
-            Title = "Project Location + True North",
-            Description = "Update Revit project location values and true north. Building geometry is still not rotated."
+            Title = L("Georef.ApplyMode.ProjectLocationAngle.Title"),
+            Description = L("Georef.ApplyMode.ProjectLocationAngle.Description")
         };
     }
 
@@ -1163,20 +1166,20 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         yield return new SiteSelectionModeOption
         {
             Mode = SiteSelectionInputMode.MapPoint,
-            Title = "Map Point",
-            Description = "Pan, zoom, and click on the map to choose the approximate site reference."
+            Title = L("Georef.SiteMode.Map.Title"),
+            Description = L("Georef.SiteMode.Map.Description")
         };
         yield return new SiteSelectionModeOption
         {
             Mode = SiteSelectionInputMode.KnownCoordinates,
-            Title = "Known CRS Coordinates",
-            Description = "Enter explicit Easting/Northing values in the selected CRS and convert them into a geographic point for review."
+            Title = L("Georef.SiteMode.Coordinates.Title"),
+            Description = L("Georef.SiteMode.Coordinates.Description")
         };
         yield return new SiteSelectionModeOption
         {
             Mode = SiteSelectionInputMode.CurrentRevitSetup,
-            Title = "Current Revit Setup",
-            Description = "Read the current Revit Survey Point or Project Base Point, keep the current true north value, and convert that existing setup into the selected CRS."
+            Title = L("Georef.SiteMode.Current.Title"),
+            Description = L("Georef.SiteMode.Current.Description")
         };
     }
 
@@ -1185,14 +1188,14 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         yield return new AnchorTargetOption
         {
             Target = PlacementAnchorTarget.SurveyPoint,
-            Title = "Survey Point",
-            Description = "Treat the primary CRS coordinates as the intended Survey Point location for the apply step."
+            Title = L("Georef.AnchorTarget.Survey.Title"),
+            Description = L("Georef.AnchorTarget.Survey.Description")
         };
         yield return new AnchorTargetOption
         {
             Target = PlacementAnchorTarget.ProjectBasePoint,
-            Title = "Project Base Point",
-            Description = "Treat the primary CRS coordinates as the intended Project Base Point location for the apply step."
+            Title = L("Georef.AnchorTarget.Project.Title"),
+            Description = L("Georef.AnchorTarget.Project.Description")
         };
     }
 
@@ -1201,14 +1204,14 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         yield return new CaptureTargetOption
         {
             Target = ReferenceCaptureTarget.PrimaryApplyAnchor,
-            Title = "Primary Apply Anchor",
-            Description = "Capture the main point that the Revit apply step will use as its anchor."
+            Title = L("Georef.CaptureTarget.Primary.Title"),
+            Description = L("Georef.CaptureTarget.Primary.Description")
         };
         yield return new CaptureTargetOption
         {
             Target = ReferenceCaptureTarget.WorkingProjectBasePoint,
-            Title = "Working Project Base Point",
-            Description = "Capture an optional secondary Project Base Point reference for later import/export workflows."
+            Title = L("Georef.CaptureTarget.Working.Title"),
+            Description = L("Georef.CaptureTarget.Working.Description")
         };
     }
 
@@ -1318,8 +1321,8 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
     {
         return anchorTarget switch
         {
-            PlacementAnchorTarget.SurveyPoint => "Survey Point",
-            PlacementAnchorTarget.ProjectBasePoint => "Project Base Point",
+            PlacementAnchorTarget.SurveyPoint => L("Georef.AnchorTarget.Survey.Title"),
+            PlacementAnchorTarget.ProjectBasePoint => L("Georef.AnchorTarget.Project.Title"),
             _ => "Survey Point"
         };
     }
@@ -1365,6 +1368,9 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
+
+
 
 
 

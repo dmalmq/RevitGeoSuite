@@ -5,6 +5,7 @@ using System.Linq;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
+using RevitGeoSuite.SharedUI.Localization;
 
 namespace RevitGeoSuite.Georeference;
 
@@ -48,31 +49,31 @@ public sealed partial class GeoreferenceViewModel
     public bool CanSelectPrimaryAnchorTarget => IsCapturingPrimaryApplyAnchor && IsStandardWorkflowMode;
 
     public string SelectPointIntroText => IsSplitWorkflowMode
-        ? "Choose the far-away shared Survey target first, then confirm the local Project Base Point that should stay near the model."
-        : "Choose how to define the apply anchor, then use the map as the primary selection surface.";
+        ? UiLocalizer.Instance.Get("Georef.SelectPointIntro.Split")
+        : UiLocalizer.Instance.Get("Georef.SelectPointIntro.Standard");
 
-    public string ReviewPrimarySectionTitle => IsSplitWorkflowMode ? "Shared Survey Target" : "Primary Apply Anchor";
+    public string ReviewPrimarySectionTitle => IsSplitWorkflowMode ? UiLocalizer.Instance.Get("Georef.Review.PrimaryTitle.Split") : UiLocalizer.Instance.Get("Georef.Review.PrimaryTitle.Standard");
 
     public string ReviewPrimarySectionDescription => IsSplitWorkflowMode
-        ? "This point becomes the shared Survey / shared-coordinate target. It can be far away from the model because the actual Project Base Point stays local."
-        : "Check the primary apply anchor first, then confirm the optional working Project Base Point only if you intend to reuse it in later workflows.";
+        ? UiLocalizer.Instance.Get("Georef.Review.PrimaryDescription.Split")
+        : UiLocalizer.Instance.Get("Georef.Review.PrimaryDescription.Standard");
 
-    public string ReviewWorkingSectionTitle => IsSplitWorkflowMode ? "Local Project Base Point" : "Working Project Base Point";
+    public string ReviewWorkingSectionTitle => IsSplitWorkflowMode ? UiLocalizer.Instance.Get("Georef.Review.WorkingTitle.Split") : UiLocalizer.Instance.Get("Georef.Review.WorkingTitle.Standard");
 
     public string ReviewWorkingSectionDescription => IsSplitWorkflowMode
-        ? "This point is the local Project Base Point reference near the model. Split apply keeps the actual Revit Project Base Point local and aligns shared coordinates from it."
-        : "This secondary reference is optional and is stored for later workflows. It does not replace the main apply anchor.";
+        ? UiLocalizer.Instance.Get("Georef.Review.WorkingDescription.Split")
+        : UiLocalizer.Instance.Get("Georef.Review.WorkingDescription.Standard");
 
-    public string SetupIntentPrimaryLabel => IsSplitWorkflowMode ? "Shared Survey Target" : "Primary Anchor";
+    public string SetupIntentPrimaryLabel => IsSplitWorkflowMode ? UiLocalizer.Instance.Get("Georef.SetupIntent.PrimaryLabel.Split") : UiLocalizer.Instance.Get("Georef.SetupIntent.PrimaryLabel.Standard");
 
-    public string SetupIntentWorkingLabel => IsSplitWorkflowMode ? "Local Project Base Point" : "Working Project Base Point";
+    public string SetupIntentWorkingLabel => IsSplitWorkflowMode ? UiLocalizer.Instance.Get("Georef.SetupIntent.WorkingLabel.Split") : UiLocalizer.Instance.Get("Georef.SetupIntent.WorkingLabel.Standard");
 
     public string SetupIntentHelpText => IsSplitWorkflowMode
-        ? "Split apply keeps the actual Revit Project Base Point local, updates shared/project location values from that local point, and repositions the Survey Point to the selected shared target."
-        : "Choose what the apply step should change. The next screen is the final confirmation gate before any document modification.";
+        ? UiLocalizer.Instance.Get("Georef.StepDescription.SetupIntent.Split")
+        : UiLocalizer.Instance.Get("Georef.StepDescription.SetupIntent.Standard");
 
     public string SplitWorkflowSummary => IsSplitWorkflowMode
-        ? "Split mode keeps the actual Revit Project Base Point near the model and uses the Survey Point/shared coordinates for the far-away real-world CRS target."
+        ? UiLocalizer.Instance.Get("Georef.SplitWorkflowSummary")
         : "";
 
     public SplitSurveyProjectBasePointIntent GetSplitApplyIntent()
@@ -134,7 +135,7 @@ public sealed partial class GeoreferenceViewModel
         PlacementIntentValidationResult result = new PlacementIntentValidationResult();
         if (SelectedCrs is null)
         {
-            result.Errors.Add("Select a coordinate reference system before generating a split-workflow preview.");
+            result.Errors.Add(UiLocalizer.Instance.Get("Georef.Error.Preview.SelectCrs"));
         }
 
         if (SelectedPoint is null)
@@ -249,15 +250,15 @@ public sealed partial class GeoreferenceViewModel
         }
 
         return IsCapturingWorkingProjectBasePoint
-            ? "Capture or confirm the local Project Base Point near the model. Split apply keeps the actual Revit Project Base Point local and saves this same point for downstream PLATEAU and export workflows."
-            : "Capture the shared Survey target in the selected CRS. This becomes the far-away shared-coordinate origin while the actual Revit Project Base Point stays local.";
+            ? UiLocalizer.Instance.Get("Georef.SelectedCaptureDescription.SplitWorking")
+            : UiLocalizer.Instance.Get("Georef.SelectedCaptureDescription.SplitShared");
     }
 
     private string BuildSelectedAnchorTargetDescription()
     {
         if (IsSplitWorkflowMode)
         {
-            return "Split workflow always treats the primary captured point as the shared Survey target.";
+            return UiLocalizer.Instance.Get("Georef.SelectedAnchorDescription.Split");
         }
 
         return SelectedAnchorTargetOption?.Description ?? string.Empty;
@@ -272,8 +273,8 @@ public sealed partial class GeoreferenceViewModel
 
         return SelectedSiteSelectionModeOption?.Mode switch
         {
-            SiteSelectionInputMode.CurrentRevitSetup when IsCapturingWorkingProjectBasePoint => "Read the current actual Revit Project Base Point into the selected CRS and use it as the local split-workflow Project Base Point.",
-            SiteSelectionInputMode.CurrentRevitSetup => "Read the current Survey Point/shared setup into the selected CRS and use it as the shared survey target.",
+            SiteSelectionInputMode.CurrentRevitSetup when IsCapturingWorkingProjectBasePoint => UiLocalizer.Instance.Get("Georef.SelectedSiteDescription.SplitCurrentWorking"),
+            SiteSelectionInputMode.CurrentRevitSetup => UiLocalizer.Instance.Get("Georef.SelectedSiteDescription.SplitCurrentSurvey"),
             _ => SelectedSiteSelectionModeOption?.Description ?? string.Empty
         };
     }
@@ -283,17 +284,20 @@ public sealed partial class GeoreferenceViewModel
         yield return new WorkflowModeOption
         {
             Mode = GeoreferenceWorkflowMode.Standard,
-            Title = "Standard Georeference",
-            Description = "Use one primary anchor and an optional working Project Base Point. This is the existing safe V1 workflow."
+            Title = UiLocalizer.Instance.Get("Module.Georeference"),
+            Description = UiLocalizer.Instance.Get("Georef.StepDescription.Crs.Standard")
         };
 
         yield return new WorkflowModeOption
         {
             Mode = GeoreferenceWorkflowMode.SplitLocalProjectBasePointAndSharedSurvey,
-            Title = "Local Project Base Point + Shared Survey",
-            Description = "Keep the actual Revit Project Base Point local near the model, then place the Survey Point/shared coordinates at the far-away CRS target."
+            Title = UiLocalizer.Instance.Get("Georef.Review.WorkingTitle.Split") + " + " + UiLocalizer.Instance.Get("Georef.Review.PrimaryTitle.Split"),
+            Description = UiLocalizer.Instance.Get("Georef.SplitWorkflowSummary")
         };
     }
 }
+
+
+
 
 

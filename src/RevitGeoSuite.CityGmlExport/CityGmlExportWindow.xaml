@@ -33,7 +33,7 @@
         <StackPanel Margin="0,0,18,0">
           <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[App.ProductTitle]}" />
           <TextBlock Margin="0,6,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.CityGmlExport]}" />
-          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding WindowTitle}" />
+          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.WindowTitle]}" />
           <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding DocumentTitle}" />
           <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Header]}" />
         </StackPanel>
@@ -53,23 +53,23 @@
         <Border Style="{StaticResource ShellCardBorderStyle}">
           <StackPanel>
             <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Center.Scope]}" />
-            <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="Pick the 3D view, decide which loaded Revit links to include, and keep the scope intentionally narrow before preparing the export." />
+            <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.ScopeHint]}" />
 
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Visible Export View" />
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.VisibleExportView]}" />
             <ComboBox Margin="0,8,0,0"
                       ItemsSource="{Binding AvailableViewOptions}"
                       SelectedItem="{Binding SelectedViewOption, Mode=TwoWay}"
                       DisplayMemberPath="Title"
                       Visibility="{Binding HasAvailableViews, Converter={StaticResource BoolToVisibilityConverter}}" />
             <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedViewDescription}" />
-            <TextBlock Margin="0,8,0,0" Foreground="#8A2D2D" Text="No non-template 3D view is available in the current document." Visibility="{Binding HasNoAvailableViews, Converter={StaticResource BoolToVisibilityConverter}}" TextWrapping="Wrap" />
+            <TextBlock Margin="0,8,0,0" Foreground="#8A2D2D" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.NoView]}" Visibility="{Binding HasNoAvailableViews, Converter={StaticResource BoolToVisibilityConverter}}" TextWrapping="Wrap" />
 
             <Expander Margin="0,18,0,0" IsExpanded="True">
               <Expander.Header>
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Include Linked Revit Models" />
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.IncludeLinks]}" />
               </Expander.Header>
               <StackPanel Margin="0,10,0,0">
-                <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Checked linked models are exported together with the host model. Geometry still follows the selected host 3D view, so hidden links contribute nothing." />
+                <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.IncludeLinksHint]}" />
                 <ScrollViewer Margin="0,10,0,0" MaxHeight="220" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasLinkedModelOptions, Converter={StaticResource BoolToVisibilityConverter}}">
                   <ItemsControl ItemsSource="{Binding LinkedModelOptions}">
                     <ItemsControl.ItemTemplate>
@@ -84,7 +84,7 @@
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
                 </ScrollViewer>
-                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="No loaded Revit links were found. The export will use only the host model." Visibility="{Binding HasNoLinkedModelOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.NoLinks]}" Visibility="{Binding HasNoLinkedModelOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
                 <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding LinkedModelSummary}" />
               </StackPanel>
             </Expander>
@@ -101,7 +101,7 @@
           <Border Grid.Column="0" Style="{StaticResource ShellCardBorderStyle}">
             <StackPanel>
               <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Center.Prepared]}" />
-              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="Prepare Export extracts geometry, resolves semantic mapping, and builds the lightweight CityGML package before anything is written to disk." />
+              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.PreparedHint]}" />
               <ItemsControl ItemsSource="{Binding PreparedRows}" Visibility="{Binding HasPreparedRows, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -116,14 +116,14 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Prepare Export to inspect the summary before writing files." Visibility="{Binding HasNoPreparedRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.NoPrepared]}" Visibility="{Binding HasNoPreparedRows, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Border>
 
           <Border Grid.Column="2" Style="{StaticResource ShellCardBorderStyle}">
             <StackPanel>
               <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Center.Validation]}" />
-              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="Blocking validation errors keep export disabled. Warnings remain visible in the summary so the expected risk is obvious before you write files." />
+              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.ValidationHint]}" />
               <ItemsControl ItemsSource="{Binding ValidationMessages}" Visibility="{Binding HasValidationMessages, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -133,7 +133,7 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No validation messages are available until the export package has been prepared." Visibility="{Binding HasNoValidationMessages, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.NoValidation]}" Visibility="{Binding HasNoValidationMessages, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Border>
         </Grid>
@@ -141,7 +141,7 @@
         <Border Style="{StaticResource ShellCardBorderStyle}">
           <StackPanel>
             <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Center.Features]}" />
-            <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="This preview list shows the first semantic features that will be written to the CityGML package." />
+            <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.FeaturesHint]}" />
             <ItemsControl ItemsSource="{Binding FeatureNames}" Visibility="{Binding HasFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -151,7 +151,7 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No prepared feature list is available until the export package has been prepared." Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.NoFeatures]}" Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
           </StackPanel>
         </Border>
       </StackPanel>
@@ -210,7 +210,7 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No CityGML export has been recorded in module state yet." Visibility="{Binding HasNoLastExportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.NoLastExport]}" Visibility="{Binding HasNoLastExportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Expander>
 
@@ -219,7 +219,7 @@
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Sidebar.Advanced]}" />
             </Expander.Header>
             <StackPanel Margin="0,12,0,0">
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Target Profile" />
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.TargetProfile]}" />
               <ComboBox Margin="0,8,0,0"
                         ItemsSource="{Binding SchemaVersionOptions}"
                         SelectedItem="{Binding SelectedSchemaVersionOption, Mode=TwoWay}"
@@ -228,20 +228,20 @@
 
               <Expander Margin="0,16,0,0" IsExpanded="False">
                 <Expander.Header>
-                  <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Optional Codelist Overrides" />
+                  <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.CodelistOverrides]}" />
                 </Expander.Header>
                 <StackPanel Margin="0,12,0,0">
-                  <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Leave these blank to use the lightweight defaults. Fill them only when you already know the intended semantic code." />
-                  <TextBlock Margin="0,12,0,0" Text="Building Function Code" />
+                  <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.CodelistHint]}" />
+                  <TextBlock Margin="0,12,0,0" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.BuildingFunctionCode]}" />
                   <TextBox Margin="0,4,0,0" Text="{Binding BuildingCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                  <TextBlock Margin="0,12,0,0" Text="Road Function Code" />
+                  <TextBlock Margin="0,12,0,0" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.RoadFunctionCode]}" />
                   <TextBox Margin="0,4,0,0" Text="{Binding RoadCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                  <TextBlock Margin="0,12,0,0" Text="Vegetation Function Code" />
+                  <TextBlock Margin="0,12,0,0" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.VegetationFunctionCode]}" />
                   <TextBox Margin="0,4,0,0" Text="{Binding VegetationCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 </StackPanel>
               </Expander>
 
-              <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="Output Folder" />
+              <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.OutputFolder]}" />
               <Grid Margin="0,8,0,0">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
@@ -251,7 +251,7 @@
                 <TextBox Grid.Column="0" Text="{Binding OutputDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 <Button Grid.Column="2" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Browse]}" Click="OnBrowseOutputClick" />
               </Grid>
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="The export writes city-model.gml into the selected folder and keeps module-specific state separate from GeoProjectInfo." />
+              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.OutputHint]}" />
             </StackPanel>
           </Expander>
         </StackPanel>
@@ -267,6 +267,7 @@
     </Border>
   </Grid>
 </Window>
+
 
 
 

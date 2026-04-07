@@ -38,7 +38,7 @@
         <StackPanel Margin="0,0,18,0">
           <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[App.ProductTitle]}" />
           <TextBlock Margin="0,6,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.Tiles3DExport]}" />
-          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding WindowTitle}" />
+          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.WindowTitle]}" />
           <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding DocumentTitle}" />
           <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Header]}" />
         </StackPanel>
@@ -58,8 +58,8 @@
         <Border Style="{StaticResource ShellCardBorderStyle}">
           <StackPanel>
             <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Center.Scope]}" />
-            <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="Keep the 3D Tiles package focused and lightweight. Pick the level of detail and output location before preparing the bundle." />
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Level Of Detail" />
+            <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.ScopeHint]}" />
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.LevelOfDetail]}" />
             <ComboBox Margin="0,8,0,0"
                       ItemsSource="{Binding LevelOfDetailOptions}"
                       SelectedItem="{Binding SelectedLevelOfDetailOption, Mode=TwoWay}"
@@ -78,7 +78,7 @@
           <Border Grid.Column="0" Style="{StaticResource ShellCardBorderStyle}">
             <StackPanel>
               <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Center.Prepared]}" />
-              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="Prepare Export extracts model geometry, applies the chosen LOD, and packages the viewer-facing metadata before anything is written to disk." />
+              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.PreparedHint]}" />
               <ItemsControl ItemsSource="{Binding PreparedRows}" Visibility="{Binding HasPreparedRows, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -93,14 +93,14 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Prepare Export to inspect the bundle summary before writing files." Visibility="{Binding HasNoPreparedRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.NoPrepared]}" Visibility="{Binding HasNoPreparedRows, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Border>
 
           <Border Grid.Column="2" Style="{StaticResource ShellCardBorderStyle}">
             <StackPanel>
               <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Center.Elements]}" />
-              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="This list previews the first prepared elements that will be written to the lightweight GLB package." />
+              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.ElementsHint]}" />
               <ItemsControl ItemsSource="{Binding FeatureNames}" Visibility="{Binding HasFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -110,7 +110,7 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No prepared element list is available until the export package has been prepared." Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.NoElements]}" Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Border>
         </Grid>
@@ -170,7 +170,7 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No 3D Tiles export has been recorded in module state yet." Visibility="{Binding HasNoLastExportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.NoLastExport]}" Visibility="{Binding HasNoLastExportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Expander>
 
@@ -179,7 +179,7 @@
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Sidebar.Advanced]}" />
             </Expander.Header>
             <StackPanel Margin="0,12,0,0">
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Output Folder" />
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.OutputFolder]}" />
               <Grid Margin="0,8,0,0">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
@@ -189,7 +189,7 @@
                 <TextBox Grid.Column="0" Text="{Binding OutputDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 <Button Grid.Column="2" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Browse]}" Click="OnBrowseOutputClick" />
               </Grid>
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="The export writes tileset.json and content.glb into the selected folder." />
+              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.OutputHint]}" />
             </StackPanel>
           </Expander>
         </StackPanel>
@@ -205,6 +205,7 @@
     </Border>
   </Grid>
 </Window>
+
 
 
 

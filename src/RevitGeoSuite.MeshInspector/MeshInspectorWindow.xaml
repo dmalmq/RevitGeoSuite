@@ -39,7 +39,7 @@
         <StackPanel Margin="0,0,18,0">
           <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[App.ProductTitle]}" />
           <TextBlock Margin="0,6,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.MeshInspector]}" />
-          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding WindowTitle}" />
+          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Mesh.WindowTitle]}" />
           <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding DocumentTitle}" />
           <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Mesh.Header]}" />
         </StackPanel>
@@ -74,7 +74,7 @@
             <ColumnDefinition Width="220" />
           </Grid.ColumnDefinitions>
           <StackPanel Grid.Column="0">
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Reference Source" />
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Mesh.ReferenceSource]}" />
             <ComboBox Margin="0,8,12,0"
                       ItemsSource="{Binding ReferenceSourceOptions}"
                       SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
@@ -98,7 +98,7 @@
             </Grid.RowDefinitions>
             <StackPanel Margin="18,18,18,0">
               <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Mesh.Center.Map]}" />
-              <TextBlock Margin="0,8,0,12" Style="{StaticResource BodyMutedTextStyle}" Text="The selected cell is highlighted on the shared map. Neighbor cells give quick context without forcing you to leave the mesh workflow." />
+              <TextBlock Margin="0,8,0,12" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Mesh.MapHint]}" />
             </StackPanel>
             <shared:MapControl Grid.Row="1" x:Name="MeshMap" Margin="18,0,18,18" />
           </Grid>
@@ -152,7 +152,7 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Neighbor meshes are not available until the selected reference can be resolved." Visibility="{Binding HasNoNeighborMeshCodes, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Mesh.NoNeighbors]}" Visibility="{Binding HasNoNeighborMeshCodes, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Expander>
 
@@ -160,7 +160,7 @@
             <Expander.Header>
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Mesh.Sidebar.Details]}" />
             </Expander.Header>
-            <TextBlock Margin="0,12,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="Saving is only available when the reference source is Survey Point / Canonical Origin. Project Base Point mode stays read-only so the canonical mesh key remains stable." />
+            <TextBlock Margin="0,12,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Mesh.SaveHint]}" />
           </Expander>
         </StackPanel>
       </ScrollViewer>
@@ -175,6 +175,7 @@
     </Border>
   </Grid>
 </Window>
+
 
 
 

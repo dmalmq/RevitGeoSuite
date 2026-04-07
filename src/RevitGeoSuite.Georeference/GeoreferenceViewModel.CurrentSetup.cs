@@ -1,6 +1,7 @@
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.Core.Workflow;
+using RevitGeoSuite.SharedUI.Localization;
 
 namespace RevitGeoSuite.Georeference;
 
@@ -31,10 +32,10 @@ public sealed partial class GeoreferenceViewModel
     public bool CanUseCurrentRevitSetup => SelectedCrs is not null && TryResolveCurrentRevitSetupLocation(out _, out _, out _, out _);
 
     public string CurrentRevitSetupButtonText => IsCapturingWorkingProjectBasePoint
-        ? "Refresh Current Project Base Point"
+        ? UiLocalizer.Instance.Get("Georef.CurrentSetup.RefreshProject")
         : ResolvePrimaryAnchorTarget() == PlacementAnchorTarget.ProjectBasePoint
-            ? "Refresh Current Project Base Point"
-            : "Refresh Current Survey Point";
+            ? UiLocalizer.Instance.Get("Georef.CurrentSetup.RefreshProject")
+            : UiLocalizer.Instance.Get("Georef.CurrentSetup.RefreshSurvey");
 
     public string CurrentRevitSetupHint => BuildCurrentRevitSetupHint();
 
@@ -42,7 +43,7 @@ public sealed partial class GeoreferenceViewModel
     {
         if (SelectedCrs is null)
         {
-            CurrentRevitSetupErrorMessage = "Select a coordinate reference system before reading the current Revit setup.";
+            CurrentRevitSetupErrorMessage = UiLocalizer.Instance.Get("Georef.CurrentSetup.Error.SelectCrs");
             return false;
         }
 
@@ -93,16 +94,16 @@ public sealed partial class GeoreferenceViewModel
         PlacementAnchorTarget anchorTarget = ResolvePrimaryAnchorTarget();
         if (anchorTarget == PlacementAnchorTarget.ProjectBasePoint)
         {
-            return TryBuildCurrentRevitProjectBasePoint("Read from current Revit Project Base Point and project location", anchorTarget, out point);
+            return TryBuildCurrentRevitProjectBasePoint(UiLocalizer.Instance.Get("Georef.CurrentSetup.Source.Project"), anchorTarget, out point);
         }
 
-        return TryBuildCurrentRevitSurveyPoint("Read from current Revit Survey Point and project location", out point);
+        return TryBuildCurrentRevitSurveyPoint(UiLocalizer.Instance.Get("Georef.CurrentSetup.Source.Survey"), out point);
     }
 
     private bool TryBuildCurrentRevitWorkingProjectBasePoint(out SelectedMapPoint point)
     {
         return TryBuildCurrentRevitProjectBasePoint(
-            "Read from current Revit Project Base Point and project location for Working Project Base Point",
+            UiLocalizer.Instance.Get("Georef.CurrentSetup.Source.Working"),
             PlacementAnchorTarget.ProjectBasePoint,
             out point);
     }
@@ -155,24 +156,24 @@ public sealed partial class GeoreferenceViewModel
         string availability = CanUseCurrentRevitSetup
             ? IsSplitWorkflowMode
                 ? (IsCapturingWorkingProjectBasePoint
-                    ? "Readable current Revit Project Base Point values can be preloaded as the local split-workflow Project Base Point. Use refresh only if the Project Base Point changed while this window was open."
-                    : "Readable current Revit Survey Point values can be preloaded as the shared split-workflow Survey target. Use refresh only if the Survey Point changed while this window was open.")
-                : "Readable Survey Point, Project Base Point, and true north values from the current Revit project are preloaded automatically for review. Use the refresh button if the project location changed while the window is open."
+                    ? UiLocalizer.Instance.Get("Georef.CurrentSetup.Hint.SplitLocal")
+                    : UiLocalizer.Instance.Get("Georef.CurrentSetup.Hint.SplitSurvey"))
+                : UiLocalizer.Instance.Get("Georef.CurrentSetup.Hint.Standard")
             : BuildCurrentRevitSetupUnavailableMessage();
 
-        return availability + " Project north remains the current model-axis reference; Revit V1 does not expose a separate standalone project north angle to store here.";
+        return availability + " " + UiLocalizer.Instance.Get("Georef.CurrentSetup.ProjectNorthNote");
     }
 
     private string BuildCurrentRevitSetupUnavailableMessage()
     {
         if (IsCapturingWorkingProjectBasePoint)
         {
-            return "Current Revit Project Base Point could not be converted. Make sure the project already has a readable site/project location setup.";
+            return UiLocalizer.Instance.Get("Georef.CurrentSetup.Unavailable.Project");
         }
 
         return ResolvePrimaryAnchorTarget() == PlacementAnchorTarget.ProjectBasePoint
-            ? "Current Revit Project Base Point could not be converted. Make sure the project already has a readable site/project location setup."
-            : "Current Revit Survey Point could not be converted. Make sure the project already has a readable site/project location setup.";
+            ? UiLocalizer.Instance.Get("Georef.CurrentSetup.Unavailable.Project")
+            : UiLocalizer.Instance.Get("Georef.CurrentSetup.Unavailable.Survey");
     }
 
     private SelectedMapPoint ReprojectCapturedPoint(SelectedMapPoint point)
@@ -237,7 +238,7 @@ public sealed partial class GeoreferenceViewModel
             Longitude = longitude,
             ProjectedCoordinate = projectedCoordinate,
             SourceLabel = sourceLabel,
-            ConfidenceLabel = "Verified (read from current Revit setup)",
+            ConfidenceLabel = UiLocalizer.Instance.Get("Georef.CurrentSetup.Verified"),
             ConfidenceLevel = GeoConfidenceLevel.Verified,
             AnchorTarget = anchorTarget,
             ReprojectWithSelectedCrs = true,
@@ -253,5 +254,8 @@ public sealed partial class GeoreferenceViewModel
             && System.Math.Abs(SelectedPoint.Longitude - candidate.Longitude) < 0.0000001d;
     }
 }
+
+
+
 
 

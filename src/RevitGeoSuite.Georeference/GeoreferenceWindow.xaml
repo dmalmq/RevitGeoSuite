@@ -65,9 +65,9 @@
       <StackPanel>
         <Border Style="{StaticResource ShellCardBorderStyle}">
           <StackPanel>
-            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="Workflow Steps" />
+            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Section.WorkflowSteps]}" />
                                     <UniformGrid Margin="0,10,0,0" Columns="3">
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="CurrentState" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToCurrentState}" ToolTip="Current State">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="CurrentState" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToCurrentState}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.CurrentState]}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -85,7 +85,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ChooseCrs" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToChooseCrs}" ToolTip="Choose CRS">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ChooseCrs" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToChooseCrs}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Crs]}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -103,7 +103,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SelectPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSelectPoint}" ToolTip="Site Reference">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SelectPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSelectPoint}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.SiteReference]}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -121,7 +121,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ReviewPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToReviewPoint}" ToolTip="Review">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ReviewPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToReviewPoint}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Review]}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -139,7 +139,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SetupIntent" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSetupIntent}" ToolTip="Intent">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SetupIntent" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSetupIntent}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Intent]}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -157,7 +157,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="Preview" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToPreview}" ToolTip="Preview">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="Preview" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToPreview}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Preview]}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -193,7 +193,7 @@
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
               <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Workflow Mode" />
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.WorkflowMode]}" />
                 <ComboBox Margin="0,8,0,0"
                           ItemsSource="{Binding WorkflowModeOptions}"
                           SelectedItem="{Binding SelectedWorkflowModeOption, Mode=TwoWay}"
@@ -206,7 +206,7 @@
             <Border Style="{StaticResource StatusPillBorderStyle}" Visibility="{Binding IsSplitWorkflowMode, Converter={StaticResource BoolToVisibilityConverter}}">
               <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SplitWorkflowSummary}" TextWrapping="Wrap" />
             </Border>
-            <TextBlock Margin="0,12,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="V1 works with project location and true north. It does not rotate building geometry directly." />
+            <TextBlock Margin="0,12,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.V1Note]}" />
             <ItemsControl Margin="0,14,0,0" ItemsSource="{Binding CurrentStateRows}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -241,14 +241,14 @@
                 <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectPointIntroText}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Capture Target" />
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.CaptureTarget]}" />
                 <ComboBox Margin="0,8,0,0"
                           ItemsSource="{Binding CaptureTargetOptions}"
                           SelectedItem="{Binding SelectedCaptureTargetOption, Mode=TwoWay}"
                           DisplayMemberPath="Title" />
               </StackPanel>
               <StackPanel Grid.Column="2">
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Selection Method" />
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.SelectionMethod]}" />
                 <ComboBox Margin="0,8,0,0"
                           ItemsSource="{Binding SiteSelectionModeOptions}"
                           SelectedItem="{Binding SelectedSiteSelectionModeOption, Mode=TwoWay}"
@@ -280,7 +280,7 @@
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
                   <StackPanel Grid.Column="0" Margin="0,0,12,0" Visibility="{Binding CanSelectPrimaryAnchorTarget, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Primary Anchor Target" />
+                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.PrimaryAnchorTarget]}" />
                     <ComboBox Margin="0,8,0,0"
                               ItemsSource="{Binding AnchorTargetOptions}"
                               SelectedItem="{Binding SelectedAnchorTargetOption, Mode=TwoWay}"
@@ -317,15 +317,15 @@
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
                   <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Easting (m)" />
+                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.EastingMeters]}" />
                     <TextBox Margin="0,8,0,0" Text="{Binding KnownCoordinateEastingInput, UpdateSourceTrigger=PropertyChanged}" />
                   </StackPanel>
                   <StackPanel Grid.Column="1" Margin="0,0,10,0">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Northing (m)" />
+                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.NorthingMeters]}" />
                     <TextBox Margin="0,8,0,0" Text="{Binding KnownCoordinateNorthingInput, UpdateSourceTrigger=PropertyChanged}" />
                   </StackPanel>
                   <StackPanel Grid.Column="2" Margin="0,0,12,0" Visibility="{Binding CanSelectPrimaryAnchorTarget, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Primary Anchor Target" />
+                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.PrimaryAnchorTarget]}" />
                     <ComboBox Margin="0,8,0,0"
                               ItemsSource="{Binding AnchorTargetOptions}"
                               SelectedItem="{Binding SelectedAnchorTargetOption, Mode=TwoWay}"
@@ -341,11 +341,11 @@
                              Margin="14,0,0,0"
                              VerticalAlignment="Center"
                              Style="{StaticResource BodyMutedTextStyle}"
-                             Text="Enter normalized Easting / Northing in the selected CRS. For EPSG:6677, the natural origin is Easting 0, Northing 0."
+                             Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.KnownCoordinatesHint]}"
                              TextWrapping="Wrap" />
                 </Grid>
                 <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedAnchorTargetDescription}" Visibility="{Binding CanSelectPrimaryAnchorTarget, Converter={StaticResource BoolToVisibilityConverter}}" />
-                <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="Working Project Base Point entries are saved as a secondary reference for later workflows." Visibility="{Binding IsCapturingWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.WorkingPointSavedHint]}" Visibility="{Binding IsCapturingWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
               </StackPanel>
             </Border>
 
@@ -361,7 +361,7 @@
                        Height="34"
                        VerticalContentAlignment="Center"
                        KeyDown="OnMapSearchKeyDown"
-                       ToolTip="Search by Japanese place/address or paste latitude, longitude." />
+                       ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.MapSearchTooltip]}" />
               <Button Grid.Column="1" Margin="8,0,0,0" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Search]}" Click="OnMapSearchClick" />
               <Button Grid.Column="2"
                       Margin="8,0,0,0"
@@ -377,7 +377,7 @@
                       IsEnabled="{Binding HasProjectBasePointLocation}" />
             </Grid>
             <Border Margin="0,0,0,8" Style="{StaticResource StatusPillBorderStyle}">
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Blue ring = Survey Point, amber ring = Project Base Point, and the red pin marks the current workflow selection." TextWrapping="Wrap" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.MapMarkerLegend]}" TextWrapping="Wrap" />
             </Border>
             <shared:MapControl x:Name="SiteMap" Height="560" MapPointSelected="OnMapPointSelected" />
           </StackPanel>
@@ -385,7 +385,7 @@
 
         <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsReviewPointStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
           <StackPanel>
-            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="Review Selected References" />
+            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Section.ReviewSelectedReferences]}" />
             <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReviewPrimarySectionDescription}" />
             <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding ReviewPrimarySectionTitle}" />
             <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding SelectedPointRows}">
@@ -421,16 +421,16 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No working Project Base Point selected for this run." Visibility="{Binding HasNoWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.NoWorkingPointRun]}" Visibility="{Binding HasNoWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
               </StackPanel>
             </Border>
             
             <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding CanShowActualProjectBasePointMoveSection, Converter={StaticResource BoolToVisibilityConverter}}">
               <StackPanel>
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Advanced: Align Actual Project Base Point (Local Only)" />
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.AdvancedAlignPbp]}" />
                 <TextBlock Margin="0,8,0,12"
                            Style="{StaticResource BodyMutedTextStyle}"
-                           Text="Use the captured Working Project Base Point to align the actual Revit Project Base Point only when the required local move stays within Revit's distance limit. Survey/shared coordinates stay fixed, and far-away targets should keep using the saved Working Project Base Point for later workflows."
+                           Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.AdvancedAlignPbpHint]}"
                            TextWrapping="Wrap" />
                 <Border Style="{StaticResource WarningBorderStyle}"
                         Visibility="{Binding HasActualProjectBasePointMoveWarningMessage, Converter={StaticResource BoolToVisibilityConverter}}">
@@ -452,7 +452,7 @@
                 </ItemsControl>
                 <TextBlock Margin="0,10,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ActualProjectBasePointMoveStatusMessage}" TextWrapping="Wrap" />
                 <Button HorizontalAlignment="Left"
-                        Content="Align Actual Project Base Point..."
+                        Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.AdvancedAlignPbpButton]}"
                         Click="OnMoveActualProjectBasePointClick"
                         IsEnabled="{Binding CanMoveActualProjectBasePoint}" />
               </StackPanel>
@@ -475,26 +475,26 @@
                 <ColumnDefinition Width="240" />
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
-              <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="Selected CRS" />
+              <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Label.SelectedCrs]}" />
               <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SelectedCrsSummary}" />
               <TextBlock Grid.Row="1" Margin="0,10,0,0" Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding SetupIntentPrimaryLabel}" />
               <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SelectedPointSummary}" />
               <TextBlock Grid.Row="2" Margin="0,10,0,0" Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding SetupIntentWorkingLabel}" />
               <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,10,0,0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding WorkingProjectBasePointSummary}" />
             </Grid>
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Setup Intent" />
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Section.SetupIntent]}" />
             <ComboBox Margin="0,8,0,0"
                       ItemsSource="{Binding AvailableApplyModeOptions}"
                       SelectedItem="{Binding SelectedApplyModeOption, Mode=TwoWay}"
                       DisplayMemberPath="Title" />
             <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedApplyModeDescription}" />
-            <TextBlock Margin="0,18,0,0" Style="{StaticResource CardTitleTextStyle}" Text="Setup Source Note" />
+            <TextBlock Margin="0,18,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.SetupSourceNote]}" />
             <TextBox Margin="0,8,0,0" Text="{Binding SetupSource, UpdateSourceTrigger=PropertyChanged}" />
-            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="This note becomes the provenance summary for the apply step and stored metadata. In split mode it also documents why the actual Project Base Point stays local while the Survey Point carries the shared target." />
+            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.SetupSourceNoteHint]}" />
             <StackPanel Margin="0,18,0,0" Visibility="{Binding RequiresTrueNorthAngleInput, Converter={StaticResource BoolToVisibilityConverter}}">
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="True North Angle (degrees)" />
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.TrueNorthAngleDegrees]}" />
               <TextBox Margin="0,8,0,0" Width="180" Text="{Binding TrueNorthAngleInput, UpdateSourceTrigger=PropertyChanged}" />
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="V1 adjusts the true north reference only. It does not rotate the model geometry itself." />
+              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.TrueNorthAngleHint]}" />
             </StackPanel>
           </StackPanel>
         </Border>
@@ -519,8 +519,8 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
-                  <TextBlock Grid.Column="1" Style="{StaticResource CardTitleTextStyle}" Text="Current" />
-                  <TextBlock Grid.Column="2" Style="{StaticResource CardTitleTextStyle}" Text="Proposed" />
+                  <TextBlock Grid.Column="1" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.Current]}" />
+                  <TextBlock Grid.Column="2" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.Proposed]}" />
                 </Grid>
                 <ItemsControl ItemsSource="{Binding PreviewFields}">
                   <ItemsControl.ItemTemplate>
@@ -540,7 +540,7 @@
                 </ItemsControl>
               </StackPanel>
             </Border>
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="What Will Change" />
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.WhatWillChange]}" />
             <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding PreviewWhatWillChange}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -549,7 +549,7 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="What Will Not Change" />
+            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.WhatWillNotChange]}" />
             <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding PreviewWhatWillNotChange}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -558,11 +558,11 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="Persistence Summary" />
+            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.PersistenceSummary]}" />
             <TextBlock Margin="0,8,0,0" Text="{Binding PreviewPersistenceSummary}" TextWrapping="Wrap" />
-            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="Impact Summary" />
+            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.ImpactSummary]}" />
             <TextBlock Margin="0,8,0,0" Text="{Binding PreviewChangeImpactSummary}" TextWrapping="Wrap" />
-            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="Confidence / Provenance" />
+            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.ConfidenceProvenance]}" />
             <TextBlock Margin="0,8,0,0" Text="{Binding PreviewConfidenceSummary}" TextWrapping="Wrap" />
 
             <Border Margin="0,16,0,0" Style="{StaticResource WarningBorderStyle}">
@@ -639,7 +639,7 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="No working Project Base Point selected yet." Visibility="{Binding HasNoWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.NoWorkingPointYet]}" Visibility="{Binding HasNoWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Expander>
 
@@ -678,6 +678,8 @@
     </Border>
   </Grid>
 </Window>
+
+
 
 
 
