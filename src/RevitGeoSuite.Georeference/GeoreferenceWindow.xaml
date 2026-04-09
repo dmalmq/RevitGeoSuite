@@ -103,7 +103,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SelectPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSelectPoint}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.SiteReference]}">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SelectPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSelectPoint}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.SiteReference]}" Visibility="{Binding IsNotQuickSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -121,7 +121,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ReviewPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToReviewPoint}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Review]}">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ReviewPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToReviewPoint}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Review]}" Visibility="{Binding IsNotQuickSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -139,7 +139,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SetupIntent" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSetupIntent}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Intent]}">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SetupIntent" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSetupIntent}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Intent]}" Visibility="{Binding IsNotQuickSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -225,7 +225,33 @@
         </Border>
 
         <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsChooseCrsStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
-          <shared:CrsPickerControl AvailableDefinitions="{Binding AvailableCrs}" SelectedDefinition="{Binding SelectedCrs, Mode=TwoWay}" />
+          <StackPanel>
+            <shared:CrsPickerControl AvailableDefinitions="{Binding AvailableCrs}" SelectedDefinition="{Binding SelectedCrs, Mode=TwoWay}" />
+            <Border Margin="0,14,0,0" Padding="14" Background="#FFF8F0" BorderBrush="#E8D5B8" BorderThickness="1" CornerRadius="6" Visibility="{Binding IsQuickSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.StepTitle.CrsAndCoordinates]}" />
+                <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding QuickSetupCoordinateHint}" TextWrapping="Wrap" />
+                <Border Margin="0,8,0,0" Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasKnownCoordinateErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <TextBlock Text="{Binding KnownCoordinateErrorMessage}" TextWrapping="Wrap" />
+                </Border>
+                <Grid Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="200" />
+                    <ColumnDefinition Width="200" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.EastingLabel]}" />
+                    <TextBox Margin="0,8,0,0" Text="{Binding KnownCoordinateEastingInput, UpdateSourceTrigger=PropertyChanged}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.NorthingLabel]}" />
+                    <TextBox Margin="0,8,0,0" Text="{Binding KnownCoordinateNorthingInput, UpdateSourceTrigger=PropertyChanged}" />
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
         </Border>
 
                 <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsSelectPointStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">

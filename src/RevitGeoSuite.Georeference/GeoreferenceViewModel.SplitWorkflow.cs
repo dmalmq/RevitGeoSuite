@@ -30,6 +30,7 @@ public sealed partial class GeoreferenceViewModel
             selectedWorkflowModeOption = value;
             EnsureValidApplyModeSelectionForCurrentWorkflow();
             InitializeSplitWorkflowDefaults();
+            InitializeQuickSetupDefaults();
             InvalidatePreview();
             RefreshSetupIntentValidation();
             RaiseWorkflowModeProperties();
@@ -38,7 +39,7 @@ public sealed partial class GeoreferenceViewModel
 
     public bool IsSplitWorkflowMode => SelectedWorkflowModeOption?.Mode == GeoreferenceWorkflowMode.SplitLocalProjectBasePointAndSharedSurvey;
 
-    public bool IsStandardWorkflowMode => !IsSplitWorkflowMode;
+    public bool IsStandardWorkflowMode => !IsSplitWorkflowMode && !IsQuickSetupMode;
 
     public IEnumerable<ApplyModeOption> AvailableApplyModeOptions => IsSplitWorkflowMode
         ? ApplyModeOptions.Where(option => option.Mode != PlacementApplyMode.MetadataOnly)
@@ -104,7 +105,7 @@ public sealed partial class GeoreferenceViewModel
             return;
         }
 
-        if (IsSplitWorkflowMode && SelectedApplyModeOption.Mode == PlacementApplyMode.MetadataOnly)
+        if ((IsSplitWorkflowMode || IsQuickSetupMode) && SelectedApplyModeOption.Mode == PlacementApplyMode.MetadataOnly)
         {
             selectedApplyModeOption = ApplyModeOptions.First(option => option.Mode == PlacementApplyMode.ProjectLocation);
             RaisePropertyChanged(nameof(SelectedApplyModeOption));
@@ -216,6 +217,7 @@ public sealed partial class GeoreferenceViewModel
         RaisePropertyChanged(nameof(SelectedWorkflowModeDescription));
         RaisePropertyChanged(nameof(IsSplitWorkflowMode));
         RaisePropertyChanged(nameof(IsStandardWorkflowMode));
+        RaiseQuickSetupProperties();
         RaisePropertyChanged(nameof(AvailableApplyModeOptions));
         RaisePropertyChanged(nameof(CanSelectPrimaryAnchorTarget));
         RaisePropertyChanged(nameof(SelectPointIntroText));
@@ -281,6 +283,13 @@ public sealed partial class GeoreferenceViewModel
 
     private static IEnumerable<WorkflowModeOption> CreateWorkflowModeOptions()
     {
+        yield return new WorkflowModeOption
+        {
+            Mode = GeoreferenceWorkflowMode.QuickSetup,
+            Title = UiLocalizer.Instance.Get("Georef.QuickSetup.Title"),
+            Description = UiLocalizer.Instance.Get("Georef.QuickSetup.Description")
+        };
+
         yield return new WorkflowModeOption
         {
             Mode = GeoreferenceWorkflowMode.Standard,

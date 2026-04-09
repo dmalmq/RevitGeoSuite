@@ -29,8 +29,9 @@ public sealed class Tiles3DExportCoordinator
     public Tiles3DExportPreparationResult Prepare(
         IDocumentHandle document,
         Tiles3DExportReferenceContext referenceContext,
-        Tiles3DLevelOfDetail levelOfDetail)
+        Tiles3DExportScopeSelection scope)
     {
+        Tiles3DLevelOfDetail levelOfDetail = Tiles3DLevelOfDetail.Fine;
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
         Document revitDocument = handle.Document;
@@ -40,11 +41,16 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("3D Tiles export is not supported in family documents.");
         }
 
-        IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext);
+        if (scope.ScopeMode == Tiles3DExportScopeMode.Selected3DView && !scope.HasSelectedView)
+        {
+            throw new InvalidOperationException("Select a non-template 3D view before preparing 3D Tiles export from a selected view.");
+        }
+
+        IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext, scope);
         IReadOnlyCollection<Tiles3DMeshPrimitive> simplified = geometrySimplifier.Simplify(extracted, levelOfDetail);
         if (simplified.Count == 0)
         {
-            throw new InvalidOperationException("No exportable model geometry was found for the selected 3D Tiles reference context.");
+            throw new InvalidOperationException("No exportable model geometry was found for the selected 3D Tiles scope.");
         }
 
         Tiles3DExportPackage package = new Tiles3DExportPackage
@@ -61,9 +67,9 @@ public sealed class Tiles3DExportCoordinator
         return new Tiles3DExportPreparationResult
         {
             Package = package,
-            PreparedRows = BuildPreparedRows(package),
+            PreparedRows = BuildPreparedRows(package, scope),
             FeatureNames = BuildFeatureNames(package),
-            StatusMessage = $"Prepared {package.ElementCount} exportable elements and {package.TriangleCount} triangles for 3D Tiles export using {referenceContext.Title}."
+            StatusMessage = BuildStatusMessage(package, scope)
         };
     }
 
@@ -72,6 +78,7 @@ public sealed class Tiles3DExportCoordinator
         Tiles3DExportPackage package,
         string outputDirectory,
         Tiles3DExportReferenceSource referenceSource,
+        Tiles3DExportScopeSelection scope,
         Tiles3DExportState? existingState)
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle
@@ -83,8 +90,13 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("3D Tiles export is not supported in family documents.");
         }
 
+        if (scope.ScopeMode == Tiles3DExportScopeMode.Selected3DView && !scope.HasSelectedView)
+        {
+            throw new InvalidOperationException("Select a non-template 3D view before exporting 3D Tiles from a selected view.");
+        }
+
         (string tilesetPath, string contentPath) = packageWriter.Write(outputDirectory, package);
-        Tiles3DExportState updatedState = BuildUpdatedState(existingState, outputDirectory, package, referenceSource);
+        Tiles3DExportState updatedState = BuildUpdatedState(existingState, outputDirectory, package, referenceSource, scope);
         bool statePersisted = false;
 
         if (!revitDocument.IsReadOnly)
@@ -115,7 +127,8 @@ public sealed class Tiles3DExportCoordinator
         Tiles3DExportState? existingState,
         string outputDirectory,
         Tiles3DExportPackage package,
-        Tiles3DExportReferenceSource referenceSource)
+        Tiles3DExportReferenceSource referenceSource,
+        Tiles3DExportScopeSelection scope)
     {
         return new Tiles3DExportState
         {
@@ -123,6 +136,11 @@ public sealed class Tiles3DExportCoordinator
             LastLodSetting = package.LevelOfDetail.ToString(),
             LastExportDateUtc = DateTime.UtcNow,
             LastReferenceSource = referenceSource,
+            LastScopeMode = scope.ScopeMode,
+            LastViewUniqueId = scope.SelectedView?.UniqueId ?? existingState?.LastViewUniqueId ?? string.Empty,
+            LastViewName = scope.SelectedView?.Title ?? existingState?.LastViewName ?? string.Empty,
+            LastSelectedLinkUniqueIds = scope.SelectedLinkedModels.Select(option => option.UniqueId).ToList(),
+            LastSelectedLinkNames = scope.SelectedLinkedModels.Select(option => option.Title).ToList(),
             LastExportedElementCount = package.ElementCount,
             LastExportedTriangleCount = package.TriangleCount
         };
@@ -133,7 +151,12 @@ public sealed class Tiles3DExportCoordinator
         string persistenceText = statePersisted
             ? "The export state was saved in module storage separately from GeoProjectInfo."
             : "The export state was not saved because the Revit document is read-only.";
-        return $"Exported {package.ElementCount} elements and {package.TriangleCount} triangles to '{state.LastExportPath}' using {state.LastLodSetting} LOD and {FormatReferenceSource(state.LastReferenceSource)}. {persistenceText}";
+        return $"Exported {package.ElementCount} elements and {package.TriangleCount} triangles to '{state.LastExportPath}' using {FormatReferenceSource(state.LastReferenceSource)} from {BuildScopeSummary(state.LastScopeMode, state.LastViewName)} with {BuildLinkSummary(state.LastSelectedLinkNames)}. {persistenceText}";
+    }
+
+    private static string BuildStatusMessage(Tiles3DExportPackage package, Tiles3DExportScopeSelection scope)
+    {
+        return $"Prepared {package.ElementCount} exportable elements and {package.TriangleCount} triangles for 3D Tiles export from {BuildScopeSummary(scope.ScopeMode, scope.SelectedView?.Title)} with {BuildLinkSummary(scope.SelectedLinkedModelNames)} using {package.ReferenceContext.Title}.";
     }
 
     private static string FormatReferenceSource(Tiles3DExportReferenceSource referenceSource)
@@ -141,6 +164,44 @@ public sealed class Tiles3DExportCoordinator
         return referenceSource == Tiles3DExportReferenceSource.WorkingProjectBasePoint
             ? "Working Project Base Point"
             : "Canonical Origin";
+    }
+
+    private static string FormatScopeMode(Tiles3DExportScopeMode scopeMode)
+    {
+        return scopeMode == Tiles3DExportScopeMode.Selected3DView
+            ? "Selected 3D View"
+            : "Whole Host Model";
+    }
+
+    private static string BuildScopeSummary(Tiles3DExportScopeMode scopeMode, string? viewName)
+    {
+        if (scopeMode != Tiles3DExportScopeMode.Selected3DView)
+        {
+            return "the whole host model";
+        }
+
+        return string.IsNullOrWhiteSpace(viewName)
+            ? "the selected 3D view"
+            : $"view '{viewName}'";
+    }
+
+    private static string BuildLinkSummary(IEnumerable<string> linkNames)
+    {
+        string[] names = linkNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (names.Length == 0)
+        {
+            return "host model only";
+        }
+
+        if (names.Length <= 3)
+        {
+            return string.Join(", ", names);
+        }
+
+        return string.Join(", ", names.Take(3)) + $" (+{names.Length - 3} more)";
     }
 
     private static double CalculateGeometricError(IReadOnlyCollection<Tiles3DMeshPrimitive> meshes, Tiles3DLevelOfDetail levelOfDetail)
@@ -176,14 +237,16 @@ public sealed class Tiles3DExportCoordinator
         };
     }
 
-    private static IReadOnlyCollection<DetailRow> BuildPreparedRows(Tiles3DExportPackage package)
+    private static IReadOnlyCollection<DetailRow> BuildPreparedRows(Tiles3DExportPackage package, Tiles3DExportScopeSelection scope)
     {
         return new[]
         {
             new DetailRow("Export Reference", package.ReferenceContext.Title),
             new DetailRow("Reference CRS", $"EPSG:{package.ReferenceContext.ProjectCrs.EpsgCode}  {package.ReferenceContext.ProjectCrs.NameSnapshot}"),
             new DetailRow("Anchor Location", $"{package.ReferenceContext.AnchorLatitude:F6}, {package.ReferenceContext.AnchorLongitude:F6}, elev {package.ReferenceContext.AnchorElevationMeters:F3} m"),
-            new DetailRow("LOD", package.LevelOfDetail.ToString()),
+            new DetailRow("Source Scope", FormatScopeMode(scope.ScopeMode)),
+            new DetailRow("Source View", scope.ScopeMode == Tiles3DExportScopeMode.Selected3DView ? scope.SelectedView?.Title ?? "Not selected" : "Not required"),
+            new DetailRow("Linked Models", BuildLinkSummary(scope.SelectedLinkedModelNames)),
             new DetailRow("Exportable Elements", package.ElementCount.ToString()),
             new DetailRow("Exportable Triangles", package.TriangleCount.ToString()),
             new DetailRow("Geometric Error", package.GeometricError.ToString("F3")),
@@ -208,4 +271,3 @@ public sealed class Tiles3DExportCoordinator
         return names;
     }
 }
-

@@ -360,6 +360,12 @@ public partial class GeoreferenceWindow : Window
         {
             await SiteMap.SetMarkerAsync(ViewModel.DisplayedMapPoint.Latitude, ViewModel.DisplayedMapPoint.Longitude, "Selected Point");
         }
+
+        if (ViewModel.IsQuickSetupMode && previousStep == GeoreferenceStep.ChooseCrs && ViewModel.CurrentStep == GeoreferenceStep.Preview)
+        {
+            await RefreshContextMarkersAsync();
+            await CenterMapAsync();
+        }
     }
 
     private async Task RunMapSearchAsync()

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Moq;
 using RevitGeoSuite.Core.Storage;
 using Xunit;
@@ -14,6 +15,11 @@ public sealed class Tiles3DExportStateServiceTests
         {
             LastExportPath = @"C:\\temp\\tiles",
             LastLodSetting = "Medium",
+            LastScopeMode = Tiles3DExportScopeMode.Selected3DView,
+            LastViewUniqueId = "view-1",
+            LastViewName = "Export View",
+            LastSelectedLinkUniqueIds = new List<string> { "link-1" },
+            LastSelectedLinkNames = new List<string> { "Architectural Link" },
             LastExportedElementCount = 4,
             LastExportedTriangleCount = 12
         };

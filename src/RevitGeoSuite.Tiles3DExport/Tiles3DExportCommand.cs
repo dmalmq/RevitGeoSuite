@@ -34,7 +34,10 @@ public sealed class Tiles3DExportCommand : IExternalCommand
             currentState,
             info,
             state,
-            new Tiles3DExportReferenceResolver(coordinateTransformer));
+            new Tiles3DExportReferenceResolver(coordinateTransformer),
+            Tiles3DExportDocumentCatalog.CreateViewOptions(document),
+            Tiles3DExportDocumentCatalog.CreateLinkOptions(document),
+            document?.ActiveView is View3D activeView && !activeView.IsTemplate ? activeView.UniqueId : null);
 
         Tiles3DExportWindow window = new Tiles3DExportWindow(
             viewModel,
@@ -51,4 +54,3 @@ public sealed class Tiles3DExportCommand : IExternalCommand
         return Result.Succeeded;
     }
 }
-

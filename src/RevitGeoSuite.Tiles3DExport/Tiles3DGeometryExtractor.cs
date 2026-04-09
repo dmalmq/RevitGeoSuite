@@ -8,7 +8,10 @@ public sealed class Tiles3DGeometryExtractor
 {
     private const double FeetToMeters = 0.3048d;
 
-    public IReadOnlyCollection<Tiles3DMeshPrimitive> Extract(Document document, Tiles3DExportReferenceContext referenceContext)
+    public IReadOnlyCollection<Tiles3DMeshPrimitive> Extract(
+        Document document,
+        Tiles3DExportReferenceContext referenceContext,
+        Tiles3DExportScopeSelection scope)
     {
         if (document is null)
         {
@@ -20,8 +23,27 @@ public sealed class Tiles3DGeometryExtractor
             throw new ArgumentNullException(nameof(referenceContext));
         }
 
+        if (scope is null)
+        {
+            throw new ArgumentNullException(nameof(scope));
+        }
+
+        View3D? selectedView = ResolveSelectedView(document, scope);
         GeometryExtractionFrame frame = GeometryExtractionFrame.Create(document.ActiveProjectLocation, referenceContext);
-        Options options = new Options
+        Options hostOptions = new Options
+        {
+            IncludeNonVisibleObjects = false,
+            ComputeReferences = false
+        };
+        if (selectedView is not null)
+        {
+            hostOptions.View = selectedView;
+        }
+        else
+        {
+            hostOptions.DetailLevel = ViewDetailLevel.Fine;
+        }
+        Options linkedOptions = new Options
         {
             DetailLevel = ViewDetailLevel.Fine,
             IncludeNonVisibleObjects = false,
@@ -29,41 +51,141 @@ public sealed class Tiles3DGeometryExtractor
         };
 
         List<Tiles3DMeshPrimitive> meshes = new List<Tiles3DMeshPrimitive>();
-        FilteredElementCollector collector = new FilteredElementCollector(document).WhereElementIsNotElementType();
-        foreach (Element element in collector)
+        AppendHostMeshes(document, selectedView, hostOptions, frame, scope.ScopeMode, meshes);
+
+        foreach (Tiles3DExportLinkOption linkOption in scope.SelectedLinkedModels)
         {
-            if (!IsExportable(element))
-            {
-                continue;
-            }
-
-            GeometryElement geometry = element.get_Geometry(options);
-            if (geometry is null)
-            {
-                continue;
-            }
-
-            List<Tiles3DTriangle> triangles = new List<Tiles3DTriangle>();
-            AppendGeometry(geometry, Transform.Identity, frame, triangles);
-            if (triangles.Count == 0)
-            {
-                continue;
-            }
-
-            meshes.Add(new Tiles3DMeshPrimitive
-            {
-                Name = BuildElementName(element),
-                CategoryName = element.Category?.Name ?? "Uncategorized",
-                Triangles = triangles
-            });
+            AppendLinkedMeshes(document, selectedView, linkOption, linkedOptions, frame, scope.ScopeMode, meshes);
         }
 
         return meshes;
     }
 
+    private static View3D? ResolveSelectedView(Document document, Tiles3DExportScopeSelection scope)
+    {
+        if (scope.ScopeMode != Tiles3DExportScopeMode.Selected3DView)
+        {
+            return null;
+        }
+
+        if (!scope.HasSelectedView)
+        {
+            throw new InvalidOperationException("Select a non-template 3D view before extracting 3D Tiles geometry from a selected view.");
+        }
+
+        return document.GetElement(scope.SelectedView!.ViewId) as View3D
+            ?? throw new InvalidOperationException("The selected 3D Tiles export view could not be resolved as a 3D view.");
+    }
+
+    private static void AppendHostMeshes(
+        Document document,
+        View3D? selectedView,
+        Options options,
+        GeometryExtractionFrame frame,
+        Tiles3DExportScopeMode scopeMode,
+        List<Tiles3DMeshPrimitive> meshes)
+    {
+        FilteredElementCollector collector = scopeMode == Tiles3DExportScopeMode.Selected3DView && selectedView is not null
+            ? new FilteredElementCollector(document, selectedView.Id).WhereElementIsNotElementType()
+            : new FilteredElementCollector(document).WhereElementIsNotElementType();
+
+        foreach (Element element in collector)
+        {
+            AppendElementMesh(element, options, frame, Transform.Identity, meshes, null);
+        }
+    }
+
+    private static void AppendLinkedMeshes(
+        Document hostDocument,
+        View3D? selectedView,
+        Tiles3DExportLinkOption linkOption,
+        Options options,
+        GeometryExtractionFrame frame,
+        Tiles3DExportScopeMode scopeMode,
+        List<Tiles3DMeshPrimitive> meshes)
+    {
+        RevitLinkInstance? linkInstance = hostDocument.GetElement(linkOption.LinkInstanceId) as RevitLinkInstance;
+        if (linkInstance is null)
+        {
+            return;
+        }
+
+        Document? linkDocument = linkInstance.GetLinkDocument();
+        if (linkDocument is null)
+        {
+            return;
+        }
+
+        Transform linkTransform = linkInstance.GetTotalTransform();
+        if (scopeMode == Tiles3DExportScopeMode.Selected3DView && selectedView is not null)
+        {
+            FilteredElementCollector visibleCollector = new FilteredElementCollector(hostDocument, selectedView.Id, linkInstance.Id).WhereElementIsNotElementType();
+            foreach (Element visibleElement in visibleCollector)
+            {
+                Element? element = visibleElement.Document.Equals(linkDocument)
+                    ? visibleElement
+                    : linkDocument.GetElement(visibleElement.Id);
+                if (element is null)
+                {
+                    continue;
+                }
+
+                AppendElementMesh(element, options, frame, linkTransform, meshes, linkOption.Title);
+            }
+
+            return;
+        }
+
+        FilteredElementCollector collector = new FilteredElementCollector(linkDocument).WhereElementIsNotElementType();
+        foreach (Element element in collector)
+        {
+            AppendElementMesh(element, options, frame, linkTransform, meshes, linkOption.Title);
+        }
+    }
+
+    private static void AppendElementMesh(
+        Element element,
+        Options options,
+        GeometryExtractionFrame frame,
+        Transform transform,
+        List<Tiles3DMeshPrimitive> meshes,
+        string? sourcePrefix)
+    {
+        if (!IsExportable(element))
+        {
+            return;
+        }
+
+        GeometryElement geometry = element.get_Geometry(options);
+        if (geometry is null)
+        {
+            return;
+        }
+
+        List<Tiles3DTriangle> triangles = new List<Tiles3DTriangle>();
+        AppendGeometry(geometry, transform, frame, triangles);
+        if (triangles.Count == 0)
+        {
+            return;
+        }
+
+        string name = BuildElementName(element);
+        if (!string.IsNullOrWhiteSpace(sourcePrefix))
+        {
+            name = $"{sourcePrefix}: {name}";
+        }
+
+        meshes.Add(new Tiles3DMeshPrimitive
+        {
+            Name = name,
+            CategoryName = element.Category?.Name ?? "Uncategorized",
+            Triangles = triangles
+        });
+    }
+
     private static bool IsExportable(Element element)
     {
-        if (element.ViewSpecific || element.Category is null)
+        if (element is RevitLinkInstance || element.ViewSpecific || element.Category is null)
         {
             return false;
         }
@@ -97,8 +219,6 @@ public sealed class Tiles3DGeometryExtractor
 
             if (geometryObject is GeometryInstance instance)
             {
-                // GetInstanceGeometry() is already returned in instance space, so only the outer transform
-                // chain (for example a containing Revit link transform) should still be applied here.
                 AppendGeometry(instance.GetInstanceGeometry(), transform, frame, triangles);
             }
         }
@@ -193,5 +313,3 @@ public sealed class Tiles3DGeometryExtractor
         }
     }
 }
-
-

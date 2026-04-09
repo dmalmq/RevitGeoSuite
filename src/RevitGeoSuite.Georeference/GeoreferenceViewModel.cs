@@ -158,6 +158,7 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
             selectedCrs = value;
             RaisePropertyChanged(nameof(SelectedCrs));
             RaisePropertyChanged(nameof(SelectedCrsSummary));
+            RaisePropertyChanged(nameof(QuickSetupCoordinateHint));
 
             if (selectedPoint is not null && selectedCrs is not null && selectedPoint.ReprojectWithSelectedCrs)
             {
@@ -387,6 +388,10 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
             KnownCoordinateErrorMessage = string.Empty;
             InvalidatePreview();
             RaisePropertyChanged(nameof(KnownCoordinateEastingInput));
+            if (IsQuickSetupMode)
+            {
+                RaisePropertyChanged(nameof(CanGoNext));
+            }
         }
     }
 
@@ -404,6 +409,10 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
             KnownCoordinateErrorMessage = string.Empty;
             InvalidatePreview();
             RaisePropertyChanged(nameof(KnownCoordinateNorthingInput));
+            if (IsQuickSetupMode)
+            {
+                RaisePropertyChanged(nameof(CanGoNext));
+            }
         }
     }
 
@@ -494,33 +503,49 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
 
     public string WindowTitle => L("Module.Georeference");
 
-    public string StepTitle => CurrentStep switch
-    {
-        GeoreferenceStep.CurrentState => $"1. {L("Georef.Step.CurrentState")}",
-        GeoreferenceStep.ChooseCrs => $"2. {L("Georef.Step.Crs")}",
-        GeoreferenceStep.SelectPoint => $"3. {L("Georef.Step.SiteReference")}",
-        GeoreferenceStep.ReviewPoint => $"4. {L("Georef.Step.Review")}",
-        GeoreferenceStep.SetupIntent => $"5. {L("Georef.Step.Intent")}",
-        GeoreferenceStep.Preview => $"6. {L("Georef.Step.Preview")}",
-        _ => string.Empty
-    };
+    public string StepTitle => IsQuickSetupMode
+        ? CurrentStep switch
+        {
+            GeoreferenceStep.CurrentState => $"1. {L("Georef.Step.CurrentState")}",
+            GeoreferenceStep.ChooseCrs => $"2. {L("Georef.QuickSetup.StepTitle.CrsAndCoordinates")}",
+            GeoreferenceStep.Preview => $"3. {L("Georef.Step.Preview")}",
+            _ => string.Empty
+        }
+        : CurrentStep switch
+        {
+            GeoreferenceStep.CurrentState => $"1. {L("Georef.Step.CurrentState")}",
+            GeoreferenceStep.ChooseCrs => $"2. {L("Georef.Step.Crs")}",
+            GeoreferenceStep.SelectPoint => $"3. {L("Georef.Step.SiteReference")}",
+            GeoreferenceStep.ReviewPoint => $"4. {L("Georef.Step.Review")}",
+            GeoreferenceStep.SetupIntent => $"5. {L("Georef.Step.Intent")}",
+            GeoreferenceStep.Preview => $"6. {L("Georef.Step.Preview")}",
+            _ => string.Empty
+        };
 
-    public string StepDescription => CurrentStep switch
-    {
-        GeoreferenceStep.CurrentState => L("Georef.StepDescription.CurrentState"),
-        GeoreferenceStep.ChooseCrs => IsSplitWorkflowMode
-            ? L("Georef.StepDescription.Crs.Split")
-            : L("Georef.StepDescription.Crs.Standard"),
-        GeoreferenceStep.SelectPoint => IsSplitWorkflowMode
-            ? L("Georef.StepDescription.SiteReference.Split")
-            : L("Georef.StepDescription.SiteReference.Standard"),
-        GeoreferenceStep.ReviewPoint => IsSplitWorkflowMode
-            ? L("Georef.StepDescription.Review.Split")
-            : L("Georef.StepDescription.Review.Standard"),
-        GeoreferenceStep.SetupIntent => SetupIntentHelpText,
-        GeoreferenceStep.Preview => L("Georef.StepDescription.Preview"),
-        _ => string.Empty
-    };
+    public string StepDescription => IsQuickSetupMode
+        ? CurrentStep switch
+        {
+            GeoreferenceStep.CurrentState => L("Georef.StepDescription.CurrentState"),
+            GeoreferenceStep.ChooseCrs => L("Georef.StepDescription.Crs.QuickSetup"),
+            GeoreferenceStep.Preview => L("Georef.StepDescription.Preview"),
+            _ => string.Empty
+        }
+        : CurrentStep switch
+        {
+            GeoreferenceStep.CurrentState => L("Georef.StepDescription.CurrentState"),
+            GeoreferenceStep.ChooseCrs => IsSplitWorkflowMode
+                ? L("Georef.StepDescription.Crs.Split")
+                : L("Georef.StepDescription.Crs.Standard"),
+            GeoreferenceStep.SelectPoint => IsSplitWorkflowMode
+                ? L("Georef.StepDescription.SiteReference.Split")
+                : L("Georef.StepDescription.SiteReference.Standard"),
+            GeoreferenceStep.ReviewPoint => IsSplitWorkflowMode
+                ? L("Georef.StepDescription.Review.Split")
+                : L("Georef.StepDescription.Review.Standard"),
+            GeoreferenceStep.SetupIntent => SetupIntentHelpText,
+            GeoreferenceStep.Preview => L("Georef.StepDescription.Preview"),
+            _ => string.Empty
+        };
 
     public string ExistingSetupMessage => CurrentState.ExistingSetupMessage;
 
@@ -562,7 +587,7 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         ? L("Georef.Action.ZoomWorkingProjectPoint")
         : L("Georef.Action.ZoomProjectPoint");
 
-    public string NextButtonText => CurrentStep == GeoreferenceStep.SetupIntent ? L("Common.Preview") : L("Common.Next");
+    public string NextButtonText => CurrentStep == GeoreferenceStep.SetupIntent || (IsQuickSetupMode && CurrentStep == GeoreferenceStep.ChooseCrs) ? L("Common.Preview") : L("Common.Next");
 
     public bool ShowNextButton => CurrentStep != GeoreferenceStep.Preview;
 
@@ -578,7 +603,7 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
     public bool CanGoNext => CurrentStep switch
     {
         GeoreferenceStep.CurrentState => CurrentState.IsSupportedDocument,
-        GeoreferenceStep.ChooseCrs => SelectedCrs is not null,
+        GeoreferenceStep.ChooseCrs => IsQuickSetupMode ? CanGoNextQuickSetupChooseCrs() : SelectedCrs is not null,
         GeoreferenceStep.SelectPoint => IsSplitWorkflowMode ? SelectedPoint is not null && WorkingProjectBasePoint is not null : SelectedPoint is not null,
         GeoreferenceStep.ReviewPoint => IsSplitWorkflowMode ? SelectedPoint is not null && WorkingProjectBasePoint is not null : SelectedPoint is not null,
         GeoreferenceStep.SetupIntent => BuildIntentValidationResult().IsValid,
@@ -627,6 +652,22 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (IsQuickSetupMode && CurrentStep == GeoreferenceStep.ChooseCrs)
+        {
+            if (!TryUseKnownCoordinates())
+            {
+                return;
+            }
+
+            BuildPreview();
+            if (Preview is not null)
+            {
+                CurrentStep = GeoreferenceStep.Preview;
+            }
+
+            return;
+        }
+
         if (CurrentStep == GeoreferenceStep.SetupIntent)
         {
             BuildPreview();
@@ -657,6 +698,12 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
     {
         if (!CanGoBack)
         {
+            return;
+        }
+
+        if (IsQuickSetupMode && CurrentStep == GeoreferenceStep.Preview)
+        {
+            CurrentStep = GeoreferenceStep.ChooseCrs;
             return;
         }
 
@@ -1292,6 +1339,11 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         if (SelectedCrs is null)
         {
             return GeoreferenceStep.ChooseCrs;
+        }
+
+        if (IsQuickSetupMode)
+        {
+            return CanGoNextQuickSetupChooseCrs() ? GeoreferenceStep.Preview : GeoreferenceStep.ChooseCrs;
         }
 
         if (SelectedPoint is null || (IsSplitWorkflowMode && WorkingProjectBasePoint is null))

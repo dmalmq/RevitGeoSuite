@@ -67,7 +67,7 @@ public partial class Tiles3DExportWindow : Window
             Tiles3DExportPreparationResult result = exportCoordinator.Prepare(
                 documentHandle,
                 ViewModel.ResolvedReferenceContext,
-                ViewModel.SelectedLevelOfDetail);
+                ViewModel.ScopeSelection);
             ViewModel.MarkPrepared(result);
         }
         catch (System.Exception ex)
@@ -102,6 +102,7 @@ public partial class Tiles3DExportWindow : Window
                 ViewModel.PreparedPackage,
                 ViewModel.OutputDirectory,
                 ViewModel.SelectedReferenceSource,
+                ViewModel.ScopeSelection,
                 ViewModel.ExportState);
             ViewModel.MarkExportSucceeded(result);
             MessageBox.Show(this, result.SummaryMessage, "3D Tiles Export Succeeded", MessageBoxButton.OK, MessageBoxImage.Information);

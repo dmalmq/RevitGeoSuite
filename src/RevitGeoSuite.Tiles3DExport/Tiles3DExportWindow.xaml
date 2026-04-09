@@ -4,10 +4,10 @@
         xmlns:loc="clr-namespace:RevitGeoSuite.SharedUI.Localization;assembly=RevitGeoSuite.SharedUI"
         xmlns:shared="clr-namespace:RevitGeoSuite.SharedUI.Controls;assembly=RevitGeoSuite.SharedUI"
         Title="3D Tiles Export"
-        Height="880"
-        Width="1380"
-        MinWidth="1120"
-        MinHeight="740"
+        Height="920"
+        Width="1420"
+        MinWidth="1160"
+        MinHeight="760"
         WindowStartupLocation="CenterOwner">
   <Window.Resources>
     <ResourceDictionary>
@@ -59,12 +59,58 @@
           <StackPanel>
             <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Center.Scope]}" />
             <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.ScopeHint]}" />
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.LevelOfDetail]}" />
+
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.ScopeMode]}" />
             <ComboBox Margin="0,8,0,0"
-                      ItemsSource="{Binding LevelOfDetailOptions}"
-                      SelectedItem="{Binding SelectedLevelOfDetailOption, Mode=TwoWay}"
+                      ItemsSource="{Binding ScopeModeOptions}"
+                      SelectedItem="{Binding SelectedScopeModeOption, Mode=TwoWay}"
                       DisplayMemberPath="Title" />
-            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedLevelOfDetailOption.Description}" />
+            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedScopeModeDescription}" />
+
+            <TextBlock Margin="0,18,0,0"
+                       Style="{StaticResource CardTitleTextStyle}"
+                       Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.VisibleExportView]}"
+                       Visibility="{Binding ShouldShowViewSelector, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <ComboBox Margin="0,8,0,0"
+                      ItemsSource="{Binding AvailableViewOptions}"
+                      SelectedItem="{Binding SelectedViewOption, Mode=TwoWay}"
+                      DisplayMemberPath="Title"
+                      Visibility="{Binding ShouldShowViewSelector, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <TextBlock Margin="0,8,0,0"
+                       Style="{StaticResource BodyMutedTextStyle}"
+                       Text="{Binding SelectedViewDescription}"
+                       Visibility="{Binding IsSelected3DViewScope, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <TextBlock Margin="0,8,0,0"
+                       Foreground="#8A2D2D"
+                       Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.NoView]}"
+                       Visibility="{Binding ShouldShowNoAvailableViewsMessage, Converter={StaticResource BoolToVisibilityConverter}}"
+                       TextWrapping="Wrap" />
+
+            <Expander Margin="0,18,0,0" IsExpanded="True">
+              <Expander.Header>
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.IncludeLinks]}" />
+              </Expander.Header>
+              <StackPanel Margin="0,10,0,0">
+                <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.IncludeLinksHint]}" />
+                <ScrollViewer Margin="0,10,0,0" MaxHeight="220" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasLinkedModelOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <ItemsControl ItemsSource="{Binding LinkedModelOptions}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
+                          <StackPanel>
+                            <CheckBox Content="{Binding Title}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                            <TextBlock Margin="20,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Description}" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.NoLinks]}" Visibility="{Binding HasNoLinkedModelOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding LinkedModelSummary}" />
+              </StackPanel>
+            </Expander>
+
           </StackPanel>
         </Border>
 
@@ -205,8 +251,3 @@
     </Border>
   </Grid>
 </Window>
-
-
-
-
-

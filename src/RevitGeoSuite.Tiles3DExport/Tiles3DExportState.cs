@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace RevitGeoSuite.Tiles3DExport;
 
@@ -11,6 +12,16 @@ public sealed class Tiles3DExportState
     public DateTime? LastExportDateUtc { get; set; }
 
     public Tiles3DExportReferenceSource LastReferenceSource { get; set; } = Tiles3DExportReferenceSource.WorkingProjectBasePoint;
+
+    public Tiles3DExportScopeMode LastScopeMode { get; set; } = Tiles3DExportScopeMode.WholeModel;
+
+    public string LastViewUniqueId { get; set; } = string.Empty;
+
+    public string LastViewName { get; set; } = string.Empty;
+
+    public List<string> LastSelectedLinkUniqueIds { get; set; } = new List<string>();
+
+    public List<string> LastSelectedLinkNames { get; set; } = new List<string>();
 
     public int LastExportedElementCount { get; set; }
 
