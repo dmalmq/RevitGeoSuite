@@ -14,5 +14,9 @@ public class PlateauContextFeature
 
     public string TileId { get; set; } = string.Empty;
 
+    public int HighestLod { get; set; }
+
     public IReadOnlyCollection<PlateauCoordinate3D> ExteriorRing { get; set; } = new PlateauCoordinate3D[0];
+
+    public IReadOnlyCollection<PlateauGeometrySurface> GeometrySurfaces { get; set; } = new PlateauGeometrySurface[0];
 }

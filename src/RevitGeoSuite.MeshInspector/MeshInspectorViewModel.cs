@@ -45,6 +45,8 @@ public sealed class MeshInspectorViewModel : INotifyPropertyChanged
 
     public string DocumentTitle => summary.DocumentTitle;
 
+    public int? ProjectCrsEpsgCode => summary.ProjectCrsEpsgCode;
+
     public string StatusMessage => summary.StatusMessage;
 
     public bool HasStatusMessage => summary.HasStatusMessage;
@@ -149,6 +151,7 @@ public sealed class MeshInspectorViewModel : INotifyPropertyChanged
     private void RaiseSummaryProperties()
     {
         RaisePropertyChanged(nameof(DocumentTitle));
+        RaisePropertyChanged(nameof(ProjectCrsEpsgCode));
         RaisePropertyChanged(nameof(StatusMessage));
         RaisePropertyChanged(nameof(HasStatusMessage));
         RaisePropertyChanged(nameof(PrimaryMeshCode));
@@ -197,4 +200,3 @@ public sealed class MeshInspectorViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
-

@@ -58,7 +58,17 @@ public sealed class Tiles3DGlbWriter
         List<object> primitives = new List<object>();
         MemoryStream binary = new MemoryStream();
 
-        foreach (Tiles3DMeshPrimitive mesh in package.Meshes.Where(mesh => mesh.Triangles.Count > 0))
+        IReadOnlyList<Tiles3DMeshPrimitive> activeMeshes = package.Meshes.Where(mesh => mesh.Triangles.Count > 0).ToArray();
+        Dictionary<Tiles3DMaterialColor, int> materialIndexMap = new Dictionary<Tiles3DMaterialColor, int>();
+        foreach (Tiles3DMeshPrimitive mesh in activeMeshes)
+        {
+            if (!materialIndexMap.ContainsKey(mesh.Color))
+            {
+                materialIndexMap[mesh.Color] = materialIndexMap.Count;
+            }
+        }
+
+        foreach (Tiles3DMeshPrimitive mesh in activeMeshes)
         {
             int positionView = AddPositionBufferView(binary, mesh, bufferViews, out int positionAccessor, out int normalAccessor, accessors);
             int normalView = positionView + 1;
@@ -72,7 +82,7 @@ public sealed class Tiles3DGlbWriter
                     NORMAL = normalAccessor
                 },
                 indices = indexAccessor,
-                material = 0,
+                material = materialIndexMap[mesh.Color],
                 mode = 4
             });
         }
@@ -108,19 +118,7 @@ public sealed class Tiles3DGlbWriter
                     primitives = primitives
                 }
             },
-            materials = new object[]
-            {
-                new
-                {
-                    pbrMetallicRoughness = new
-                    {
-                        baseColorFactor = new[] { 0.72d, 0.75d, 0.78d, 1d },
-                        metallicFactor = 0d,
-                        roughnessFactor = 0.95d
-                    },
-                    doubleSided = true
-                }
-            },
+            materials = BuildMaterials(materialIndexMap),
             accessors = accessors,
             bufferViews = bufferViews,
             buffers = new object[]
@@ -137,6 +135,26 @@ public sealed class Tiles3DGlbWriter
             Json = JsonConvert.SerializeObject(document, Formatting.None),
             Binary = binary
         };
+    }
+
+    private static object[] BuildMaterials(Dictionary<Tiles3DMaterialColor, int> materialIndexMap)
+    {
+        object[] materials = new object[materialIndexMap.Count];
+        foreach (KeyValuePair<Tiles3DMaterialColor, int> entry in materialIndexMap)
+        {
+            materials[entry.Value] = new
+            {
+                pbrMetallicRoughness = new
+                {
+                    baseColorFactor = entry.Key.ToNormalizedArray(),
+                    metallicFactor = 0d,
+                    roughnessFactor = 0.95d
+                },
+                doubleSided = true
+            };
+        }
+
+        return materials;
     }
 
     private static int AddPositionBufferView(

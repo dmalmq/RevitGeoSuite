@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using Newtonsoft.Json.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using Xunit;
 
@@ -31,7 +32,28 @@ public sealed class Tiles3DGlbWriterTests
         Assert.Contains("\"materials\"", json, StringComparison.Ordinal);
     }
 
-    private static Tiles3DExportPackage CreatePackage()
+    [Fact]
+    public void Write_serializes_mesh_material_color_to_base_color_factor()
+    {
+        string tempDirectory = Path.Combine(Path.GetTempPath(), "RevitGeoSuite", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        string outputPath = Path.Combine(tempDirectory, "content.glb");
+        Tiles3DExportPackage package = CreatePackage(new Tiles3DMaterialColor(255, 128, 0));
+
+        new Tiles3DGlbWriter().Write(outputPath, package);
+
+        byte[] bytes = File.ReadAllBytes(outputPath);
+        int jsonLength = BitConverter.ToInt32(bytes, 12);
+        string json = Encoding.UTF8.GetString(bytes, 20, jsonLength).TrimEnd(' ', '\0');
+        JToken colorFactor = JObject.Parse(json)["materials"]![0]!["pbrMetallicRoughness"]!["baseColorFactor"]!;
+
+        Assert.Equal(1d, colorFactor[0]!.Value<double>(), 6);
+        Assert.Equal(128d / 255d, colorFactor[1]!.Value<double>(), 6);
+        Assert.Equal(0d, colorFactor[2]!.Value<double>(), 6);
+        Assert.Equal(1d, colorFactor[3]!.Value<double>(), 6);
+    }
+
+    private static Tiles3DExportPackage CreatePackage(Tiles3DMaterialColor? color = null)
     {
         return new Tiles3DExportPackage
         {
@@ -49,6 +71,7 @@ public sealed class Tiles3DGlbWriterTests
                 new Tiles3DMeshPrimitive
                 {
                     Name = "Triangle",
+                    Color = color ?? Tiles3DMaterialColor.Default,
                     Triangles = new List<Tiles3DTriangle>
                     {
                         new Tiles3DTriangle(

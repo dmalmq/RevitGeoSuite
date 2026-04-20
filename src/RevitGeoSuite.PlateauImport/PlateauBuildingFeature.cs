@@ -6,4 +6,8 @@ public sealed class PlateauBuildingFeature : PlateauContextFeature
     {
         FeatureType = PlateauFeatureType.Building;
     }
+
+    public double? BaseElevationMeters { get; set; }
+
+    public double? TopElevationMeters { get; set; }
 }

@@ -4,6 +4,8 @@ namespace RevitGeoSuite.MeshInspector;
 
 public sealed class MeshInspectorSummary
 {
+    public int? ProjectCrsEpsgCode { get; set; }
+
     public string DocumentTitle { get; set; } = string.Empty;
 
     public string StatusMessage { get; set; } = string.Empty;

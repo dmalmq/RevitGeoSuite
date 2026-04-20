@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
@@ -80,9 +81,32 @@ public partial class PlateauImportWindow : Window
 
     private async void OnScanFolderClick(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.TryScanFolder())
+        FolderPathTextBox.GetBindingExpression(System.Windows.Controls.TextBox.TextProperty)?.UpdateSource();
+        ViewModel.SelectedFolderPath = FolderPathTextBox.Text;
+        if (!ViewModel.TryStartFolderScan(out string folderPath))
         {
-            await RefreshTilePreviewAsync(true, false);
+            return;
+        }
+
+        try
+        {
+            await Task.Yield();
+            PlateauFolderScanResult result = await Task.Run(() => ViewModel.ScanFolder(
+                folderPath,
+                progress => Dispatcher.Invoke(() => ViewModel.ReportScanProgress(progress))));
+            bool success = ViewModel.ApplyScanResult(result);
+            if (success)
+            {
+                await RefreshTilePreviewAsync(true, false);
+            }
+        }
+        catch (Exception ex)
+        {
+            ViewModel.HandleScanFailure(ex);
+        }
+        finally
+        {
+            ViewModel.FinishFolderScan();
         }
     }
 
@@ -202,6 +226,7 @@ public partial class PlateauImportWindow : Window
 
     private async Task RefreshTilePreviewAsync(bool fitToBounds, bool rebuildModelOverlay)
     {
+        TraceTilePreviewRefresh(fitToBounds, rebuildModelOverlay);
         await TilePreviewMap.SetPointSelectionEnabledAsync(false);
         await TilePreviewMap.ClearMeshGridAsync();
 
@@ -242,6 +267,7 @@ public partial class PlateauImportWindow : Window
         if (!ViewModel.ShowModelOverlay)
         {
             ViewModel.SetModelOverlayStatus("Host model overlay hidden.");
+            Trace.WriteLine("[PlateauImportWindow] Model overlay hidden before refresh.");
             await TilePreviewMap.ClearModelFootprintOverlayAsync();
             return false;
         }
@@ -255,6 +281,8 @@ public partial class PlateauImportWindow : Window
 
         ModelFootprintOverlayResult result = modelOverlayCacheResult;
         ViewModel.SetModelOverlayStatus(result.StatusMessage);
+        Trace.WriteLine(
+            $"[PlateauImportWindow] Model overlay result. crs={FormatReferenceEpsg()} hasOverlay={result.HasOverlay} includedElements={result.IncludedElementCount} status='{result.StatusMessage}'");
         if (!result.HasOverlay)
         {
             await TilePreviewMap.ClearModelFootprintOverlayAsync();
@@ -289,12 +317,30 @@ public partial class PlateauImportWindow : Window
             context.AnchorZFeet);
     }
 
+    private void TraceTilePreviewRefresh(bool fitToBounds, bool rebuildModelOverlay)
+    {
+        string referenceTitle = ViewModel.CurrentReferenceContext?.Title ?? "Unavailable";
+        Trace.WriteLine(
+            $"[PlateauImportWindow] Refreshing tile preview. crs={FormatReferenceEpsg()} reference='{referenceTitle}' fitToBounds={fitToBounds} rebuildModelOverlay={rebuildModelOverlay} hasTilePreview={ViewModel.HasTilePreview} showModelOverlay={ViewModel.ShowModelOverlay}");
+    }
+
+    private string FormatReferenceEpsg()
+    {
+        return ViewModel.CurrentReferenceContext?.ProjectCrs is null
+            ? "unavailable"
+            : $"EPSG:{ViewModel.CurrentReferenceContext.ProjectCrs.EpsgCode}";
+    }
+
     private string BuildImportConfirmationMessage()
     {
         string folderName = string.IsNullOrWhiteSpace(ViewModel.SelectedFolderPath)
             ? "selected folder"
             : Path.GetFileName(ViewModel.SelectedFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        return $"Import {ViewModel.PreparedSolidCount} lightweight PLATEAU context solids from '{folderName}' into '{ViewModel.DocumentTitle}'?\n\nThis replaces prior PLATEAU imports for the same tile and category scopes, then groups the new imported elements by tile and category for easier selection afterward.";
+        string mode = ViewModel.SelectedGeometryImportMode.GetDisplayName();
+        string modeDetail = ViewModel.SelectedGeometryImportMode == PlateauGeometryImportMode.DetailedDirectShape
+            ? "Detailed mode preserves the highest-LOD CityGML surfaces as faceted DirectShape geometry and may create heavier Revit context shapes.\n\n"
+            : string.Empty;
+        return $"Import {ViewModel.PreparedShapeCount} PLATEAU context shapes from '{folderName}' into '{ViewModel.DocumentTitle}' using {mode}?\n\n{modeDetail}This replaces prior PLATEAU imports for the same tile and category scopes, then groups the new imported elements by tile and category for easier selection afterward.";
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)

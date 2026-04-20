@@ -15,6 +15,8 @@ public sealed class PlateauImportState
 
     public PlateauImportReferenceSource LastReferenceSource { get; set; } = PlateauImportReferenceSource.WorkingProjectBasePoint;
 
+    public PlateauGeometryImportMode LastGeometryImportMode { get; set; } = PlateauGeometryImportMode.LightweightExtrusion;
+
     public int LastImportedFeatureCount { get; set; }
 
     public int LastImportedGroupCount { get; set; }

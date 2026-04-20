@@ -50,12 +50,13 @@ public sealed class Tiles3DGeometryExtractor
             ComputeReferences = false
         };
 
+        Dictionary<ElementId, Tiles3DMaterialColor> materialColorCache = new Dictionary<ElementId, Tiles3DMaterialColor>();
         List<Tiles3DMeshPrimitive> meshes = new List<Tiles3DMeshPrimitive>();
-        AppendHostMeshes(document, selectedView, hostOptions, frame, scope.ScopeMode, meshes);
+        AppendHostMeshes(document, selectedView, hostOptions, frame, scope.ScopeMode, meshes, materialColorCache);
 
         foreach (Tiles3DExportLinkOption linkOption in scope.SelectedLinkedModels)
         {
-            AppendLinkedMeshes(document, selectedView, linkOption, linkedOptions, frame, scope.ScopeMode, meshes);
+            AppendLinkedMeshes(document, selectedView, linkOption, linkedOptions, frame, scope.ScopeMode, meshes, materialColorCache);
         }
 
         return meshes;
@@ -83,7 +84,8 @@ public sealed class Tiles3DGeometryExtractor
         Options options,
         GeometryExtractionFrame frame,
         Tiles3DExportScopeMode scopeMode,
-        List<Tiles3DMeshPrimitive> meshes)
+        List<Tiles3DMeshPrimitive> meshes,
+        Dictionary<ElementId, Tiles3DMaterialColor> materialColorCache)
     {
         FilteredElementCollector collector = scopeMode == Tiles3DExportScopeMode.Selected3DView && selectedView is not null
             ? new FilteredElementCollector(document, selectedView.Id).WhereElementIsNotElementType()
@@ -91,7 +93,7 @@ public sealed class Tiles3DGeometryExtractor
 
         foreach (Element element in collector)
         {
-            AppendElementMesh(element, options, frame, Transform.Identity, meshes, null);
+            AppendElementMesh(document, element, options, frame, Transform.Identity, meshes, null, materialColorCache);
         }
     }
 
@@ -102,7 +104,8 @@ public sealed class Tiles3DGeometryExtractor
         Options options,
         GeometryExtractionFrame frame,
         Tiles3DExportScopeMode scopeMode,
-        List<Tiles3DMeshPrimitive> meshes)
+        List<Tiles3DMeshPrimitive> meshes,
+        Dictionary<ElementId, Tiles3DMaterialColor> materialColorCache)
     {
         RevitLinkInstance? linkInstance = hostDocument.GetElement(linkOption.LinkInstanceId) as RevitLinkInstance;
         if (linkInstance is null)
@@ -130,7 +133,7 @@ public sealed class Tiles3DGeometryExtractor
                     continue;
                 }
 
-                AppendElementMesh(element, options, frame, linkTransform, meshes, linkOption.Title);
+                AppendElementMesh(linkDocument, element, options, frame, linkTransform, meshes, linkOption.Title, materialColorCache);
             }
 
             return;
@@ -139,17 +142,19 @@ public sealed class Tiles3DGeometryExtractor
         FilteredElementCollector collector = new FilteredElementCollector(linkDocument).WhereElementIsNotElementType();
         foreach (Element element in collector)
         {
-            AppendElementMesh(element, options, frame, linkTransform, meshes, linkOption.Title);
+            AppendElementMesh(linkDocument, element, options, frame, linkTransform, meshes, linkOption.Title, materialColorCache);
         }
     }
 
     private static void AppendElementMesh(
+        Document document,
         Element element,
         Options options,
         GeometryExtractionFrame frame,
         Transform transform,
         List<Tiles3DMeshPrimitive> meshes,
-        string? sourcePrefix)
+        string? sourcePrefix,
+        Dictionary<ElementId, Tiles3DMaterialColor> materialColorCache)
     {
         if (!IsExportable(element))
         {
@@ -162,12 +167,8 @@ public sealed class Tiles3DGeometryExtractor
             return;
         }
 
-        List<Tiles3DTriangle> triangles = new List<Tiles3DTriangle>();
-        AppendGeometry(geometry, transform, frame, triangles);
-        if (triangles.Count == 0)
-        {
-            return;
-        }
+        Dictionary<Tiles3DMaterialColor, List<Tiles3DTriangle>> trianglesByColor = new Dictionary<Tiles3DMaterialColor, List<Tiles3DTriangle>>();
+        AppendGeometry(document, geometry, transform, frame, trianglesByColor, materialColorCache);
 
         string name = BuildElementName(element);
         if (!string.IsNullOrWhiteSpace(sourcePrefix))
@@ -175,12 +176,22 @@ public sealed class Tiles3DGeometryExtractor
             name = $"{sourcePrefix}: {name}";
         }
 
-        meshes.Add(new Tiles3DMeshPrimitive
+        string categoryName = element.Category?.Name ?? "Uncategorized";
+        foreach (KeyValuePair<Tiles3DMaterialColor, List<Tiles3DTriangle>> entry in trianglesByColor)
         {
-            Name = name,
-            CategoryName = element.Category?.Name ?? "Uncategorized",
-            Triangles = triangles
-        });
+            if (entry.Value.Count == 0)
+            {
+                continue;
+            }
+
+            meshes.Add(new Tiles3DMeshPrimitive
+            {
+                Name = name,
+                CategoryName = categoryName,
+                Color = entry.Key,
+                Triangles = entry.Value
+            });
+        }
     }
 
     private static bool IsExportable(Element element)
@@ -201,30 +212,42 @@ public sealed class Tiles3DGeometryExtractor
             : $"{categoryName}: {element.Name}";
     }
 
-    private static void AppendGeometry(GeometryElement geometryElement, Transform transform, GeometryExtractionFrame frame, List<Tiles3DTriangle> triangles)
+    private static void AppendGeometry(
+        Document document,
+        GeometryElement geometryElement,
+        Transform transform,
+        GeometryExtractionFrame frame,
+        Dictionary<Tiles3DMaterialColor, List<Tiles3DTriangle>> trianglesByColor,
+        Dictionary<ElementId, Tiles3DMaterialColor> materialColorCache)
     {
         foreach (GeometryObject geometryObject in geometryElement)
         {
             if (geometryObject is Solid solid)
             {
-                AppendSolid(solid, transform, frame, triangles);
+                AppendSolid(document, solid, transform, frame, trianglesByColor, materialColorCache);
                 continue;
             }
 
             if (geometryObject is Mesh mesh)
             {
-                AppendMesh(mesh, transform, frame, triangles);
+                AddTrianglesToColor(Tiles3DMaterialColor.Default, trianglesByColor, mesh, transform, frame);
                 continue;
             }
 
             if (geometryObject is GeometryInstance instance)
             {
-                AppendGeometry(instance.GetInstanceGeometry(), transform, frame, triangles);
+                AppendGeometry(document, instance.GetInstanceGeometry(), transform, frame, trianglesByColor, materialColorCache);
             }
         }
     }
 
-    private static void AppendSolid(Solid solid, Transform transform, GeometryExtractionFrame frame, List<Tiles3DTriangle> triangles)
+    private static void AppendSolid(
+        Document document,
+        Solid solid,
+        Transform transform,
+        GeometryExtractionFrame frame,
+        Dictionary<Tiles3DMaterialColor, List<Tiles3DTriangle>> trianglesByColor,
+        Dictionary<ElementId, Tiles3DMaterialColor> materialColorCache)
     {
         if (solid.Faces.IsEmpty || solid.Volume <= 1e-9)
         {
@@ -233,15 +256,54 @@ public sealed class Tiles3DGeometryExtractor
 
         foreach (Face face in solid.Faces)
         {
-            AppendMesh(face.Triangulate(), transform, frame, triangles);
+            Tiles3DMaterialColor color = ResolveFaceMaterialColor(document, face, materialColorCache);
+            Mesh mesh = face.Triangulate();
+            AddTrianglesToColor(color, trianglesByColor, mesh, transform, frame);
         }
     }
 
-    private static void AppendMesh(Mesh mesh, Transform transform, GeometryExtractionFrame frame, List<Tiles3DTriangle> triangles)
+    private static Tiles3DMaterialColor ResolveFaceMaterialColor(
+        Document document,
+        Face face,
+        Dictionary<ElementId, Tiles3DMaterialColor> cache)
+    {
+        ElementId materialId = face.MaterialElementId;
+        if (materialId == ElementId.InvalidElementId)
+        {
+            return Tiles3DMaterialColor.Default;
+        }
+
+        if (cache.TryGetValue(materialId, out Tiles3DMaterialColor cached))
+        {
+            return cached;
+        }
+
+        Tiles3DMaterialColor color = Tiles3DMaterialColor.Default;
+        if (document.GetElement(materialId) is Material material && material.Color is Color revitColor)
+        {
+            color = new Tiles3DMaterialColor(revitColor.Red, revitColor.Green, revitColor.Blue);
+        }
+
+        cache[materialId] = color;
+        return color;
+    }
+
+    private static void AddTrianglesToColor(
+        Tiles3DMaterialColor color,
+        Dictionary<Tiles3DMaterialColor, List<Tiles3DTriangle>> trianglesByColor,
+        Mesh mesh,
+        Transform transform,
+        GeometryExtractionFrame frame)
     {
         if (mesh is null || mesh.NumTriangles == 0)
         {
             return;
+        }
+
+        if (!trianglesByColor.TryGetValue(color, out List<Tiles3DTriangle> triangles))
+        {
+            triangles = new List<Tiles3DTriangle>();
+            trianglesByColor[color] = triangles;
         }
 
         for (int triangleIndex = 0; triangleIndex < mesh.NumTriangles; triangleIndex++)

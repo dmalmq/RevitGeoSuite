@@ -30,8 +30,15 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
     private string selectedFolderPath;
     private string statusMessage;
     private string modelOverlayStatusMessage;
+    private string scanProgressStatusText;
     private bool showModelOverlay;
+    private bool isScanning;
+    private bool isScanProgressIndeterminate;
+    private double scanProgressPercent;
+    private int scanProgressCurrent;
+    private int scanProgressTotal;
     private PlateauImportReferenceSourceOption? selectedReferenceSourceOption;
+    private PlateauGeometryImportModeOption? selectedGeometryImportModeOption;
 
     public PlateauImportViewModel(
         CurrentProjectStateSummary currentState,
@@ -56,6 +63,7 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         selectedFolderPath = GetInitialFolderPath(importState);
         statusMessage = string.Empty;
         modelOverlayStatusMessage = "Resolve the import reference to show the host-model overlay.";
+        scanProgressStatusText = string.Empty;
         showModelOverlay = true;
         CurrentStateRows = new ObservableCollection<DetailRow>();
         LastImportRows = new ObservableCollection<DetailRow>();
@@ -68,10 +76,13 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         FeatureTypeOptions = new ObservableCollection<PlateauFeatureSelectionItem>();
         TileOptions = new ObservableCollection<PlateauTileSelectionItem>();
         ReferenceSourceOptions = new ObservableCollection<PlateauImportReferenceSourceOption>(CreateReferenceSourceOptions());
+        GeometryImportModeOptions = new ObservableCollection<PlateauGeometryImportModeOption>(CreateGeometryImportModeOptions());
         BuildLastImportRows();
 
         PlateauImportReferenceSource defaultSource = GetDefaultReferenceSource(currentState, importState);
+        PlateauGeometryImportMode defaultGeometryImportMode = GetDefaultGeometryImportMode(importState);
         selectedReferenceSourceOption = ReferenceSourceOptions.First(option => option.Source == defaultSource);
+        selectedGeometryImportModeOption = GeometryImportModeOptions.First(option => option.Mode == defaultGeometryImportMode);
         RefreshReferenceContext(clearPreview: false);
     }
 
@@ -98,6 +109,8 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
     public ObservableCollection<PlateauTileSelectionItem> TileOptions { get; }
 
     public ObservableCollection<PlateauImportReferenceSourceOption> ReferenceSourceOptions { get; }
+
+    public ObservableCollection<PlateauGeometryImportModeOption> GeometryImportModeOptions { get; }
 
     public string WindowTitle => "PLATEAU Context Import";
 
@@ -157,7 +170,19 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         }
     }
 
-    public bool CanScanFolder => !string.IsNullOrWhiteSpace(SelectedFolderPath);
+    public bool CanScanFolder => !string.IsNullOrWhiteSpace(SelectedFolderPath) && !IsScanning;
+
+    public bool IsScanning
+    {
+        get => isScanning;
+        set
+        {
+            if (isScanning == value) return;
+            isScanning = value;
+            RaisePropertyChanged(nameof(IsScanning));
+            RaisePropertyChanged(nameof(CanScanFolder));
+        }
+    }
 
     public bool CanLoadPreview => referenceContext is not null
         && scanResult is not null
@@ -165,6 +190,88 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         && TileOptions.Any(option => option.IsSelected);
 
     public bool CanImport => preparedPlan is not null && currentState.IsSupportedDocument && !currentState.IsReadOnly;
+
+    public double ScanProgressPercent
+    {
+        get => scanProgressPercent;
+        private set
+        {
+            if (Math.Abs(scanProgressPercent - value) < 0.001d)
+            {
+                return;
+            }
+
+            scanProgressPercent = value;
+            RaisePropertyChanged(nameof(ScanProgressPercent));
+        }
+    }
+
+    public int ScanProgressCurrent
+    {
+        get => scanProgressCurrent;
+        private set
+        {
+            if (scanProgressCurrent == value)
+            {
+                return;
+            }
+
+            scanProgressCurrent = value;
+            RaisePropertyChanged(nameof(ScanProgressCurrent));
+        }
+    }
+
+    public int ScanProgressTotal
+    {
+        get => scanProgressTotal;
+        private set
+        {
+            if (scanProgressTotal == value)
+            {
+                return;
+            }
+
+            scanProgressTotal = value;
+            RaisePropertyChanged(nameof(ScanProgressTotal));
+        }
+    }
+
+    public bool IsScanProgressIndeterminate
+    {
+        get => isScanProgressIndeterminate;
+        private set
+        {
+            if (isScanProgressIndeterminate == value)
+            {
+                return;
+            }
+
+            isScanProgressIndeterminate = value;
+            RaisePropertyChanged(nameof(IsScanProgressIndeterminate));
+            RaisePropertyChanged(nameof(HasDeterminateScanProgress));
+        }
+    }
+
+    public bool HasDeterminateScanProgress => !IsScanProgressIndeterminate && ScanProgressTotal > 0;
+
+    public string ScanProgressStatusText
+    {
+        get => scanProgressStatusText;
+        private set
+        {
+            string normalized = value ?? string.Empty;
+            if (string.Equals(scanProgressStatusText, normalized, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            scanProgressStatusText = normalized;
+            RaisePropertyChanged(nameof(ScanProgressStatusText));
+            RaisePropertyChanged(nameof(HasScanProgressStatusText));
+        }
+    }
+
+    public bool HasScanProgressStatusText => !string.IsNullOrWhiteSpace(ScanProgressStatusText);
 
     public string TilePreviewGeoJson
     {
@@ -232,7 +339,11 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
 
     public string TilePreviewStatusText => BuildTilePreviewStatusText();
 
-    public int PreparedSolidCount => preparedPlan?.Solids.Count ?? 0;
+    public int PreparedShapeCount => preparedPlan?.Shapes.Count ?? 0;
+
+    public int PreparedSurfaceCount => preparedPlan?.PreparedSurfaceCount ?? 0;
+
+    public int PreparedTriangleCount => preparedPlan?.PreparedTriangleCount ?? 0;
 
     public int SelectedCategoryCount => FeatureTypeOptions.Count(option => option.IsSelected);
 
@@ -245,6 +356,8 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
     public ContextImportPlan? PreparedPlan => preparedPlan;
 
     public PlateauImportReferenceSource SelectedReferenceSource => SelectedReferenceSourceOption?.Source ?? PlateauImportReferenceSource.WorkingProjectBasePoint;
+
+    public PlateauGeometryImportMode SelectedGeometryImportMode => SelectedGeometryImportModeOption?.Mode ?? PlateauGeometryImportMode.LightweightExtrusion;
 
     public PlateauImportReferenceSourceOption? SelectedReferenceSourceOption
     {
@@ -264,9 +377,33 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         }
     }
 
+    public PlateauGeometryImportModeOption? SelectedGeometryImportModeOption
+    {
+        get => selectedGeometryImportModeOption;
+        set
+        {
+            if (selectedGeometryImportModeOption == value || value is null)
+            {
+                return;
+            }
+
+            selectedGeometryImportModeOption = value;
+            ClearPreview(clearWarnings: false);
+            StatusMessage = BuildBaseStatusMessage();
+            RaisePropertyChanged(nameof(SelectedGeometryImportModeOption));
+            RaisePropertyChanged(nameof(SelectedGeometryImportMode));
+            RaisePropertyChanged(nameof(GeometryImportModeTitle));
+            RaisePropertyChanged(nameof(GeometryImportModeDescription));
+        }
+    }
+
     public string ReferenceSourceTitle => referenceContext?.Title ?? SelectedReferenceSourceOption?.Title ?? "Reference unavailable";
 
     public string ReferenceSourceDescription => referenceContext?.Description ?? SelectedReferenceSourceOption?.Description ?? string.Empty;
+
+    public string GeometryImportModeTitle => SelectedGeometryImportModeOption?.Title ?? SelectedGeometryImportMode.GetDisplayName();
+
+    public string GeometryImportModeDescription => SelectedGeometryImportModeOption?.Description ?? string.Empty;
 
     public bool HasSuggestedTiles => SuggestedTiles.Count > 0;
 
@@ -306,47 +443,101 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
 
     public bool TryScanFolder()
     {
-        ActionMessage = string.Empty;
-
-        if (!CanScanFolder)
+        if (!TryStartFolderScan(out string folderPath))
         {
-            StatusMessage = "Choose a PLATEAU folder before scanning.";
             return false;
         }
 
         try
         {
-            scanResult = folderScanService.ScanFolder(SelectedFolderPath);
-            PopulateSelections(scanResult);
-            ReplaceCollection(ScanRows, BuildScanRows(scanResult));
-            ReplaceCollection(DetectedSourceFiles, BuildDetectedSourceFiles(scanResult));
-            ReplaceCollection(WarningMessages, scanResult.WarningMessages);
-            ClearPreview(clearWarnings: false);
-            if (scanResult.CityModels.Count == 0)
-            {
-                StatusMessage = scanResult.IsRecursivePackageScan
-                    ? "The selected PLATEAU package root was scanned, but no supported PLATEAU features were found under udx."
-                    : "The selected folder was scanned, but no supported PLATEAU features were found in the selected folder files.";
-            }
-            else
-            {
-                string scanMode = scanResult.IsRecursivePackageScan ? "package root" : "selected folder";
-                StatusMessage = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "Scanned {0} supported file(s) from the {1}. Choose categories and click tiles on the map preview, then load a preview.",
-                    scanResult.SupportedFilePaths.Count,
-                    scanMode);
-            }
-
-            RaiseScanProperties();
-            return true;
+            PlateauFolderScanResult result = folderScanService.ScanFolder(folderPath, ReportScanProgress);
+            return ApplyScanResult(result);
         }
         catch (Exception ex)
         {
-            ClearScanAndPreview();
-            StatusMessage = ex.Message;
+            HandleScanFailure(ex);
             return false;
         }
+        finally
+        {
+            FinishFolderScan();
+        }
+    }
+
+    public bool TryStartFolderScan(out string folderPath)
+    {
+        ActionMessage = string.Empty;
+        folderPath = SelectedFolderPath;
+
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            StatusMessage = "Choose a PLATEAU folder before scanning.";
+            ResetScanProgress();
+            return false;
+        }
+
+        IsScanning = true;
+        ReportScanProgress(new PlateauScanProgress(PlateauScanPhase.Enumerating, 0, 0, string.Empty));
+        return true;
+    }
+
+    public PlateauFolderScanResult ScanFolder(string folderPath, Action<PlateauScanProgress>? reportProgress = null)
+    {
+        return folderScanService.ScanFolder(folderPath, reportProgress);
+    }
+
+    public void ReportScanProgress(PlateauScanProgress progress)
+    {
+        if (progress is null)
+        {
+            return;
+        }
+
+        ScanProgressCurrent = progress.Current;
+        ScanProgressTotal = progress.Total;
+        ScanProgressPercent = progress.Percent;
+        IsScanProgressIndeterminate = progress.Phase == PlateauScanPhase.Enumerating || progress.Total == 0;
+        ScanProgressStatusText = BuildScanProgressStatusText(progress);
+    }
+
+    public bool ApplyScanResult(PlateauFolderScanResult result)
+    {
+        scanResult = result ?? throw new ArgumentNullException(nameof(result));
+        PopulateSelections(scanResult);
+        ReplaceCollection(ScanRows, BuildScanRows(scanResult));
+        ReplaceCollection(DetectedSourceFiles, BuildDetectedSourceFiles(scanResult));
+        ReplaceCollection(WarningMessages, scanResult.WarningMessages);
+        ClearPreview(clearWarnings: false);
+        if (scanResult.CityModels.Count == 0)
+        {
+            StatusMessage = scanResult.IsRecursivePackageScan
+                ? "The selected PLATEAU package root was scanned, but no supported PLATEAU features were found under udx."
+                : "The selected folder was scanned, but no supported PLATEAU features were found in the selected folder files.";
+        }
+        else
+        {
+            string scanMode = scanResult.IsRecursivePackageScan ? "package root" : "selected folder";
+            StatusMessage = string.Format(
+                CultureInfo.InvariantCulture,
+                "Scanned {0} supported file(s) from the {1}. Choose categories and click tiles on the map preview, then load a preview.",
+                scanResult.SupportedFilePaths.Count,
+                scanMode);
+        }
+
+        RaiseScanProperties();
+        return true;
+    }
+
+    public void HandleScanFailure(Exception ex)
+    {
+        ClearScanAndPreview();
+        StatusMessage = ex.Message;
+    }
+
+    public void FinishFolderScan()
+    {
+        IsScanning = false;
+        ResetScanProgress();
     }
 
     public bool TryLoadPreview()
@@ -375,13 +566,14 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
 
         try
         {
-            preparedPlan = geometryBuilder.BuildPlan(scanResult, referenceContext, selectedFeatureTypes, selectedTileIds);
+            preparedPlan = geometryBuilder.BuildPlan(scanResult, referenceContext, selectedFeatureTypes, selectedTileIds, SelectedGeometryImportMode);
             ReplaceCollection(PreviewRows, BuildPreviewRows(preparedPlan));
             ReplaceCollection(FeatureNames, BuildFeatureNames(preparedPlan));
             ReplaceCollection(WarningMessages, scanResult.WarningMessages.Concat(preparedPlan.WarningMessages).Distinct(StringComparer.Ordinal));
+            string importMode = SelectedGeometryImportMode.GetDisplayName();
             StatusMessage = currentState.IsReadOnly
-                ? string.Format(CultureInfo.InvariantCulture, "Preview loaded. {0} context shapes are ready, but this Revit project is read-only so import is disabled until the model is editable.", PreparedSolidCount)
-                : string.Format(CultureInfo.InvariantCulture, "Preview loaded. {0} context shapes are ready to import using {1}.", PreparedSolidCount, referenceContext.Title);
+                ? string.Format(CultureInfo.InvariantCulture, "Preview loaded. {0} context shapes are ready in {1} mode, but this Revit project is read-only so import is disabled until the model is editable.", PreparedShapeCount, importMode)
+                : string.Format(CultureInfo.InvariantCulture, "Preview loaded. {0} context shapes are ready to import using {1} in {2} mode.", PreparedShapeCount, referenceContext.Title, importMode);
             RaisePreviewProperties();
             return true;
         }
@@ -427,7 +619,7 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
             ClearPreview(clearWarnings: false);
         }
 
-        RefreshTilePreviewState();
+        RefreshTilePreviewState(raiseReferenceCoordinates: true);
         StatusMessage = BuildBaseStatusMessage();
         RaiseReferenceProperties();
     }
@@ -458,9 +650,12 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
             return "Preview is available, but importing PLATEAU context requires an editable Revit project.";
         }
 
+        string modeText = SelectedGeometryImportMode == PlateauGeometryImportMode.DetailedDirectShape
+            ? "detailed context geometry"
+            : "lightweight context geometry";
         return scanResult is null
             ? "Choose a PLATEAU package root or source folder, scan it, click the tiles you want on the preview map, and then load a filtered preview before importing."
-            : "Adjust the category filters and selected tiles, load a preview, and then import the lightweight context geometry.";
+            : $"Adjust the category filters and selected tiles, load a preview, and then import the {modeText}.";
     }
 
     private IReadOnlyCollection<DetailRow> BuildCurrentStateRows(PlateauImportReferenceContext? resolvedReference)
@@ -498,7 +693,37 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
             ? importState.LastImportDateUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
             : "an earlier session";
 
-        return $"Last PLATEAU import restored: '{folderName}' via {FormatReferenceSource(importState.LastReferenceSource)} on {dateText}. Scan Folder to rebuild the preview before importing again.";
+        return $"Last PLATEAU import restored: '{folderName}' via {FormatReferenceSource(importState.LastReferenceSource)} in {importState.LastGeometryImportMode.GetDisplayName().ToLowerInvariant()} mode on {dateText}. Scan Folder to rebuild the preview before importing again.";
+    }
+
+    private static string BuildScanProgressStatusText(PlateauScanProgress progress)
+    {
+        if (progress.Phase == PlateauScanPhase.Enumerating)
+        {
+            return "Finding supported CityGML and XML files in the selected PLATEAU folder...";
+        }
+
+        if (progress.Phase == PlateauScanPhase.Completed)
+        {
+            return progress.Total == 0
+                ? "No supported CityGML or XML files were found in the selected PLATEAU folder."
+                : string.Format(CultureInfo.InvariantCulture, "Finished scanning {0} supported file(s).", progress.Total);
+        }
+
+        if (progress.Total == 0)
+        {
+            return "No supported CityGML or XML files were found in the selected PLATEAU folder.";
+        }
+
+        string fileName = string.IsNullOrWhiteSpace(progress.CurrentFileName)
+            ? "current file"
+            : progress.CurrentFileName;
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "Scanning {0} of {1}: {2}",
+            Math.Min(progress.Current, progress.Total),
+            progress.Total,
+            fileName);
     }
 
     private void BuildLastImportRows()
@@ -523,6 +748,7 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
             new DetailRow("Last Folder", string.IsNullOrWhiteSpace(importState.LastImportedFolderPath) ? "Not recorded" : importState.LastImportedFolderPath),
             new DetailRow("Last Import Date", importState.LastImportDateUtc.HasValue ? importState.LastImportDateUtc.Value.ToString("u", CultureInfo.InvariantCulture) : "Not recorded"),
             new DetailRow("Last Reference", FormatReferenceSource(importState.LastReferenceSource)),
+            new DetailRow("Last Geometry Mode", importState.LastGeometryImportMode.GetDisplayName()),
             new DetailRow("Last Imported Elements", importState.LastImportedFeatureCount.ToString(CultureInfo.InvariantCulture)),
             new DetailRow("Last Created Groups", importState.LastImportedGroupCount.ToString(CultureInfo.InvariantCulture)),
             new DetailRow("Last Categories", categorySummary),
@@ -567,30 +793,38 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         string tileSummary = plan.SelectedTileIds.Count == 0
             ? "None"
             : string.Join(", ", plan.SelectedTileIds);
-
-        return new[]
+        List<DetailRow> rows = new List<DetailRow>
         {
             new DetailRow("Source Folder", plan.SourceFolderPath),
+            new DetailRow("Geometry Mode", plan.GeometryImportMode.GetDisplayName()),
             new DetailRow("Selected Categories", categorySummary),
             new DetailRow("Selected Tiles", tileSummary),
             new DetailRow("Source Features", plan.SourceFeatureCount.ToString(CultureInfo.InvariantCulture)),
-            new DetailRow("Importable Solids", plan.Solids.Count.ToString(CultureInfo.InvariantCulture)),
+            new DetailRow("Importable Shapes", plan.Shapes.Count.ToString(CultureInfo.InvariantCulture)),
             new DetailRow("Import Reference", plan.ReferenceContext.Title),
             new DetailRow("Reference CRS", $"EPSG:{plan.ReferenceContext.ProjectCrs.EpsgCode}  {plan.ReferenceContext.ProjectCrs.NameSnapshot}"),
             new DetailRow("Reference Elevation", $"{plan.ReferenceContext.AnchorElevationMeters:F3} m")
         };
+
+        if (plan.GeometryImportMode == PlateauGeometryImportMode.DetailedDirectShape)
+        {
+            rows.Add(new DetailRow("Prepared Surfaces", plan.PreparedSurfaceCount.ToString(CultureInfo.InvariantCulture)));
+            rows.Add(new DetailRow("Prepared Triangles", plan.PreparedTriangleCount.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        return rows;
     }
 
     private static IReadOnlyCollection<string> BuildFeatureNames(ContextImportPlan plan)
     {
-        List<string> names = plan.Solids
-            .Select(solid => $"[{solid.TileId}] {solid.FeatureType.GetDisplayName()}: {solid.DisplayName}")
+        List<string> names = plan.Shapes
+            .Select(shape => $"[{shape.TileId}] {shape.FeatureType.GetDisplayName()}: {shape.DisplayName}")
             .Take(40)
             .ToList();
 
-        if (plan.Solids.Count > names.Count)
+        if (plan.Shapes.Count > names.Count)
         {
-            names.Add($"... and {plan.Solids.Count - names.Count} more");
+            names.Add($"... and {plan.Shapes.Count - names.Count} more");
         }
 
         return names;
@@ -632,7 +866,7 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
 
         ReplaceSelections(FeatureTypeOptions, featureSelections);
         ReplaceSelections(TileOptions, tileSelections);
-        RefreshTilePreviewState();
+        RefreshTilePreviewState(raiseReferenceCoordinates: true);
         RaisePropertyChanged(nameof(HasFeatureTypeOptions));
         RaisePropertyChanged(nameof(HasNoFeatureTypeOptions));
         RaisePropertyChanged(nameof(HasTileOptions));
@@ -704,14 +938,18 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         return true;
     }
 
-    private void RefreshTilePreviewState()
+    private void RefreshTilePreviewState(bool raiseReferenceCoordinates = false)
     {
         TilePreviewGeoJson = TileOptions.Count == 0
             ? string.Empty
             : tileOverlayService.CreateGeoJson(TileOptions.ToArray());
-        RaisePropertyChanged(nameof(TilePreviewReferenceLatitude));
-        RaisePropertyChanged(nameof(TilePreviewReferenceLongitude));
-        RaisePropertyChanged(nameof(TilePreviewReferenceTitle));
+        if (raiseReferenceCoordinates)
+        {
+            RaisePropertyChanged(nameof(TilePreviewReferenceLatitude));
+            RaisePropertyChanged(nameof(TilePreviewReferenceLongitude));
+            RaisePropertyChanged(nameof(TilePreviewReferenceTitle));
+        }
+
         RaisePropertyChanged(nameof(TilePreviewStatusText));
     }
 
@@ -786,7 +1024,8 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         ReplaceCollection(TileOptions, Array.Empty<PlateauTileSelectionItem>());
         ReplaceCollection(ScanRows, Array.Empty<DetailRow>());
         ReplaceCollection(DetectedSourceFiles, Array.Empty<string>());
-        RefreshTilePreviewState();
+        ResetScanProgress();
+        RefreshTilePreviewState(raiseReferenceCoordinates: true);
         ClearPreview(clearWarnings: true);
         RaiseScanProperties();
     }
@@ -833,6 +1072,11 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
             : PlateauImportReferenceSource.CanonicalOrigin;
     }
 
+    private static PlateauGeometryImportMode GetDefaultGeometryImportMode(PlateauImportState? importState)
+    {
+        return importState?.LastGeometryImportMode ?? PlateauGeometryImportMode.LightweightExtrusion;
+    }
+
     private static IReadOnlyCollection<PlateauImportReferenceSourceOption> CreateReferenceSourceOptions()
     {
         return new[]
@@ -848,6 +1092,25 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
                 Source = PlateauImportReferenceSource.CanonicalOrigin,
                 Title = "Canonical Origin",
                 Description = "Uses the shared canonical origin from GeoProjectInfo. This is the stable fallback when a Project Base Point reference is not available or not desired."
+            }
+        };
+    }
+
+    private static IReadOnlyCollection<PlateauGeometryImportModeOption> CreateGeometryImportModeOptions()
+    {
+        return new[]
+        {
+            new PlateauGeometryImportModeOption
+            {
+                Mode = PlateauGeometryImportMode.LightweightExtrusion,
+                Title = "Lightweight Geometry",
+                Description = "Builds fast context extrusions from the selected feature footprint and height. Use this when you want a lighter Revit reference model."
+            },
+            new PlateauGeometryImportModeOption
+            {
+                Mode = PlateauGeometryImportMode.DetailedDirectShape,
+                Title = "Detailed Geometry",
+                Description = "Imports the highest-LOD CityGML surfaces as faceted DirectShape geometry so roof forms and non-extruded shapes are preserved. This mode creates heavier Revit geometry."
             }
         };
     }
@@ -883,12 +1146,25 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         RaisePropertyChanged(nameof(SelectedTileCount));
         RaisePropertyChanged(nameof(HasWarningMessages));
         RaisePropertyChanged(nameof(HasNoWarningMessages));
+        RaisePropertyChanged(nameof(HasDeterminateScanProgress));
+        RaisePropertyChanged(nameof(HasScanProgressStatusText));
+    }
+
+    private void ResetScanProgress()
+    {
+        ScanProgressCurrent = 0;
+        ScanProgressTotal = 0;
+        ScanProgressPercent = 0d;
+        IsScanProgressIndeterminate = false;
+        ScanProgressStatusText = string.Empty;
     }
 
     private void RaisePreviewProperties()
     {
         RaisePropertyChanged(nameof(CanImport));
-        RaisePropertyChanged(nameof(PreparedSolidCount));
+        RaisePropertyChanged(nameof(PreparedShapeCount));
+        RaisePropertyChanged(nameof(PreparedSurfaceCount));
+        RaisePropertyChanged(nameof(PreparedTriangleCount));
         RaisePropertyChanged(nameof(HasPreviewRows));
         RaisePropertyChanged(nameof(HasNoPreviewRows));
         RaisePropertyChanged(nameof(HasFeatureNames));
@@ -975,11 +1251,6 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
-
-
-
-
-
 
 
 

@@ -8,15 +8,21 @@ public sealed class ContextImportPlan
 
     public PlateauImportReferenceContext ReferenceContext { get; set; } = new PlateauImportReferenceContext();
 
+    public PlateauGeometryImportMode GeometryImportMode { get; set; } = PlateauGeometryImportMode.LightweightExtrusion;
+
     public IReadOnlyCollection<PlateauCityModel> SourceModels { get; set; } = new PlateauCityModel[0];
 
     public IReadOnlyCollection<PlateauFeatureType> SelectedFeatureTypes { get; set; } = new PlateauFeatureType[0];
 
     public IReadOnlyCollection<string> SelectedTileIds { get; set; } = new string[0];
 
-    public IReadOnlyCollection<ContextSolidPlan> Solids { get; set; } = new ContextSolidPlan[0];
+    public IReadOnlyCollection<ContextShapePlan> Shapes { get; set; } = new ContextShapePlan[0];
 
     public IReadOnlyCollection<string> WarningMessages { get; set; } = new string[0];
 
     public int SourceFeatureCount { get; set; }
+
+    public int PreparedSurfaceCount { get; set; }
+
+    public int PreparedTriangleCount { get; set; }
 }

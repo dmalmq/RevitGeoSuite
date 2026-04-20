@@ -54,6 +54,7 @@ public sealed class Tiles3DGeometrySimplifier
         {
             Name = source.Name,
             CategoryName = source.CategoryName,
+            Color = source.Color,
             Triangles = retained
         };
     }
@@ -64,6 +65,7 @@ public sealed class Tiles3DGeometrySimplifier
         {
             Name = source.Name,
             CategoryName = source.CategoryName,
+            Color = source.Color,
             Triangles = source.Triangles.ToList()
         };
     }

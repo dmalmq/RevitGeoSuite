@@ -35,39 +35,39 @@ public sealed class PlateauContextImporter
             throw new InvalidOperationException("PLATEAU context import requires an active Revit transaction.");
         }
 
-        if (plan.Solids.Count == 0)
+        if (plan.Shapes.Count == 0)
         {
             throw new InvalidOperationException("The selected PLATEAU folder and filters did not produce any importable context geometry.");
         }
 
         List<string> warnings = new List<string>(plan.WarningMessages ?? Array.Empty<string>());
-        DeleteMatchingExistingImports(document, plan.Solids);
+        DeleteMatchingExistingImports(document, plan.Shapes);
 
         double minSegmentLengthFeet = Math.Max(document.Application.ShortCurveTolerance, 1e-6d);
         Dictionary<string, List<ElementId>> groupedElements = new Dictionary<string, List<ElementId>>(StringComparer.Ordinal);
         int importedCount = 0;
-        foreach (ContextSolidPlan solidPlan in plan.Solids)
+        foreach (ContextShapePlan shapePlan in plan.Shapes)
         {
-            if (!TryBuildSolid(solidPlan, warnings, minSegmentLengthFeet, out Solid? solid) || solid is null)
+            if (!TryBuildGeometryObjects(shapePlan, warnings, minSegmentLengthFeet, out IList<GeometryObject>? geometryObjects) || geometryObjects is null)
             {
                 continue;
             }
 
             try
             {
-                ElementId categoryId = ResolveCategoryId(document, solidPlan.FeatureType, warnings);
+                ElementId categoryId = ResolveCategoryId(document, shapePlan.FeatureType, warnings);
                 DirectShape directShape = DirectShape.CreateElement(document, categoryId);
                 directShape.ApplicationId = ApplicationId;
                 directShape.ApplicationDataId = JsonConvert.SerializeObject(new PlateauImportedElementMetadata
                 {
-                    SourceFeatureId = solidPlan.SourceFeatureId,
-                    TileId = solidPlan.TileId,
-                    FeatureType = solidPlan.FeatureType
+                    SourceFeatureId = shapePlan.SourceFeatureId,
+                    TileId = shapePlan.TileId,
+                    FeatureType = shapePlan.FeatureType
                 });
-                directShape.Name = solidPlan.DisplayName;
-                directShape.SetShape(new GeometryObject[] { solid });
+                directShape.Name = shapePlan.DisplayName;
+                directShape.SetShape(geometryObjects);
 
-                string scopeKey = BuildScopeKey(solidPlan.TileId, solidPlan.FeatureType);
+                string scopeKey = BuildScopeKey(shapePlan.TileId, shapePlan.FeatureType);
                 if (!groupedElements.TryGetValue(scopeKey, out List<ElementId>? elementIds))
                 {
                     elementIds = new List<ElementId>();
@@ -79,7 +79,7 @@ public sealed class PlateauContextImporter
             }
             catch (Exception ex)
             {
-                warnings.Add($"Skipped {BuildFeatureLabel(solidPlan)} because Revit could not create the context shape: {ex.Message}");
+                warnings.Add($"Skipped {BuildFeatureLabel(shapePlan)} because Revit could not create the context shape: {ex.Message}");
             }
         }
 
@@ -92,18 +92,17 @@ public sealed class PlateauContextImporter
         foreach (KeyValuePair<string, List<ElementId>> entry in groupedElements.Where(entry => entry.Value.Count > 0))
         {
             string[] parts = entry.Key.Split('|');
-            string tileId = parts[0];
             PlateauFeatureType featureType = (PlateauFeatureType)Enum.Parse(typeof(PlateauFeatureType), parts[1], ignoreCase: false);
 
             try
             {
                 Group group = document.Create.NewGroup(entry.Value);
-                group.GroupType.Name = BuildUniqueGroupName(document, BuildPreferredGroupName(tileId, featureType), group.GroupType.Id);
+                group.GroupType.Name = BuildUniqueGroupName(document, BuildPreferredGroupName(parts[0], featureType), group.GroupType.Id);
                 createdGroupCount++;
             }
             catch (Exception ex)
             {
-                warnings.Add($"Imported {entry.Value.Count} {featureType.GetPluralDisplayName().ToLowerInvariant()} for tile {tileId}, but grouping failed: {ex.Message}");
+                warnings.Add($"Imported {entry.Value.Count} {featureType.GetPluralDisplayName().ToLowerInvariant()} for tile {parts[0]}, but grouping failed: {ex.Message}");
             }
         }
 
@@ -115,9 +114,9 @@ public sealed class PlateauContextImporter
         };
     }
 
-    private static void DeleteMatchingExistingImports(Document document, IReadOnlyCollection<ContextSolidPlan> solids)
+    private static void DeleteMatchingExistingImports(Document document, IReadOnlyCollection<ContextShapePlan> shapes)
     {
-        HashSet<string> scopeKeys = new HashSet<string>(solids.Select(solid => BuildScopeKey(solid.TileId, solid.FeatureType)), StringComparer.Ordinal);
+        HashSet<string> scopeKeys = new HashSet<string>(shapes.Select(shape => BuildScopeKey(shape.TileId, shape.FeatureType)), StringComparer.Ordinal);
         HashSet<long> groupIds = new HashSet<long>();
         HashSet<long> elementIds = new HashSet<long>();
 
@@ -238,45 +237,106 @@ public sealed class PlateauContextImporter
         return $"{tileId}|{featureType}";
     }
 
-    private bool TryBuildSolid(
-        ContextSolidPlan solidPlan,
+    private bool TryBuildGeometryObjects(
+        ContextShapePlan shapePlan,
         ICollection<string> warnings,
         double minSegmentLengthFeet,
-        out Solid? solid)
+        out IList<GeometryObject>? geometryObjects)
     {
-        solid = null;
-        IReadOnlyCollection<(double XFeet, double YFeet)> sanitizedFootprint = footprintSanitizer.Sanitize(solidPlan.FootprintPointsFeet, minSegmentLengthFeet);
-        if (sanitizedFootprint.Count < 3)
-        {
-            warnings.Add($"Skipped {BuildFeatureLabel(solidPlan)} because its footprint collapsed below Revit's short-curve tolerance.");
-            return false;
-        }
-
+        geometryObjects = null;
         try
         {
-            solid = BuildSolid(solidPlan, sanitizedFootprint);
-            return true;
+            geometryObjects = shapePlan.GeometryMode == PlateauGeometryImportMode.DetailedDirectShape
+                ? BuildDetailedGeometry(shapePlan, warnings)
+                : BuildLightweightGeometry(shapePlan, warnings, minSegmentLengthFeet);
+            return geometryObjects is not null && geometryObjects.Count > 0;
         }
         catch (Exception ex)
         {
-            warnings.Add($"Skipped {BuildFeatureLabel(solidPlan)} because Revit could not build a valid solid: {ex.Message}");
+            warnings.Add($"Skipped {BuildFeatureLabel(shapePlan)} because Revit could not build a valid shape: {ex.Message}");
             return false;
         }
     }
 
-    private static string BuildFeatureLabel(ContextSolidPlan solidPlan)
+    private IList<GeometryObject>? BuildLightweightGeometry(ContextShapePlan shapePlan, ICollection<string> warnings, double minSegmentLengthFeet)
     {
-        string displayName = string.IsNullOrWhiteSpace(solidPlan.DisplayName) ? solidPlan.SourceFeatureId : solidPlan.DisplayName;
-        string sourceFileName = string.IsNullOrWhiteSpace(solidPlan.SourceFilePath)
-            ? "unknown file"
-            : Path.GetFileName(solidPlan.SourceFilePath);
-        return $"'{displayName}' in tile {solidPlan.TileId} ({sourceFileName})";
+        IReadOnlyCollection<(double XFeet, double YFeet)> sanitizedFootprint = footprintSanitizer.Sanitize(shapePlan.FootprintPointsFeet, minSegmentLengthFeet);
+        if (sanitizedFootprint.Count < 3)
+        {
+            warnings.Add($"Skipped {BuildFeatureLabel(shapePlan)} because its footprint collapsed below Revit's short-curve tolerance.");
+            return null;
+        }
+
+        Solid solid = BuildSolid(shapePlan, sanitizedFootprint);
+        return new GeometryObject[] { solid };
     }
 
-    private static Solid BuildSolid(ContextSolidPlan solidPlan, IReadOnlyCollection<(double XFeet, double YFeet)> footprintPointsFeet)
+    private static IList<GeometryObject>? BuildDetailedGeometry(ContextShapePlan shapePlan, ICollection<string> warnings)
+    {
+        List<TessellatedFace> faces = new List<TessellatedFace>();
+        foreach (ContextShapeTriangle triangle in shapePlan.Triangles)
+        {
+            if (IsDegenerate(triangle))
+            {
+                continue;
+            }
+
+            faces.Add(new TessellatedFace(
+                new List<XYZ>
+                {
+                    new XYZ(triangle.A.XFeet, triangle.A.YFeet, triangle.A.ZFeet),
+                    new XYZ(triangle.B.XFeet, triangle.B.YFeet, triangle.B.ZFeet),
+                    new XYZ(triangle.C.XFeet, triangle.C.YFeet, triangle.C.ZFeet)
+                },
+                ElementId.InvalidElementId));
+        }
+
+        if (faces.Count == 0)
+        {
+            warnings.Add($"Skipped {BuildFeatureLabel(shapePlan)} because its detailed geometry did not contain any non-degenerate triangles.");
+            return null;
+        }
+
+        TessellatedShapeBuilder builder = new TessellatedShapeBuilder();
+        builder.OpenConnectedFaceSet(false);
+        foreach (TessellatedFace face in faces)
+        {
+            builder.AddFace(face);
+        }
+
+        builder.CloseConnectedFaceSet();
+        builder.Target = TessellatedShapeBuilderTarget.AnyGeometry;
+        builder.Fallback = TessellatedShapeBuilderFallback.Mesh;
+        builder.Build();
+        return builder.GetBuildResult().GetGeometricalObjects();
+    }
+
+    private static bool IsDegenerate(ContextShapeTriangle triangle)
+    {
+        XYZ ab = new XYZ(
+            triangle.B.XFeet - triangle.A.XFeet,
+            triangle.B.YFeet - triangle.A.YFeet,
+            triangle.B.ZFeet - triangle.A.ZFeet);
+        XYZ ac = new XYZ(
+            triangle.C.XFeet - triangle.A.XFeet,
+            triangle.C.YFeet - triangle.A.YFeet,
+            triangle.C.ZFeet - triangle.A.ZFeet);
+        return ab.CrossProduct(ac).GetLength() <= 1e-8d;
+    }
+
+    private static string BuildFeatureLabel(ContextShapePlan shapePlan)
+    {
+        string displayName = string.IsNullOrWhiteSpace(shapePlan.DisplayName) ? shapePlan.SourceFeatureId : shapePlan.DisplayName;
+        string sourceFileName = string.IsNullOrWhiteSpace(shapePlan.SourceFilePath)
+            ? "unknown file"
+            : Path.GetFileName(shapePlan.SourceFilePath);
+        return $"'{displayName}' in tile {shapePlan.TileId} ({sourceFileName})";
+    }
+
+    private static Solid BuildSolid(ContextShapePlan shapePlan, IReadOnlyCollection<(double XFeet, double YFeet)> footprintPointsFeet)
     {
         List<XYZ> points = footprintPointsFeet
-            .Select(point => new XYZ(point.XFeet, point.YFeet, solidPlan.BaseElevationFeet))
+            .Select(point => new XYZ(point.XFeet, point.YFeet, shapePlan.BaseElevationFeet))
             .ToList();
         if (points.Count < 3)
         {
@@ -291,7 +351,6 @@ public sealed class PlateauContextImporter
             loop.Append(Line.CreateBound(start, end));
         }
 
-        return GeometryCreationUtilities.CreateExtrusionGeometry(new List<CurveLoop> { loop }, XYZ.BasisZ, solidPlan.HeightFeet);
+        return GeometryCreationUtilities.CreateExtrusionGeometry(new List<CurveLoop> { loop }, XYZ.BasisZ, shapePlan.HeightFeet);
     }
 }
-
