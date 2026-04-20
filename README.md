@@ -114,6 +114,18 @@ All output DLLs are written to `bin/Deploy/`.
 
 ## Install
 
+### Installer EXE
+
+After building the solution, create a distributable installer `.exe` with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install\build-installer.ps1
+```
+
+The installer EXE is written to `install/output/` and installs the add-in payload under `C:\ProgramData\Autodesk\Revit\Addins\2024\RevitGeoSuite\` with `RevitGeoSuite.addin` placed in `C:\ProgramData\Autodesk\Revit\Addins\2024\`.
+
+### Manual Install
+
 1. Build the solution
 2. Copy `bin/Deploy/` contents to a folder (e.g. `C:\RevitGeoSuite\`)
 3. Copy `RevitGeoSuite.addin` to `%AppData%\Autodesk\Revit\Addins\2024\`

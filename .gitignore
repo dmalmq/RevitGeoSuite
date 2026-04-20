@@ -8,5 +8,11 @@ packages/
 .dotnet/
 TestResults/
 *.slnx
+*.log
+.claude/
+manual-build-correct/
+meshinspector-manual.rsp
 georef-build*.log
 georef-bpr-false.log
+install/dist/
+install/output/

@@ -7,7 +7,8 @@
     <Deterministic>true</Deterministic>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitInstallDir>
-    <OutputPath>$(SolutionDir)bin\Deploy\</OutputPath>
+    <RepositoryRoot>$(MSBuildThisFileDirectory)</RepositoryRoot>
+    <OutputPath>$(RepositoryRoot)bin\Deploy\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <UseCommonOutputDirectory>true</UseCommonOutputDirectory>
   </PropertyGroup>
