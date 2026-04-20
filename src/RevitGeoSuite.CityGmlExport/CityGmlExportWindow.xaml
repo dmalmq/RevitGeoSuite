@@ -52,6 +52,22 @@
 
         <Border Style="{StaticResource ShellCardBorderStyle}">
           <StackPanel>
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.OutputFolder]}" />
+            <Grid Margin="0,8,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="118" />
+              </Grid.ColumnDefinitions>
+              <TextBox Grid.Column="0" Text="{Binding OutputDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+              <Button Grid.Column="2" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Browse]}" Click="OnBrowseOutputClick" />
+            </Grid>
+            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.OutputHint]}" />
+          </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <StackPanel>
             <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Center.Scope]}" />
             <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.ScopeHint]}" />
 
@@ -164,7 +180,7 @@
             <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Shell.RightPanel]}" />
           </Border>
 
-          <Expander IsExpanded="True">
+          <Expander IsExpanded="False">
             <Expander.Header>
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Sidebar.Reference]}" />
             </Expander.Header>
@@ -241,17 +257,6 @@
                 </StackPanel>
               </Expander>
 
-              <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.OutputFolder]}" />
-              <Grid Margin="0,8,0,0">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="10" />
-                  <ColumnDefinition Width="118" />
-                </Grid.ColumnDefinitions>
-                <TextBox Grid.Column="0" Text="{Binding OutputDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Grid.Column="2" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Browse]}" Click="OnBrowseOutputClick" />
-              </Grid>
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.OutputHint]}" />
             </StackPanel>
           </Expander>
         </StackPanel>

@@ -15,9 +15,9 @@ namespace RevitGeoSuite.Georeference.Tests;
 public sealed class GeoreferenceApplyCoordinatorTests
 {
     [Fact]
-    public void Apply_forwards_preview_intent_to_revit_placement_service()
+    public void Apply_forwards_existing_setup_preview_intent_to_revit_placement_service()
     {
-        GeoreferenceViewModel viewModel = GeoreferenceViewModelTestsAccessor.CreatePreviewReadyViewModel();
+        GeoreferenceViewModel viewModel = GeoreferenceViewModelTestsAccessor.CreatePreviewReadyExistingSetupViewModel();
         PlacementApplyResult expectedResult = new PlacementApplyResult
         {
             AuditSummary = "Applied test summary"
@@ -35,7 +35,12 @@ public sealed class GeoreferenceApplyCoordinatorTests
         Assert.Same(expectedResult, result);
         placementService.Verify(service => service.ApplyPlacement(
             document,
-            It.Is<PlacementIntent>(intent => intent.SelectedCrs!.EpsgCode == 6677 && intent.SelectedProjectedCoordinate.HasValue)), Times.Once);
+            It.Is<PlacementIntent>(intent =>
+                intent.ApplyMode == PlacementApplyMode.MetadataOnly &&
+                intent.SelectedCrs!.EpsgCode == 6677 &&
+                intent.WorkingProjectBasePoint != null &&
+                Math.Abs(intent.WorkingProjectBasePoint.ProjectedCoordinate!.Value.Easting - 25.0d) < 0.001d &&
+                Math.Abs(intent.WorkingProjectBasePoint.ProjectedCoordinate.Value.Northing + 12.5d) < 0.001d)), Times.Once);
     }
 
     [Fact]
@@ -68,15 +73,12 @@ public sealed class GeoreferenceApplyCoordinatorTests
             return viewModel;
         }
 
-        public static GeoreferenceViewModel CreatePreviewReadyViewModel()
+        public static GeoreferenceViewModel CreatePreviewReadyExistingSetupViewModel()
         {
             GeoreferenceViewModel viewModel = CreateBaseViewModel();
             viewModel.GoNext();
             viewModel.SelectedCrs = viewModel.AvailableCrs.Single(definition => definition.EpsgCode == 6677);
-            viewModel.GoNext();
-            viewModel.SetSelectedMapPoint(35.681236, 139.767125);
-            viewModel.GoNext();
-            viewModel.GoNext();
+            viewModel.ConfirmExistingSetup = true;
             viewModel.GoNext();
             return viewModel;
         }
@@ -91,20 +93,31 @@ public sealed class GeoreferenceApplyCoordinatorTests
                 {
                     DocumentTitle = "Sample Project",
                     IsSupportedDocument = true,
-                    SiteLatitudeDegrees = 35.681236,
-                    SiteLongitudeDegrees = 139.767125,
+                    ExistingSetupDetected = true,
                     ProjectPosition = new ProjectPositionSnapshot(),
+                    SurveyPoint = new BasePointSnapshot
+                    {
+                        Name = "Survey Point",
+                        SharedEastWestFeet = 0d,
+                        SharedNorthSouthFeet = 0d,
+                        SharedElevationFeet = 0d,
+                        EstimatedLatitudeDegrees = 35.681236,
+                        EstimatedLongitudeDegrees = 139.767125
+                    },
                     ProjectBasePoint = new BasePointSnapshot
                     {
                         Name = "Project Base Point",
+                        SharedEastWestFeet = 25d / 0.3048d,
+                        SharedNorthSouthFeet = -12.5d / 0.3048d,
+                        SharedElevationFeet = 0d,
                         EstimatedLatitudeDegrees = 35.680910,
                         EstimatedLongitudeDegrees = 139.768015
                     }
                 },
                 registry.GetAvailableDefinitions(),
                 transformer,
-                new SiteSelectionService(),
-                new PlacementPreviewService(validator));
+                new PlacementPreviewService(validator),
+                new SplitSurveyProjectBasePointPreviewService(validator));
         }
     }
 }

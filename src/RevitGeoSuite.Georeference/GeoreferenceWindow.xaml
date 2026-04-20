@@ -8,7 +8,6 @@
         Width="1500"
         MinWidth="1180"
         MinHeight="780"
-        Loaded="OnLoaded"
         WindowStartupLocation="CenterOwner">
   <Window.Resources>
     <ResourceDictionary>
@@ -66,8 +65,8 @@
         <Border Style="{StaticResource ShellCardBorderStyle}">
           <StackPanel>
             <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Section.WorkflowSteps]}" />
-                                    <UniformGrid Margin="0,10,0,0" Columns="3">
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="CurrentState" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToCurrentState}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.CurrentState]}">
+            <UniformGrid Margin="0,10,0,0" Columns="3">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="CurrentState" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToCurrentState}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -85,7 +84,7 @@
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ChooseCrs" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToChooseCrs}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Crs]}">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ChooseCrs" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToChooseCrs}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -99,65 +98,11 @@
                   </Border.Style>
                   <StackPanel Orientation="Horizontal">
                     <TextBlock FontWeight="SemiBold" Text="2." />
-                    <TextBlock Margin="6,0,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Crs]}" TextWrapping="Wrap" Width="130" />
+                    <TextBlock Margin="6,0,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Step.Setup]}" TextWrapping="Wrap" Width="130" />
                   </StackPanel>
                 </Border>
               </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SelectPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSelectPoint}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.SiteReference]}" Visibility="{Binding IsNotQuickSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
-                <Border>
-                  <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsSelectPointStepVisible}" Value="True">
-                          <Setter Property="Background" Value="{StaticResource SuiteAccentSoftBrush}" />
-                          <Setter Property="BorderBrush" Value="{StaticResource SuiteAccentBrush}" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </Border.Style>
-                  <StackPanel Orientation="Horizontal">
-                    <TextBlock FontWeight="SemiBold" Text="3." />
-                    <TextBlock Margin="6,0,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.SiteReference]}" TextWrapping="Wrap" Width="130" />
-                  </StackPanel>
-                </Border>
-              </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="ReviewPoint" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToReviewPoint}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Review]}" Visibility="{Binding IsNotQuickSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
-                <Border>
-                  <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsReviewPointStepVisible}" Value="True">
-                          <Setter Property="Background" Value="{StaticResource SuiteAccentSoftBrush}" />
-                          <Setter Property="BorderBrush" Value="{StaticResource SuiteAccentBrush}" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </Border.Style>
-                  <StackPanel Orientation="Horizontal">
-                    <TextBlock FontWeight="SemiBold" Text="4." />
-                    <TextBlock Margin="6,0,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Review]}" TextWrapping="Wrap" Width="130" />
-                  </StackPanel>
-                </Border>
-              </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="SetupIntent" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToSetupIntent}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Intent]}" Visibility="{Binding IsNotQuickSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
-                <Border>
-                  <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsSetupIntentStepVisible}" Value="True">
-                          <Setter Property="Background" Value="{StaticResource SuiteAccentSoftBrush}" />
-                          <Setter Property="BorderBrush" Value="{StaticResource SuiteAccentBrush}" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </Border.Style>
-                  <StackPanel Orientation="Horizontal">
-                    <TextBlock FontWeight="SemiBold" Text="5." />
-                    <TextBlock Margin="6,0,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Intent]}" TextWrapping="Wrap" Width="130" />
-                  </StackPanel>
-                </Border>
-              </Button>
-              <Button Style="{StaticResource StepChipButtonStyle}" Tag="Preview" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToPreview}" ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Preview]}">
+              <Button Style="{StaticResource StepChipButtonStyle}" Tag="Preview" Click="OnStepChipClick" IsEnabled="{Binding CanNavigateToPreview}">
                 <Border>
                   <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource StepChipBorderStyle}">
@@ -170,7 +115,7 @@
                     </Style>
                   </Border.Style>
                   <StackPanel Orientation="Horizontal">
-                    <TextBlock FontWeight="SemiBold" Text="6." />
+                    <TextBlock FontWeight="SemiBold" Text="3." />
                     <TextBlock Margin="6,0,0,0" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.Preview]}" TextWrapping="Wrap" Width="130" />
                   </StackPanel>
                 </Border>
@@ -181,32 +126,14 @@
 
         <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsCurrentStateStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
           <StackPanel>
-            <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasExistingSetupMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Step.CurrentState]}" />
+            <Border Margin="0,12,0,0" Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasExistingSetupMessage, Converter={StaticResource BoolToVisibilityConverter}}">
               <TextBlock Text="{Binding ExistingSetupMessage}" TextWrapping="Wrap" />
             </Border>
-            <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Border Margin="0,12,0,0" Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
               <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
             </Border>
-            <Grid Margin="0,0,0,14">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260" />
-                <ColumnDefinition Width="*" />
-              </Grid.ColumnDefinitions>
-              <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.WorkflowMode]}" />
-                <ComboBox Margin="0,8,0,0"
-                          ItemsSource="{Binding WorkflowModeOptions}"
-                          SelectedItem="{Binding SelectedWorkflowModeOption, Mode=TwoWay}"
-                          DisplayMemberPath="Title" />
-              </StackPanel>
-              <Border Grid.Column="1" Style="{StaticResource StatusPillBorderStyle}">
-                <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedWorkflowModeDescription}" TextWrapping="Wrap" />
-              </Border>
-            </Grid>
-            <Border Style="{StaticResource StatusPillBorderStyle}" Visibility="{Binding IsSplitWorkflowMode, Converter={StaticResource BoolToVisibilityConverter}}">
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SplitWorkflowSummary}" TextWrapping="Wrap" />
-            </Border>
-            <TextBlock Margin="0,12,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.V1Note]}" />
+            <TextBlock Margin="0,12,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SetupModeDescription}" TextWrapping="Wrap" />
             <ItemsControl Margin="0,14,0,0" ItemsSource="{Binding CurrentStateRows}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -216,7 +143,7 @@
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
                   </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
@@ -226,308 +153,90 @@
 
         <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsChooseCrsStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
           <StackPanel>
-            <shared:CrsPickerControl AvailableDefinitions="{Binding AvailableCrs}" SelectedDefinition="{Binding SelectedCrs, Mode=TwoWay}" />
-            <Border Margin="0,14,0,0" Padding="14" Background="#FFF8F0" BorderBrush="#E8D5B8" BorderThickness="1" CornerRadius="6" Visibility="{Binding IsQuickSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding SetupModeTitle}" />
+            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SetupModeDescription}" TextWrapping="Wrap" />
+            <shared:CrsPickerControl Margin="0,18,0,0" AvailableDefinitions="{Binding AvailableCrs}" SelectedDefinition="{Binding SelectedCrs, Mode=TwoWay}" />
+
+            <CheckBox Margin="0,14,0,0"
+                      Content="{Binding OverrideExistingSetupLabel}"
+                      IsChecked="{Binding OverrideExistingSetup, Mode=TwoWay}"
+                      Visibility="{Binding HasDetectedExistingPointSetup, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+            <Border Margin="0,18,0,0" Padding="14" Background="#FFF8F0" BorderBrush="#E8D5B8" BorderThickness="1" CornerRadius="6" Visibility="{Binding IsNewProjectMode, Converter={StaticResource BoolToVisibilityConverter}}">
               <StackPanel>
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.StepTitle.CrsAndCoordinates]}" />
-                <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding QuickSetupCoordinateHint}" TextWrapping="Wrap" />
-                <Border Margin="0,8,0,0" Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasKnownCoordinateErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-                  <TextBlock Text="{Binding KnownCoordinateErrorMessage}" TextWrapping="Wrap" />
-                </Border>
-                <Grid Margin="0,10,0,0">
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Section.SetupDetails]}" />
+                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.StepDescription.NewProject]}" TextWrapping="Wrap" />
+                <Grid Margin="0,14,0,0">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="200" />
-                    <ColumnDefinition Width="200" />
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="220" />
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
                   <StackPanel Grid.Column="0" Margin="0,0,12,0">
                     <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.EastingLabel]}" />
-                    <TextBox Margin="0,8,0,0" Text="{Binding KnownCoordinateEastingInput, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox Margin="0,8,0,0" Text="{Binding ProjectBasePointOffsetXInput, UpdateSourceTrigger=PropertyChanged}" />
                   </StackPanel>
                   <StackPanel Grid.Column="1" Margin="0,0,12,0">
                     <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.NorthingLabel]}" />
-                    <TextBox Margin="0,8,0,0" Text="{Binding KnownCoordinateNorthingInput, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox Margin="0,8,0,0" Text="{Binding ProjectBasePointOffsetYInput, UpdateSourceTrigger=PropertyChanged}" />
                   </StackPanel>
                 </Grid>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </Border>
-
-                <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsSelectPointStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
-          <StackPanel>
-            <Grid Margin="0,0,0,10">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="260" />
-                <ColumnDefinition Width="260" />
-              </Grid.ColumnDefinitions>
-              <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding SelectedCrsSummary}" TextWrapping="Wrap" />
-                <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectPointIntroText}" TextWrapping="Wrap" />
-              </StackPanel>
-              <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.CaptureTarget]}" />
-                <ComboBox Margin="0,8,0,0"
-                          ItemsSource="{Binding CaptureTargetOptions}"
-                          SelectedItem="{Binding SelectedCaptureTargetOption, Mode=TwoWay}"
-                          DisplayMemberPath="Title" />
-              </StackPanel>
-              <StackPanel Grid.Column="2">
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.SelectionMethod]}" />
-                <ComboBox Margin="0,8,0,0"
-                          ItemsSource="{Binding SiteSelectionModeOptions}"
-                          SelectedItem="{Binding SelectedSiteSelectionModeOption, Mode=TwoWay}"
-                          DisplayMemberPath="Title" />
-              </StackPanel>
-            </Grid>
-
-            <Border Margin="0,0,0,10" Style="{StaticResource StatusPillBorderStyle}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedCaptureTargetDescription}" TextWrapping="Wrap" />
-                <TextBlock Grid.Column="1" Margin="18,0,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedSiteSelectionModeDescription}" TextWrapping="Wrap" />
-              </Grid>
-            </Border>
-
-            <Border Margin="0,0,0,10" Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsCurrentRevitSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
-              <StackPanel>
-                <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasCurrentRevitSetupErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-                  <TextBlock Text="{Binding CurrentRevitSetupErrorMessage}" TextWrapping="Wrap" />
-                </Border>
-                <Grid>
+                <Grid Margin="0,14,0,0">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="200" />
-                    <ColumnDefinition Width="250" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <StackPanel Grid.Column="0" Margin="0,0,12,0" Visibility="{Binding CanSelectPrimaryAnchorTarget, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.PrimaryAnchorTarget]}" />
-                    <ComboBox Margin="0,8,0,0"
-                              ItemsSource="{Binding AnchorTargetOptions}"
-                              SelectedItem="{Binding SelectedAnchorTargetOption, Mode=TwoWay}"
-                              DisplayMemberPath="Title" />
-                  </StackPanel>
-                  <Button Grid.Column="2"
-                          MinWidth="160"
-                          Height="34"
-                          VerticalAlignment="Bottom"
-                          Content="{Binding CurrentRevitSetupButtonText}"
-                          Click="OnUseCurrentRevitSetupClick"
-                          IsEnabled="{Binding CanUseCurrentRevitSetup}" />
-                  <TextBlock Grid.Column="3"
-                             Margin="14,0,0,0"
-                             VerticalAlignment="Center"
-                             Style="{StaticResource BodyMutedTextStyle}"
-                             Text="{Binding CurrentRevitSetupHint}"
-                             TextWrapping="Wrap" />
-                </Grid>
-              </StackPanel>
-            </Border>
-
-            <Border Margin="0,0,0,10" Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsKnownCoordinateMode, Converter={StaticResource BoolToVisibilityConverter}}">
-              <StackPanel>
-                <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasKnownCoordinateErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-                  <TextBlock Text="{Binding KnownCoordinateErrorMessage}" TextWrapping="Wrap" />
-                </Border>
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="160" />
-                    <ColumnDefinition Width="160" />
                     <ColumnDefinition Width="220" />
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
-                  <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.EastingMeters]}" />
-                    <TextBox Margin="0,8,0,0" Text="{Binding KnownCoordinateEastingInput, UpdateSourceTrigger=PropertyChanged}" />
-                  </StackPanel>
-                  <StackPanel Grid.Column="1" Margin="0,0,10,0">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.NorthingMeters]}" />
-                    <TextBox Margin="0,8,0,0" Text="{Binding KnownCoordinateNorthingInput, UpdateSourceTrigger=PropertyChanged}" />
-                  </StackPanel>
-                  <StackPanel Grid.Column="2" Margin="0,0,12,0" Visibility="{Binding CanSelectPrimaryAnchorTarget, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.PrimaryAnchorTarget]}" />
-                    <ComboBox Margin="0,8,0,0"
-                              ItemsSource="{Binding AnchorTargetOptions}"
-                              SelectedItem="{Binding SelectedAnchorTargetOption, Mode=TwoWay}"
-                              DisplayMemberPath="Title" />
-                  </StackPanel>
-                  <Button Grid.Column="3"
-                          MinWidth="150"
-                          Height="34"
-                          VerticalAlignment="Bottom"
-                          Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Action.UseCoordinates]}"
-                          Click="OnUseKnownCoordinatesClick" />
-                  <TextBlock Grid.Column="4"
-                             Margin="14,0,0,0"
-                             VerticalAlignment="Center"
-                             Style="{StaticResource BodyMutedTextStyle}"
-                             Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.KnownCoordinatesHint]}"
-                             TextWrapping="Wrap" />
+                  <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Survey]}" />
+                  <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SurveyOriginSummary}" TextWrapping="Wrap" />
                 </Grid>
-                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedAnchorTargetDescription}" Visibility="{Binding CanSelectPrimaryAnchorTarget, Converter={StaticResource BoolToVisibilityConverter}}" />
-                <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.WorkingPointSavedHint]}" Visibility="{Binding IsCapturingWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <Grid Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Project]}" />
+                  <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding ProjectBasePointOffsetSummary}" TextWrapping="Wrap" />
+                </Grid>
               </StackPanel>
             </Border>
 
-            <Grid Margin="0,0,0,10">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="360" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-              </Grid.ColumnDefinitions>
-              <TextBox x:Name="MapSearchTextBox"
-                       Grid.Column="0"
-                       Height="34"
-                       VerticalContentAlignment="Center"
-                       KeyDown="OnMapSearchKeyDown"
-                       ToolTip="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.MapSearchTooltip]}" />
-              <Button Grid.Column="1" Margin="8,0,0,0" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Search]}" Click="OnMapSearchClick" />
-              <Button Grid.Column="2"
-                      Margin="8,0,0,0"
-                      Style="{StaticResource SecondaryButtonStyle}"
-                      Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Action.ZoomSite]}"
-                      Click="OnZoomToSiteClick"
-                      IsEnabled="{Binding HasSiteLocation}" />
-              <Button Grid.Column="3"
-                      Margin="8,0,0,0"
-                      Style="{StaticResource SecondaryButtonStyle}"
-                      Content="{Binding ProjectBasePointZoomButtonText}"
-                      Click="OnZoomToProjectBasePointClick"
-                      IsEnabled="{Binding HasProjectBasePointLocation}" />
-            </Grid>
-            <Border Margin="0,0,0,8" Style="{StaticResource StatusPillBorderStyle}">
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.MapMarkerLegend]}" TextWrapping="Wrap" />
-            </Border>
-            <shared:MapControl x:Name="SiteMap" Height="560" MapPointSelected="OnMapPointSelected" />
-          </StackPanel>
-        </Border>
-
-        <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsReviewPointStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
-          <StackPanel>
-            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Section.ReviewSelectedReferences]}" />
-            <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReviewPrimarySectionDescription}" />
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding ReviewPrimarySectionTitle}" />
-            <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding SelectedPointRows}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="220" />
-                      <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <Border Style="{StaticResource ShellCardBorderStyle}">
+            <Border Margin="0,18,0,0" Padding="14" Background="#FFF8F0" BorderBrush="#E8D5B8" BorderThickness="1" CornerRadius="6" Visibility="{Binding IsConfirmExistingSetupMode, Converter={StaticResource BoolToVisibilityConverter}}">
               <StackPanel>
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding SetupIntentWorkingLabel}" />
-                <TextBlock Margin="0,8,0,10" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReviewWorkingSectionDescription}" />
-                <ItemsControl ItemsSource="{Binding WorkingProjectBasePointRows}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="220" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                        <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.NoWorkingPointRun]}" Visibility="{Binding HasNoWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Section.SetupDetails]}" />
+                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.StepDescription.Existing]}" TextWrapping="Wrap" />
+                <Grid Margin="0,14,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Survey]}" />
+                  <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SurveyOriginSummary}" TextWrapping="Wrap" />
+                </Grid>
+                <Grid Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Project]}" />
+                  <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding ProjectBasePointOffsetSummary}" TextWrapping="Wrap" />
+                </Grid>
+                <CheckBox Margin="0,16,0,0"
+                          Content="{Binding ExistingSetupConfirmationLabel}"
+                          IsChecked="{Binding ConfirmExistingSetup, Mode=TwoWay}" />
+                <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ExistingSetupConfirmationHint}" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
-            
-            <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding CanShowActualProjectBasePointMoveSection, Converter={StaticResource BoolToVisibilityConverter}}">
-              <StackPanel>
-                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.AdvancedAlignPbp]}" />
-                <TextBlock Margin="0,8,0,12"
-                           Style="{StaticResource BodyMutedTextStyle}"
-                           Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.AdvancedAlignPbpHint]}"
-                           TextWrapping="Wrap" />
-                <Border Style="{StaticResource WarningBorderStyle}"
-                        Visibility="{Binding HasActualProjectBasePointMoveWarningMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-                  <TextBlock Text="{Binding ActualProjectBasePointMoveWarningMessage}" TextWrapping="Wrap" />
-                </Border>
-                <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding ActualProjectBasePointMoveRows}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="220" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                        <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock Margin="0,10,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ActualProjectBasePointMoveStatusMessage}" TextWrapping="Wrap" />
-                <Button HorizontalAlignment="Left"
-                        Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.AdvancedAlignPbpButton]}"
-                        Click="OnMoveActualProjectBasePointClick"
-                        IsEnabled="{Binding CanMoveActualProjectBasePoint}" />
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </Border>
 
-        <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsSetupIntentStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
-          <StackPanel>
-            <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasSetupIntentErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-              <TextBlock Text="{Binding SetupIntentErrorMessage}" TextWrapping="Wrap" />
+            <Border Margin="0,14,0,0" Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasSetupValidationMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+              <TextBlock Text="{Binding SetupValidationMessage}" TextWrapping="Wrap" />
             </Border>
-            <Grid Margin="0,0,0,16">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-              </Grid.RowDefinitions>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="240" />
-                <ColumnDefinition Width="*" />
-              </Grid.ColumnDefinitions>
-              <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Label.SelectedCrs]}" />
-              <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SelectedCrsSummary}" />
-              <TextBlock Grid.Row="1" Margin="0,10,0,0" Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding SetupIntentPrimaryLabel}" />
-              <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SelectedPointSummary}" />
-              <TextBlock Grid.Row="2" Margin="0,10,0,0" Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding SetupIntentWorkingLabel}" />
-              <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,10,0,0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding WorkingProjectBasePointSummary}" />
-            </Grid>
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Section.SetupIntent]}" />
-            <ComboBox Margin="0,8,0,0"
-                      ItemsSource="{Binding AvailableApplyModeOptions}"
-                      SelectedItem="{Binding SelectedApplyModeOption, Mode=TwoWay}"
-                      DisplayMemberPath="Title" />
-            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedApplyModeDescription}" />
-            <TextBlock Margin="0,18,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.SetupSourceNote]}" />
-            <TextBox Margin="0,8,0,0" Text="{Binding SetupSource, UpdateSourceTrigger=PropertyChanged}" />
-            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.SetupSourceNoteHint]}" />
-            <StackPanel Margin="0,18,0,0" Visibility="{Binding RequiresTrueNorthAngleInput, Converter={StaticResource BoolToVisibilityConverter}}">
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.TrueNorthAngleDegrees]}" />
-              <TextBox Margin="0,8,0,0" Width="180" Text="{Binding TrueNorthAngleInput, UpdateSourceTrigger=PropertyChanged}" />
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.TrueNorthAngleHint]}" />
-            </StackPanel>
           </StackPanel>
         </Border>
 
         <Border Style="{StaticResource ShellCardBorderStyle}" Visibility="{Binding IsPreviewStepVisible, Converter={StaticResource BoolToVisibilityConverter}}">
           <StackPanel>
-            <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasPreviewWarnings, Converter={StaticResource BoolToVisibilityConverter}}">
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Section.Preview]}" />
+            <Border Margin="0,12,0,0" Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasPreviewWarnings, Converter={StaticResource BoolToVisibilityConverter}}">
               <ItemsControl ItemsSource="{Binding PreviewWarnings}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -537,7 +246,7 @@
               </ItemsControl>
             </Border>
 
-            <Border Style="{StaticResource ShellCardBorderStyle}">
+            <Border Margin="0,14,0,0" Style="{StaticResource ShellCardBorderStyle}">
               <StackPanel>
                 <Grid Margin="0,0,0,10">
                   <Grid.ColumnDefinitions>
@@ -558,15 +267,16 @@
                           <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                        <TextBlock Grid.Column="1" Margin="10,0,16,0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding CurrentValue}" />
-                        <TextBlock Grid.Column="2" Margin="10,0,0,0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding ProposedValue}" />
+                        <TextBlock Grid.Column="1" Margin="10,0,16,0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding CurrentValue}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="2" Margin="10,0,0,0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding ProposedValue}" TextWrapping="Wrap" />
                       </Grid>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
               </StackPanel>
             </Border>
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.WhatWillChange]}" />
+
+            <TextBlock Margin="0,16,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Preview.WhatWillChange]}" />
             <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding PreviewWhatWillChange}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -606,7 +316,7 @@
             <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Shell.RightPanel]}" />
           </Border>
 
-          <Expander IsExpanded="True">
+          <Expander IsExpanded="False">
             <Expander.Header>
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Sidebar.ProjectContext]}" />
             </Expander.Header>
@@ -619,27 +329,7 @@
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </Expander>
-
-          <Expander IsExpanded="True">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Sidebar.PrimaryAnchor]}" />
-            </Expander.Header>
-            <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding SelectedPointRows}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Grid Margin="0,0,0,10">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="130" />
-                      <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
                   </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
@@ -648,25 +338,22 @@
 
           <Expander IsExpanded="False">
             <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Sidebar.WorkingPoint]}" />
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Sidebar.PlannedSetup]}" />
             </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <ItemsControl ItemsSource="{Binding WorkingProjectBasePointRows}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Grid Margin="0,0,0,10">
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130" />
-                        <ColumnDefinition Width="*" />
-                      </Grid.ColumnDefinitions>
-                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
-                    </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.NoWorkingPointYet]}" Visibility="{Binding HasNoWorkingProjectBasePoint, Converter={StaticResource BoolToVisibilityConverter}}" />
-            </StackPanel>
+            <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding PlannedSetupRows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="130" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </Expander>
 
           <Expander IsExpanded="True">
@@ -680,47 +367,22 @@
               <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasExistingSetupMessage, Converter={StaticResource BoolToVisibilityConverter}}">
                 <TextBlock Text="{Binding ExistingSetupMessage}" TextWrapping="Wrap" />
               </Border>
-              <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasCurrentRevitSetupErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-                <TextBlock Text="{Binding CurrentRevitSetupErrorMessage}" TextWrapping="Wrap" />
-              </Border>
-              <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasKnownCoordinateErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-                <TextBlock Text="{Binding KnownCoordinateErrorMessage}" TextWrapping="Wrap" />
-              </Border>
-              <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasSetupIntentErrorMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-                <TextBlock Text="{Binding SetupIntentErrorMessage}" TextWrapping="Wrap" />
+              <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasSetupValidationMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Text="{Binding SetupValidationMessage}" TextWrapping="Wrap" />
               </Border>
             </StackPanel>
           </Expander>
         </StackPanel>
       </ScrollViewer>
     </Border>
+
     <Border Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource FooterBarBorderStyle}">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
         <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Back]}" Click="OnBackClick" IsEnabled="{Binding CanGoBack}" />
-        <Button x:Name="NextButton" Content="{Binding NextButtonText}" Click="OnNextClick" IsEnabled="{Binding CanGoNext}" Visibility="{Binding ShowNextButton, Converter={StaticResource BoolToVisibilityConverter}}" />
+        <Button Content="{Binding NextButtonText}" Click="OnNextClick" IsEnabled="{Binding CanGoNext}" Visibility="{Binding ShowNextButton, Converter={StaticResource BoolToVisibilityConverter}}" />
         <Button Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Apply]}" Click="OnApplyClick" IsEnabled="{Binding CanApply}" Visibility="{Binding IsPreviewStepVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
         <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Close]}" Click="OnCloseClick" />
       </StackPanel>
     </Border>
   </Grid>
 </Window>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

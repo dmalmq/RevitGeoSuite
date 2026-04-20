@@ -11,6 +11,8 @@ namespace RevitGeoSuite.SharedUI.Controls;
 
 public partial class ModuleNavRailControl : UserControl
 {
+    private bool isLocalizerSubscribed;
+
     public static readonly DependencyProperty CurrentModuleKeyProperty = DependencyProperty.Register(
         nameof(CurrentModuleKey),
         typeof(string),
@@ -31,7 +33,8 @@ public partial class ModuleNavRailControl : UserControl
 
         InitializeComponent();
         RefreshLabels();
-        UiLocalizer.Instance.PropertyChanged += OnLocalizerPropertyChanged;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
     public event EventHandler<ModuleNavigationRequestedEventArgs>? ModuleRequested;
@@ -50,6 +53,29 @@ public partial class ModuleNavRailControl : UserControl
         {
             control.RefreshSelection();
         }
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (isLocalizerSubscribed)
+        {
+            return;
+        }
+
+        UiLocalizer.Instance.PropertyChanged += OnLocalizerPropertyChanged;
+        isLocalizerSubscribed = true;
+        RefreshLabels();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (!isLocalizerSubscribed)
+        {
+            return;
+        }
+
+        UiLocalizer.Instance.PropertyChanged -= OnLocalizerPropertyChanged;
+        isLocalizerSubscribed = false;
     }
 
     private void OnLocalizerPropertyChanged(object? sender, PropertyChangedEventArgs e)

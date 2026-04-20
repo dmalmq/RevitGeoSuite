@@ -34,17 +34,15 @@ public sealed class GeoreferenceCommand : IExternalCommand
             currentState,
             crsRegistry.GetAvailableDefinitions(),
             coordinateTransformer,
-            new SiteSelectionService(),
             placementPreviewService,
             splitPreviewService);
 
         RevitGeoPlacementService placementService = new RevitGeoPlacementService(new ProjectLocationWriter(), geoProjectInfoStore, moduleStateStore: moduleStateStore);
         GeoreferenceApplyCoordinator applyCoordinator = new GeoreferenceApplyCoordinator(placementService);
         SplitSurveyProjectBasePointApplyCoordinator splitApplyCoordinator = new SplitSurveyProjectBasePointApplyCoordinator(new SplitSurveyProjectBasePointService(geoProjectInfoStore, moduleStateStore: moduleStateStore));
-        ProjectBasePointMoveCoordinator projectBasePointMoveCoordinator = new ProjectBasePointMoveCoordinator(new ProjectBasePointMoveService(moduleStateStore));
         RevitDocumentHandle? documentHandle = document is null ? null : new RevitDocumentHandle(document);
 
-        GeoreferenceWindow window = new GeoreferenceWindow(viewModel, applyCoordinator, splitApplyCoordinator, projectBasePointMoveCoordinator, documentHandle);
+        GeoreferenceWindow window = new GeoreferenceWindow(viewModel, applyCoordinator, splitApplyCoordinator, documentHandle);
         new WindowInteropHelper(window).Owner = uiApplication.MainWindowHandle;
         window.ShowDialog();
 
@@ -56,9 +54,3 @@ public sealed class GeoreferenceCommand : IExternalCommand
         return Result.Succeeded;
     }
 }
-
-
-
-
-
-
