@@ -24,7 +24,7 @@ public sealed class PlateauImportModule : IRevitGeoModule
             {
                 CommandId = "PlateauImportContext",
                 ButtonText = "Import\nContext",
-                ToolTip = "Scan a PLATEAU folder, preview selected categories and grid tiles, and import grouped lightweight context geometry into the active Revit project.",
+                ToolTip = "Scan a PLATEAU folder, preview selected categories and grid tiles, and import grouped lightweight or detailed PLATEAU context geometry into the active Revit project.",
                 CommandClassName = "RevitGeoSuite.PlateauImport.PlateauImportCommand",
                 AssemblyPath = Assembly.GetExecutingAssembly().Location,
                 IconKind = RibbonIconKind.PlateauImport

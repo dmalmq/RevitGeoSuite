@@ -14,7 +14,7 @@ public sealed class PlateauFolderScanService
         this.cityGmlParser = cityGmlParser ?? new CityGmlParser();
     }
 
-    public PlateauFolderScanResult ScanFolder(string folderPath)
+    public PlateauFolderScanResult ScanFolder(string folderPath, Action<PlateauScanProgress>? reportProgress = null)
     {
         if (string.IsNullOrWhiteSpace(folderPath))
         {
@@ -27,6 +27,7 @@ public sealed class PlateauFolderScanService
         }
 
         ScanTarget scanTarget = ResolveScanTarget(folderPath);
+        reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Enumerating, 0, 0, string.Empty));
         List<PlateauCityModel> models = new List<PlateauCityModel>();
         List<string> warnings = new List<string>();
         string[] supportedFiles = Directory
@@ -34,7 +35,9 @@ public sealed class PlateauFolderScanService
             .Where(IsSupportedFile)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Parsing, 0, supportedFiles.Length, string.Empty));
 
+        int processedFileCount = 0;
         foreach (string filePath in supportedFiles)
         {
             try
@@ -43,14 +46,20 @@ public sealed class PlateauFolderScanService
                 if (model.Features.Count == 0)
                 {
                     warnings.Add($"Skipped '{Path.GetFileName(filePath)}' because no supported PLATEAU buildings, bridges, roads, vegetation, or relief features were found.");
-                    continue;
                 }
-
-                models.Add(model);
+                else
+                {
+                    models.Add(model);
+                }
             }
             catch (Exception ex)
             {
                 warnings.Add($"Skipped '{Path.GetFileName(filePath)}' because it could not be parsed: {ex.Message}");
+            }
+            finally
+            {
+                processedFileCount++;
+                reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Parsing, processedFileCount, supportedFiles.Length, filePath));
             }
         }
 
@@ -60,6 +69,8 @@ public sealed class PlateauFolderScanService
                 ? "No .gml or .xml files were found under the detected PLATEAU package root (udx)."
                 : "No .gml or .xml files were found in the selected folder.");
         }
+
+        reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Completed, supportedFiles.Length, supportedFiles.Length, string.Empty));
 
         return new PlateauFolderScanResult
         {

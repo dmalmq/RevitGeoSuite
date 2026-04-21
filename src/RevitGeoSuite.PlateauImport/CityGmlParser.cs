@@ -58,7 +58,7 @@ public sealed class CityGmlParser
                         continue;
                     }
 
-                    features.AddRange(ParseFeatures(element, descriptor.FeatureType, gml, filePath, tileId));
+                    features.AddRange(ParseFeatures(element, descriptor.Namespace, descriptor.FeatureType, gml, filePath, tileId));
                 }
             }
         }
@@ -150,12 +150,13 @@ public sealed class CityGmlParser
 
     private static IReadOnlyCollection<PlateauContextFeature> ParseFeatures(
         XElement featureElement,
+        XNamespace featureNamespace,
         PlateauFeatureType featureType,
         XNamespace gml,
         string sourcePath,
         string tileId)
     {
-        List<RingCandidate> candidates = GetRingCandidates(featureElement, gml);
+        List<GeometrySurfaceCandidate> candidates = GetSurfaceCandidates(featureElement, gml);
         if (candidates.Count == 0)
         {
             return Array.Empty<PlateauContextFeature>();
@@ -164,25 +165,55 @@ public sealed class CityGmlParser
         string baseId = (string?)featureElement.Attribute(gml + "id") ?? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         string baseName = featureElement.Elements(gml + "name").Select(element => element.Value).FirstOrDefault()
             ?? featureElement.Name.LocalName;
+        int highestLod = candidates.Max(candidate => candidate.Surface.Lod);
+        GeometrySurfaceCandidate[] highestLodCandidates = candidates
+            .Where(candidate => candidate.Surface.Lod == highestLod)
+            .OrderBy(candidate => candidate.Sequence)
+            .ToArray();
 
         if (!ShouldPreserveAllTransportRings(featureType))
         {
-            RingCandidate selectedRing = SelectBestRing(candidates)!;
-            PlateauContextFeature feature = CreateFeature(featureType, baseId, baseName, sourcePath, tileId, selectedRing.Coordinates);
+            GeometrySurfaceCandidate selectedCandidate = SelectBestSurface(candidates)!;
+            PlateauContextFeature feature = CreateFeature(
+                featureElement,
+                featureNamespace,
+                featureType,
+                baseId,
+                baseName,
+                sourcePath,
+                tileId,
+                selectedCandidate.Coordinates,
+                candidates,
+                highestLod,
+                highestLodCandidates.Select(candidate => candidate.Surface).ToArray(),
+                gml);
             return new[] { feature };
         }
 
-        List<PlateauContextFeature> features = new List<PlateauContextFeature>(candidates.Count);
-        bool needsSuffix = candidates.Count > 1;
-        foreach (RingCandidate candidate in candidates)
+        List<PlateauContextFeature> features = new List<PlateauContextFeature>(highestLodCandidates.Length);
+        bool needsSuffix = highestLodCandidates.Length > 1;
+        for (int index = 0; index < highestLodCandidates.Length; index++)
         {
+            GeometrySurfaceCandidate candidate = highestLodCandidates[index];
             string featureId = needsSuffix
-                ? string.Format(CultureInfo.InvariantCulture, "{0}::{1}", baseId, candidate.Sequence + 1)
+                ? string.Format(CultureInfo.InvariantCulture, "{0}::{1}", baseId, index + 1)
                 : baseId;
             string featureName = needsSuffix
-                ? string.Format(CultureInfo.InvariantCulture, "{0} [{1}]", baseName, candidate.Sequence + 1)
+                ? string.Format(CultureInfo.InvariantCulture, "{0} [{1}]", baseName, index + 1)
                 : baseName;
-            features.Add(CreateFeature(featureType, featureId, featureName, sourcePath, tileId, candidate.Coordinates));
+            features.Add(CreateFeature(
+                featureElement,
+                featureNamespace,
+                featureType,
+                featureId,
+                featureName,
+                sourcePath,
+                tileId,
+                candidate.Coordinates,
+                new[] { candidate },
+                candidate.Surface.Lod,
+                new[] { candidate.Surface },
+                gml));
         }
 
         return features;
@@ -194,36 +225,129 @@ public sealed class CityGmlParser
     }
 
     private static PlateauContextFeature CreateFeature(
+        XElement featureElement,
+        XNamespace featureNamespace,
         PlateauFeatureType featureType,
         string id,
         string name,
         string sourcePath,
         string tileId,
-        PlateauCoordinate3D[] coordinates)
+        PlateauCoordinate3D[] coordinates,
+        IReadOnlyCollection<GeometrySurfaceCandidate> candidates,
+        int highestLod,
+        IReadOnlyCollection<PlateauGeometrySurface> geometrySurfaces,
+        XNamespace gml)
     {
-        PlateauContextFeature feature = featureType == PlateauFeatureType.Building
-            ? new PlateauBuildingFeature()
-            : new PlateauContextFeature { FeatureType = featureType };
+        PlateauContextFeature feature;
+        if (featureType == PlateauFeatureType.Building)
+        {
+            (double? baseElevationMeters, double? topElevationMeters) = ResolveBuildingElevationRange(featureElement, featureNamespace, gml, candidates);
+            feature = new PlateauBuildingFeature
+            {
+                BaseElevationMeters = baseElevationMeters,
+                TopElevationMeters = topElevationMeters
+            };
+        }
+        else
+        {
+            feature = new PlateauContextFeature { FeatureType = featureType };
+        }
 
         feature.Id = id;
         feature.Name = name;
         feature.SourcePath = sourcePath;
         feature.TileId = tileId;
+        feature.HighestLod = highestLod;
         feature.ExteriorRing = coordinates;
+        feature.GeometrySurfaces = geometrySurfaces;
         return feature;
     }
 
-    private static List<RingCandidate> GetRingCandidates(XElement featureElement, XNamespace gml)
+    private static (double? BaseElevationMeters, double? TopElevationMeters) ResolveBuildingElevationRange(
+        XElement featureElement,
+        XNamespace featureNamespace,
+        XNamespace gml,
+        IReadOnlyCollection<GeometrySurfaceCandidate> candidates)
     {
-        return featureElement
-            .Descendants(gml + "LinearRing")
-            .Select((ring, index) => CreateCandidate(ring, featureElement, gml, index))
-            .Where(candidate => candidate is not null && candidate.Coordinates.Length >= 4)
+        double? baseElevationMeters = TryGetSemanticElevation(featureElement, featureNamespace, gml, preferHighest: false, "GroundSurface");
+        double? topElevationMeters = TryGetSemanticElevation(featureElement, featureNamespace, gml, preferHighest: true, "RoofSurface", "OuterCeilingSurface", "ClosureSurface");
+
+        if (!baseElevationMeters.HasValue)
+        {
+            baseElevationMeters = TryGetCandidateElevation(candidates, preferHighest: false);
+        }
+
+        if (!topElevationMeters.HasValue)
+        {
+            topElevationMeters = TryGetCandidateElevation(candidates, preferHighest: true);
+        }
+
+        return (baseElevationMeters, topElevationMeters);
+    }
+
+    private static double? TryGetSemanticElevation(
+        XElement featureElement,
+        XNamespace featureNamespace,
+        XNamespace gml,
+        bool preferHighest,
+        params string[] semanticSurfaceNames)
+    {
+        double? selectedElevation = null;
+        foreach (string surfaceName in semanticSurfaceNames)
+        {
+            XElement[] surfaces = featureElement.Descendants(featureNamespace + surfaceName).ToArray();
+            foreach (XElement surface in surfaces)
+            {
+                foreach (PlateauCoordinate3D point in surface
+                             .Descendants(gml + "LinearRing")
+                             .SelectMany(ring => ParseCoordinates(ring, gml)))
+                {
+                    if (!selectedElevation.HasValue)
+                    {
+                        selectedElevation = point.Z;
+                    }
+                    else if (preferHighest)
+                    {
+                        selectedElevation = Math.Max(selectedElevation.Value, point.Z);
+                    }
+                    else
+                    {
+                        selectedElevation = Math.Min(selectedElevation.Value, point.Z);
+                    }
+                }
+            }
+        }
+
+        return selectedElevation;
+    }
+
+    private static double? TryGetCandidateElevation(IReadOnlyCollection<GeometrySurfaceCandidate> candidates, bool preferHighest)
+    {
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        IEnumerable<double> elevations = candidates.SelectMany(candidate => candidate.Coordinates.Select(point => point.Z));
+        return preferHighest
+            ? elevations.Max()
+            : elevations.Min();
+    }
+
+    private static List<GeometrySurfaceCandidate> GetSurfaceCandidates(XElement featureElement, XNamespace gml)
+    {
+        IEnumerable<XElement> geometryElements = featureElement
+            .Descendants(gml + "Polygon")
+            .Concat(featureElement.Descendants(gml + "Triangle"));
+
+        return geometryElements
+            .Select((geometryElement, index) => CreateCandidate(geometryElement, featureElement, gml, index))
+            .Where(candidate => candidate is not null)
             .Select(candidate => candidate!)
             .ToList();
     }
 
-    private static RingCandidate? SelectBestRing(IReadOnlyCollection<RingCandidate> candidates)
+    private static GeometrySurfaceCandidate? SelectBestSurface(IReadOnlyCollection<GeometrySurfaceCandidate> candidates)
     {
         if (candidates.Count == 0)
         {
@@ -238,30 +362,66 @@ public sealed class CityGmlParser
             .First();
     }
 
-    private static RingCandidate? CreateCandidate(XElement ringElement, XElement featureElement, XNamespace gml, int sequence)
+    private static GeometrySurfaceCandidate? CreateCandidate(XElement geometryElement, XElement featureElement, XNamespace gml, int sequence)
     {
-        PlateauCoordinate3D[] coordinates = ParseCoordinates(ringElement, gml);
-        if (coordinates.Length < 4)
+        XElement? exteriorRingElement = geometryElement.Element(gml + "exterior")?.Element(gml + "LinearRing")
+            ?? geometryElement.Descendants(gml + "LinearRing").FirstOrDefault();
+        if (exteriorRingElement is null)
         {
             return null;
         }
 
-        string[] ancestorNames = ringElement
+        PlateauCoordinate3D[] exteriorCoordinates = ParseCoordinates(exteriorRingElement, gml);
+        if (exteriorCoordinates.Length < 3)
+        {
+            return null;
+        }
+
+        IReadOnlyCollection<IReadOnlyCollection<PlateauCoordinate3D>> interiorRings = geometryElement
+            .Elements(gml + "interior")
+            .Elements(gml + "LinearRing")
+            .Select(ring => (IReadOnlyCollection<PlateauCoordinate3D>)ParseCoordinates(ring, gml))
+            .Where(points => points.Count >= 3)
+            .ToArray();
+
+        string[] ancestorNames = geometryElement
             .Ancestors()
             .TakeWhile(element => element != featureElement)
             .Select(element => element.Name.LocalName)
             .ToArray();
+        int lod = DetermineLod(ancestorNames);
+        double planArea = ComputePlanArea(exteriorCoordinates);
 
-        double planArea = ComputePlanArea(coordinates);
-        return new RingCandidate
+        PlateauGeometrySurface surface = new PlateauGeometrySurface
         {
-            Coordinates = coordinates,
+            SurfaceId = (string?)geometryElement.Attribute(gml + "id")
+                ?? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+            Lod = lod,
+            SemanticSurfaceType = ResolveSemanticSurfaceType(ancestorNames),
+            ExteriorRing = exteriorCoordinates,
+            InteriorRings = interiorRings
+        };
+
+        return new GeometrySurfaceCandidate
+        {
+            Surface = surface,
+            Coordinates = exteriorCoordinates,
             Sequence = sequence,
             Priority = DeterminePriority(ancestorNames),
             PlanArea = planArea,
             HasPlanArea = planArea > 0.000001d,
-            AverageZ = coordinates.Average(point => point.Z)
+            AverageZ = exteriorCoordinates.Average(point => point.Z)
         };
+    }
+
+    private static string ResolveSemanticSurfaceType(IReadOnlyCollection<string> ancestorNames)
+    {
+        return ancestorNames.FirstOrDefault(name =>
+                name.EndsWith("Surface", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(name, "MultiSurface", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(name, "CompositeSurface", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("lod", StringComparison.OrdinalIgnoreCase))
+            ?? string.Empty;
     }
 
     private static int DeterminePriority(IReadOnlyCollection<string> ancestorNames)
@@ -282,6 +442,38 @@ public sealed class CityGmlParser
         }
 
         return 3;
+    }
+
+    private static int DetermineLod(IReadOnlyCollection<string> ancestorNames)
+    {
+        int highestLod = 0;
+        foreach (string name in ancestorNames)
+        {
+            if (!name.StartsWith("lod", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            int digitStart = 3;
+            int digitLength = 0;
+            while (digitStart + digitLength < name.Length && char.IsDigit(name[digitStart + digitLength]))
+            {
+                digitLength++;
+            }
+
+            if (digitLength == 0)
+            {
+                continue;
+            }
+
+            if (int.TryParse(name.Substring(digitStart, digitLength), NumberStyles.Integer, CultureInfo.InvariantCulture, out int lod)
+                && lod > highestLod)
+            {
+                highestLod = lod;
+            }
+        }
+
+        return highestLod;
     }
 
     private static double ComputePlanArea(IReadOnlyList<PlateauCoordinate3D> coordinates)
@@ -391,8 +583,10 @@ public sealed class CityGmlParser
         public IReadOnlyCollection<string> LocalNames { get; }
     }
 
-    private sealed class RingCandidate
+    private sealed class GeometrySurfaceCandidate
     {
+        public PlateauGeometrySurface Surface { get; set; } = new PlateauGeometrySurface();
+
         public PlateauCoordinate3D[] Coordinates { get; set; } = Array.Empty<PlateauCoordinate3D>();
 
         public int Sequence { get; set; }

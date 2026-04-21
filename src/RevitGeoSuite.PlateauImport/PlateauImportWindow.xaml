@@ -68,11 +68,23 @@
                 <ColumnDefinition Width="10" />
                 <ColumnDefinition Width="138" />
               </Grid.ColumnDefinitions>
-              <TextBox Grid.Column="0" Text="{Binding SelectedFolderPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBox x:Name="FolderPathTextBox" Grid.Column="0" Text="{Binding SelectedFolderPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
               <Button Grid.Column="2" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Browse]}" Click="OnBrowseFolderClick" />
               <Button Grid.Column="4" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ScanFolder]}" Click="OnScanFolderClick" IsEnabled="{Binding CanScanFolder}" />
             </Grid>
             <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.PackageAutoScanHint]}" />
+            <ProgressBar Margin="0,12,0,0"
+                         Height="8"
+                         Maximum="100"
+                         Value="{Binding ScanProgressPercent}"
+                         IsIndeterminate="{Binding IsScanProgressIndeterminate}"
+                         Foreground="{StaticResource SuiteAccentBrush}"
+                         Visibility="{Binding IsScanning, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <TextBlock Margin="0,8,0,0"
+                       Style="{StaticResource BodyMutedTextStyle}"
+                       Text="{Binding ScanProgressStatusText}"
+                       TextWrapping="Wrap"
+                       Visibility="{Binding IsScanning, Converter={StaticResource BoolToVisibilityConverter}}" />
             <ItemsControl Margin="0,14,0,0" ItemsSource="{Binding ScanRows}" Visibility="{Binding HasScanRows, Converter={StaticResource BoolToVisibilityConverter}}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -122,22 +134,22 @@
             <StackPanel>
               <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Filters]}" />
               <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.FiltersHint]}" />
-              <ItemsControl ItemsSource="{Binding FeatureTypeOptions}" Visibility="{Binding HasFeatureTypeOptions, Converter={StaticResource BoolToVisibilityConverter}}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
-                      <StackPanel>
+              <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasFeatureTypeOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl ItemsSource="{Binding FeatureTypeOptions}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
                         <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
-                          <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Title}" />
+                          <StackPanel>
+                            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Title}" />
+                            <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Description}" />
+                          </StackPanel>
                         </CheckBox>
-                        <TextBlock Margin="22,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Description}" />
-                        <TextBlock Margin="22,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFileCount, StringFormat=Files: {0}}" />
-                        <TextBlock Margin="22,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFilesSummary}" />
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
               <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoFeatureTypes]}" Visibility="{Binding HasNoFeatureTypeOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Border>
@@ -146,24 +158,23 @@
             <StackPanel>
               <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.TileSelectionSummary]}" />
               <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.TileSelectionHint]}" />
-              <ItemsControl ItemsSource="{Binding TileOptions}" Visibility="{Binding HasTileOptions, Converter={StaticResource BoolToVisibilityConverter}}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
-                      <StackPanel Orientation="Horizontal">
-                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Top" />
-                        <StackPanel Margin="10,0,0,0">
-                          <TextBlock FontFamily="Consolas" FontWeight="SemiBold" Text="{Binding TileId}" />
-                          <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding FeatureCount, StringFormat=Features: {0}}" />
-                          <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFileCount, StringFormat=Files: {0}}" />
-                          <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFilesSummary}" />
-                          <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.TileSuggested]}" Visibility="{Binding IsSuggested, Converter={StaticResource BoolToVisibilityConverter}}" />
-                        </StackPanel>
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+              <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasTileOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl ItemsSource="{Binding TileOptions}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Margin="0,0,0,6" Padding="8" Background="#FAFAF6" BorderBrush="{StaticResource SuiteBorderBrush}" BorderThickness="1" CornerRadius="5">
+                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
+                          <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="Consolas" FontWeight="SemiBold" Text="{Binding TileId}" />
+                            <TextBlock Margin="12,0,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding FeatureCount, StringFormat={}{0} features}" />
+                            <TextBlock Margin="8,0,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFileCount, StringFormat={}{0} files}" />
+                          </StackPanel>
+                        </CheckBox>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
               <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoTileOptions]}" Visibility="{Binding HasNoTileOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Border>
@@ -180,9 +191,15 @@
             <StackPanel>
               <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Preview]}" />
               <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.PreviewHint]}" />
+              <TextBlock Margin="0,12,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.GeometryModeLabel]}" />
+              <ComboBox Margin="0,8,0,0"
+                        ItemsSource="{Binding GeometryImportModeOptions}"
+                        SelectedItem="{Binding SelectedGeometryImportModeOption, Mode=TwoWay}"
+                        DisplayMemberPath="Title" />
+              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding GeometryImportModeDescription}" TextWrapping="Wrap" />
               <TextBlock Margin="0,12,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding SelectedCategoryCount, StringFormat=Selected categories: {0}}" />
               <TextBlock Margin="0,4,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding SelectedTileCount, StringFormat=Selected tiles: {0}}" />
-              <TextBlock Margin="0,4,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding PreparedSolidCount, StringFormat=Importable solids: {0}}" />
+              <TextBlock Margin="0,4,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding PreparedShapeCount, StringFormat=Importable shapes: {0}}" />
               <ItemsControl Margin="0,14,0,0" ItemsSource="{Binding PreviewRows}" Visibility="{Binding HasPreviewRows, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -228,7 +245,7 @@
             <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Shell.RightPanel]}" />
           </Border>
 
-          <Expander IsExpanded="True">
+          <Expander IsExpanded="False">
             <Expander.Header>
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.Reference]}" />
             </Expander.Header>
@@ -350,8 +367,6 @@
     </Border>
   </Grid>
 </Window>
-
-
 
 
 

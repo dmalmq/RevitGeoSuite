@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using RevitGeoSuite.Core.Mesh;
@@ -10,6 +11,11 @@ namespace RevitGeoSuite.MeshInspector;
 
 public sealed class MeshInspectorService
 {
+    private const double MinJapanLatitude = 20.0;
+    private const double MaxJapanLatitude = 46.0;
+    private const double MinJapanLongitude = 122.0;
+    private const double MaxJapanLongitude = 154.0;
+
     private readonly IMeshCalculator meshCalculator;
     private readonly MeshNeighborResolver neighborResolver;
     private readonly MeshOverlayService meshOverlayService;
@@ -34,6 +40,7 @@ public sealed class MeshInspectorService
         MeshInspectorSummary summary = new MeshInspectorSummary
         {
             DocumentTitle = string.IsNullOrWhiteSpace(currentState.DocumentTitle) ? "Active Revit Project" : currentState.DocumentTitle,
+            ProjectCrsEpsgCode = info?.ProjectCrs?.EpsgCode,
             ReferenceSourceTitle = GetReferenceSourceTitle(referenceSource),
             ReferenceSourceDescription = GetReferenceSourceDescription(referenceSource)
         };
@@ -82,7 +89,26 @@ public sealed class MeshInspectorService
             return summary;
         }
 
+        if (!TryValidateReferenceLocation(referenceContext.Latitude, referenceContext.Longitude, out string referenceIssue))
+        {
+            Trace.WriteLine(
+                $"[MeshInspectorService] Invalid reference coordinate source='{referenceContext.Title}' lat={referenceContext.Latitude} lon={referenceContext.Longitude} issue='{referenceIssue}'");
+            summary.StatusMessage = $"Mesh Inspector could not derive a tertiary mesh because the resolved reference location {referenceIssue}. Review the stored georeference origin or Project Base Point reference before retrying.";
+            summary.DetailRows = CreateReferenceFailureRows(summary, currentState, info, referenceContext, referenceIssue);
+            return summary;
+        }
+
         MeshCode calculatedPrimaryMesh = meshCalculator.Calculate(referenceContext.Latitude, referenceContext.Longitude, JapanMeshLevel.Tertiary);
+        if (!IsValidTertiaryMeshCode(calculatedPrimaryMesh))
+        {
+            string meshIssue = $"produced unexpected mesh code '{calculatedPrimaryMesh.Value}'";
+            Trace.WriteLine(
+                $"[MeshInspectorService] Invalid tertiary mesh source='{referenceContext.Title}' lat={referenceContext.Latitude} lon={referenceContext.Longitude} mesh='{calculatedPrimaryMesh.Value}'");
+            summary.StatusMessage = $"Mesh Inspector could not derive a tertiary mesh because the resolved reference location {meshIssue}. Review the stored georeference origin or Project Base Point reference before retrying.";
+            summary.DetailRows = CreateReferenceFailureRows(summary, currentState, info, referenceContext, meshIssue);
+            return summary;
+        }
+
         IReadOnlyCollection<MeshCode> neighbors = neighborResolver.GetNeighbors(calculatedPrimaryMesh);
         bool storedMatches = referenceSource == MeshReferenceSource.SurveyPoint
             && string.Equals(info.PrimaryMeshCode?.Value, calculatedPrimaryMesh.Value, StringComparison.Ordinal);
@@ -104,7 +130,7 @@ public sealed class MeshInspectorService
         {
             new DetailRow("Document", summary.DocumentTitle),
             new DetailRow("Reference Source", referenceContext.Title),
-            new DetailRow("Reference Location", $"{referenceContext.Latitude:F6}, {referenceContext.Longitude:F6}"),
+            new DetailRow("Reference Location", FormatCoordinate(referenceContext.Latitude, referenceContext.Longitude)),
             new DetailRow("Reference Note", referenceContext.Description),
             new DetailRow("Stored CRS", $"EPSG:{info.ProjectCrs.EpsgCode}  {info.ProjectCrs.NameSnapshot}"),
             new DetailRow("Stored Origin", $"{info.Origin.Latitude:F6}, {info.Origin.Longitude:F6}, elev {info.Origin.ElevationMeters:F3} m"),
@@ -134,6 +160,27 @@ public sealed class MeshInspectorService
         }
 
         return summary;
+    }
+
+    private static IReadOnlyCollection<DetailRow> CreateReferenceFailureRows(
+        MeshInspectorSummary summary,
+        CurrentProjectStateSummary currentState,
+        GeoProjectInfo info,
+        MeshReferenceContext referenceContext,
+        string referenceIssue)
+    {
+        return new[]
+        {
+            new DetailRow("Document", summary.DocumentTitle),
+            new DetailRow("Reference Source", referenceContext.Title),
+            new DetailRow("Reference Location", FormatCoordinate(referenceContext.Latitude, referenceContext.Longitude)),
+            new DetailRow("Reference Note", referenceContext.Description),
+            new DetailRow("Reference Check", referenceIssue),
+            new DetailRow("Stored CRS", $"EPSG:{info.ProjectCrs!.EpsgCode}  {info.ProjectCrs.NameSnapshot}"),
+            new DetailRow("Stored Origin", $"{info.Origin!.Latitude:F6}, {info.Origin.Longitude:F6}, elev {info.Origin.ElevationMeters:F3} m"),
+            new DetailRow("Stored Primary Mesh", info.PrimaryMeshCode?.Value ?? "Not stored"),
+            new DetailRow("Working Project Base Point", currentState.StoredWorkingProjectBasePoint?.IsValid == true ? "Available" : "Not stored")
+        };
     }
 
     private static MeshReferenceContext? ResolveReferenceContext(CurrentProjectStateSummary currentState, GeoProjectInfo info, MeshReferenceSource referenceSource)
@@ -189,6 +236,48 @@ public sealed class MeshInspectorService
         };
     }
 
+    private static bool TryValidateReferenceLocation(double latitude, double longitude, out string issue)
+    {
+        if (!IsFinite(latitude) || !IsFinite(longitude))
+        {
+            issue = "is not a finite latitude/longitude value";
+            return false;
+        }
+
+        if (latitude < MinJapanLatitude || latitude > MaxJapanLatitude || longitude < MinJapanLongitude || longitude > MaxJapanLongitude)
+        {
+            issue = $"falls outside the supported Japan mesh range ({MinJapanLatitude:F0}-{MaxJapanLatitude:F0} latitude, {MinJapanLongitude:F0}-{MaxJapanLongitude:F0} longitude)";
+            return false;
+        }
+
+        issue = string.Empty;
+        return true;
+    }
+
+    private static bool IsValidTertiaryMeshCode(MeshCode meshCode)
+    {
+        return meshCode is not null
+            && !string.IsNullOrWhiteSpace(meshCode.Value)
+            && meshCode.Value.Length == (int)JapanMeshLevel.Tertiary
+            && meshCode.Value.All(char.IsDigit);
+    }
+
+    private static bool IsFinite(double value)
+    {
+        return !double.IsNaN(value) && !double.IsInfinity(value);
+    }
+
+    private static string FormatCoordinate(double latitude, double longitude)
+    {
+        string lat = IsFinite(latitude)
+            ? latitude.ToString("F6", CultureInfo.InvariantCulture)
+            : "n/a";
+        string lon = IsFinite(longitude)
+            ? longitude.ToString("F6", CultureInfo.InvariantCulture)
+            : "n/a";
+        return $"{lat}, {lon}";
+    }
+
     private sealed class MeshReferenceContext
     {
         public MeshReferenceContext(string title, string description, double latitude, double longitude, bool canPersistPrimaryMeshCode)
@@ -211,3 +300,4 @@ public sealed class MeshInspectorService
         public bool CanPersistPrimaryMeshCode { get; }
     }
 }
+

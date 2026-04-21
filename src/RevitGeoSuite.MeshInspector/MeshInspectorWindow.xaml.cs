@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -39,6 +40,7 @@ public partial class MeshInspectorWindow : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        TraceMapRefresh("Window loaded.");
         await MeshMap.SetPointSelectionEnabledAsync(false);
         await LoadMapAsync();
     }
@@ -125,6 +127,7 @@ public partial class MeshInspectorWindow : Window
 
     private async Task LoadMapAsync()
     {
+        TraceMapRefresh("Refreshing mesh map.");
         await MeshMap.ClearMeshGridAsync();
         await MeshMap.ClearMarkerAsync();
 
@@ -137,5 +140,17 @@ public partial class MeshInspectorWindow : Window
         {
             await MeshMap.ShowMeshGridAsync(ViewModel.OverlayGeoJson);
         }
+    }
+
+    private void TraceMapRefresh(string message)
+    {
+        string epsg = ViewModel.ProjectCrsEpsgCode.HasValue
+            ? $"EPSG:{ViewModel.ProjectCrsEpsgCode.Value}"
+            : "unavailable";
+        string reference = string.IsNullOrWhiteSpace(ViewModel.ReferenceSourceTitle)
+            ? "Unavailable"
+            : ViewModel.ReferenceSourceTitle;
+        Trace.WriteLine(
+            $"[MeshInspectorWindow] {message} storedCrs={epsg} reference='{reference}' hasOverlay={ViewModel.HasOverlay} centerLat={ViewModel.CenterLatitude?.ToString() ?? "n/a"} centerLon={ViewModel.CenterLongitude?.ToString() ?? "n/a"}");
     }
 }

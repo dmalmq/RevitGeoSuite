@@ -94,11 +94,12 @@ public sealed class PlateauImportCoordinator
             LastImportedFilePath = plan.SourceModels.Count == 1 ? plan.SourceModels.First().SourcePath : string.Empty,
             LastImportedFolderPath = plan.SourceFolderPath,
             LastReferenceSource = referenceSource,
+            LastGeometryImportMode = plan.GeometryImportMode,
             LastImportedFeatureCount = execution.ImportedElementCount,
             LastImportedGroupCount = execution.CreatedGroupCount,
             LastSelectedTileIds = plan.SelectedTileIds.OrderBy(tileId => tileId, StringComparer.Ordinal).ToList(),
             LastSelectedFeatureTypes = plan.SelectedFeatureTypes.Select(type => type.ToString()).OrderBy(name => name, StringComparer.Ordinal).ToList(),
-            LastImportSummary = string.Format(CultureInfo.InvariantCulture, "Imported {0} elements in {1} groups.", execution.ImportedElementCount, execution.CreatedGroupCount)
+            LastImportSummary = string.Format(CultureInfo.InvariantCulture, "Imported {0} elements in {1} groups using {2}.", execution.ImportedElementCount, execution.CreatedGroupCount, plan.GeometryImportMode.GetDisplayName().ToLowerInvariant())
         };
 
         foreach (string tileId in plan.SelectedTileIds)
@@ -123,6 +124,7 @@ public sealed class PlateauImportCoordinator
         string sourceText = referenceSource == PlateauImportReferenceSource.WorkingProjectBasePoint
             ? "Project Base Point"
             : "Canonical Origin";
+        string modeText = plan.GeometryImportMode.GetDisplayName();
         string tileText = plan.SelectedTileIds.Count == 0
             ? "No tile filter was recorded."
             : "Tiles: " + string.Join(", ", plan.SelectedTileIds);
@@ -135,10 +137,11 @@ public sealed class PlateauImportCoordinator
 
         return string.Format(
             CultureInfo.InvariantCulture,
-            "Imported {0} PLATEAU context elements from '{1}' using {2} and created {3} Revit group(s). {4} {5}{6}",
+            "Imported {0} PLATEAU context elements from '{1}' using {2} in {3} mode and created {4} Revit group(s). {5} {6}{7}",
             execution.ImportedElementCount,
             folderName,
             sourceText,
+            modeText,
             execution.CreatedGroupCount,
             categoryText,
             tileText,

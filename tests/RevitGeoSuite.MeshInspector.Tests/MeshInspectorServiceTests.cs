@@ -41,6 +41,64 @@ public sealed class MeshInspectorServiceTests
     }
 
     [Fact]
+    public void BuildSummary_supports_sapporo_origin()
+    {
+        JapanMeshCalculator calculator = new JapanMeshCalculator();
+        MeshInspectorService service = new MeshInspectorService(calculator);
+        CurrentProjectStateSummary currentState = new CurrentProjectStateSummary
+        {
+            DocumentTitle = "SapporoSample.rvt",
+            IsSupportedDocument = true,
+            IsReadOnly = false,
+            HasStoredGeoInfo = true
+        };
+
+        GeoProjectInfo info = new GeoProjectInfo
+        {
+            ProjectCrs = new CrsReference { EpsgCode = 6679, NameSnapshot = "JGD2011 / Japan Plane Rectangular CS XI" },
+            Origin = new ProjectOrigin { Latitude = 43.06417, Longitude = 141.34694, ElevationMeters = 15.2 },
+            Confidence = GeoConfidenceLevel.Verified,
+            SetupSource = "Test"
+        };
+
+        MeshInspectorSummary summary = service.BuildSummary(currentState, info, MeshReferenceSource.SurveyPoint);
+
+        Assert.Equal("64414277", summary.PrimaryMeshCode);
+        Assert.True(summary.HasOverlay);
+        Assert.Equal(8, summary.NeighborMeshCodes.Count);
+        Assert.Contains(summary.DetailRows, row => row.Label == "Calculated Mesh" && row.Value == "64414277");
+    }
+
+    [Fact]
+    public void BuildSummary_reports_invalid_reference_location_instead_of_throwing()
+    {
+        JapanMeshCalculator calculator = new JapanMeshCalculator();
+        MeshInspectorService service = new MeshInspectorService(calculator);
+        CurrentProjectStateSummary currentState = new CurrentProjectStateSummary
+        {
+            DocumentTitle = "MeshSample.rvt",
+            IsSupportedDocument = true,
+            IsReadOnly = false,
+            HasStoredGeoInfo = true
+        };
+
+        GeoProjectInfo info = new GeoProjectInfo
+        {
+            ProjectCrs = new CrsReference { EpsgCode = 6679, NameSnapshot = "JGD2011 / Japan Plane Rectangular CS XI" },
+            Origin = new ProjectOrigin { Latitude = 43.06417, Longitude = 80.0, ElevationMeters = 15.2 },
+            Confidence = GeoConfidenceLevel.Verified,
+            SetupSource = "Test"
+        };
+
+        MeshInspectorSummary summary = service.BuildSummary(currentState, info, MeshReferenceSource.SurveyPoint);
+
+        Assert.False(summary.HasPrimaryMeshCode);
+        Assert.False(summary.HasOverlay);
+        Assert.Contains("outside the supported Japan mesh range", summary.StatusMessage);
+        Assert.Contains(summary.DetailRows, row => row.Label == "Reference Check" && row.Value.Contains("supported Japan mesh range"));
+    }
+
+    [Fact]
     public void BuildSummary_uses_working_project_base_point_before_revit_estimate()
     {
         JapanMeshCalculator calculator = new JapanMeshCalculator();

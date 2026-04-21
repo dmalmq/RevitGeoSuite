@@ -65,6 +65,7 @@ public sealed class PlateauImportViewModelTests
             LastImportedFolderPath = fixtureFolder,
             LastImportDateUtc = new DateTime(2026, 3, 31, 6, 1, 57, DateTimeKind.Utc),
             LastReferenceSource = PlateauImportReferenceSource.WorkingProjectBasePoint,
+            LastGeometryImportMode = PlateauGeometryImportMode.DetailedDirectShape,
             LastImportedFeatureCount = 5,
             LastImportedGroupCount = 4,
             LastSelectedTileIds = new List<string> { "53394536" },
@@ -101,6 +102,8 @@ public sealed class PlateauImportViewModelTests
         Assert.True(viewModel.HasLastImportRows);
         Assert.Contains(viewModel.LastImportRows, row => row.Label == "Last Folder" && row.Value == fixtureFolder);
         Assert.Contains(viewModel.LastImportRows, row => row.Label == "Last Categories" && row.Value.Contains("Building"));
+        Assert.Equal(PlateauGeometryImportMode.DetailedDirectShape, viewModel.SelectedGeometryImportMode);
+        Assert.Contains(viewModel.LastImportRows, row => row.Label == "Last Geometry Mode" && row.Value.Contains("Detailed", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("restored", viewModel.ActionMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Scan Folder", viewModel.ActionMessage, StringComparison.OrdinalIgnoreCase);
     }
@@ -140,10 +143,70 @@ public sealed class PlateauImportViewModelTests
         bool loaded = viewModel.TryLoadPreview();
 
         Assert.True(loaded);
-        Assert.Equal(2, viewModel.PreparedSolidCount);
+        Assert.Equal(2, viewModel.PreparedShapeCount);
         Assert.Contains(viewModel.PreviewRows, row => row.Label == "Selected Categories" && row.Value == "Buildings");
         Assert.Contains(viewModel.FeatureNames, name => name.Contains("Folder Building A"));
         Assert.DoesNotContain(viewModel.FeatureNames, name => name.IndexOf("Road", StringComparison.OrdinalIgnoreCase) >= 0);
+    }
+
+    [Fact]
+    public void Scan_folder_succeeds_even_while_scanning_flag_is_set()
+    {
+        string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
+        PlateauImportViewModel viewModel = CreateViewModel(
+            new CurrentProjectStateSummary
+            {
+                DocumentTitle = "Plateau Sample Project",
+                IsSupportedDocument = true,
+                HasStoredGeoInfo = true,
+                ProjectBasePoint = new BasePointSnapshot { Name = "Project Base Point", EstimatedLatitudeDegrees = 35.681236d, EstimatedLongitudeDegrees = 139.767125d }
+            },
+            CreateGeoInfo());
+        viewModel.SelectedReferenceSourceOption = viewModel.ReferenceSourceOptions.Single(option => option.Source == PlateauImportReferenceSource.CanonicalOrigin);
+        viewModel.SelectedFolderPath = fixtureFolder;
+        viewModel.IsScanning = true;
+
+        bool scanned = viewModel.TryScanFolder();
+
+        Assert.True(scanned);
+        Assert.True(viewModel.HasScanRows);
+        Assert.True(viewModel.HasDetectedSourceFiles);
+    }
+
+    [Fact]
+    public void Scan_progress_updates_status_counts_and_resets_after_finish()
+    {
+        PlateauImportViewModel viewModel = CreateViewModel(
+            new CurrentProjectStateSummary
+            {
+                DocumentTitle = "Plateau Progress Project",
+                IsSupportedDocument = true,
+                HasStoredGeoInfo = true,
+                ProjectBasePoint = new BasePointSnapshot { Name = "Project Base Point", EstimatedLatitudeDegrees = 35.681236d, EstimatedLongitudeDegrees = 139.767125d }
+            },
+            CreateGeoInfo());
+        viewModel.SelectedFolderPath = @"C:\plateau";
+
+        bool started = viewModel.TryStartFolderScan(out string folderPath);
+        viewModel.ReportScanProgress(new PlateauScanProgress(PlateauScanPhase.Parsing, 2, 6, @"C:\plateau\53394536_bldg_sample.gml"));
+
+        Assert.True(started);
+        Assert.Equal(@"C:\plateau", folderPath);
+        Assert.True(viewModel.IsScanning);
+        Assert.False(viewModel.IsScanProgressIndeterminate);
+        Assert.Equal(2, viewModel.ScanProgressCurrent);
+        Assert.Equal(6, viewModel.ScanProgressTotal);
+        Assert.Equal(33.333333333333336d, viewModel.ScanProgressPercent, 6);
+        Assert.Contains("2 of 6", viewModel.ScanProgressStatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("53394536_bldg_sample.gml", viewModel.ScanProgressStatusText, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.FinishFolderScan();
+
+        Assert.False(viewModel.IsScanning);
+        Assert.Equal(0, viewModel.ScanProgressCurrent);
+        Assert.Equal(0, viewModel.ScanProgressTotal);
+        Assert.Equal(0d, viewModel.ScanProgressPercent);
+        Assert.True(string.IsNullOrWhiteSpace(viewModel.ScanProgressStatusText));
     }
 
     [Fact]
@@ -255,9 +318,37 @@ public sealed class PlateauImportViewModelTests
 
         Assert.True(scanned);
         Assert.True(loaded);
-        Assert.Equal(2, viewModel.PreparedSolidCount);
+        Assert.Equal(2, viewModel.PreparedShapeCount);
         Assert.False(viewModel.CanImport);
         Assert.Contains("read-only", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Detailed_geometry_mode_updates_preview_rows_and_status_text()
+    {
+        string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
+        PlateauImportViewModel viewModel = CreateViewModel(
+            new CurrentProjectStateSummary
+            {
+                DocumentTitle = "Detailed Preview Project",
+                IsSupportedDocument = true,
+                HasStoredGeoInfo = true,
+                ProjectBasePoint = new BasePointSnapshot { Name = "Project Base Point", EstimatedLatitudeDegrees = 35.681236d, EstimatedLongitudeDegrees = 139.767125d }
+            },
+            CreateGeoInfo());
+        viewModel.SelectedReferenceSourceOption = viewModel.ReferenceSourceOptions.Single(option => option.Source == PlateauImportReferenceSource.CanonicalOrigin);
+        viewModel.SelectedGeometryImportModeOption = viewModel.GeometryImportModeOptions.Single(option => option.Mode == PlateauGeometryImportMode.DetailedDirectShape);
+        viewModel.SelectedFolderPath = fixtureFolder;
+
+        bool scanned = viewModel.TryScanFolder();
+        viewModel.ToggleTileSelection("53394536");
+        bool loaded = viewModel.TryLoadPreview();
+
+        Assert.True(scanned);
+        Assert.True(loaded);
+        Assert.Equal(PlateauGeometryImportMode.DetailedDirectShape, viewModel.SelectedGeometryImportMode);
+        Assert.Contains(viewModel.PreviewRows, row => row.Label == "Geometry Mode" && row.Value.Contains("Detailed", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("Detailed Geometry", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     private static GeoProjectInfo CreateGeoInfo()

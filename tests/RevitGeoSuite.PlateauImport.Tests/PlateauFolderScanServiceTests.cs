@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using Xunit;
 
 namespace RevitGeoSuite.PlateauImport.Tests;
@@ -38,5 +39,23 @@ public sealed class PlateauFolderScanServiceTests
         Assert.Contains(result.SupportedFilePaths, path => path.Contains("udx\\bldg\\53394536_bldg_sample.gml", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(result.SupportedFilePaths, path => path.Contains("udx\\brid\\54394536_brid_sample.gml", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.SupportedFilePaths, path => path.Contains("metadata", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ScanFolder_reports_progress_for_each_supported_file()
+    {
+        string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
+        List<PlateauScanProgress> reported = new List<PlateauScanProgress>();
+
+        PlateauFolderScanResult result = new PlateauFolderScanService(new CityGmlParser()).ScanFolder(fixtureFolder, reported.Add);
+
+        Assert.NotEmpty(reported);
+        Assert.Equal(PlateauScanPhase.Enumerating, reported[0].Phase);
+        Assert.Contains(reported, progress => progress.Phase == PlateauScanPhase.Parsing && progress.Current == 0 && progress.Total == result.SupportedFilePaths.Count);
+        Assert.Equal(result.SupportedFilePaths.Count, reported.Count(progress => progress.Phase == PlateauScanPhase.Parsing && progress.Current > 0));
+        PlateauScanProgress lastProgress = reported[reported.Count - 1];
+        Assert.Equal(PlateauScanPhase.Completed, lastProgress.Phase);
+        Assert.Equal(result.SupportedFilePaths.Count, lastProgress.Current);
+        Assert.Equal(result.SupportedFilePaths.Count, lastProgress.Total);
     }
 }

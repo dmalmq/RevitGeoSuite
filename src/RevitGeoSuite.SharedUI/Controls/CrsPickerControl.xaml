@@ -20,7 +20,8 @@
       <TextBlock Margin="0,4,0,8" Foreground="#5C6670" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Crs.SearchHint]}" />
       <TextBox x:Name="SearchBox" Margin="0,0,0,8" TextChanged="OnSearchTextChanged" />
       <ListBox x:Name="DefinitionsList"
-               MinHeight="280"
+               MinHeight="180"
+               MaxHeight="320"
                ItemsSource="{Binding FilteredDefinitions, RelativeSource={RelativeSource AncestorType=controls:CrsPickerControl}}"
                SelectedItem="{Binding SelectedDefinition, RelativeSource={RelativeSource AncestorType=controls:CrsPickerControl}, Mode=TwoWay}">
         <ListBox.ItemTemplate>

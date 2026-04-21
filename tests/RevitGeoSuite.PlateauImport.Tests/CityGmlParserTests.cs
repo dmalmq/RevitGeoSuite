@@ -19,6 +19,26 @@ public sealed class CityGmlParserTests
         Assert.All(model.Features, feature => Assert.Equal(PlateauFeatureType.Building, feature.FeatureType));
         Assert.Equal(new[] { "Sample Building A", "Sample Building B" }, model.Features.Select(feature => feature.Name).ToArray());
         Assert.All(model.Features, feature => Assert.True(feature.ExteriorRing.Count >= 4));
+        Assert.All(model.Features, feature => Assert.Single(feature.GeometrySurfaces));
+        Assert.All(model.Features, feature => Assert.Equal(0, feature.HighestLod));
+    }
+
+    [Fact]
+    public void ParseFile_preserves_highest_lod_surfaces_for_detailed_building_geometry()
+    {
+        string fixturePath = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "Samples", "sample-detailed-building.gml");
+        CityGmlParser parser = new CityGmlParser();
+
+        PlateauCityModel model = parser.ParseFile(fixturePath);
+        PlateauBuildingFeature building = Assert.IsType<PlateauBuildingFeature>(Assert.Single(model.Features));
+
+        Assert.Equal("Detailed Building", building.Name);
+        Assert.Equal(2, building.HighestLod);
+        Assert.True(building.GeometrySurfaces.Count >= 7);
+        Assert.All(building.GeometrySurfaces, surface => Assert.Equal(2, surface.Lod));
+        Assert.Contains(building.GeometrySurfaces, surface => surface.SemanticSurfaceType == "RoofSurface");
+        Assert.Contains(building.GeometrySurfaces, surface => surface.SemanticSurfaceType == "WallSurface");
+        Assert.DoesNotContain(building.GeometrySurfaces, surface => surface.SurfaceId == "lod0-poly-001");
     }
 
     [Fact]
@@ -28,13 +48,19 @@ public sealed class CityGmlParserTests
         CityGmlParser parser = new CityGmlParser();
 
         PlateauCityModel model = parser.ParseFile(fixturePath);
-        PlateauContextFeature building = Assert.Single(model.Features);
+        PlateauBuildingFeature building = Assert.IsType<PlateauBuildingFeature>(Assert.Single(model.Features));
         PlateauCoordinate3D firstPoint = building.ExteriorRing.First();
 
         Assert.Equal(PlateauFeatureType.Building, building.FeatureType);
         Assert.Equal("Elevated Building", building.Name);
+        Assert.Equal(2, building.HighestLod);
         Assert.Equal(42d, firstPoint.Z, 6);
         Assert.All(building.ExteriorRing, point => Assert.Equal(42d, point.Z, 6));
+        Assert.True(building.BaseElevationMeters.HasValue);
+        Assert.True(building.TopElevationMeters.HasValue);
+        Assert.Equal(42d, building.BaseElevationMeters.Value, 6);
+        Assert.Equal(57d, building.TopElevationMeters.Value, 6);
+        Assert.Equal(2, building.GeometrySurfaces.Count);
     }
 
     [Fact]
@@ -47,9 +73,11 @@ public sealed class CityGmlParserTests
 
         Assert.Equal(2, model.Features.Count);
         Assert.All(model.Features, road => Assert.Equal(PlateauFeatureType.Road, road.FeatureType));
-        Assert.Equal(new[] { "traffic-area-001::1", "traffic-area-001::2" }, model.Features.Select(feature => feature.Id).ToArray());
+        Assert.Equal(new[] { "traffic-area-high-001::1", "traffic-area-high-001::2" }, model.Features.Select(feature => feature.Id).ToArray());
         Assert.Equal(new[] { "Elevated Traffic Area [1]", "Elevated Traffic Area [2]" }, model.Features.Select(feature => feature.Name).ToArray());
         Assert.Equal(new[] { 40.82d, 41.15d }, model.Features.Select(feature => feature.ExteriorRing.First().Z).ToArray());
+        Assert.All(model.Features, feature => Assert.Equal(3, feature.HighestLod));
+        Assert.All(model.Features, feature => Assert.Single(feature.GeometrySurfaces));
     }
 
     [Fact]
@@ -66,6 +94,7 @@ public sealed class CityGmlParserTests
         Assert.Equal("53394536", road.TileId);
         Assert.Equal("Folder Road A", road.Name);
         Assert.True(road.ExteriorRing.Count >= 4);
+        Assert.Single(road.GeometrySurfaces);
     }
 
     [Fact]
@@ -82,5 +111,6 @@ public sealed class CityGmlParserTests
         Assert.Equal("54394536", bridge.TileId);
         Assert.Equal("Folder Bridge A", bridge.Name);
         Assert.True(bridge.ExteriorRing.Count >= 4);
+        Assert.Single(bridge.GeometrySurfaces);
     }
 }

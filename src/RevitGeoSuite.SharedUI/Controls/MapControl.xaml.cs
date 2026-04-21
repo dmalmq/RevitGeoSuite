@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -13,6 +14,7 @@ namespace RevitGeoSuite.SharedUI.Controls;
 
 public partial class MapControl : UserControl
 {
+    private readonly AsyncInitializationGate initializationGate;
     private readonly Queue<string> pendingMessages;
     private bool isInitialized;
     private bool isMapReady;
@@ -20,6 +22,7 @@ public partial class MapControl : UserControl
     public MapControl()
     {
         InitializeComponent();
+        initializationGate = new AsyncInitializationGate();
         pendingMessages = new Queue<string>();
         Loaded += OnLoaded;
     }
@@ -176,23 +179,11 @@ public partial class MapControl : UserControl
 
         try
         {
-            string hostHtml = ReadMapHostHtml();
-            MapHostEnvironment.EnsureHostPage(hostHtml);
-
-            CoreWebView2Environment environment = await MapHostEnvironment.CreateAsync();
-            await MapBrowser.EnsureCoreWebView2Async(environment);
-            ConfigureBrowserSettings(MapBrowser.CoreWebView2);
-            MapBrowser.CoreWebView2.SetVirtualHostNameToFolderMapping(
-                MapHostEnvironment.HostName,
-                MapHostEnvironment.GetHostAssetFolder(),
-                CoreWebView2HostResourceAccessKind.Allow);
-            MapBrowser.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-            MapBrowser.Source = MapHostEnvironment.GetHostPageUri();
-            isInitialized = true;
+            await initializationGate.RunAsync(InitializeBrowserAsync);
         }
-        catch (Exception ex)
+        catch
         {
-            ShowFallback($"Map host could not start. {ex.Message}");
+            // InitializeBrowserAsync already reports the failure and keeps retries available.
         }
     }
 
@@ -278,5 +269,42 @@ public partial class MapControl : UserControl
         FallbackText.Text = message;
         FallbackOverlay.Visibility = Visibility.Visible;
     }
-}
 
+    private async Task InitializeBrowserAsync()
+    {
+        string userDataFolder = MapHostEnvironment.GetUserDataFolder();
+        string hostAssetFolder = MapHostEnvironment.GetHostAssetFolder();
+        Trace.WriteLine($"[MapControl] Starting WebView2 initialization. controlId={GetHashCode()} userDataFolder='{userDataFolder}' hostAssetFolder='{hostAssetFolder}'");
+
+        try
+        {
+            string hostHtml = ReadMapHostHtml();
+            MapHostEnvironment.EnsureHostPage(hostHtml);
+
+            CoreWebView2Environment environment = await MapHostEnvironment.CreateAsync();
+            await MapBrowser.EnsureCoreWebView2Async(environment);
+            ConfigureBrowserSettings(MapBrowser.CoreWebView2);
+            MapBrowser.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                MapHostEnvironment.HostName,
+                hostAssetFolder,
+                CoreWebView2HostResourceAccessKind.Allow);
+            MapBrowser.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+            MapBrowser.Source = MapHostEnvironment.GetHostPageUri();
+            HideFallback();
+            isInitialized = true;
+            Trace.WriteLine($"[MapControl] WebView2 initialization succeeded. controlId={GetHashCode()} source='{MapBrowser.Source}'");
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine($"[MapControl] WebView2 initialization failed. controlId={GetHashCode()} error={ex}");
+            ShowFallback($"Map host could not start. {ex.Message}");
+            throw;
+        }
+    }
+
+    private void HideFallback()
+    {
+        FallbackText.Text = string.Empty;
+        FallbackOverlay.Visibility = Visibility.Collapsed;
+    }
+}

@@ -6,1141 +6,305 @@ using System.Globalization;
 using System.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
-using RevitGeoSuite.Core.Mesh;
-using RevitGeoSuite.Core.Validation;
 using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
 using RevitGeoSuite.SharedUI.Localization;
 
 namespace RevitGeoSuite.Georeference;
 
-public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
+public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 {
+    private const double FeetToMeters = 0.3048d;
     private readonly ICoordinateTransformer coordinateTransformer;
     private readonly PlacementPreviewService placementPreviewService;
-    private readonly PlacementIntentValidator intentValidator;
-    private readonly SiteSelectionService siteSelectionService;
-    private readonly PlacementCurrentState placementCurrentState;
-
-
+    private readonly SplitSurveyProjectBasePointPreviewService splitSurveyProjectBasePointPreviewService;
     private CrsDefinition? selectedCrs;
-    private GeoreferenceStep currentStep;
-    private SelectedMapPoint? selectedPoint;
-    private SelectedMapPoint? workingProjectBasePoint;
-    private SelectedMapPoint? displayedMapPoint;
-    private ApplyModeOption? selectedApplyModeOption;
-    private SiteSelectionModeOption? selectedSiteSelectionModeOption;
-    private AnchorTargetOption? selectedAnchorTargetOption;
-    private CaptureTargetOption? selectedCaptureTargetOption;
-    private string setupSource;
-    private string trueNorthAngleInput;
-    private string setupIntentErrorMessage;
-    private string knownCoordinateEastingInput;
-    private string knownCoordinateNorthingInput;
-    private string knownCoordinateErrorMessage;
+    private GeoreferenceStep currentStep = GeoreferenceStep.CurrentState;
+    private string projectBasePointOffsetXInput = string.Empty;
+    private string projectBasePointOffsetYInput = string.Empty;
+    private bool confirmExistingSetup;
+    private bool overrideExistingSetup;
+    private string setupValidationMessage = string.Empty;
     private PlacementPreview? preview;
     private PlacementIntent? previewIntent;
+    private SplitSurveyProjectBasePointIntent? splitPreviewIntent;
 
     public GeoreferenceViewModel(
         CurrentProjectStateSummary currentState,
         IReadOnlyCollection<CrsDefinition> availableCrs,
         ICoordinateTransformer coordinateTransformer,
-        SiteSelectionService siteSelectionService,
         PlacementPreviewService placementPreviewService,
-        PlacementIntentValidator? intentValidator = null)
-        : this(
-            currentState,
-            availableCrs,
-            coordinateTransformer,
-            siteSelectionService,
-            placementPreviewService,
-            new SplitSurveyProjectBasePointPreviewService(new CoordinateValidator(new CrsRegistry(), coordinateTransformer, new JapanMeshCalculator())),
-            intentValidator)
-    {
-    }
-    public GeoreferenceViewModel(
-        CurrentProjectStateSummary currentState,
-        IReadOnlyCollection<CrsDefinition> availableCrs,
-        ICoordinateTransformer coordinateTransformer,
-        SiteSelectionService siteSelectionService,
-        PlacementPreviewService placementPreviewService,
-        SplitSurveyProjectBasePointPreviewService splitSurveyProjectBasePointPreviewService,
-        PlacementIntentValidator? intentValidator = null)
+        SplitSurveyProjectBasePointPreviewService splitSurveyProjectBasePointPreviewService)
     {
         CurrentState = currentState ?? throw new ArgumentNullException(nameof(currentState));
         AvailableCrs = availableCrs?.OrderBy(definition => definition.EpsgCode).ToArray() ?? throw new ArgumentNullException(nameof(availableCrs));
         this.coordinateTransformer = coordinateTransformer ?? throw new ArgumentNullException(nameof(coordinateTransformer));
-        this.siteSelectionService = siteSelectionService ?? throw new ArgumentNullException(nameof(siteSelectionService));
         this.placementPreviewService = placementPreviewService ?? throw new ArgumentNullException(nameof(placementPreviewService));
         this.splitSurveyProjectBasePointPreviewService = splitSurveyProjectBasePointPreviewService ?? throw new ArgumentNullException(nameof(splitSurveyProjectBasePointPreviewService));
-        this.intentValidator = intentValidator ?? new PlacementIntentValidator();
-        placementCurrentState = PlacementCurrentStateFactory.Create(CurrentState);
-        currentStep = GeoreferenceStep.CurrentState;
-        setupSource = string.Empty;
-        trueNorthAngleInput = CurrentState.ProjectPosition.AngleDegrees.ToString("F3", CultureInfo.InvariantCulture);
-        setupIntentErrorMessage = string.Empty;
-        knownCoordinateEastingInput = string.Empty;
-        knownCoordinateNorthingInput = string.Empty;
-        knownCoordinateErrorMessage = string.Empty;
 
         CurrentStateRows = new ObservableCollection<SummaryRow>(CreateCurrentStateRows(CurrentState));
-        SelectedPointRows = new ObservableCollection<SummaryRow>();
-        WorkingProjectBasePointRows = new ObservableCollection<SummaryRow>();
-        ApplyModeOptions = new ObservableCollection<ApplyModeOption>(CreateApplyModeOptions());
-        SiteSelectionModeOptions = new ObservableCollection<SiteSelectionModeOption>(CreateSiteSelectionModeOptions());
-        AnchorTargetOptions = new ObservableCollection<AnchorTargetOption>(CreateAnchorTargetOptions());
-        CaptureTargetOptions = new ObservableCollection<CaptureTargetOption>(CreateCaptureTargetOptions());
-        InitializeWorkflowModes();
+        PlannedSetupRows = new ObservableCollection<SummaryRow>();
         PreviewFields = new ObservableCollection<PlacementPreviewField>();
         PreviewWarnings = new ObservableCollection<string>();
         PreviewWhatWillChange = new ObservableCollection<string>();
         PreviewWhatWillNotChange = new ObservableCollection<string>();
-
-        SelectedApplyModeOption = ApplyModeOptions[0];
-        SelectedAnchorTargetOption = AnchorTargetOptions[0];
-        SelectedCaptureTargetOption = CaptureTargetOptions[0];
-        SelectedSiteSelectionModeOption = SiteSelectionModeOptions.First(option => option.Mode == (CurrentState.SurveyPoint.HasEstimatedLocation ? SiteSelectionInputMode.CurrentRevitSetup : SiteSelectionInputMode.MapPoint));
+        RefreshPlannedSetupRows();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
     public CurrentProjectStateSummary CurrentState { get; }
-
     public IReadOnlyCollection<CrsDefinition> AvailableCrs { get; }
-
     public ObservableCollection<SummaryRow> CurrentStateRows { get; }
-
-    public ObservableCollection<SummaryRow> SelectedPointRows { get; }
-
-    public ObservableCollection<SummaryRow> WorkingProjectBasePointRows { get; }
-
-    public ObservableCollection<ApplyModeOption> ApplyModeOptions { get; }
-
-    public ObservableCollection<SiteSelectionModeOption> SiteSelectionModeOptions { get; }
-
-    public ObservableCollection<AnchorTargetOption> AnchorTargetOptions { get; }
-
-    public ObservableCollection<CaptureTargetOption> CaptureTargetOptions { get; }
-
+    public ObservableCollection<SummaryRow> PlannedSetupRows { get; }
     public ObservableCollection<PlacementPreviewField> PreviewFields { get; }
-
     public ObservableCollection<string> PreviewWarnings { get; }
-
     public ObservableCollection<string> PreviewWhatWillChange { get; }
-
     public ObservableCollection<string> PreviewWhatWillNotChange { get; }
 
-    public GeoreferenceStep CurrentStep
-    {
-        get => currentStep;
-        private set
-        {
-            if (currentStep == value)
-            {
-                return;
-            }
+    public GeoreferenceStep CurrentStep { get => currentStep; private set { if (currentStep == value) return; currentStep = value; RaiseStepProperties(); } }
+    public CrsDefinition? SelectedCrs { get => selectedCrs; set { if (selectedCrs == value) return; selectedCrs = value; OnSetupChanged(nameof(SelectedCrs), nameof(SelectedCrsSummary), nameof(SurveyOriginSummary), nameof(ProjectBasePointOffsetSummary)); } }
+    public string ProjectBasePointOffsetXInput { get => projectBasePointOffsetXInput; set { if (projectBasePointOffsetXInput == value) return; projectBasePointOffsetXInput = value ?? string.Empty; OnSetupChanged(nameof(ProjectBasePointOffsetXInput), nameof(ProjectBasePointOffsetSummary)); } }
+    public string ProjectBasePointOffsetYInput { get => projectBasePointOffsetYInput; set { if (projectBasePointOffsetYInput == value) return; projectBasePointOffsetYInput = value ?? string.Empty; OnSetupChanged(nameof(ProjectBasePointOffsetYInput), nameof(ProjectBasePointOffsetSummary)); } }
+    public bool ConfirmExistingSetup { get => confirmExistingSetup; set { if (confirmExistingSetup == value) return; confirmExistingSetup = value; OnSetupChanged(nameof(ConfirmExistingSetup)); } }
+    public bool OverrideExistingSetup { get => overrideExistingSetup; set { if (overrideExistingSetup == value) return; overrideExistingSetup = value; confirmExistingSetup = false; OnSetupChanged(nameof(OverrideExistingSetup), nameof(ConfirmExistingSetup), nameof(IsNewProjectMode), nameof(IsConfirmExistingSetupMode), nameof(UsesSplitApply), nameof(SetupModeTitle), nameof(SetupModeDescription), nameof(StepDescription), nameof(ProjectBasePointOffsetSummary), nameof(SurveyOriginSummary)); } }
+    public string SetupValidationMessage { get => setupValidationMessage; private set { if (setupValidationMessage == value) return; setupValidationMessage = value; RaisePropertyChanged(nameof(SetupValidationMessage)); RaisePropertyChanged(nameof(HasSetupValidationMessage)); } }
+    public PlacementPreview? Preview { get => preview; private set { preview = value; RaisePropertyChanged(nameof(Preview)); RaisePropertyChanged(nameof(HasPreview)); RaisePropertyChanged(nameof(PreviewPersistenceSummary)); RaisePropertyChanged(nameof(PreviewChangeImpactSummary)); RaisePropertyChanged(nameof(PreviewConfidenceSummary)); RaisePropertyChanged(nameof(HasPreviewWarnings)); } }
 
-            currentStep = value;
-            RaiseStepProperties();
-        }
-    }
-
-    public CrsDefinition? SelectedCrs
-    {
-        get => selectedCrs;
-        set
-        {
-            if (selectedCrs == value)
-            {
-                return;
-            }
-
-            selectedCrs = value;
-            RaisePropertyChanged(nameof(SelectedCrs));
-            RaisePropertyChanged(nameof(SelectedCrsSummary));
-            RaisePropertyChanged(nameof(QuickSetupCoordinateHint));
-
-            if (selectedPoint is not null && selectedCrs is not null && selectedPoint.ReprojectWithSelectedCrs)
-            {
-                SelectedPoint = ReprojectCapturedPoint(selectedPoint);
-            }
-
-            if (workingProjectBasePoint is not null && selectedCrs is not null && workingProjectBasePoint.ReprojectWithSelectedCrs)
-            {
-                WorkingProjectBasePoint = ReprojectCapturedPoint(workingProjectBasePoint);
-            }
-
-            InitializeCurrentRevitSetupSelections(false, false);
-            InitializeSplitWorkflowDefaults();
-            InvalidatePreview();
-            RefreshSetupIntentValidation();
-            RaisePropertyChanged(nameof(ActualProjectBasePointMoveRows));
-            RaisePropertyChanged(nameof(CanMoveActualProjectBasePoint));
-            RaisePropertyChanged(nameof(IsActualProjectBasePointMoveNoOp));
-            RaisePropertyChanged(nameof(HasActualProjectBasePointMoveTarget));
-            RaisePropertyChanged(nameof(HasActualProjectBasePointMoveWarningMessage));
-            RaisePropertyChanged(nameof(ActualProjectBasePointMoveWarningMessage));
-            RaisePropertyChanged(nameof(ActualProjectBasePointMoveStatusMessage));
-            RaisePropertyChanged(nameof(CanGoNext));
-            RaisePropertyChanged(nameof(CanApply));
-        }
-    }
-
-    public SelectedMapPoint? SelectedPoint
-    {
-        get => selectedPoint;
-        private set
-        {
-            selectedPoint = value;
-            RefreshSelectedPointRows();
-            if (selectedPoint is not null && string.IsNullOrWhiteSpace(SetupSource))
-            {
-                SetupSource = selectedPoint.SourceLabel;
-            }
-
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(SelectedPoint));
-            RaisePropertyChanged(nameof(HasSelectedPoint));
-            RaisePropertyChanged(nameof(SelectedPointSummary));
-            RefreshSetupIntentValidation();
-            RaisePropertyChanged(nameof(CanGoNext));
-            RaisePropertyChanged(nameof(CanApply));
-        }
-    }
-
-    public SelectedMapPoint? WorkingProjectBasePoint
-    {
-        get => workingProjectBasePoint;
-        private set
-        {
-            workingProjectBasePoint = value;
-            RefreshWorkingProjectBasePointRows();
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(WorkingProjectBasePoint));
-            RaisePropertyChanged(nameof(HasWorkingProjectBasePoint));
-            RaisePropertyChanged(nameof(HasNoWorkingProjectBasePoint));
-            RaisePropertyChanged(nameof(CanClearWorkingProjectBasePoint));
-            RaisePropertyChanged(nameof(WorkingProjectBasePointSummary));
-            RaisePropertyChanged(nameof(CanGoNext));
-            RaisePropertyChanged(nameof(CanApply));
-            RaisePropertyChanged(nameof(ActualProjectBasePointMoveRows));
-            RaisePropertyChanged(nameof(HasActualProjectBasePointMoveTarget));
-            RaisePropertyChanged(nameof(CanMoveActualProjectBasePoint));
-            RaisePropertyChanged(nameof(IsActualProjectBasePointMoveNoOp));
-            RaisePropertyChanged(nameof(HasActualProjectBasePointMoveWarningMessage));
-            RaisePropertyChanged(nameof(ActualProjectBasePointMoveWarningMessage));
-            RaisePropertyChanged(nameof(ActualProjectBasePointMoveStatusMessage));
-        }
-    }
-
-    public SelectedMapPoint? DisplayedMapPoint
-    {
-        get => displayedMapPoint;
-        private set
-        {
-            displayedMapPoint = value;
-            RaisePropertyChanged(nameof(DisplayedMapPoint));
-        }
-    }
-
-    public ApplyModeOption? SelectedApplyModeOption
-    {
-        get => selectedApplyModeOption;
-        set
-        {
-            if (selectedApplyModeOption == value || value is null)
-            {
-                return;
-            }
-
-            selectedApplyModeOption = value;
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(SelectedApplyModeOption));
-            RaisePropertyChanged(nameof(SelectedApplyModeDescription));
-            RaisePropertyChanged(nameof(RequiresTrueNorthAngleInput));
-            RefreshSetupIntentValidation();
-            RaisePropertyChanged(nameof(CanGoNext));
-            RaisePropertyChanged(nameof(CanApply));
-        }
-    }
-
-    public SiteSelectionModeOption? SelectedSiteSelectionModeOption
-    {
-        get => selectedSiteSelectionModeOption;
-        set
-        {
-            if (selectedSiteSelectionModeOption == value || value is null)
-            {
-                return;
-            }
-
-            selectedSiteSelectionModeOption = value;
-            KnownCoordinateErrorMessage = string.Empty;
-            CurrentRevitSetupErrorMessage = string.Empty;
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(SelectedSiteSelectionModeOption));
-            RaisePropertyChanged(nameof(SelectedSiteSelectionModeDescription));
-            RaisePropertyChanged(nameof(IsMapSelectionMode));
-            RaisePropertyChanged(nameof(IsKnownCoordinateMode));
-            RaisePropertyChanged(nameof(IsCurrentRevitSetupMode));
-            RaisePropertyChanged(nameof(CanUseCurrentRevitSetup));
-            RaisePropertyChanged(nameof(CurrentRevitSetupButtonText));
-            RaisePropertyChanged(nameof(CurrentRevitSetupHint));
-            InitializeCurrentRevitSetupSelections(true, true);
-        }
-    }
-
-    public AnchorTargetOption? SelectedAnchorTargetOption
-    {
-        get => selectedAnchorTargetOption;
-        set
-        {
-            if (selectedAnchorTargetOption == value || value is null)
-            {
-                return;
-            }
-
-            selectedAnchorTargetOption = value;
-            CurrentRevitSetupErrorMessage = string.Empty;
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(SelectedAnchorTargetOption));
-            RaisePropertyChanged(nameof(SelectedAnchorTargetDescription));
-            RaisePropertyChanged(nameof(CanUseCurrentRevitSetup));
-            RaisePropertyChanged(nameof(CurrentRevitSetupButtonText));
-            RaisePropertyChanged(nameof(CurrentRevitSetupHint));
-            InitializeCurrentRevitSetupSelections(true, false);
-        }
-    }
-
-    public CaptureTargetOption? SelectedCaptureTargetOption
-    {
-        get => selectedCaptureTargetOption;
-        set
-        {
-            if (selectedCaptureTargetOption == value || value is null)
-            {
-                return;
-            }
-
-            selectedCaptureTargetOption = value;
-            KnownCoordinateErrorMessage = string.Empty;
-            CurrentRevitSetupErrorMessage = string.Empty;
-            RaisePropertyChanged(nameof(SelectedCaptureTargetOption));
-            RaisePropertyChanged(nameof(SelectedCaptureTargetDescription));
-            RaisePropertyChanged(nameof(IsCapturingPrimaryApplyAnchor));
-            RaisePropertyChanged(nameof(IsCapturingWorkingProjectBasePoint));
-            RaisePropertyChanged(nameof(CanUseCurrentRevitSetup));
-            RaisePropertyChanged(nameof(CurrentRevitSetupButtonText));
-            RaisePropertyChanged(nameof(CurrentRevitSetupHint));
-            InitializeCurrentRevitSetupSelections(false, IsCapturingWorkingProjectBasePoint);
-        }
-    }
-
-    public string SetupSource
-    {
-        get => setupSource;
-        set
-        {
-            if (string.Equals(setupSource, value, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            setupSource = value ?? string.Empty;
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(SetupSource));
-            RefreshSetupIntentValidation();
-            RaisePropertyChanged(nameof(CanGoNext));
-            RaisePropertyChanged(nameof(CanApply));
-        }
-    }
-
-    public string TrueNorthAngleInput
-    {
-        get => trueNorthAngleInput;
-        set
-        {
-            if (string.Equals(trueNorthAngleInput, value, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            trueNorthAngleInput = value ?? string.Empty;
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(TrueNorthAngleInput));
-            RefreshSetupIntentValidation();
-            RaisePropertyChanged(nameof(CanGoNext));
-            RaisePropertyChanged(nameof(CanApply));
-        }
-    }
-
-    public string KnownCoordinateEastingInput
-    {
-        get => knownCoordinateEastingInput;
-        set
-        {
-            if (string.Equals(knownCoordinateEastingInput, value, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            knownCoordinateEastingInput = value ?? string.Empty;
-            KnownCoordinateErrorMessage = string.Empty;
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(KnownCoordinateEastingInput));
-            if (IsQuickSetupMode)
-            {
-                RaisePropertyChanged(nameof(CanGoNext));
-            }
-        }
-    }
-
-    public string KnownCoordinateNorthingInput
-    {
-        get => knownCoordinateNorthingInput;
-        set
-        {
-            if (string.Equals(knownCoordinateNorthingInput, value, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            knownCoordinateNorthingInput = value ?? string.Empty;
-            KnownCoordinateErrorMessage = string.Empty;
-            InvalidatePreview();
-            RaisePropertyChanged(nameof(KnownCoordinateNorthingInput));
-            if (IsQuickSetupMode)
-            {
-                RaisePropertyChanged(nameof(CanGoNext));
-            }
-        }
-    }
-
-    public string SetupIntentErrorMessage
-    {
-        get => setupIntentErrorMessage;
-        private set
-        {
-            if (string.Equals(setupIntentErrorMessage, value, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            setupIntentErrorMessage = value;
-            RaisePropertyChanged(nameof(SetupIntentErrorMessage));
-            RaisePropertyChanged(nameof(HasSetupIntentErrorMessage));
-        }
-    }
-
-    public string KnownCoordinateErrorMessage
-    {
-        get => knownCoordinateErrorMessage;
-        private set
-        {
-            if (string.Equals(knownCoordinateErrorMessage, value, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            knownCoordinateErrorMessage = value;
-            RaisePropertyChanged(nameof(KnownCoordinateErrorMessage));
-            RaisePropertyChanged(nameof(HasKnownCoordinateErrorMessage));
-        }
-    }
-
-    public PlacementPreview? Preview
-    {
-        get => preview;
-        private set
-        {
-            preview = value;
-            RaisePropertyChanged(nameof(Preview));
-            RaisePropertyChanged(nameof(HasPreview));
-            RaisePropertyChanged(nameof(PreviewPersistenceSummary));
-            RaisePropertyChanged(nameof(PreviewChangeImpactSummary));
-            RaisePropertyChanged(nameof(PreviewConfidenceSummary));
-            RaisePropertyChanged(nameof(HasPreviewWarnings));
-        }
-    }
-
-    public bool HasSelectedPoint => SelectedPoint is not null;
-
-    public bool HasWorkingProjectBasePoint => WorkingProjectBasePoint is not null;
-
-    public bool HasNoWorkingProjectBasePoint => !HasWorkingProjectBasePoint;
-
-    public bool HasSiteLocation => TryGetPreferredSiteLocation(out _, out _);
-
-    public bool HasSurveyPointContextLocation => TryGetSurveyPointContextLocation(out _, out _);
-
-    public bool HasCurrentProjectBasePointContextLocation => CurrentState.ProjectBasePoint.HasEstimatedLocation;
-
-    public bool HasProjectBasePointLocation => WorkingProjectBasePoint is not null
-        || CurrentState.StoredWorkingProjectBasePoint?.IsValid == true
-        || CurrentState.ProjectBasePoint.HasEstimatedLocation;
-
-    public bool HasSetupIntentErrorMessage => !string.IsNullOrWhiteSpace(SetupIntentErrorMessage);
-
-    public bool HasKnownCoordinateErrorMessage => !string.IsNullOrWhiteSpace(KnownCoordinateErrorMessage);
-
+    public bool HasDetectedExistingPointSetup => CurrentState.SurveyPoint.HasSharedPosition && CurrentState.ProjectBasePoint.HasSharedPosition;
+    public bool IsNewProjectMode => !HasDetectedExistingPointSetup || OverrideExistingSetup;
+    public bool IsConfirmExistingSetupMode => HasDetectedExistingPointSetup && !OverrideExistingSetup;
+    public bool UsesSplitApply => IsNewProjectMode;
     public bool HasPreview => Preview is not null;
-
     public bool HasPreviewWarnings => PreviewWarnings.Count > 0;
-
-    public bool IsMapSelectionMode => SelectedSiteSelectionModeOption?.Mode == SiteSelectionInputMode.MapPoint;
-
-    public bool IsKnownCoordinateMode => SelectedSiteSelectionModeOption?.Mode == SiteSelectionInputMode.KnownCoordinates;
-
-    public bool IsCurrentRevitSetupMode => SelectedSiteSelectionModeOption?.Mode == SiteSelectionInputMode.CurrentRevitSetup;
-
-    public bool IsCapturingPrimaryApplyAnchor => SelectedCaptureTargetOption?.Target != ReferenceCaptureTarget.WorkingProjectBasePoint;
-
-    public bool IsCapturingWorkingProjectBasePoint => SelectedCaptureTargetOption?.Target == ReferenceCaptureTarget.WorkingProjectBasePoint;
-
-    public bool CanClearWorkingProjectBasePoint => HasWorkingProjectBasePoint;
-
-    private static string L(string key) => UiLocalizer.Instance.Get(key);
-
-    public string WindowTitle => L("Module.Georeference");
-
-    public string StepTitle => IsQuickSetupMode
-        ? CurrentStep switch
-        {
-            GeoreferenceStep.CurrentState => $"1. {L("Georef.Step.CurrentState")}",
-            GeoreferenceStep.ChooseCrs => $"2. {L("Georef.QuickSetup.StepTitle.CrsAndCoordinates")}",
-            GeoreferenceStep.Preview => $"3. {L("Georef.Step.Preview")}",
-            _ => string.Empty
-        }
-        : CurrentStep switch
-        {
-            GeoreferenceStep.CurrentState => $"1. {L("Georef.Step.CurrentState")}",
-            GeoreferenceStep.ChooseCrs => $"2. {L("Georef.Step.Crs")}",
-            GeoreferenceStep.SelectPoint => $"3. {L("Georef.Step.SiteReference")}",
-            GeoreferenceStep.ReviewPoint => $"4. {L("Georef.Step.Review")}",
-            GeoreferenceStep.SetupIntent => $"5. {L("Georef.Step.Intent")}",
-            GeoreferenceStep.Preview => $"6. {L("Georef.Step.Preview")}",
-            _ => string.Empty
-        };
-
-    public string StepDescription => IsQuickSetupMode
-        ? CurrentStep switch
-        {
-            GeoreferenceStep.CurrentState => L("Georef.StepDescription.CurrentState"),
-            GeoreferenceStep.ChooseCrs => L("Georef.StepDescription.Crs.QuickSetup"),
-            GeoreferenceStep.Preview => L("Georef.StepDescription.Preview"),
-            _ => string.Empty
-        }
-        : CurrentStep switch
-        {
-            GeoreferenceStep.CurrentState => L("Georef.StepDescription.CurrentState"),
-            GeoreferenceStep.ChooseCrs => IsSplitWorkflowMode
-                ? L("Georef.StepDescription.Crs.Split")
-                : L("Georef.StepDescription.Crs.Standard"),
-            GeoreferenceStep.SelectPoint => IsSplitWorkflowMode
-                ? L("Georef.StepDescription.SiteReference.Split")
-                : L("Georef.StepDescription.SiteReference.Standard"),
-            GeoreferenceStep.ReviewPoint => IsSplitWorkflowMode
-                ? L("Georef.StepDescription.Review.Split")
-                : L("Georef.StepDescription.Review.Standard"),
-            GeoreferenceStep.SetupIntent => SetupIntentHelpText,
-            GeoreferenceStep.Preview => L("Georef.StepDescription.Preview"),
-            _ => string.Empty
-        };
-
+    public bool HasSetupValidationMessage => !string.IsNullOrWhiteSpace(SetupValidationMessage);
+    public bool HasExistingSetupMessage => !string.IsNullOrWhiteSpace(CurrentState.ExistingSetupMessage);
+    public bool HasStatusMessage => !string.IsNullOrWhiteSpace(CurrentState.StatusMessage);
     public string ExistingSetupMessage => CurrentState.ExistingSetupMessage;
-
-    public bool HasExistingSetupMessage => !string.IsNullOrWhiteSpace(ExistingSetupMessage);
-
     public string StatusMessage => CurrentState.StatusMessage;
-
-    public bool HasStatusMessage => !string.IsNullOrWhiteSpace(StatusMessage);
-
-    public string SelectedCrsSummary => SelectedCrs is null
-        ? L("Georef.SelectedCrsEmpty")
-        : $"EPSG:{SelectedCrs.EpsgCode}  {SelectedCrs.Name}";
-
-    public string SelectedApplyModeDescription => SelectedApplyModeOption?.Description ?? string.Empty;
-
-    public string SelectedSiteSelectionModeDescription => BuildSelectedSiteSelectionModeDescription();
-
-    public string SelectedAnchorTargetDescription => BuildSelectedAnchorTargetDescription();
-
-    public string SelectedCaptureTargetDescription => BuildSelectedCaptureTargetDescription();
-
+    public string StepTitle => CurrentStep switch { GeoreferenceStep.CurrentState => $"1. {L("Georef.Step.CurrentState")}", GeoreferenceStep.ChooseCrs => $"2. {L("Georef.Simple.Step.Setup")}", GeoreferenceStep.Preview => $"3. {L("Georef.Step.Preview")}", _ => string.Empty };
+    public string StepDescription => CurrentStep switch { GeoreferenceStep.CurrentState => L("Georef.StepDescription.CurrentState"), GeoreferenceStep.ChooseCrs => IsNewProjectMode ? L("Georef.Simple.StepDescription.NewProject") : L("Georef.Simple.StepDescription.Existing"), GeoreferenceStep.Preview => L("Georef.StepDescription.Preview"), _ => string.Empty };
+    public string SelectedCrsSummary => SelectedCrs is null ? L("Georef.SelectedCrsEmpty") : $"EPSG:{SelectedCrs.EpsgCode}  {SelectedCrs.Name}";
+    public string SetupModeTitle => IsNewProjectMode ? L("Georef.Simple.Mode.NewProject.Title") : L("Georef.Simple.Mode.Existing.Title");
+    public string SetupModeDescription => IsNewProjectMode ? L("Georef.Simple.Mode.NewProject.Description") : L("Georef.Simple.Mode.Existing.Description");
+    public string ExistingSetupConfirmationLabel => L("Georef.Simple.ConfirmExisting.Label");
+    public string ExistingSetupConfirmationHint => L("Georef.Simple.ConfirmExisting.Hint");
+    public string OverrideExistingSetupLabel => L("Georef.Simple.OverrideExisting.Label");
     public string PreviewPersistenceSummary => Preview?.PersistenceSummary ?? string.Empty;
-
     public string PreviewChangeImpactSummary => Preview?.ChangeImpactSummary ?? string.Empty;
-
     public string PreviewConfidenceSummary => Preview?.ConfidenceSummary ?? string.Empty;
-
-    public string SelectedPointSummary => SelectedPoint is null
-        ? L("Georef.NotSelected")
-        : $"{SelectedPoint.Latitude:F6}, {SelectedPoint.Longitude:F6}";
-
-    public string WorkingProjectBasePointSummary => WorkingProjectBasePoint is null
-        ? CurrentState.StoredWorkingProjectBasePoint is null
-            ? L("Georef.NotSelected")
-            : FormatWorkingProjectBasePoint(CurrentState.StoredWorkingProjectBasePoint)
-        : $"{WorkingProjectBasePoint.Latitude:F6}, {WorkingProjectBasePoint.Longitude:F6}";
-
-    public string ProjectBasePointZoomButtonText => WorkingProjectBasePoint is not null || CurrentState.StoredWorkingProjectBasePoint?.IsValid == true
-        ? L("Georef.Action.ZoomWorkingProjectPoint")
-        : L("Georef.Action.ZoomProjectPoint");
-
-    public string NextButtonText => CurrentStep == GeoreferenceStep.SetupIntent || (IsQuickSetupMode && CurrentStep == GeoreferenceStep.ChooseCrs) ? L("Common.Preview") : L("Common.Next");
-
-    public bool ShowNextButton => CurrentStep != GeoreferenceStep.Preview;
-
     public bool CanGoBack => CurrentStep != GeoreferenceStep.CurrentState;
-
-    public bool RequiresTrueNorthAngleInput => SelectedApplyModeOption?.Mode == PlacementApplyMode.ProjectLocationAndAngle;
-
-    public bool CanApply => CurrentStep == GeoreferenceStep.Preview
-        && Preview?.IsReadyToApply == true
-        && CurrentState.IsSupportedDocument
-        && !CurrentState.IsReadOnly;
-
-    public bool CanGoNext => CurrentStep switch
-    {
-        GeoreferenceStep.CurrentState => CurrentState.IsSupportedDocument,
-        GeoreferenceStep.ChooseCrs => IsQuickSetupMode ? CanGoNextQuickSetupChooseCrs() : SelectedCrs is not null,
-        GeoreferenceStep.SelectPoint => IsSplitWorkflowMode ? SelectedPoint is not null && WorkingProjectBasePoint is not null : SelectedPoint is not null,
-        GeoreferenceStep.ReviewPoint => IsSplitWorkflowMode ? SelectedPoint is not null && WorkingProjectBasePoint is not null : SelectedPoint is not null,
-        GeoreferenceStep.SetupIntent => BuildIntentValidationResult().IsValid,
-        GeoreferenceStep.Preview => false,
-        _ => false
-    };
-
-    public bool CanNavigateToCurrentState => CanNavigateToStep(GeoreferenceStep.CurrentState);
-
-    public bool CanNavigateToChooseCrs => CanNavigateToStep(GeoreferenceStep.ChooseCrs);
-
-    public bool CanNavigateToSelectPoint => CanNavigateToStep(GeoreferenceStep.SelectPoint);
-
-    public bool CanNavigateToReviewPoint => CanNavigateToStep(GeoreferenceStep.ReviewPoint);
-
-    public bool CanNavigateToSetupIntent => CanNavigateToStep(GeoreferenceStep.SetupIntent);
-
-    public bool CanNavigateToPreview => CanNavigateToStep(GeoreferenceStep.Preview);
-
+    public bool ShowNextButton => CurrentStep != GeoreferenceStep.Preview;
+    public string NextButtonText => CurrentStep == GeoreferenceStep.ChooseCrs ? L("Common.Preview") : L("Common.Next");
+    public bool CanApply => CurrentStep == GeoreferenceStep.Preview && Preview?.IsReadyToApply == true && CurrentState.IsSupportedDocument && !CurrentState.IsReadOnly;
+    public bool CanGoNext => CurrentStep switch { GeoreferenceStep.CurrentState => CurrentState.IsSupportedDocument, GeoreferenceStep.ChooseCrs => BuildSetupValidationResult().IsValid, _ => false };
+    public bool CanNavigateToCurrentState => true;
+    public bool CanNavigateToChooseCrs => CurrentState.IsSupportedDocument;
+    public bool CanNavigateToPreview => GetFurthestNavigableStep() == GeoreferenceStep.Preview;
     public bool IsCurrentStateStepVisible => CurrentStep == GeoreferenceStep.CurrentState;
-
     public bool IsChooseCrsStepVisible => CurrentStep == GeoreferenceStep.ChooseCrs;
-
-    public bool IsSelectPointStepVisible => CurrentStep == GeoreferenceStep.SelectPoint;
-
-    public bool IsReviewPointStepVisible => CurrentStep == GeoreferenceStep.ReviewPoint;
-
-    public bool IsSetupIntentStepVisible => CurrentStep == GeoreferenceStep.SetupIntent;
-
     public bool IsPreviewStepVisible => CurrentStep == GeoreferenceStep.Preview;
+    public string SurveyOriginSummary => BuildSurveyOriginSummary();
+    public string ProjectBasePointOffsetSummary => IsConfirmExistingSetupMode ? FormatCurrentSharedCoordinate(CurrentState.ProjectBasePoint) : TryGetOffsetCoordinate(out ProjectedCoordinate offset) ? string.Format(CultureInfo.InvariantCulture, "E {0:F3} m, N {1:F3} m", offset.Easting, offset.Northing) : L("Georef.Simple.PendingOffset");
 
     public PlacementIntent GetApplyIntent()
     {
-        if (!CanApply || previewIntent is null)
-        {
-            throw new InvalidOperationException("Generate a valid preview in an editable project before applying changes.");
-        }
-
+        if (!CanApply || previewIntent is null) throw new InvalidOperationException("Generate a valid existing-setup preview in an editable project before applying georeference changes.");
         return previewIntent;
+    }
+
+    public SplitSurveyProjectBasePointIntent GetSplitApplyIntent()
+    {
+        if (!CanApply || splitPreviewIntent is null) throw new InvalidOperationException("Generate a valid new-project preview in an editable project before applying georeference changes.");
+        return splitPreviewIntent;
     }
 
     public void GoNext()
     {
-        if (!CanGoNext)
-        {
-            return;
-        }
-
-        if (IsQuickSetupMode && CurrentStep == GeoreferenceStep.ChooseCrs)
-        {
-            if (!TryUseKnownCoordinates())
-            {
-                return;
-            }
-
-            BuildPreview();
-            if (Preview is not null)
-            {
-                CurrentStep = GeoreferenceStep.Preview;
-            }
-
-            return;
-        }
-
-        if (CurrentStep == GeoreferenceStep.SetupIntent)
-        {
-            BuildPreview();
-            if (Preview is not null)
-            {
-                CurrentStep = GeoreferenceStep.Preview;
-            }
-
-            return;
-        }
-
-        CurrentStep = CurrentStep switch
-        {
-            GeoreferenceStep.CurrentState => GeoreferenceStep.ChooseCrs,
-            GeoreferenceStep.ChooseCrs => GeoreferenceStep.SelectPoint,
-            GeoreferenceStep.SelectPoint => GeoreferenceStep.ReviewPoint,
-            GeoreferenceStep.ReviewPoint => GeoreferenceStep.SetupIntent,
-            _ => CurrentStep
-        };
-
-        if (CurrentStep == GeoreferenceStep.SelectPoint)
-        {
-            InitializeCurrentRevitSetupSelections(false, false);
-        }
+        if (!CanGoNext) return;
+        if (CurrentStep == GeoreferenceStep.CurrentState) { CurrentStep = GeoreferenceStep.ChooseCrs; return; }
+        BuildPreview();
+        if (Preview is not null) CurrentStep = GeoreferenceStep.Preview;
     }
 
     public void GoBack()
     {
-        if (!CanGoBack)
-        {
-            return;
-        }
-
-        if (IsQuickSetupMode && CurrentStep == GeoreferenceStep.Preview)
-        {
-            CurrentStep = GeoreferenceStep.ChooseCrs;
-            return;
-        }
-
-        CurrentStep = CurrentStep switch
-        {
-            GeoreferenceStep.ChooseCrs => GeoreferenceStep.CurrentState,
-            GeoreferenceStep.SelectPoint => GeoreferenceStep.ChooseCrs,
-            GeoreferenceStep.ReviewPoint => GeoreferenceStep.SelectPoint,
-            GeoreferenceStep.SetupIntent => GeoreferenceStep.ReviewPoint,
-            GeoreferenceStep.Preview => GeoreferenceStep.SetupIntent,
-            _ => CurrentStep
-        };
+        if (!CanGoBack) return;
+        CurrentStep = CurrentStep == GeoreferenceStep.Preview ? GeoreferenceStep.ChooseCrs : GeoreferenceStep.CurrentState;
     }
 
-    public bool CanNavigateToStep(GeoreferenceStep step)
+    public bool CanNavigateToStep(GeoreferenceStep step) => step switch
     {
-        return step <= GetFurthestNavigableStep();
-    }
+        GeoreferenceStep.CurrentState => true,
+        GeoreferenceStep.ChooseCrs => CurrentState.IsSupportedDocument,
+        GeoreferenceStep.Preview => GetFurthestNavigableStep() == GeoreferenceStep.Preview,
+        _ => false
+    };
 
     public void NavigateToStep(GeoreferenceStep step)
     {
-        if (step == CurrentStep || !CanNavigateToStep(step))
-        {
-            return;
-        }
-
-        if (step == GeoreferenceStep.Preview)
-        {
-            BuildPreview();
-            if (Preview is not null)
-            {
-                CurrentStep = GeoreferenceStep.Preview;
-            }
-
-            return;
-        }
-
+        if (!CanNavigateToStep(step) || step == CurrentStep) return;
+        if (step == GeoreferenceStep.Preview) { BuildPreview(); if (Preview is not null) CurrentStep = GeoreferenceStep.Preview; return; }
         CurrentStep = step;
-        if (CurrentStep == GeoreferenceStep.SelectPoint)
-        {
-            InitializeCurrentRevitSetupSelections(false, false);
-        }
-    }
-
-    public void SetSelectedMapPoint(double latitude, double longitude)
-    {
-        if (SelectedCrs is null)
-        {
-            return;
-        }
-
-        SelectedMapPoint capturedPoint = IsCapturingWorkingProjectBasePoint
-            ? BuildWorkingProjectBasePoint(latitude, longitude, false)
-            : BuildPrimaryMapPoint(latitude, longitude);
-
-        ApplyCapturedPoint(capturedPoint);
-    }
-
-    public bool TryUseKnownCoordinates()
-    {
-        if (SelectedCrs is null)
-        {
-            KnownCoordinateErrorMessage = L("Georef.Error.SelectCrsBeforeCoordinates");
-            return false;
-        }
-
-        if (!TryParseCoordinateValue(KnownCoordinateEastingInput, out double easting))
-        {
-            KnownCoordinateErrorMessage = "Enter a valid Easting value in the selected CRS.";
-            return false;
-        }
-
-        if (!TryParseCoordinateValue(KnownCoordinateNorthingInput, out double northing))
-        {
-            KnownCoordinateErrorMessage = "Enter a valid Northing value in the selected CRS.";
-            return false;
-        }
-
-        ProjectedCoordinate projectedCoordinate = new ProjectedCoordinate(easting, northing);
-        GeographicCoordinate geographicCoordinate = coordinateTransformer.Unproject(projectedCoordinate, SelectedCrs.ToReference());
-        SelectedMapPoint capturedPoint = IsCapturingWorkingProjectBasePoint
-            ? BuildWorkingProjectBasePoint(geographicCoordinate.Latitude, geographicCoordinate.Longitude, true, projectedCoordinate)
-            : BuildPrimaryKnownCoordinatePoint(geographicCoordinate.Latitude, geographicCoordinate.Longitude, projectedCoordinate);
-
-        ApplyCapturedPoint(capturedPoint);
-        KnownCoordinateErrorMessage = string.Empty;
-        return true;
-    }
-
-    public void ClearWorkingProjectBasePoint()
-    {
-        bool wasDisplayed = ReferenceEquals(DisplayedMapPoint, WorkingProjectBasePoint);
-        WorkingProjectBasePoint = null;
-        if (wasDisplayed)
-        {
-            DisplayedMapPoint = SelectedPoint;
-        }
-    }
-
-    public bool TryGetPreferredSiteLocation(out double latitude, out double longitude)
-    {
-        if (CurrentState.StoredOrigin is not null)
-        {
-            latitude = CurrentState.StoredOrigin.Latitude;
-            longitude = CurrentState.StoredOrigin.Longitude;
-            return true;
-        }
-
-        if (CurrentState.SurveyPoint.HasEstimatedLocation)
-        {
-            latitude = CurrentState.SurveyPoint.EstimatedLatitudeDegrees!.Value;
-            longitude = CurrentState.SurveyPoint.EstimatedLongitudeDegrees!.Value;
-            return true;
-        }
-
-        if (CurrentState.SiteLatitudeDegrees.HasValue && CurrentState.SiteLongitudeDegrees.HasValue)
-        {
-            latitude = CurrentState.SiteLatitudeDegrees.Value;
-            longitude = CurrentState.SiteLongitudeDegrees.Value;
-            return true;
-        }
-
-        latitude = 0d;
-        longitude = 0d;
-        return false;
-    }
-
-    public bool TryGetSurveyPointContextLocation(out double latitude, out double longitude)
-    {
-        if (CurrentState.StoredOrigin is not null)
-        {
-            latitude = CurrentState.StoredOrigin.Latitude;
-            longitude = CurrentState.StoredOrigin.Longitude;
-            return true;
-        }
-
-        if (CurrentState.SurveyPoint.HasEstimatedLocation)
-        {
-            latitude = CurrentState.SurveyPoint.EstimatedLatitudeDegrees!.Value;
-            longitude = CurrentState.SurveyPoint.EstimatedLongitudeDegrees!.Value;
-            return true;
-        }
-
-        if (CurrentState.SiteLatitudeDegrees.HasValue && CurrentState.SiteLongitudeDegrees.HasValue)
-        {
-            latitude = CurrentState.SiteLatitudeDegrees.Value;
-            longitude = CurrentState.SiteLongitudeDegrees.Value;
-            return true;
-        }
-
-        latitude = 0d;
-        longitude = 0d;
-        return false;
-    }
-
-    public bool TryGetCurrentProjectBasePointContextLocation(out double latitude, out double longitude)
-    {
-        if (CurrentState.ProjectBasePoint.HasEstimatedLocation)
-        {
-            latitude = CurrentState.ProjectBasePoint.EstimatedLatitudeDegrees!.Value;
-            longitude = CurrentState.ProjectBasePoint.EstimatedLongitudeDegrees!.Value;
-            return true;
-        }
-
-        latitude = 0d;
-        longitude = 0d;
-        return false;
-    }
-
-    public bool TryGetProjectBasePointLocation(out double latitude, out double longitude)
-    {
-        if (WorkingProjectBasePoint is not null)
-        {
-            latitude = WorkingProjectBasePoint.Latitude;
-            longitude = WorkingProjectBasePoint.Longitude;
-            return true;
-        }
-
-        if (CurrentState.StoredWorkingProjectBasePoint?.IsValid == true)
-        {
-            latitude = CurrentState.StoredWorkingProjectBasePoint.Origin!.Latitude;
-            longitude = CurrentState.StoredWorkingProjectBasePoint.Origin.Longitude;
-            return true;
-        }
-
-        if (CurrentState.ProjectBasePoint.HasEstimatedLocation)
-        {
-            latitude = CurrentState.ProjectBasePoint.EstimatedLatitudeDegrees!.Value;
-            longitude = CurrentState.ProjectBasePoint.EstimatedLongitudeDegrees!.Value;
-            return true;
-        }
-
-        latitude = 0d;
-        longitude = 0d;
-        return false;
-    }
-
-    private void ApplyCapturedPoint(SelectedMapPoint capturedPoint)
-    {
-        if (IsCapturingWorkingProjectBasePoint)
-        {
-            WorkingProjectBasePoint = capturedPoint;
-        }
-        else
-        {
-            SelectedPoint = capturedPoint;
-        }
-
-        DisplayedMapPoint = capturedPoint;
-    }
-
-    private SelectedMapPoint BuildPrimaryMapPoint(double latitude, double longitude)
-    {
-        ProjectedCoordinate projectedCoordinate = coordinateTransformer.Project(
-            new GeographicCoordinate(latitude, longitude),
-            SelectedCrs!.ToReference());
-
-        return new SelectedMapPoint
-        {
-            Latitude = latitude,
-            Longitude = longitude,
-            ProjectedCoordinate = projectedCoordinate,
-            SourceLabel = "Selected from OSM map",
-            ConfidenceLabel = "Approximate (map-based selection)",
-            ConfidenceLevel = GeoConfidenceLevel.Approximate,
-            AnchorTarget = ResolvePrimaryAnchorTarget(),
-            ReprojectWithSelectedCrs = true,
-            IsKnownCoordinateInput = false
-        };
-    }
-
-    private SelectedMapPoint BuildPrimaryKnownCoordinatePoint(double latitude, double longitude, ProjectedCoordinate projectedCoordinate)
-    {
-        PlacementAnchorTarget anchorTarget = ResolvePrimaryAnchorTarget();
-        string anchorTitle = anchorTarget == PlacementAnchorTarget.ProjectBasePoint ? "Project Base Point" : "Survey Point";
-
-        return new SelectedMapPoint
-        {
-            Latitude = latitude,
-            Longitude = longitude,
-            ProjectedCoordinate = projectedCoordinate,
-            SourceLabel = $"Entered EPSG:{SelectedCrs!.EpsgCode} coordinates for {anchorTitle}",
-            ConfidenceLabel = "Verified (user-entered CRS coordinates)",
-            ConfidenceLevel = GeoConfidenceLevel.Verified,
-            AnchorTarget = anchorTarget,
-            ReprojectWithSelectedCrs = false,
-            IsKnownCoordinateInput = true
-        };
-    }
-
-    private SelectedMapPoint BuildWorkingProjectBasePoint(double latitude, double longitude, bool isKnownCoordinateInput, ProjectedCoordinate? knownProjectedCoordinate = null)
-    {
-        ProjectedCoordinate projectedCoordinate = knownProjectedCoordinate
-            ?? coordinateTransformer.Project(new GeographicCoordinate(latitude, longitude), SelectedCrs!.ToReference());
-        string sourceLabel = isKnownCoordinateInput
-            ? $"Entered EPSG:{SelectedCrs!.EpsgCode} coordinates for Working Project Base Point"
-            : "Selected from OSM map for Working Project Base Point";
-        string confidenceLabel = isKnownCoordinateInput
-            ? "Verified (user-entered CRS coordinates)"
-            : "Approximate (map-based selection)";
-        GeoConfidenceLevel confidence = isKnownCoordinateInput ? GeoConfidenceLevel.Verified : GeoConfidenceLevel.Approximate;
-
-        return new SelectedMapPoint
-        {
-            Latitude = latitude,
-            Longitude = longitude,
-            ProjectedCoordinate = projectedCoordinate,
-            SourceLabel = sourceLabel,
-            ConfidenceLabel = confidenceLabel,
-            ConfidenceLevel = confidence,
-            AnchorTarget = PlacementAnchorTarget.ProjectBasePoint,
-            ReprojectWithSelectedCrs = !isKnownCoordinateInput,
-            IsKnownCoordinateInput = isKnownCoordinateInput
-        };
     }
 
     private void BuildPreview()
     {
-        PlacementIntentValidationResult validationResult = BuildIntentValidationResult();
-        SetupIntentErrorMessage = string.Join(Environment.NewLine, validationResult.Errors);
-        if (!validationResult.IsValid)
-        {
-            previewIntent = null;
-            splitPreviewIntent = null;
-            Preview = null;
-            ResetPreviewCollections();
-            return;
-        }
+        SetupValidationResult validation = BuildSetupValidationResult();
+        SetupValidationMessage = string.Join(Environment.NewLine, validation.Errors);
+        if (!validation.IsValid || SelectedCrs is null) { previewIntent = null; splitPreviewIntent = null; Preview = null; ResetPreviewCollections(); return; }
 
-        if (IsSplitWorkflowMode)
+        if (IsNewProjectMode)
         {
-            SplitSurveyProjectBasePointIntent splitIntent = BuildSplitIntent();
-            splitPreviewIntent = splitIntent;
+            splitPreviewIntent = BuildNewProjectSplitIntent();
             previewIntent = null;
-            Preview = splitSurveyProjectBasePointPreviewService.CreatePreview(CurrentState, splitIntent);
+            Preview = splitSurveyProjectBasePointPreviewService.CreatePreview(CurrentState, splitPreviewIntent);
         }
         else
         {
-            PlacementIntent intent = BuildIntent();
-            previewIntent = intent;
+            previewIntent = BuildExistingSetupMetadataIntent();
             splitPreviewIntent = null;
-            Preview = placementPreviewService.CreatePreview(placementCurrentState, intent);
+            Preview = placementPreviewService.CreatePreview(PlacementCurrentStateFactory.Create(CurrentState), previewIntent);
         }
 
         ReplaceCollection(PreviewFields, Preview.Fields);
         ReplaceCollection(PreviewWarnings, Preview.Warnings);
         ReplaceCollection(PreviewWhatWillChange, Preview.WhatWillChange);
         ReplaceCollection(PreviewWhatWillNotChange, Preview.WhatWillNotChange);
+        RaisePropertyChanged(nameof(HasPreviewWarnings));
         RaisePropertyChanged(nameof(CanApply));
     }
 
-    private void RefreshSelectedPointRows()
+    private SetupValidationResult BuildSetupValidationResult()
     {
-        SelectedPointRows.Clear();
-        if (SelectedPoint is null)
+        SetupValidationResult result = new SetupValidationResult();
+        if (SelectedCrs is null) result.Errors.Add(L("Georef.Simple.Validation.SelectCrs"));
+        if (IsConfirmExistingSetupMode)
         {
-            return;
+            if (!ConfirmExistingSetup) result.Errors.Add(L("Georef.Simple.Validation.ConfirmExisting"));
+            if (!CurrentState.SurveyPoint.HasEstimatedLocation) result.Errors.Add(L("Georef.Simple.Validation.SurveyUnavailable"));
+            if (!CurrentState.ProjectBasePoint.HasEstimatedLocation || !CurrentState.ProjectBasePoint.HasSharedPosition) result.Errors.Add(L("Georef.Simple.Validation.ProjectBasePointUnavailable"));
+        }
+        else
+        {
+            if (!TryParseCoordinateValue(ProjectBasePointOffsetXInput, out _)) result.Errors.Add(L("Georef.Simple.Validation.OffsetX"));
+            if (!TryParseCoordinateValue(ProjectBasePointOffsetYInput, out _)) result.Errors.Add(L("Georef.Simple.Validation.OffsetY"));
         }
 
-        SelectedPointRows.Add(new SummaryRow("Latitude / Longitude", $"{SelectedPoint.Latitude:F6}, {SelectedPoint.Longitude:F6}"));
-        if (IsSplitWorkflowMode)
-        {
-            SelectedPointRows.Add(new SummaryRow("Role", "Shared Survey Target"));
-        }
-        SelectedPointRows.Add(new SummaryRow("Projected Easting", $"{SelectedPoint.ProjectedCoordinate.Easting:F4} m"));
-        SelectedPointRows.Add(new SummaryRow("Projected Northing", $"{SelectedPoint.ProjectedCoordinate.Northing:F4} m"));
-        if (SelectedPoint.AnchorTarget != PlacementAnchorTarget.Unspecified)
-        {
-            SelectedPointRows.Add(new SummaryRow("Anchor Target", FormatAnchorTarget(SelectedPoint.AnchorTarget)));
-        }
-
-        SelectedPointRows.Add(new SummaryRow("Source", SelectedPoint.SourceLabel));
-        SelectedPointRows.Add(new SummaryRow("Confidence", SelectedPoint.ConfidenceLabel));
-        if (SelectedCrs is not null)
-        {
-            SelectedPointRows.Add(new SummaryRow("Selected CRS", $"EPSG:{SelectedCrs.EpsgCode}  {SelectedCrs.Name}"));
-        }
+        return result;
     }
 
-    private void RefreshWorkingProjectBasePointRows()
+    private SplitSurveyProjectBasePointIntent BuildNewProjectSplitIntent()
     {
-        WorkingProjectBasePointRows.Clear();
-        if (WorkingProjectBasePoint is null)
+        ProjectedCoordinate projectOffset = ParseOffsetCoordinate();
+        ProjectOrigin surveyOrigin = BuildSurveyOriginOrThrow();
+        GeographicCoordinate projectBasePointCoordinate = coordinateTransformer.Unproject(projectOffset, SelectedCrs!.ToReference());
+        return new SplitSurveyProjectBasePointIntent
         {
-            return;
-        }
-
-        WorkingProjectBasePointRows.Add(new SummaryRow("Latitude / Longitude", $"{WorkingProjectBasePoint.Latitude:F6}, {WorkingProjectBasePoint.Longitude:F6}"));
-        WorkingProjectBasePointRows.Add(new SummaryRow("Projected Easting", $"{WorkingProjectBasePoint.ProjectedCoordinate.Easting:F4} m"));
-        WorkingProjectBasePointRows.Add(new SummaryRow("Projected Northing", $"{WorkingProjectBasePoint.ProjectedCoordinate.Northing:F4} m"));
-        WorkingProjectBasePointRows.Add(new SummaryRow("Role", IsSplitWorkflowMode ? "Local Project Base Point" : "Working Project Base Point"));
-        WorkingProjectBasePointRows.Add(new SummaryRow("Source", WorkingProjectBasePoint.SourceLabel));
-        WorkingProjectBasePointRows.Add(new SummaryRow("Confidence", WorkingProjectBasePoint.ConfidenceLabel));
-        if (SelectedCrs is not null)
-        {
-            WorkingProjectBasePointRows.Add(new SummaryRow("Selected CRS", $"EPSG:{SelectedCrs.EpsgCode}  {SelectedCrs.Name}"));
-        }
-    }
-
-    private void RefreshSetupIntentValidation()
-    {
-        if (CurrentStep != GeoreferenceStep.SetupIntent)
-        {
-            SetupIntentErrorMessage = string.Empty;
-            return;
-        }
-
-        PlacementIntentValidationResult validationResult = BuildIntentValidationResult();
-        SetupIntentErrorMessage = string.Join(Environment.NewLine, validationResult.Errors);
-    }
-
-    private PlacementIntentValidationResult BuildIntentValidationResult()
-    {
-        if (IsSplitWorkflowMode)
-        {
-            return BuildSplitIntentValidationResult();
-        }
-
-        if (SelectedCrs is null || SelectedPoint is null || SelectedApplyModeOption is null)
-        {
-            PlacementIntentValidationResult missingResult = new PlacementIntentValidationResult();
-            if (SelectedCrs is null)
+            SelectedCrs = SelectedCrs.ToReference(),
+            SharedSurveyOrigin = surveyOrigin,
+            SharedSurveyProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
+            LocalProjectBasePoint = new WorkingProjectBasePointReference
             {
-                missingResult.Errors.Add(L("Georef.Error.Preview.SelectCrs"));
-            }
-
-            if (SelectedPoint is null)
-            {
-                missingResult.Errors.Add(L("Georef.Error.Preview.SelectPoint"));
-            }
-
-            if (SelectedApplyModeOption is null)
-            {
-                missingResult.Errors.Add(L("Georef.Error.Preview.SelectApplyMode"));
-            }
-
-            return missingResult;
-        }
-
-        return intentValidator.Validate(BuildIntent());
+                ProjectCrs = SelectedCrs.ToReference(),
+                Origin = new ProjectOrigin { Latitude = projectBasePointCoordinate.Latitude, Longitude = projectBasePointCoordinate.Longitude, ElevationMeters = 0d },
+                ProjectedCoordinate = projectOffset,
+                Confidence = GeoConfidenceLevel.Verified,
+                SetupSource = L("Georef.Simple.SetupSource.NewProject")
+            },
+            Confidence = GeoConfidenceLevel.Verified,
+            SetupSource = L("Georef.Simple.SetupSource.NewProject"),
+            ApplyMode = PlacementApplyMode.ProjectLocation
+        };
     }
 
-    private PlacementIntent BuildIntent()
+    private PlacementIntent BuildExistingSetupMetadataIntent()
     {
-        double? trueNorthAngle = ParseTrueNorthAngle();
-        return siteSelectionService.CreateIntent(
-            SelectedCrs!,
-            SelectedPoint!,
-            SelectedApplyModeOption!.Mode,
-            SetupSource,
-            trueNorthAngle,
-            WorkingProjectBasePoint);
+        return new PlacementIntent
+        {
+            SelectedCrs = SelectedCrs!.ToReference(),
+            SelectedOrigin = new ProjectOrigin { Latitude = CurrentState.SurveyPoint.EstimatedLatitudeDegrees!.Value, Longitude = CurrentState.SurveyPoint.EstimatedLongitudeDegrees!.Value, ElevationMeters = 0d },
+            SelectedProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
+            Confidence = GeoConfidenceLevel.Verified,
+            SetupSource = L("Georef.Simple.SetupSource.Existing"),
+            ApplyMode = PlacementApplyMode.MetadataOnly,
+            AnchorTarget = PlacementAnchorTarget.SurveyPoint,
+            WorkingProjectBasePoint = new WorkingProjectBasePointReference
+            {
+                ProjectCrs = SelectedCrs.ToReference(),
+                Origin = new ProjectOrigin { Latitude = CurrentState.ProjectBasePoint.EstimatedLatitudeDegrees!.Value, Longitude = CurrentState.ProjectBasePoint.EstimatedLongitudeDegrees!.Value, ElevationMeters = 0d },
+                ProjectedCoordinate = new ProjectedCoordinate(CurrentState.ProjectBasePoint.SharedEastWestFeet!.Value * FeetToMeters, CurrentState.ProjectBasePoint.SharedNorthSouthFeet!.Value * FeetToMeters),
+                Confidence = GeoConfidenceLevel.Verified,
+                SetupSource = L("Georef.Simple.SetupSource.Existing")
+            }
+        };
     }
 
-    private double? ParseTrueNorthAngle()
+    private void RefreshPlannedSetupRows()
     {
-        if (!RequiresTrueNorthAngleInput)
+        List<SummaryRow> rows = new List<SummaryRow>
         {
-            return null;
+            new SummaryRow(L("Georef.Simple.Planned.Mode"), SetupModeTitle),
+            new SummaryRow(L("Georef.Label.SelectedCrs"), SelectedCrsSummary),
+            new SummaryRow(L("Georef.Simple.Planned.Survey"), SurveyOriginSummary),
+            new SummaryRow(L("Georef.Simple.Planned.Project"), ProjectBasePointOffsetSummary),
+            new SummaryRow(L("Georef.Simple.Planned.Apply"), IsNewProjectMode ? L("Georef.Simple.Planned.Apply.NewProject") : L("Georef.Simple.Planned.Apply.Existing"))
+        };
+        if (IsConfirmExistingSetupMode) rows.Add(new SummaryRow(L("Georef.Simple.Planned.Confirmation"), ConfirmExistingSetup ? L("Common.Yes") : L("Common.No")));
+        ReplaceCollection(PlannedSetupRows, rows);
+    }
+
+    private void OnSetupChanged(params string[] propertyNames)
+    {
+        InvalidatePreview();
+        RefreshPlannedSetupRows();
+        foreach (string propertyName in propertyNames) RaisePropertyChanged(propertyName);
+        RaisePropertyChanged(nameof(SetupModeDescription));
+        RaisePropertyChanged(nameof(CanGoNext));
+        RaisePropertyChanged(nameof(CanApply));
+    }
+
+    private bool TryBuildSurveyOrigin(out ProjectOrigin? origin)
+    {
+        origin = null;
+        if (SelectedCrs is null) return false;
+        GeographicCoordinate coordinate = coordinateTransformer.Unproject(new ProjectedCoordinate(0d, 0d), SelectedCrs.ToReference());
+        origin = new ProjectOrigin { Latitude = coordinate.Latitude, Longitude = coordinate.Longitude, ElevationMeters = 0d };
+        return true;
+    }
+
+    private ProjectOrigin BuildSurveyOriginOrThrow()
+    {
+        if (!TryBuildSurveyOrigin(out ProjectOrigin? origin) || origin is null) throw new InvalidOperationException("Select a coordinate reference system before generating georeference preview.");
+        return origin;
+    }
+
+    private string BuildSurveyOriginSummary()
+    {
+        if (SelectedCrs is null)
+        {
+            return L("Georef.Simple.PendingCrs");
         }
 
-        if (string.IsNullOrWhiteSpace(TrueNorthAngleInput))
+        if (!TryBuildSurveyOrigin(out ProjectOrigin? origin) || origin is null)
         {
-            return null;
+            return L("Georef.Simple.PendingOrigin");
         }
 
-        if (double.TryParse(TrueNorthAngleInput, NumberStyles.Float, CultureInfo.CurrentCulture, out double currentCultureValue))
-        {
-            return currentCultureValue;
-        }
+        return string.Format(CultureInfo.InvariantCulture, "E 0.000 m, N 0.000 m / Lat {0:F6}, Lon {1:F6}", origin.Latitude, origin.Longitude);
+    }
 
-        if (double.TryParse(TrueNorthAngleInput, NumberStyles.Float, CultureInfo.InvariantCulture, out double invariantValue))
-        {
-            return invariantValue;
-        }
+    private bool TryGetOffsetCoordinate(out ProjectedCoordinate offset)
+    {
+        offset = default;
+        if (!TryParseCoordinateValue(ProjectBasePointOffsetXInput, out double x) || !TryParseCoordinateValue(ProjectBasePointOffsetYInput, out double y)) return false;
+        offset = new ProjectedCoordinate(x, y);
+        return true;
+    }
 
-        return null;
+    private ProjectedCoordinate ParseOffsetCoordinate()
+    {
+        if (!TryGetOffsetCoordinate(out ProjectedCoordinate offset)) throw new InvalidOperationException("Enter valid Project Base Point X/Y offsets before generating georeference preview.");
+        return offset;
     }
 
     private void InvalidatePreview()
@@ -1149,24 +313,11 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         splitPreviewIntent = null;
         Preview = null;
         ResetPreviewCollections();
+        SetupValidationMessage = CurrentStep == GeoreferenceStep.ChooseCrs
+            ? string.Join(Environment.NewLine, BuildSetupValidationResult().Errors)
+            : string.Empty;
         RaisePropertyChanged(nameof(CanApply));
-        RaiseStepNavigationProperties();
-    }
-
-    private static bool TryParseCoordinateValue(string? text, out double value)
-    {
-        value = 0d;
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        if (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value))
-        {
-            return true;
-        }
-
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        RaisePropertyChanged(nameof(CanNavigateToPreview));
     }
 
     private void ResetPreviewCollections()
@@ -1175,217 +326,16 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         PreviewWarnings.Clear();
         PreviewWhatWillChange.Clear();
         PreviewWhatWillNotChange.Clear();
+        RaisePropertyChanged(nameof(HasPreviewWarnings));
     }
 
-    private static void ReplaceCollection<T>(ObservableCollection<T> target, IEnumerable<T> values)
-    {
-        target.Clear();
-        foreach (T value in values)
-        {
-            target.Add(value);
-        }
-    }
-
-    private static IEnumerable<ApplyModeOption> CreateApplyModeOptions()
-    {
-        yield return new ApplyModeOption
-        {
-            Mode = PlacementApplyMode.MetadataOnly,
-            Title = L("Georef.ApplyMode.MetadataOnly.Title"),
-            Description = L("Georef.ApplyMode.MetadataOnly.Description")
-        };
-        yield return new ApplyModeOption
-        {
-            Mode = PlacementApplyMode.ProjectLocation,
-            Title = L("Georef.ApplyMode.ProjectLocation.Title"),
-            Description = L("Georef.ApplyMode.ProjectLocation.Description")
-        };
-        yield return new ApplyModeOption
-        {
-            Mode = PlacementApplyMode.ProjectLocationAndAngle,
-            Title = L("Georef.ApplyMode.ProjectLocationAngle.Title"),
-            Description = L("Georef.ApplyMode.ProjectLocationAngle.Description")
-        };
-    }
-
-    private static IEnumerable<SiteSelectionModeOption> CreateSiteSelectionModeOptions()
-    {
-        yield return new SiteSelectionModeOption
-        {
-            Mode = SiteSelectionInputMode.MapPoint,
-            Title = L("Georef.SiteMode.Map.Title"),
-            Description = L("Georef.SiteMode.Map.Description")
-        };
-        yield return new SiteSelectionModeOption
-        {
-            Mode = SiteSelectionInputMode.KnownCoordinates,
-            Title = L("Georef.SiteMode.Coordinates.Title"),
-            Description = L("Georef.SiteMode.Coordinates.Description")
-        };
-        yield return new SiteSelectionModeOption
-        {
-            Mode = SiteSelectionInputMode.CurrentRevitSetup,
-            Title = L("Georef.SiteMode.Current.Title"),
-            Description = L("Georef.SiteMode.Current.Description")
-        };
-    }
-
-    private static IEnumerable<AnchorTargetOption> CreateAnchorTargetOptions()
-    {
-        yield return new AnchorTargetOption
-        {
-            Target = PlacementAnchorTarget.SurveyPoint,
-            Title = L("Georef.AnchorTarget.Survey.Title"),
-            Description = L("Georef.AnchorTarget.Survey.Description")
-        };
-        yield return new AnchorTargetOption
-        {
-            Target = PlacementAnchorTarget.ProjectBasePoint,
-            Title = L("Georef.AnchorTarget.Project.Title"),
-            Description = L("Georef.AnchorTarget.Project.Description")
-        };
-    }
-
-    private static IEnumerable<CaptureTargetOption> CreateCaptureTargetOptions()
-    {
-        yield return new CaptureTargetOption
-        {
-            Target = ReferenceCaptureTarget.PrimaryApplyAnchor,
-            Title = L("Georef.CaptureTarget.Primary.Title"),
-            Description = L("Georef.CaptureTarget.Primary.Description")
-        };
-        yield return new CaptureTargetOption
-        {
-            Target = ReferenceCaptureTarget.WorkingProjectBasePoint,
-            Title = L("Georef.CaptureTarget.Working.Title"),
-            Description = L("Georef.CaptureTarget.Working.Description")
-        };
-    }
-
-    private static IEnumerable<SummaryRow> CreateCurrentStateRows(CurrentProjectStateSummary summary)
-    {
-        yield return new SummaryRow("Document", summary.DocumentTitle);
-        yield return new SummaryRow("Stored Geo Metadata", summary.HasStoredGeoInfo ? "Yes" : "No");
-        yield return new SummaryRow("Read-Only", summary.IsReadOnly ? "Yes" : "No");
-        if (summary.SiteLatitudeDegrees.HasValue && summary.SiteLongitudeDegrees.HasValue)
-        {
-            yield return new SummaryRow("Site Location", $"{summary.SiteLatitudeDegrees.Value:F6}, {summary.SiteLongitudeDegrees.Value:F6}");
-        }
-
-        if (summary.SiteTimeZoneHours.HasValue)
-        {
-            yield return new SummaryRow("Site Time Zone", $"UTC{summary.SiteTimeZoneHours.Value:+0.##;-0.##;0}");
-        }
-
-        yield return new SummaryRow("Project Position", FormatLengthPair(summary.ProjectPosition.EastWestFeet, summary.ProjectPosition.NorthSouthFeet));
-        yield return new SummaryRow("Project Elevation", FormatLength(summary.ProjectPosition.ElevationFeet));
-        yield return new SummaryRow("True North Angle", $"{summary.ProjectPosition.AngleDegrees:F3}°");
-        yield return new SummaryRow(summary.SurveyPoint.Name, FormatPoint(summary.SurveyPoint));
-        if (summary.SurveyPoint.HasEstimatedLocation)
-        {
-            yield return new SummaryRow("Survey Point Estimate", FormatEstimatedLocation(summary.SurveyPoint));
-        }
-
-        yield return new SummaryRow(summary.ProjectBasePoint.Name, FormatPoint(summary.ProjectBasePoint));
-        if (summary.ProjectBasePoint.HasEstimatedLocation)
-        {
-            yield return new SummaryRow("Project Base Point Estimate", FormatEstimatedLocation(summary.ProjectBasePoint));
-        }
-
-        yield return new SummaryRow("Project North", "Current model axes reference. Revit V1 does not expose a separate stored project north angle here.");
-        if (summary.StoredCrs is not null)
-        {
-            yield return new SummaryRow("Stored CRS", $"EPSG:{summary.StoredCrs.EpsgCode}  {summary.StoredCrs.NameSnapshot}");
-        }
-
-        if (summary.StoredOrigin is not null)
-        {
-            yield return new SummaryRow("Stored Origin", $"{summary.StoredOrigin.Latitude:F6}, {summary.StoredOrigin.Longitude:F6}, elev {summary.StoredOrigin.ElevationMeters:F3} m");
-        }
-
-        if (summary.StoredWorkingProjectBasePoint?.IsValid == true)
-        {
-            yield return new SummaryRow("Stored Working Project Base Point", FormatWorkingProjectBasePoint(summary.StoredWorkingProjectBasePoint));
-        }
-
-        if (summary.StoredConfidence.HasValue)
-        {
-            yield return new SummaryRow("Stored Confidence", summary.StoredConfidence.Value.ToString());
-        }
-
-        if (!string.IsNullOrWhiteSpace(summary.SetupSource))
-        {
-            yield return new SummaryRow("Setup Source", summary.SetupSource);
-        }
-    }
-
-    private static string FormatLengthPair(double eastWestFeet, double northSouthFeet)
-    {
-        return $"EW {FormatLength(eastWestFeet)}, NS {FormatLength(northSouthFeet)}";
-    }
-
-    private static string FormatLength(double feet)
-    {
-        return $"{feet:F3} ft / {feet * 0.3048:F3} m";
-    }
-
-    private GeoreferenceStep GetFurthestNavigableStep()
-    {
-        if (!CurrentState.IsSupportedDocument)
-        {
-            return GeoreferenceStep.CurrentState;
-        }
-
-        if (SelectedCrs is null)
-        {
-            return GeoreferenceStep.ChooseCrs;
-        }
-
-        if (IsQuickSetupMode)
-        {
-            return CanGoNextQuickSetupChooseCrs() ? GeoreferenceStep.Preview : GeoreferenceStep.ChooseCrs;
-        }
-
-        if (SelectedPoint is null || (IsSplitWorkflowMode && WorkingProjectBasePoint is null))
-        {
-            return GeoreferenceStep.SelectPoint;
-        }
-
-        if (!BuildIntentValidationResult().IsValid)
-        {
-            return GeoreferenceStep.SetupIntent;
-        }
-
-        return GeoreferenceStep.Preview;
-    }
-
-    private static string FormatPoint(BasePointSnapshot point)
-    {
-        return $"X {point.XFeet:F3} ft, Y {point.YFeet:F3} ft, Z {point.ZFeet:F3} ft";
-    }
-
-    private static string FormatEstimatedLocation(BasePointSnapshot point)
-    {
-        return $"Lat {point.EstimatedLatitudeDegrees!.Value:F6}, Lon {point.EstimatedLongitudeDegrees!.Value:F6}";
-    }
-
-    private static string FormatAnchorTarget(PlacementAnchorTarget anchorTarget)
-    {
-        return anchorTarget switch
-        {
-            PlacementAnchorTarget.SurveyPoint => L("Georef.AnchorTarget.Survey.Title"),
-            PlacementAnchorTarget.ProjectBasePoint => L("Georef.AnchorTarget.Project.Title"),
-            _ => "Survey Point"
-        };
-    }
-
-    private static string FormatWorkingProjectBasePoint(WorkingProjectBasePointReference workingProjectBasePoint)
-    {
-        return $"EPSG:{workingProjectBasePoint.ProjectCrs!.EpsgCode} / E {workingProjectBasePoint.ProjectedCoordinate!.Value.Easting:F3} m, N {workingProjectBasePoint.ProjectedCoordinate.Value.Northing:F3} m / Lat {workingProjectBasePoint.Origin!.Latitude:F6}, Lon {workingProjectBasePoint.Origin.Longitude:F6}";
-    }
+    private GeoreferenceStep GetFurthestNavigableStep() => !CurrentState.IsSupportedDocument ? GeoreferenceStep.CurrentState : BuildSetupValidationResult().IsValid ? GeoreferenceStep.Preview : GeoreferenceStep.ChooseCrs;
 
     private void RaiseStepProperties()
     {
+        SetupValidationMessage = CurrentStep == GeoreferenceStep.ChooseCrs
+            ? string.Join(Environment.NewLine, BuildSetupValidationResult().Errors)
+            : string.Empty;
         RaisePropertyChanged(nameof(CurrentStep));
         RaisePropertyChanged(nameof(StepTitle));
         RaisePropertyChanged(nameof(StepDescription));
@@ -1396,52 +346,64 @@ public sealed partial class GeoreferenceViewModel : INotifyPropertyChanged
         RaisePropertyChanged(nameof(ShowNextButton));
         RaisePropertyChanged(nameof(IsCurrentStateStepVisible));
         RaisePropertyChanged(nameof(IsChooseCrsStepVisible));
-        RaisePropertyChanged(nameof(IsSelectPointStepVisible));
-        RaisePropertyChanged(nameof(IsReviewPointStepVisible));
-        RaisePropertyChanged(nameof(IsSetupIntentStepVisible));
         RaisePropertyChanged(nameof(IsPreviewStepVisible));
-        RaiseStepNavigationProperties();
-    }
-
-    private void RaiseStepNavigationProperties()
-    {
         RaisePropertyChanged(nameof(CanNavigateToCurrentState));
         RaisePropertyChanged(nameof(CanNavigateToChooseCrs));
-        RaisePropertyChanged(nameof(CanNavigateToSelectPoint));
-        RaisePropertyChanged(nameof(CanNavigateToReviewPoint));
-        RaisePropertyChanged(nameof(CanNavigateToSetupIntent));
         RaisePropertyChanged(nameof(CanNavigateToPreview));
-        RaisePropertyChanged(nameof(HasSiteLocation));
-        RaisePropertyChanged(nameof(HasSurveyPointContextLocation));
     }
 
-    private void RaisePropertyChanged(string propertyName)
+    private static bool TryParseCoordinateValue(string? text, out double value)
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        value = 0d;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value)) return true;
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static string FormatCurrentSharedCoordinate(BasePointSnapshot point)
+    {
+        if (!point.HasSharedPosition) return L("Georef.Simple.CurrentOffsetUnavailable");
+        return string.Format(CultureInfo.InvariantCulture, "E {0:F3} m, N {1:F3} m", point.SharedEastWestFeet!.Value * FeetToMeters, point.SharedNorthSouthFeet!.Value * FeetToMeters);
+    }
+
+    private static IEnumerable<SummaryRow> CreateCurrentStateRows(CurrentProjectStateSummary summary)
+    {
+        yield return new SummaryRow(L("Georef.Current.Document"), summary.DocumentTitle);
+        yield return new SummaryRow(L("Georef.Current.StoredMetadata"), summary.HasStoredGeoInfo ? L("Common.Yes") : L("Common.No"));
+        yield return new SummaryRow(L("Georef.Current.ReadOnly"), summary.IsReadOnly ? L("Common.Yes") : L("Common.No"));
+        if (summary.SiteLatitudeDegrees.HasValue && summary.SiteLongitudeDegrees.HasValue)
+        {
+            yield return new SummaryRow(L("Georef.Current.SiteLocation"), $"{summary.SiteLatitudeDegrees.Value:F6}, {summary.SiteLongitudeDegrees.Value:F6}");
+        }
+
+        yield return new SummaryRow(L("Georef.Current.SurveyShared"), FormatCurrentSharedCoordinate(summary.SurveyPoint));
+        yield return new SummaryRow(L("Georef.Current.ProjectShared"), FormatCurrentSharedCoordinate(summary.ProjectBasePoint));
+        if (summary.SurveyPoint.HasEstimatedLocation)
+        {
+            yield return new SummaryRow(L("Georef.Current.SurveyEstimate"), $"Lat {summary.SurveyPoint.EstimatedLatitudeDegrees!.Value:F6}, Lon {summary.SurveyPoint.EstimatedLongitudeDegrees!.Value:F6}");
+        }
+
+        if (summary.ProjectBasePoint.HasEstimatedLocation)
+        {
+            yield return new SummaryRow(L("Georef.Current.ProjectEstimate"), $"Lat {summary.ProjectBasePoint.EstimatedLatitudeDegrees!.Value:F6}, Lon {summary.ProjectBasePoint.EstimatedLongitudeDegrees!.Value:F6}");
+        }
+
+        yield return new SummaryRow(L("Georef.Current.TrueNorthAngle"), $"{summary.ProjectPosition.AngleDegrees:F3}°");
+    }
+
+    private static void ReplaceCollection<T>(ObservableCollection<T> target, IEnumerable<T> values)
+    {
+        target.Clear();
+        foreach (T value in values) target.Add(value);
+    }
+
+    private static string L(string key) => UiLocalizer.Instance.Get(key);
+
+    private void RaisePropertyChanged(string propertyName) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private sealed class SetupValidationResult
+    {
+        public List<string> Errors { get; } = new List<string>();
+        public bool IsValid => Errors.Count == 0;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using RevitGeoSuite.Core.Coordinates;
@@ -18,7 +19,10 @@ public sealed class ContextGeometryBuilder
         this.coordinateTransformer = coordinateTransformer ?? new CoordinateTransformer(new CrsRegistry());
     }
 
-    public ContextImportPlan BuildPlan(PlateauCityModel cityModel, PlateauImportReferenceContext referenceContext)
+    public ContextImportPlan BuildPlan(
+        PlateauCityModel cityModel,
+        PlateauImportReferenceContext referenceContext,
+        PlateauGeometryImportMode geometryImportMode = PlateauGeometryImportMode.LightweightExtrusion)
     {
         if (cityModel is null)
         {
@@ -30,14 +34,15 @@ public sealed class ContextGeometryBuilder
             FolderPath = Path.GetDirectoryName(cityModel.SourcePath) ?? string.Empty,
             CityModels = new[] { cityModel }
         };
-        return BuildPlan(scanResult, referenceContext, null, null);
+        return BuildPlan(scanResult, referenceContext, null, null, geometryImportMode);
     }
 
     public ContextImportPlan BuildPlan(
         PlateauFolderScanResult scanResult,
         PlateauImportReferenceContext referenceContext,
         IReadOnlyCollection<PlateauFeatureType>? selectedFeatureTypes,
-        IReadOnlyCollection<string>? selectedTileIds)
+        IReadOnlyCollection<string>? selectedTileIds,
+        PlateauGeometryImportMode geometryImportMode = PlateauGeometryImportMode.LightweightExtrusion)
     {
         if (scanResult is null)
         {
@@ -49,75 +54,205 @@ public sealed class ContextGeometryBuilder
             throw new ArgumentNullException(nameof(referenceContext));
         }
 
+        ResolvedContextFeature[] resolvedFeatures = ResolveFeatures(scanResult).ToArray();
         HashSet<PlateauFeatureType> selectedTypes = new HashSet<PlateauFeatureType>(
             (selectedFeatureTypes is null || selectedFeatureTypes.Count == 0)
-                ? scanResult.CityModels.SelectMany(model => model.Features).Select(feature => feature.FeatureType)
+                ? resolvedFeatures.Select(item => item.Feature.FeatureType)
                 : selectedFeatureTypes);
         HashSet<string> selectedTiles = new HashSet<string>(
             (selectedTileIds is null || selectedTileIds.Count == 0)
-                ? scanResult.CityModels.SelectMany(model => model.Features).Select(feature => ResolveTileId(feature, model: null))
+                ? resolvedFeatures.Select(item => item.TileId)
                 : selectedTileIds,
             StringComparer.Ordinal);
 
-        List<ContextSolidPlan> solids = new List<ContextSolidPlan>();
+        List<ContextShapePlan> shapes = new List<ContextShapePlan>();
+        List<string> warnings = new List<string>(scanResult.WarningMessages);
         int sourceFeatureCount = 0;
+        int preparedSurfaceCount = 0;
+        int preparedTriangleCount = 0;
 
-        foreach (PlateauCityModel cityModel in scanResult.CityModels)
+        foreach (ResolvedContextFeature resolvedFeature in resolvedFeatures)
         {
-            foreach (PlateauContextFeature feature in cityModel.Features)
+            PlateauCityModel cityModel = resolvedFeature.CityModel;
+            PlateauContextFeature feature = resolvedFeature.Feature;
+            string tileId = resolvedFeature.TileId;
+            if (!selectedTypes.Contains(feature.FeatureType) || !selectedTiles.Contains(tileId))
             {
-                string tileId = ResolveTileId(feature, cityModel);
-                if (!selectedTypes.Contains(feature.FeatureType) || !selectedTiles.Contains(tileId))
-                {
-                    continue;
-                }
-
-                sourceFeatureCount++;
-                List<PlateauCoordinate3D> ring = NormalizeRing(feature.ExteriorRing);
-                if (ring.Count < 3)
-                {
-                    continue;
-                }
-
-                List<PlateauCoordinate3D> transformedRing = ring
-                    .Select(point => TransformPoint(point, cityModel, referenceContext))
-                    .ToList();
-                (double minimumHeightMeters, double defaultHeightMeters) = GetHeightParameters(feature.FeatureType);
-                double minZ = transformedRing.Min(point => point.Z);
-                double maxZ = transformedRing.Max(point => point.Z);
-                double heightMeters = Math.Max(minimumHeightMeters, maxZ - minZ);
-                if (heightMeters <= minimumHeightMeters)
-                {
-                    heightMeters = defaultHeightMeters;
-                }
-
-                solids.Add(new ContextSolidPlan
-                {
-                    DisplayName = string.IsNullOrWhiteSpace(feature.Name) ? feature.Id : feature.Name,
-                    SourceFeatureId = string.IsNullOrWhiteSpace(feature.Id) ? Guid.NewGuid().ToString("N") : feature.Id,
-                    FeatureType = feature.FeatureType,
-                    TileId = tileId,
-                    SourceFilePath = cityModel.SourcePath,
-                    FootprintPointsFeet = transformedRing
-                        .Select(point => ToLocalFeet(point, referenceContext))
-                        .ToArray(),
-                    BaseElevationFeet = ToLocalElevationFeet(minZ, referenceContext),
-                    HeightFeet = heightMeters * MetersToFeet
-                });
+                continue;
             }
+
+            sourceFeatureCount++;
+            if (geometryImportMode == PlateauGeometryImportMode.DetailedDirectShape)
+            {
+                if (TryBuildDetailedShape(feature, cityModel, referenceContext, tileId, warnings, out ContextShapePlan? shape))
+                {
+                    shapes.Add(shape!);
+                    preparedSurfaceCount += shape!.SurfaceCount;
+                    preparedTriangleCount += shape.Triangles.Count;
+                }
+
+                continue;
+            }
+
+            List<PlateauCoordinate3D> ring = NormalizeRing(feature.ExteriorRing);
+            if (ring.Count < 3)
+            {
+                continue;
+            }
+
+            List<PlateauCoordinate3D> transformedRing = ring
+                .Select(point => TransformPoint(point, cityModel, referenceContext))
+                .ToList();
+            (double minimumHeightMeters, double defaultHeightMeters) = GetHeightParameters(feature.FeatureType);
+            (double baseElevationMeters, double heightMeters) = ResolveElevationAndHeight(
+                feature,
+                cityModel,
+                transformedRing,
+                minimumHeightMeters,
+                defaultHeightMeters,
+                warnings);
+
+            shapes.Add(new ContextShapePlan
+            {
+                DisplayName = string.IsNullOrWhiteSpace(feature.Name) ? feature.Id : feature.Name,
+                SourceFeatureId = string.IsNullOrWhiteSpace(feature.Id) ? Guid.NewGuid().ToString("N") : feature.Id,
+                FeatureType = feature.FeatureType,
+                TileId = tileId,
+                SourceFilePath = cityModel.SourcePath,
+                GeometryMode = PlateauGeometryImportMode.LightweightExtrusion,
+                FootprintPointsFeet = transformedRing
+                    .Select(point => ToLocalFeet(point, referenceContext))
+                    .ToArray(),
+                BaseElevationFeet = ToLocalElevationFeet(baseElevationMeters, referenceContext),
+                HeightFeet = heightMeters * MetersToFeet
+            });
         }
 
         return new ContextImportPlan
         {
             SourceFolderPath = scanResult.FolderPath,
             ReferenceContext = referenceContext,
+            GeometryImportMode = geometryImportMode,
             SourceModels = scanResult.CityModels,
             SelectedFeatureTypes = selectedTypes.OrderBy(type => type).ToArray(),
             SelectedTileIds = selectedTiles.OrderBy(tileId => tileId, StringComparer.Ordinal).ToArray(),
-            Solids = solids,
-            WarningMessages = scanResult.WarningMessages,
-            SourceFeatureCount = sourceFeatureCount
+            Shapes = shapes,
+            WarningMessages = warnings,
+            SourceFeatureCount = sourceFeatureCount,
+            PreparedSurfaceCount = preparedSurfaceCount,
+            PreparedTriangleCount = preparedTriangleCount
         };
+    }
+
+    private bool TryBuildDetailedShape(
+        PlateauContextFeature feature,
+        PlateauCityModel cityModel,
+        PlateauImportReferenceContext referenceContext,
+        string tileId,
+        ICollection<string> warnings,
+        out ContextShapePlan? shape)
+    {
+        shape = null;
+        PlateauGeometrySurface[] surfaces = feature.GeometrySurfaces
+            .Where(surface => NormalizeRing(surface.ExteriorRing).Count >= 3)
+            .ToArray();
+        if (surfaces.Length == 0)
+        {
+            warnings.Add($"Skipped {BuildFeatureLabel(feature, cityModel.SourcePath, tileId)} because no usable highest-LOD surfaces were available for detailed geometry import.");
+            return false;
+        }
+
+        List<ContextShapeTriangle> triangles = new List<ContextShapeTriangle>();
+        int importedSurfaceCount = 0;
+        foreach (PlateauGeometrySurface surface in surfaces)
+        {
+            List<ContextShapePoint3D> localPoints = NormalizeRing(surface.ExteriorRing)
+                .Select(point => TransformPoint(point, cityModel, referenceContext))
+                .Select(point => ToLocalPointFeet(point, referenceContext))
+                .ToList();
+            if (localPoints.Count < 3)
+            {
+                warnings.Add($"Skipped a detailed surface for {BuildFeatureLabel(feature, cityModel.SourcePath, tileId)} because it collapsed below the minimum point count after coordinate conversion.");
+                continue;
+            }
+
+            if (surface.InteriorRings.Count > 0)
+            {
+                warnings.Add($"Detailed geometry ignored {surface.InteriorRings.Count} interior ring(s) for {BuildFeatureLabel(feature, cityModel.SourcePath, tileId)} on surface '{surface.SurfaceId}'. Only the exterior boundary was imported in this first pass.");
+            }
+
+            if (!PlateauPolygonTriangulator.TryTriangulate(localPoints, out IReadOnlyCollection<ContextShapeTriangle> surfaceTriangles))
+            {
+                warnings.Add($"Skipped a detailed surface for {BuildFeatureLabel(feature, cityModel.SourcePath, tileId)} because the polygon could not be triangulated safely.");
+                continue;
+            }
+
+            triangles.AddRange(surfaceTriangles);
+            importedSurfaceCount++;
+        }
+
+        if (triangles.Count == 0)
+        {
+            warnings.Add($"Skipped {BuildFeatureLabel(feature, cityModel.SourcePath, tileId)} because none of its detailed surfaces could be triangulated into importable geometry.");
+            return false;
+        }
+
+        shape = new ContextShapePlan
+        {
+            DisplayName = string.IsNullOrWhiteSpace(feature.Name) ? feature.Id : feature.Name,
+            SourceFeatureId = string.IsNullOrWhiteSpace(feature.Id) ? Guid.NewGuid().ToString("N") : feature.Id,
+            FeatureType = feature.FeatureType,
+            TileId = tileId,
+            SourceFilePath = cityModel.SourcePath,
+            GeometryMode = PlateauGeometryImportMode.DetailedDirectShape,
+            SurfaceCount = importedSurfaceCount,
+            Triangles = triangles
+        };
+        return true;
+    }
+
+    private static (double BaseElevationMeters, double HeightMeters) ResolveElevationAndHeight(
+        PlateauContextFeature feature,
+        PlateauCityModel cityModel,
+        IReadOnlyCollection<PlateauCoordinate3D> transformedRing,
+        double minimumHeightMeters,
+        double defaultHeightMeters,
+        ICollection<string> warnings)
+    {
+        double minZ = transformedRing.Min(point => point.Z);
+        double maxZ = transformedRing.Max(point => point.Z);
+        double baseElevationMeters = minZ;
+        double topElevationMeters = maxZ;
+
+        if (feature is PlateauBuildingFeature buildingFeature)
+        {
+            if (buildingFeature.BaseElevationMeters.HasValue)
+            {
+                baseElevationMeters = buildingFeature.BaseElevationMeters.Value;
+            }
+
+            if (buildingFeature.TopElevationMeters.HasValue)
+            {
+                topElevationMeters = Math.Max(buildingFeature.TopElevationMeters.Value, baseElevationMeters);
+            }
+        }
+
+        double heightMeters = Math.Max(minimumHeightMeters, topElevationMeters - baseElevationMeters);
+        if (heightMeters <= minimumHeightMeters)
+        {
+            heightMeters = defaultHeightMeters;
+            if (feature is PlateauBuildingFeature)
+            {
+                warnings.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Used the default {0:F1} m height for building '{1}' in '{2}' because no usable roof/top elevation could be derived from the CityGML geometry.",
+                    defaultHeightMeters,
+                    string.IsNullOrWhiteSpace(feature.Name) ? feature.Id : feature.Name,
+                    Path.GetFileName(cityModel.SourcePath)));
+            }
+        }
+
+        return (baseElevationMeters, heightMeters);
     }
 
     private static string ResolveTileId(PlateauContextFeature feature, PlateauCityModel? model)
@@ -142,6 +277,17 @@ public sealed class ContextGeometryBuilder
         return string.IsNullOrWhiteSpace(fileName) ? "unassigned" : fileName;
     }
 
+    private static IEnumerable<ResolvedContextFeature> ResolveFeatures(PlateauFolderScanResult scanResult)
+    {
+        foreach (PlateauCityModel cityModel in scanResult.CityModels)
+        {
+            foreach (PlateauContextFeature feature in cityModel.Features)
+            {
+                yield return new ResolvedContextFeature(cityModel, feature, ResolveTileId(feature, cityModel));
+            }
+        }
+    }
+
     private static (double XFeet, double YFeet) ToLocalFeet(PlateauCoordinate3D point, PlateauImportReferenceContext referenceContext)
     {
         double deltaEastFeet = (point.X - referenceContext.AnchorProjectedCoordinate.Easting) * MetersToFeet;
@@ -149,6 +295,12 @@ public sealed class ContextGeometryBuilder
         return (
             XFeet: referenceContext.AnchorXFeet + (deltaEastFeet * referenceContext.SharedEastToLocalX) + (deltaNorthFeet * referenceContext.SharedNorthToLocalX),
             YFeet: referenceContext.AnchorYFeet + (deltaEastFeet * referenceContext.SharedEastToLocalY) + (deltaNorthFeet * referenceContext.SharedNorthToLocalY));
+    }
+
+    private static ContextShapePoint3D ToLocalPointFeet(PlateauCoordinate3D point, PlateauImportReferenceContext referenceContext)
+    {
+        (double xFeet, double yFeet) = ToLocalFeet(point, referenceContext);
+        return new ContextShapePoint3D(xFeet, yFeet, ToLocalElevationFeet(point.Z, referenceContext));
     }
 
     private static double ToLocalElevationFeet(double pointElevationMeters, PlateauImportReferenceContext referenceContext)
@@ -183,7 +335,7 @@ public sealed class ContextGeometryBuilder
             return new PlateauCoordinate3D(projected.Easting, projected.Northing, point.Z);
         }
 
-        throw new InvalidOperationException($"The CityGML file uses EPSG:{sourceEpsg}, which is not supported yet for lightweight PLATEAU import. Supported file CRSs are EPSG:6668, EPSG:6697, and projected Japanese zones EPSG:6669-6687.");
+        throw new InvalidOperationException($"The CityGML file uses EPSG:{sourceEpsg}, which is not supported yet for PLATEAU import. Supported file CRSs are EPSG:6668, EPSG:6697, and projected Japanese zones EPSG:6669-6687.");
     }
 
     private static bool IsSupportedProjectedJgd2011(int epsgCode)
@@ -212,6 +364,15 @@ public sealed class ContextGeometryBuilder
         return points;
     }
 
+    private static string BuildFeatureLabel(PlateauContextFeature feature, string sourcePath, string tileId)
+    {
+        string displayName = string.IsNullOrWhiteSpace(feature.Name) ? feature.Id : feature.Name;
+        string sourceFileName = string.IsNullOrWhiteSpace(sourcePath)
+            ? "unknown file"
+            : Path.GetFileName(sourcePath);
+        return $"'{displayName}' in tile {tileId} ({sourceFileName})";
+    }
+
     private static (double MinimumHeightMeters, double DefaultHeightMeters) GetHeightParameters(PlateauFeatureType featureType)
     {
         switch (featureType)
@@ -230,7 +391,6 @@ public sealed class ContextGeometryBuilder
                 return (3.0d, 10.0d);
         }
     }
+
+    private sealed record ResolvedContextFeature(PlateauCityModel CityModel, PlateauContextFeature Feature, string TileId);
 }
-
-
-

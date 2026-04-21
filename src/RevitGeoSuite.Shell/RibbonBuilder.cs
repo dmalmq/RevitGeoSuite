@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Autodesk.Revit.UI;
 using RevitGeoSuite.Core.Modules;
@@ -48,9 +49,20 @@ public sealed class RibbonBuilder
         {
             application.CreateRibbonTab(TabName);
         }
-        catch
+        catch (System.Exception ex) when (IsDuplicateRibbonTabException(ex))
         {
         }
+        catch (System.Exception ex)
+        {
+            Trace.WriteLine($"Failed to create ribbon tab '{TabName}': {ex}");
+            throw;
+        }
+    }
+
+    internal static bool IsDuplicateRibbonTabException(System.Exception exception)
+    {
+        return exception.GetType().Name.EndsWith("ArgumentException", System.StringComparison.Ordinal)
+            && exception.Message.IndexOf("already exists", System.StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static RibbonPanel GetOrCreatePanel(UIControlledApplication application, string panelName)
