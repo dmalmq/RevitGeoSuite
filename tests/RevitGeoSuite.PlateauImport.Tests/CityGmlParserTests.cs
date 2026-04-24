@@ -1,4 +1,7 @@
+using System;
+using System.IO;
 using System.Linq;
+using RevitGeoSuite.Core.Plateau.Schema;
 using Xunit;
 
 namespace RevitGeoSuite.PlateauImport.Tests;
@@ -78,6 +81,104 @@ public sealed class CityGmlParserTests
         Assert.Equal(new[] { 40.82d, 41.15d }, model.Features.Select(feature => feature.ExteriorRing.First().Z).ToArray());
         Assert.All(model.Features, feature => Assert.Equal(3, feature.HighestLod));
         Assert.All(model.Features, feature => Assert.Single(feature.GeometrySurfaces));
+    }
+
+    [Fact]
+    public void ParseFile_enumerates_mixed_supported_features_in_descriptor_order()
+    {
+        string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".gml");
+        string xml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<core:CityModel xmlns:core=""{PlateauConstants.CoreNamespace.NamespaceName}""
+                xmlns:gml=""{PlateauConstants.GmlNamespace.NamespaceName}""
+                xmlns:bldg=""{PlateauConstants.BuildingNamespace.NamespaceName}""
+                xmlns:brid=""{PlateauConstants.BridgeNamespace.NamespaceName}""
+                xmlns:tran=""{PlateauConstants.TransportationNamespace.NamespaceName}""
+                srsName=""urn:ogc:def:crs:EPSG::6677"">
+  <core:cityObjectMember>
+    <tran:Road gml:id=""road-1"">
+      <gml:name>Road First In Xml</gml:name>
+      <tran:lod0Network>
+        <gml:GeometricComplex>
+          <gml:element>
+            <gml:Polygon gml:id=""road-poly"">
+              <gml:exterior>
+                <gml:LinearRing>
+                  <gml:posList>0 0 0 10 0 0 10 10 0 0 10 0 0 0 0</gml:posList>
+                </gml:LinearRing>
+              </gml:exterior>
+            </gml:Polygon>
+          </gml:element>
+        </gml:GeometricComplex>
+      </tran:lod0Network>
+    </tran:Road>
+  </core:cityObjectMember>
+  <core:cityObjectMember>
+    <bldg:Building gml:id=""building-1"">
+      <gml:name>Building Second In Xml</gml:name>
+      <bldg:lod0FootPrint>
+        <gml:MultiSurface>
+          <gml:surfaceMember>
+            <gml:Polygon gml:id=""building-poly"">
+              <gml:exterior>
+                <gml:LinearRing>
+                  <gml:posList>20 0 0 30 0 0 30 10 0 20 10 0 20 0 0</gml:posList>
+                </gml:LinearRing>
+              </gml:exterior>
+            </gml:Polygon>
+          </gml:surfaceMember>
+        </gml:MultiSurface>
+      </bldg:lod0FootPrint>
+    </bldg:Building>
+  </core:cityObjectMember>
+  <core:cityObjectMember>
+    <brid:Bridge gml:id=""bridge-1"">
+      <gml:name>Bridge Third In Xml</gml:name>
+      <brid:lod0Geometry>
+        <gml:MultiSurface>
+          <gml:surfaceMember>
+            <gml:Polygon gml:id=""bridge-poly"">
+              <gml:exterior>
+                <gml:LinearRing>
+                  <gml:posList>40 0 0 50 0 0 50 10 0 40 10 0 40 0 0</gml:posList>
+                </gml:LinearRing>
+              </gml:exterior>
+            </gml:Polygon>
+          </gml:surfaceMember>
+        </gml:MultiSurface>
+      </brid:lod0Geometry>
+    </brid:Bridge>
+  </core:cityObjectMember>
+</core:CityModel>";
+
+        try
+        {
+            File.WriteAllText(tempPath, xml);
+            PlateauCityModel model = new CityGmlParser().ParseFile(tempPath);
+
+            Assert.Equal(
+                new[]
+                {
+                    PlateauFeatureType.Building,
+                    PlateauFeatureType.Bridge,
+                    PlateauFeatureType.Road
+                },
+                model.Features.Select(feature => feature.FeatureType).ToArray());
+            Assert.Equal(
+                new[]
+                {
+                    "Building Second In Xml",
+                    "Bridge Third In Xml",
+                    "Road First In Xml"
+                },
+                model.Features.Select(feature => feature.Name).ToArray());
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
     }
 
     [Fact]

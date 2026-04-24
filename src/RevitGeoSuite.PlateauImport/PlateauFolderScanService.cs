@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace RevitGeoSuite.PlateauImport;
 
@@ -37,29 +39,50 @@ public sealed class PlateauFolderScanService
             .ToArray();
         reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Parsing, 0, supportedFiles.Length, string.Empty));
 
+        IndexedParseResult[] parseResults = new IndexedParseResult[supportedFiles.Length];
         int processedFileCount = 0;
-        foreach (string filePath in supportedFiles)
+        ParallelOptions parallelOptions = new ParallelOptions
         {
+            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1)
+        };
+
+        Parallel.For(0, supportedFiles.Length, parallelOptions, index =>
+        {
+            string filePath = supportedFiles[index];
+            PlateauCityModel? model = null;
+            string? warning = null;
             try
             {
-                PlateauCityModel model = cityGmlParser.ParseFile(filePath);
+                model = cityGmlParser.ParseFile(filePath);
                 if (model.Features.Count == 0)
                 {
-                    warnings.Add($"Skipped '{Path.GetFileName(filePath)}' because no supported PLATEAU buildings, bridges, roads, vegetation, or relief features were found.");
-                }
-                else
-                {
-                    models.Add(model);
+                    warning = $"Skipped '{Path.GetFileName(filePath)}' because no supported PLATEAU buildings, bridges, roads, vegetation, or relief features were found.";
+                    model = null;
                 }
             }
             catch (Exception ex)
             {
-                warnings.Add($"Skipped '{Path.GetFileName(filePath)}' because it could not be parsed: {ex.Message}");
+                warning = $"Skipped '{Path.GetFileName(filePath)}' because it could not be parsed: {ex.Message}";
             }
             finally
             {
-                processedFileCount++;
-                reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Parsing, processedFileCount, supportedFiles.Length, filePath));
+                parseResults[index] = new IndexedParseResult(model, warning);
+                int processed = Interlocked.Increment(ref processedFileCount);
+                reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Parsing, processed, supportedFiles.Length, filePath));
+            }
+        });
+
+        for (int index = 0; index < parseResults.Length; index++)
+        {
+            IndexedParseResult result = parseResults[index];
+            if (result.Model is not null)
+            {
+                models.Add(result.Model);
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.Warning))
+            {
+                warnings.Add(result.Warning);
             }
         }
 
@@ -125,5 +148,17 @@ public sealed class PlateauFolderScanService
 
         public bool IsRecursivePackageScan { get; }
     }
-}
 
+    private sealed class IndexedParseResult
+    {
+        public IndexedParseResult(PlateauCityModel? model, string? warning)
+        {
+            Model = model;
+            Warning = warning;
+        }
+
+        public PlateauCityModel? Model { get; }
+
+        public string? Warning { get; }
+    }
+}

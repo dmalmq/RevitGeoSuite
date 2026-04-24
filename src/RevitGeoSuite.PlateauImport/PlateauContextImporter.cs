@@ -88,6 +88,7 @@ public sealed class PlateauContextImporter
             throw new InvalidOperationException("None of the filtered PLATEAU features could be converted into valid Revit context geometry. Review the warnings list and adjust the folder or filters before importing again.");
         }
 
+        HashSet<string> existingGroupNames = GetExistingGroupNames(document);
         int createdGroupCount = 0;
         foreach (KeyValuePair<string, List<ElementId>> entry in groupedElements.Where(entry => entry.Value.Count > 0))
         {
@@ -97,7 +98,9 @@ public sealed class PlateauContextImporter
             try
             {
                 Group group = document.Create.NewGroup(entry.Value);
-                group.GroupType.Name = BuildUniqueGroupName(document, BuildPreferredGroupName(parts[0], featureType), group.GroupType.Id);
+                string groupName = BuildUniqueGroupName(existingGroupNames, BuildPreferredGroupName(parts[0], featureType));
+                group.GroupType.Name = groupName;
+                existingGroupNames.Add(groupName);
                 createdGroupCount++;
             }
             catch (Exception ex)
@@ -205,16 +208,18 @@ public sealed class PlateauContextImporter
         return $"PLATEAU {tileId} {featureType.GetPluralDisplayName()}";
     }
 
-    private static string BuildUniqueGroupName(Document document, string preferredName, ElementId currentGroupTypeId)
+    private static HashSet<string> GetExistingGroupNames(Document document)
     {
-        HashSet<string> existingNames = new HashSet<string>(
+        return new HashSet<string>(
             new FilteredElementCollector(document)
                 .OfClass(typeof(GroupType))
                 .Cast<GroupType>()
-                .Where(groupType => groupType.Id != currentGroupTypeId)
                 .Select(groupType => groupType.Name),
             StringComparer.OrdinalIgnoreCase);
+    }
 
+    private static string BuildUniqueGroupName(ISet<string> existingNames, string preferredName)
+    {
         if (!existingNames.Contains(preferredName))
         {
             return preferredName;

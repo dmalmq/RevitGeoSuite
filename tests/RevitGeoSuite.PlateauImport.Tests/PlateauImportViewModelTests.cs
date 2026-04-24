@@ -318,7 +318,7 @@ public sealed class PlateauImportViewModelTests
 
         Assert.True(scanned);
         Assert.True(loaded);
-        Assert.Equal(2, viewModel.PreparedShapeCount);
+        Assert.Equal(4, viewModel.PreparedShapeCount);
         Assert.False(viewModel.CanImport);
         Assert.Contains("read-only", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
     }
@@ -351,6 +351,92 @@ public sealed class PlateauImportViewModelTests
         Assert.Contains("Detailed Geometry", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
     }
 
+
+    [Fact]
+    public void Preview_build_pipeline_matches_the_synchronous_preview_result_and_toggles_preview_state()
+    {
+        string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
+        PlateauImportViewModel syncViewModel = CreateViewModel(
+            new CurrentProjectStateSummary
+            {
+                DocumentTitle = "Synchronous Preview Project",
+                IsSupportedDocument = true,
+                HasStoredGeoInfo = true,
+                ProjectBasePoint = new BasePointSnapshot { Name = "Project Base Point", EstimatedLatitudeDegrees = 35.681236d, EstimatedLongitudeDegrees = 139.767125d }
+            },
+            CreateGeoInfo());
+        PlateauImportViewModel asyncViewModel = CreateViewModel(
+            new CurrentProjectStateSummary
+            {
+                DocumentTitle = "Async Preview Project",
+                IsSupportedDocument = true,
+                HasStoredGeoInfo = true,
+                ProjectBasePoint = new BasePointSnapshot { Name = "Project Base Point", EstimatedLatitudeDegrees = 35.681236d, EstimatedLongitudeDegrees = 139.767125d }
+            },
+            CreateGeoInfo());
+
+        syncViewModel.SelectedReferenceSourceOption = syncViewModel.ReferenceSourceOptions.Single(option => option.Source == PlateauImportReferenceSource.CanonicalOrigin);
+        syncViewModel.SelectedFolderPath = fixtureFolder;
+        asyncViewModel.SelectedReferenceSourceOption = asyncViewModel.ReferenceSourceOptions.Single(option => option.Source == PlateauImportReferenceSource.CanonicalOrigin);
+        asyncViewModel.SelectedFolderPath = fixtureFolder;
+
+        Assert.True(syncViewModel.TryScanFolder());
+        Assert.True(asyncViewModel.TryScanFolder());
+        syncViewModel.ToggleTileSelection("53394536");
+        asyncViewModel.ToggleTileSelection("53394536");
+
+        bool loadedSynchronously = syncViewModel.TryLoadPreview();
+        bool started = asyncViewModel.TryStartPreviewLoad(out PlateauImportViewModel.PreviewBuildRequest? request);
+        PlateauImportViewModel.PreviewBuildResult result = asyncViewModel.BuildPreviewResult(request!);
+        bool applied = asyncViewModel.ApplyPreviewResult(result);
+        asyncViewModel.FinishPreviewLoad();
+
+        Assert.True(loadedSynchronously);
+        Assert.True(started);
+        Assert.NotNull(request);
+        Assert.True(applied);
+        Assert.False(asyncViewModel.IsPreparingPreview);
+        Assert.Equal(syncViewModel.PreparedShapeCount, asyncViewModel.PreparedShapeCount);
+        Assert.Equal(syncViewModel.FeatureNames.ToArray(), asyncViewModel.FeatureNames.ToArray());
+        Assert.Equal(syncViewModel.PreviewRows.Select(row => row.Value).ToArray(), asyncViewModel.PreviewRows.Select(row => row.Value).ToArray());
+    }
+
+    [Fact]
+    public void Preview_build_results_are_discarded_when_the_selection_changes_mid_build()
+    {
+        string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
+        PlateauImportViewModel viewModel = CreateViewModel(
+            new CurrentProjectStateSummary
+            {
+                DocumentTitle = "Stale Preview Project",
+                IsSupportedDocument = true,
+                HasStoredGeoInfo = true,
+                ProjectBasePoint = new BasePointSnapshot { Name = "Project Base Point", EstimatedLatitudeDegrees = 35.681236d, EstimatedLongitudeDegrees = 139.767125d }
+            },
+            CreateGeoInfo());
+        viewModel.SelectedReferenceSourceOption = viewModel.ReferenceSourceOptions.Single(option => option.Source == PlateauImportReferenceSource.CanonicalOrigin);
+        viewModel.SelectedFolderPath = fixtureFolder;
+
+        Assert.True(viewModel.TryScanFolder());
+        viewModel.ToggleTileSelection("53394536");
+
+        Assert.True(viewModel.TryStartPreviewLoad(out PlateauImportViewModel.PreviewBuildRequest? request));
+        Assert.NotNull(request);
+        Assert.True(viewModel.IsPreparingPreview);
+        Assert.False(viewModel.CanLoadPreview);
+        Assert.False(viewModel.CanImport);
+
+        viewModel.ToggleTileSelection("53394536");
+        PlateauImportViewModel.PreviewBuildResult result = viewModel.BuildPreviewResult(request!);
+        bool applied = viewModel.ApplyPreviewResult(result);
+        viewModel.FinishPreviewLoad();
+
+        Assert.False(applied);
+        Assert.False(viewModel.IsPreparingPreview);
+        Assert.Null(viewModel.PreparedPlan);
+        Assert.Equal(0, viewModel.PreparedShapeCount);
+        Assert.False(viewModel.CanLoadPreview);
+    }
     private static GeoProjectInfo CreateGeoInfo()
     {
         return new GeoProjectInfo
@@ -376,5 +462,3 @@ public sealed class PlateauImportViewModelTests
             new ContextGeometryBuilder());
     }
 }
-
-

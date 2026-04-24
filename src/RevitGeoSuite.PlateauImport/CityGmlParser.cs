@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Xml.Linq;
 using RevitGeoSuite.Core.Plateau.Schema;
 
@@ -18,6 +17,7 @@ public sealed class CityGmlParser
         new SupportedFeatureDescriptor(PlateauConstants.VegetationNamespace, PlateauFeatureType.Vegetation, "SolitaryVegetationObject", "PlantCover"),
         new SupportedFeatureDescriptor(PlateauConstants.ReliefNamespace, PlateauFeatureType.Relief, "ReliefFeature", "TINRelief", "MassPointRelief", "BreaklineRelief")
     };
+    private static readonly Dictionary<XName, SupportedFeatureDescriptor> SupportedFeatureLookup = BuildSupportedFeatureLookup();
 
     public PlateauCityModel ParseFile(string filePath)
     {
@@ -31,12 +31,31 @@ public sealed class CityGmlParser
             throw new FileNotFoundException("CityGML file could not be found.", filePath);
         }
 
-        XDocument document = XDocument.Load(filePath, LoadOptions.SetLineInfo);
+        XDocument document = XDocument.Load(filePath);
         XNamespace gml = PlateauConstants.GmlNamespace;
+        Dictionary<SupportedFeatureDescriptor, List<XElement>> matchedElements = CreateMatchedElementBuckets();
+        string envelopeSrsName = string.Empty;
+        foreach (XElement element in document.Descendants())
+        {
+            if (string.IsNullOrWhiteSpace(envelopeSrsName)
+                && element.Name == gml + "Envelope")
+            {
+                envelopeSrsName = (string?)element.Attribute("srsName") ?? string.Empty;
+            }
 
-        string srsName = document.Root?.Attribute("srsName")?.Value
-            ?? document.Descendants(gml + "Envelope").Attributes("srsName").Select(attribute => attribute.Value).FirstOrDefault()
-            ?? string.Empty;
+            if (SupportedFeatureLookup.TryGetValue(element.Name, out SupportedFeatureDescriptor? descriptor))
+            {
+                matchedElements[descriptor].Add(element);
+            }
+        }
+
+        string srsName = document.Root?.Attribute("srsName")?.Value;
+        if (string.IsNullOrWhiteSpace(srsName))
+        {
+            srsName = envelopeSrsName;
+        }
+
+        srsName ??= string.Empty;
 
         int? epsgCode = PlateauSchemaHelper.TryExtractEpsgCode(srsName, out int parsedEpsg)
             ? parsedEpsg
@@ -46,20 +65,21 @@ public sealed class CityGmlParser
             ?? Path.GetFileNameWithoutExtension(filePath)
             ?? string.Empty;
 
+        Dictionary<XElement, RoadChildSummary> roadChildSummaries = new Dictionary<XElement, RoadChildSummary>();
         List<PlateauContextFeature> features = new List<PlateauContextFeature>();
-        foreach (SupportedFeatureDescriptor descriptor in SupportedFeatures)
+        for (int descriptorIndex = 0; descriptorIndex < SupportedFeatures.Length; descriptorIndex++)
         {
-            foreach (string localName in descriptor.LocalNames)
+            SupportedFeatureDescriptor descriptor = SupportedFeatures[descriptorIndex];
+            List<XElement> elements = matchedElements[descriptor];
+            for (int elementIndex = 0; elementIndex < elements.Count; elementIndex++)
             {
-                foreach (XElement element in document.Descendants(descriptor.Namespace + localName))
+                XElement element = elements[elementIndex];
+                if (ShouldSkipFeatureElement(descriptor.FeatureType, descriptor.Namespace, element.Name.LocalName, element, roadChildSummaries))
                 {
-                    if (ShouldSkipFeatureElement(descriptor.FeatureType, descriptor.Namespace, localName, element))
-                    {
-                        continue;
-                    }
-
-                    features.AddRange(ParseFeatures(element, descriptor.Namespace, descriptor.FeatureType, gml, filePath, tileId));
+                    continue;
                 }
+
+                AppendFeatures(features, ParseFeatures(element, descriptor.FeatureType, gml, filePath, tileId));
             }
         }
 
@@ -73,7 +93,12 @@ public sealed class CityGmlParser
         };
     }
 
-    private static bool ShouldSkipFeatureElement(PlateauFeatureType featureType, XNamespace featureNamespace, string localName, XElement featureElement)
+    private static bool ShouldSkipFeatureElement(
+        PlateauFeatureType featureType,
+        XNamespace featureNamespace,
+        string localName,
+        XElement featureElement,
+        IDictionary<XElement, RoadChildSummary> roadChildSummaries)
     {
         if (featureType != PlateauFeatureType.Road)
         {
@@ -82,8 +107,7 @@ public sealed class CityGmlParser
 
         if (string.Equals(localName, "Road", StringComparison.OrdinalIgnoreCase))
         {
-            return featureElement.Descendants(featureNamespace + "TrafficArea").Any()
-                || featureElement.Descendants(featureNamespace + "AuxiliaryTrafficArea").Any();
+            return GetRoadChildSummary(featureElement, featureNamespace, roadChildSummaries).HasChildTrafficAreas;
         }
 
         if (!string.Equals(localName, "TrafficArea", StringComparison.OrdinalIgnoreCase)
@@ -92,53 +116,32 @@ public sealed class CityGmlParser
             return false;
         }
 
-        XElement? parentRoad = featureElement.Ancestors(featureNamespace + "Road").FirstOrDefault();
+        XElement? parentRoad = null;
+        for (XElement? ancestor = featureElement.Parent; ancestor is not null; ancestor = ancestor.Parent)
+        {
+            if (ancestor.Name == featureNamespace + "Road")
+            {
+                parentRoad = ancestor;
+                break;
+            }
+        }
+
         if (parentRoad is null)
         {
             return false;
         }
 
         int currentMaxLod = DetermineElementMaxLod(featureElement);
-        int parentMaxChildLod = parentRoad
-            .Elements(featureNamespace + "trafficArea")
-            .Elements()
-            .Concat(parentRoad.Elements(featureNamespace + "auxiliaryTrafficArea").Elements())
-            .Select(DetermineElementMaxLod)
-            .DefaultIfEmpty(0)
-            .Max();
-
+        int parentMaxChildLod = GetRoadChildSummary(parentRoad, featureNamespace, roadChildSummaries).MaxChildLod;
         return currentMaxLod > 0 && currentMaxLod < parentMaxChildLod;
     }
 
     private static int DetermineElementMaxLod(XElement element)
     {
         int maxLod = 0;
-        foreach (string localName in element
-                     .DescendantsAndSelf()
-                     .Select(descendant => descendant.Name.LocalName))
+        foreach (XElement descendant in element.DescendantsAndSelf())
         {
-            if (!localName.StartsWith("lod", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            int digitStart = 3;
-            int digitLength = 0;
-            while (digitStart + digitLength < localName.Length && char.IsDigit(localName[digitStart + digitLength]))
-            {
-                digitLength++;
-            }
-
-            if (digitLength == 0)
-            {
-                continue;
-            }
-
-            if (!int.TryParse(localName.Substring(digitStart, digitLength), NumberStyles.Integer, CultureInfo.InvariantCulture, out int lod))
-            {
-                continue;
-            }
-
+            int lod = ExtractLod(descendant.Name.LocalName);
             if (lod > maxLod)
             {
                 maxLod = lod;
@@ -150,7 +153,6 @@ public sealed class CityGmlParser
 
     private static IReadOnlyCollection<PlateauContextFeature> ParseFeatures(
         XElement featureElement,
-        XNamespace featureNamespace,
         PlateauFeatureType featureType,
         XNamespace gml,
         string sourcePath,
@@ -163,20 +165,39 @@ public sealed class CityGmlParser
         }
 
         string baseId = (string?)featureElement.Attribute(gml + "id") ?? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        string baseName = featureElement.Elements(gml + "name").Select(element => element.Value).FirstOrDefault()
-            ?? featureElement.Name.LocalName;
-        int highestLod = candidates.Max(candidate => candidate.Surface.Lod);
-        GeometrySurfaceCandidate[] highestLodCandidates = candidates
-            .Where(candidate => candidate.Surface.Lod == highestLod)
-            .OrderBy(candidate => candidate.Sequence)
-            .ToArray();
+        string? baseName = null;
+        foreach (XElement nameElement in featureElement.Elements(gml + "name"))
+        {
+            baseName = nameElement.Value;
+            break;
+        }
+
+        baseName ??= featureElement.Name.LocalName;
+
+        int highestLod = 0;
+        for (int index = 0; index < candidates.Count; index++)
+        {
+            int candidateLod = candidates[index].Surface.Lod;
+            if (candidateLod > highestLod)
+            {
+                highestLod = candidateLod;
+            }
+        }
+
+        List<GeometrySurfaceCandidate> highestLodCandidates = new List<GeometrySurfaceCandidate>();
+        for (int index = 0; index < candidates.Count; index++)
+        {
+            GeometrySurfaceCandidate candidate = candidates[index];
+            if (candidate.Surface.Lod == highestLod)
+            {
+                highestLodCandidates.Add(candidate);
+            }
+        }
 
         if (!ShouldPreserveAllTransportRings(featureType))
         {
             GeometrySurfaceCandidate selectedCandidate = SelectBestSurface(candidates)!;
             PlateauContextFeature feature = CreateFeature(
-                featureElement,
-                featureNamespace,
                 featureType,
                 baseId,
                 baseName,
@@ -185,14 +206,13 @@ public sealed class CityGmlParser
                 selectedCandidate.Coordinates,
                 candidates,
                 highestLod,
-                highestLodCandidates.Select(candidate => candidate.Surface).ToArray(),
-                gml);
+                BuildGeometrySurfaces(highestLodCandidates));
             return new[] { feature };
         }
 
-        List<PlateauContextFeature> features = new List<PlateauContextFeature>(highestLodCandidates.Length);
-        bool needsSuffix = highestLodCandidates.Length > 1;
-        for (int index = 0; index < highestLodCandidates.Length; index++)
+        List<PlateauContextFeature> features = new List<PlateauContextFeature>(highestLodCandidates.Count);
+        bool needsSuffix = highestLodCandidates.Count > 1;
+        for (int index = 0; index < highestLodCandidates.Count; index++)
         {
             GeometrySurfaceCandidate candidate = highestLodCandidates[index];
             string featureId = needsSuffix
@@ -202,8 +222,6 @@ public sealed class CityGmlParser
                 ? string.Format(CultureInfo.InvariantCulture, "{0} [{1}]", baseName, index + 1)
                 : baseName;
             features.Add(CreateFeature(
-                featureElement,
-                featureNamespace,
                 featureType,
                 featureId,
                 featureName,
@@ -212,8 +230,7 @@ public sealed class CityGmlParser
                 candidate.Coordinates,
                 new[] { candidate },
                 candidate.Surface.Lod,
-                new[] { candidate.Surface },
-                gml));
+                new[] { candidate.Surface }));
         }
 
         return features;
@@ -225,8 +242,6 @@ public sealed class CityGmlParser
     }
 
     private static PlateauContextFeature CreateFeature(
-        XElement featureElement,
-        XNamespace featureNamespace,
         PlateauFeatureType featureType,
         string id,
         string name,
@@ -235,15 +250,15 @@ public sealed class CityGmlParser
         PlateauCoordinate3D[] coordinates,
         IReadOnlyCollection<GeometrySurfaceCandidate> candidates,
         int highestLod,
-        IReadOnlyCollection<PlateauGeometrySurface> geometrySurfaces,
-        XNamespace gml)
+        IReadOnlyCollection<PlateauGeometrySurface> geometrySurfaces)
     {
         PlateauContextFeature feature;
         if (featureType == PlateauFeatureType.Building)
         {
-            (double? baseElevationMeters, double? topElevationMeters) = ResolveBuildingElevationRange(featureElement, featureNamespace, gml, candidates);
+            (double? baseElevationMeters, double? topElevationMeters) = ResolveBuildingElevationRange(candidates);
             feature = new PlateauBuildingFeature
             {
+                FeatureType = featureType,
                 BaseElevationMeters = baseElevationMeters,
                 TopElevationMeters = topElevationMeters
             };
@@ -264,13 +279,10 @@ public sealed class CityGmlParser
     }
 
     private static (double? BaseElevationMeters, double? TopElevationMeters) ResolveBuildingElevationRange(
-        XElement featureElement,
-        XNamespace featureNamespace,
-        XNamespace gml,
         IReadOnlyCollection<GeometrySurfaceCandidate> candidates)
     {
-        double? baseElevationMeters = TryGetSemanticElevation(featureElement, featureNamespace, gml, preferHighest: false, "GroundSurface");
-        double? topElevationMeters = TryGetSemanticElevation(featureElement, featureNamespace, gml, preferHighest: true, "RoofSurface", "OuterCeilingSurface", "ClosureSurface");
+        double? baseElevationMeters = TryGetSemanticElevation(candidates, preferHighest: false, "GroundSurface");
+        double? topElevationMeters = TryGetSemanticElevation(candidates, preferHighest: true, "RoofSurface", "OuterCeilingSurface", "ClosureSurface");
 
         if (!baseElevationMeters.HasValue)
         {
@@ -286,35 +298,30 @@ public sealed class CityGmlParser
     }
 
     private static double? TryGetSemanticElevation(
-        XElement featureElement,
-        XNamespace featureNamespace,
-        XNamespace gml,
+        IReadOnlyCollection<GeometrySurfaceCandidate> candidates,
         bool preferHighest,
         params string[] semanticSurfaceNames)
     {
         double? selectedElevation = null;
-        foreach (string surfaceName in semanticSurfaceNames)
+        foreach (GeometrySurfaceCandidate candidate in candidates)
         {
-            XElement[] surfaces = featureElement.Descendants(featureNamespace + surfaceName).ToArray();
-            foreach (XElement surface in surfaces)
+            if (!MatchesSemanticSurface(candidate.Surface.SemanticSurfaceType, semanticSurfaceNames))
             {
-                foreach (PlateauCoordinate3D point in surface
-                             .Descendants(gml + "LinearRing")
-                             .SelectMany(ring => ParseCoordinates(ring, gml)))
-                {
-                    if (!selectedElevation.HasValue)
-                    {
-                        selectedElevation = point.Z;
-                    }
-                    else if (preferHighest)
-                    {
-                        selectedElevation = Math.Max(selectedElevation.Value, point.Z);
-                    }
-                    else
-                    {
-                        selectedElevation = Math.Min(selectedElevation.Value, point.Z);
-                    }
-                }
+                continue;
+            }
+
+            double candidateElevation = preferHighest ? candidate.MaxZ : candidate.MinZ;
+            if (!selectedElevation.HasValue)
+            {
+                selectedElevation = candidateElevation;
+            }
+            else if (preferHighest)
+            {
+                selectedElevation = Math.Max(selectedElevation.Value, candidateElevation);
+            }
+            else
+            {
+                selectedElevation = Math.Min(selectedElevation.Value, candidateElevation);
             }
         }
 
@@ -328,44 +335,79 @@ public sealed class CityGmlParser
             return null;
         }
 
-        IEnumerable<double> elevations = candidates.SelectMany(candidate => candidate.Coordinates.Select(point => point.Z));
-        return preferHighest
-            ? elevations.Max()
-            : elevations.Min();
-    }
+        double selectedElevation = preferHighest ? double.NegativeInfinity : double.PositiveInfinity;
+        foreach (GeometrySurfaceCandidate candidate in candidates)
+        {
+            if (preferHighest)
+            {
+                if (candidate.MaxZ > selectedElevation)
+                {
+                    selectedElevation = candidate.MaxZ;
+                }
+            }
+            else if (candidate.MinZ < selectedElevation)
+            {
+                selectedElevation = candidate.MinZ;
+            }
+        }
 
-    private static List<GeometrySurfaceCandidate> GetSurfaceCandidates(XElement featureElement, XNamespace gml)
-    {
-        IEnumerable<XElement> geometryElements = featureElement
-            .Descendants(gml + "Polygon")
-            .Concat(featureElement.Descendants(gml + "Triangle"));
-
-        return geometryElements
-            .Select((geometryElement, index) => CreateCandidate(geometryElement, featureElement, gml, index))
-            .Where(candidate => candidate is not null)
-            .Select(candidate => candidate!)
-            .ToList();
-    }
-
-    private static GeometrySurfaceCandidate? SelectBestSurface(IReadOnlyCollection<GeometrySurfaceCandidate> candidates)
-    {
-        if (candidates.Count == 0)
+        if (double.IsInfinity(selectedElevation))
         {
             return null;
         }
 
-        return candidates
-            .OrderBy(candidate => candidate.Priority)
-            .ThenBy(candidate => candidate.HasPlanArea ? 0 : 1)
-            .ThenBy(candidate => candidate.AverageZ)
-            .ThenByDescending(candidate => candidate.PlanArea)
-            .First();
+        return selectedElevation;
+    }
+
+    private static List<GeometrySurfaceCandidate> GetSurfaceCandidates(XElement featureElement, XNamespace gml)
+    {
+        List<XElement> polygonElements = new List<XElement>();
+        List<XElement> triangleElements = new List<XElement>();
+        foreach (XElement element in featureElement.Descendants())
+        {
+            if (element.Name == gml + "Polygon")
+            {
+                polygonElements.Add(element);
+            }
+            else if (element.Name == gml + "Triangle")
+            {
+                triangleElements.Add(element);
+            }
+        }
+
+        List<GeometrySurfaceCandidate> candidates = new List<GeometrySurfaceCandidate>(polygonElements.Count + triangleElements.Count);
+        int sequence = 0;
+        AppendCandidates(candidates, polygonElements, featureElement, gml, ref sequence);
+        AppendCandidates(candidates, triangleElements, featureElement, gml, ref sequence);
+        return candidates;
+    }
+
+    private static GeometrySurfaceCandidate? SelectBestSurface(IReadOnlyCollection<GeometrySurfaceCandidate> candidates)
+    {
+        GeometrySurfaceCandidate? bestCandidate = null;
+        foreach (GeometrySurfaceCandidate candidate in candidates)
+        {
+            if (bestCandidate is null || CompareCandidate(candidate, bestCandidate) < 0)
+            {
+                bestCandidate = candidate;
+            }
+        }
+
+        return bestCandidate;
     }
 
     private static GeometrySurfaceCandidate? CreateCandidate(XElement geometryElement, XElement featureElement, XNamespace gml, int sequence)
     {
-        XElement? exteriorRingElement = geometryElement.Element(gml + "exterior")?.Element(gml + "LinearRing")
-            ?? geometryElement.Descendants(gml + "LinearRing").FirstOrDefault();
+        XElement? exteriorRingElement = geometryElement.Element(gml + "exterior")?.Element(gml + "LinearRing");
+        if (exteriorRingElement is null)
+        {
+            foreach (XElement ringElement in geometryElement.Descendants(gml + "LinearRing"))
+            {
+                exteriorRingElement = ringElement;
+                break;
+            }
+        }
+
         if (exteriorRingElement is null)
         {
             return null;
@@ -377,29 +419,40 @@ public sealed class CityGmlParser
             return null;
         }
 
-        IReadOnlyCollection<IReadOnlyCollection<PlateauCoordinate3D>> interiorRings = geometryElement
-            .Elements(gml + "interior")
-            .Elements(gml + "LinearRing")
-            .Select(ring => (IReadOnlyCollection<PlateauCoordinate3D>)ParseCoordinates(ring, gml))
-            .Where(points => points.Count >= 3)
-            .ToArray();
+        double minZ = double.PositiveInfinity;
+        double maxZ = double.NegativeInfinity;
+        AccumulateElevationRange(exteriorCoordinates, ref minZ, ref maxZ);
 
-        string[] ancestorNames = geometryElement
-            .Ancestors()
-            .TakeWhile(element => element != featureElement)
-            .Select(element => element.Name.LocalName)
-            .ToArray();
-        int lod = DetermineLod(ancestorNames);
+        List<IReadOnlyCollection<PlateauCoordinate3D>> interiorRings = new List<IReadOnlyCollection<PlateauCoordinate3D>>();
+        foreach (XElement interiorElement in geometryElement.Elements(gml + "interior"))
+        {
+            foreach (XElement ringElement in interiorElement.Elements(gml + "LinearRing"))
+            {
+                PlateauCoordinate3D[] interiorCoordinates = ParseCoordinates(ringElement, gml);
+                if (interiorCoordinates.Length < 3)
+                {
+                    continue;
+                }
+
+                interiorRings.Add(interiorCoordinates);
+                AccumulateElevationRange(interiorCoordinates, ref minZ, ref maxZ);
+            }
+        }
+
+        ResolveGeometryMetadata(geometryElement, featureElement, out int lod, out int priority, out string semanticSurfaceType);
         double planArea = ComputePlanArea(exteriorCoordinates);
+        double averageZ = ComputeAverageZ(exteriorCoordinates);
 
         PlateauGeometrySurface surface = new PlateauGeometrySurface
         {
             SurfaceId = (string?)geometryElement.Attribute(gml + "id")
                 ?? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
             Lod = lod,
-            SemanticSurfaceType = ResolveSemanticSurfaceType(ancestorNames),
+            SemanticSurfaceType = semanticSurfaceType,
             ExteriorRing = exteriorCoordinates,
-            InteriorRings = interiorRings
+            InteriorRings = interiorRings.Count == 0
+                ? Array.Empty<IReadOnlyCollection<PlateauCoordinate3D>>()
+                : interiorRings.ToArray()
         };
 
         return new GeometrySurfaceCandidate
@@ -407,73 +460,78 @@ public sealed class CityGmlParser
             Surface = surface,
             Coordinates = exteriorCoordinates,
             Sequence = sequence,
-            Priority = DeterminePriority(ancestorNames),
+            Priority = priority,
             PlanArea = planArea,
             HasPlanArea = planArea > 0.000001d,
-            AverageZ = exteriorCoordinates.Average(point => point.Z)
+            AverageZ = averageZ,
+            MinZ = double.IsPositiveInfinity(minZ) ? 0d : minZ,
+            MaxZ = double.IsNegativeInfinity(maxZ) ? 0d : maxZ
         };
     }
 
-    private static string ResolveSemanticSurfaceType(IReadOnlyCollection<string> ancestorNames)
+    private static double ComputeAverageZ(IReadOnlyList<PlateauCoordinate3D> coordinates)
     {
-        return ancestorNames.FirstOrDefault(name =>
-                name.EndsWith("Surface", StringComparison.OrdinalIgnoreCase)
+        if (coordinates.Count == 0)
+        {
+            return 0d;
+        }
+
+        double sum = 0d;
+        for (int index = 0; index < coordinates.Count; index++)
+        {
+            sum += coordinates[index].Z;
+        }
+
+        return sum / coordinates.Count;
+    }
+
+    private static void ResolveGeometryMetadata(
+        XElement geometryElement,
+        XElement featureElement,
+        out int lod,
+        out int priority,
+        out string semanticSurfaceType)
+    {
+        lod = 0;
+        priority = 3;
+        semanticSurfaceType = string.Empty;
+        for (XElement? ancestor = geometryElement.Parent; ancestor is not null && ancestor != featureElement; ancestor = ancestor.Parent)
+        {
+            string name = ancestor.Name.LocalName;
+            if (string.IsNullOrWhiteSpace(semanticSurfaceType)
+                && name.EndsWith("Surface", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(name, "MultiSurface", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(name, "CompositeSurface", StringComparison.OrdinalIgnoreCase)
                 && !name.StartsWith("lod", StringComparison.OrdinalIgnoreCase))
-            ?? string.Empty;
-    }
-
-    private static int DeterminePriority(IReadOnlyCollection<string> ancestorNames)
-    {
-        if (ancestorNames.Any(name => string.Equals(name, "GroundSurface", StringComparison.OrdinalIgnoreCase)))
-        {
-            return 0;
-        }
-
-        if (ancestorNames.Any(name => name.StartsWith("lod", StringComparison.OrdinalIgnoreCase) && !name.StartsWith("lod0", StringComparison.OrdinalIgnoreCase)))
-        {
-            return 1;
-        }
-
-        if (ancestorNames.Any(name => string.Equals(name, "lod0FootPrint", StringComparison.OrdinalIgnoreCase)))
-        {
-            return 2;
-        }
-
-        return 3;
-    }
-
-    private static int DetermineLod(IReadOnlyCollection<string> ancestorNames)
-    {
-        int highestLod = 0;
-        foreach (string name in ancestorNames)
-        {
-            if (!name.StartsWith("lod", StringComparison.OrdinalIgnoreCase))
             {
+                semanticSurfaceType = name;
+            }
+
+            int ancestorLod = ExtractLod(name);
+            if (ancestorLod > lod)
+            {
+                lod = ancestorLod;
+            }
+
+            if (priority > 0 && string.Equals(name, "GroundSurface", StringComparison.OrdinalIgnoreCase))
+            {
+                priority = 0;
                 continue;
             }
 
-            int digitStart = 3;
-            int digitLength = 0;
-            while (digitStart + digitLength < name.Length && char.IsDigit(name[digitStart + digitLength]))
+            if (priority > 1
+                && name.StartsWith("lod", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("lod0", StringComparison.OrdinalIgnoreCase))
             {
-                digitLength++;
-            }
-
-            if (digitLength == 0)
-            {
+                priority = 1;
                 continue;
             }
 
-            if (int.TryParse(name.Substring(digitStart, digitLength), NumberStyles.Integer, CultureInfo.InvariantCulture, out int lod)
-                && lod > highestLod)
+            if (priority > 2 && string.Equals(name, "lod0FootPrint", StringComparison.OrdinalIgnoreCase))
             {
-                highestLod = lod;
+                priority = 2;
             }
         }
-
-        return highestLod;
     }
 
     private static double ComputePlanArea(IReadOnlyList<PlateauCoordinate3D> coordinates)
@@ -502,26 +560,30 @@ public sealed class CityGmlParser
             return ParsePosListCoordinates(posListElement);
         }
 
-        XElement[] posElements = ringElement.Elements(gml + "pos").ToArray();
-        if (posElements.Length == 0)
+        List<XElement> posElements = new List<XElement>();
+        foreach (XElement posElement in ringElement.Elements(gml + "pos"))
+        {
+            posElements.Add(posElement);
+        }
+
+        if (posElements.Count == 0)
         {
             return Array.Empty<PlateauCoordinate3D>();
         }
 
-        List<PlateauCoordinate3D> coordinates = new List<PlateauCoordinate3D>(posElements.Length);
-        foreach (XElement posElement in posElements)
+        List<PlateauCoordinate3D> coordinates = new List<PlateauCoordinate3D>(posElements.Count);
+        for (int index = 0; index < posElements.Count; index++)
         {
-            string[] rawValues = (posElement.Value ?? string.Empty)
-                .Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            if (rawValues.Length < 2)
+            List<double> rawValues = ParseDoubleValues(posElements[index].Value ?? string.Empty);
+            if (rawValues.Count < 2)
             {
                 continue;
             }
 
-            double x = double.Parse(rawValues[0], CultureInfo.InvariantCulture);
-            double y = double.Parse(rawValues[1], CultureInfo.InvariantCulture);
-            double z = rawValues.Length >= 3
-                ? double.Parse(rawValues[2], CultureInfo.InvariantCulture)
+            double x = rawValues[0];
+            double y = rawValues[1];
+            double z = rawValues.Count >= 3
+                ? rawValues[2]
                 : 0d;
             coordinates.Add(new PlateauCoordinate3D(x, y, z));
         }
@@ -531,9 +593,8 @@ public sealed class CityGmlParser
 
     private static PlateauCoordinate3D[] ParsePosListCoordinates(XElement posListElement)
     {
-        string[] rawValues = (posListElement.Value ?? string.Empty)
-            .Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        if (rawValues.Length < 6)
+        List<double> rawValues = ParseDoubleValues(posListElement.Value ?? string.Empty);
+        if (rawValues.Count < 6)
         {
             return Array.Empty<PlateauCoordinate3D>();
         }
@@ -544,7 +605,7 @@ public sealed class CityGmlParser
         {
             dimension = parsedDimension;
         }
-        else if (rawValues.Length % 3 == 0)
+        else if (rawValues.Count % 3 == 0)
         {
             dimension = 3;
         }
@@ -553,18 +614,310 @@ public sealed class CityGmlParser
             dimension = 2;
         }
 
-        List<PlateauCoordinate3D> coordinates = new List<PlateauCoordinate3D>(rawValues.Length / dimension);
-        for (int index = 0; index <= rawValues.Length - dimension; index += dimension)
+        List<PlateauCoordinate3D> coordinates = new List<PlateauCoordinate3D>(rawValues.Count / dimension);
+        for (int index = 0; index <= rawValues.Count - dimension; index += dimension)
         {
-            double x = double.Parse(rawValues[index], CultureInfo.InvariantCulture);
-            double y = double.Parse(rawValues[index + 1], CultureInfo.InvariantCulture);
+            double x = rawValues[index];
+            double y = rawValues[index + 1];
             double z = dimension >= 3
-                ? double.Parse(rawValues[index + 2], CultureInfo.InvariantCulture)
+                ? rawValues[index + 2]
                 : 0d;
             coordinates.Add(new PlateauCoordinate3D(x, y, z));
         }
 
         return coordinates.ToArray();
+    }
+
+    private static List<double> ParseDoubleValues(string rawText)
+    {
+        List<double> values = new List<double>();
+        if (string.IsNullOrWhiteSpace(rawText))
+        {
+            return values;
+        }
+
+        int index = 0;
+        while (TryReadNextDouble(rawText, ref index, out double value))
+        {
+            values.Add(value);
+        }
+
+        return values;
+    }
+
+    private static bool TryReadNextDouble(string rawText, ref int index, out double value)
+    {
+        int length = rawText.Length;
+        while (index < length && char.IsWhiteSpace(rawText[index]))
+        {
+            index++;
+        }
+
+        if (index >= length)
+        {
+            value = 0d;
+            return false;
+        }
+
+        bool isNegative = false;
+        if (rawText[index] == '+' || rawText[index] == '-')
+        {
+            isNegative = rawText[index] == '-';
+            index++;
+        }
+
+        double integerPart = 0d;
+        bool hasDigits = false;
+        while (index < length && char.IsDigit(rawText[index]))
+        {
+            hasDigits = true;
+            integerPart = (integerPart * 10d) + (rawText[index] - '0');
+            index++;
+        }
+
+        double fractionalPart = 0d;
+        double divisor = 1d;
+        if (index < length && rawText[index] == '.')
+        {
+            index++;
+            while (index < length && char.IsDigit(rawText[index]))
+            {
+                hasDigits = true;
+                fractionalPart = (fractionalPart * 10d) + (rawText[index] - '0');
+                divisor *= 10d;
+                index++;
+            }
+        }
+
+        if (!hasDigits)
+        {
+            throw new FormatException("Encountered an invalid coordinate token while parsing PLATEAU geometry.");
+        }
+
+        int exponent = 0;
+        bool exponentNegative = false;
+        if (index < length && (rawText[index] == 'e' || rawText[index] == 'E'))
+        {
+            index++;
+            if (index < length && (rawText[index] == '+' || rawText[index] == '-'))
+            {
+                exponentNegative = rawText[index] == '-';
+                index++;
+            }
+
+            bool hasExponentDigits = false;
+            while (index < length && char.IsDigit(rawText[index]))
+            {
+                hasExponentDigits = true;
+                exponent = (exponent * 10) + (rawText[index] - '0');
+                index++;
+            }
+
+            if (!hasExponentDigits)
+            {
+                throw new FormatException("Encountered an invalid exponent while parsing PLATEAU geometry.");
+            }
+        }
+
+        if (index < length && !char.IsWhiteSpace(rawText[index]))
+        {
+            throw new FormatException("Encountered an invalid character while parsing PLATEAU geometry.");
+        }
+
+        double parsed = integerPart + (fractionalPart / divisor);
+        if (exponent != 0)
+        {
+            parsed *= Math.Pow(10d, exponentNegative ? -exponent : exponent);
+        }
+
+        value = isNegative ? -parsed : parsed;
+        return true;
+    }
+
+    private static void AppendCandidates(
+        ICollection<GeometrySurfaceCandidate> candidates,
+        IReadOnlyCollection<XElement> geometryElements,
+        XElement featureElement,
+        XNamespace gml,
+        ref int sequence)
+    {
+        foreach (XElement geometryElement in geometryElements)
+        {
+            GeometrySurfaceCandidate? candidate = CreateCandidate(geometryElement, featureElement, gml, sequence);
+            sequence++;
+            if (candidate is not null)
+            {
+                candidates.Add(candidate);
+            }
+        }
+    }
+
+    private static void AppendFeatures(ICollection<PlateauContextFeature> features, IReadOnlyCollection<PlateauContextFeature> parsedFeatures)
+    {
+        foreach (PlateauContextFeature feature in parsedFeatures)
+        {
+            features.Add(feature);
+        }
+    }
+
+    private static Dictionary<SupportedFeatureDescriptor, List<XElement>> CreateMatchedElementBuckets()
+    {
+        Dictionary<SupportedFeatureDescriptor, List<XElement>> buckets = new Dictionary<SupportedFeatureDescriptor, List<XElement>>(SupportedFeatures.Length);
+        for (int index = 0; index < SupportedFeatures.Length; index++)
+        {
+            buckets[SupportedFeatures[index]] = new List<XElement>();
+        }
+
+        return buckets;
+    }
+
+    private static Dictionary<XName, SupportedFeatureDescriptor> BuildSupportedFeatureLookup()
+    {
+        Dictionary<XName, SupportedFeatureDescriptor> lookup = new Dictionary<XName, SupportedFeatureDescriptor>();
+        for (int descriptorIndex = 0; descriptorIndex < SupportedFeatures.Length; descriptorIndex++)
+        {
+            SupportedFeatureDescriptor descriptor = SupportedFeatures[descriptorIndex];
+            foreach (string localName in descriptor.LocalNames)
+            {
+                lookup[descriptor.Namespace + localName] = descriptor;
+            }
+        }
+
+        return lookup;
+    }
+
+    private static RoadChildSummary GetRoadChildSummary(
+        XElement roadElement,
+        XNamespace featureNamespace,
+        IDictionary<XElement, RoadChildSummary> roadChildSummaries)
+    {
+        if (roadChildSummaries.TryGetValue(roadElement, out RoadChildSummary? cachedSummary))
+        {
+            return cachedSummary;
+        }
+
+        bool hasChildTrafficAreas = false;
+        int maxChildLod = 0;
+        foreach (XElement childContainer in roadElement.Elements())
+        {
+            if (childContainer.Name != featureNamespace + "trafficArea"
+                && childContainer.Name != featureNamespace + "auxiliaryTrafficArea")
+            {
+                continue;
+            }
+
+            foreach (XElement childFeature in childContainer.Elements())
+            {
+                hasChildTrafficAreas = true;
+                int childLod = DetermineElementMaxLod(childFeature);
+                if (childLod > maxChildLod)
+                {
+                    maxChildLod = childLod;
+                }
+            }
+        }
+
+        RoadChildSummary summary = new RoadChildSummary(hasChildTrafficAreas, maxChildLod);
+        roadChildSummaries[roadElement] = summary;
+        return summary;
+    }
+
+    private static bool MatchesSemanticSurface(string semanticSurfaceType, IReadOnlyCollection<string> semanticSurfaceNames)
+    {
+        if (string.IsNullOrWhiteSpace(semanticSurfaceType))
+        {
+            return false;
+        }
+
+        foreach (string surfaceName in semanticSurfaceNames)
+        {
+            if (string.Equals(semanticSurfaceType, surfaceName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IReadOnlyCollection<PlateauGeometrySurface> BuildGeometrySurfaces(IReadOnlyCollection<GeometrySurfaceCandidate> candidates)
+    {
+        PlateauGeometrySurface[] surfaces = new PlateauGeometrySurface[candidates.Count];
+        int index = 0;
+        foreach (GeometrySurfaceCandidate candidate in candidates)
+        {
+            surfaces[index++] = candidate.Surface;
+        }
+
+        return surfaces;
+    }
+
+    private static int CompareCandidate(GeometrySurfaceCandidate left, GeometrySurfaceCandidate right)
+    {
+        int comparison = left.Priority.CompareTo(right.Priority);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = (left.HasPlanArea ? 0 : 1).CompareTo(right.HasPlanArea ? 0 : 1);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = left.AverageZ.CompareTo(right.AverageZ);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = right.PlanArea.CompareTo(left.PlanArea);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        return left.Sequence.CompareTo(right.Sequence);
+    }
+
+    private static int ExtractLod(string localName)
+    {
+        if (!localName.StartsWith("lod", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        int index = 3;
+        int lod = 0;
+        bool hasDigits = false;
+        while (index < localName.Length && char.IsDigit(localName[index]))
+        {
+            hasDigits = true;
+            lod = (lod * 10) + (localName[index] - '0');
+            index++;
+        }
+
+        return hasDigits ? lod : 0;
+    }
+
+    private static void AccumulateElevationRange(
+        IReadOnlyCollection<PlateauCoordinate3D> coordinates,
+        ref double minZ,
+        ref double maxZ)
+    {
+        foreach (PlateauCoordinate3D point in coordinates)
+        {
+            if (point.Z < minZ)
+            {
+                minZ = point.Z;
+            }
+
+            if (point.Z > maxZ)
+            {
+                maxZ = point.Z;
+            }
+        }
     }
 
     private sealed class SupportedFeatureDescriptor
@@ -598,5 +951,22 @@ public sealed class CityGmlParser
         public double PlanArea { get; set; }
 
         public double AverageZ { get; set; }
+
+        public double MinZ { get; set; }
+
+        public double MaxZ { get; set; }
+    }
+
+    private sealed class RoadChildSummary
+    {
+        public RoadChildSummary(bool hasChildTrafficAreas, int maxChildLod)
+        {
+            HasChildTrafficAreas = hasChildTrafficAreas;
+            MaxChildLod = maxChildLod;
+        }
+
+        public bool HasChildTrafficAreas { get; }
+
+        public int MaxChildLod { get; }
     }
 }

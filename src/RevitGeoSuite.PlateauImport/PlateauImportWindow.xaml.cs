@@ -110,9 +110,27 @@ public partial class PlateauImportWindow : Window
         }
     }
 
-    private void OnLoadPreviewClick(object sender, RoutedEventArgs e)
+    private async void OnLoadPreviewClick(object sender, RoutedEventArgs e)
     {
-        ViewModel.TryLoadPreview();
+        if (!ViewModel.TryStartPreviewLoad(out PlateauImportViewModel.PreviewBuildRequest? request) || request is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Yield();
+            PlateauImportViewModel.PreviewBuildResult result = await Task.Run(() => ViewModel.BuildPreviewResult(request));
+            ViewModel.ApplyPreviewResult(result);
+        }
+        catch (Exception ex)
+        {
+            ViewModel.HandlePreviewFailure(ex);
+        }
+        finally
+        {
+            ViewModel.FinishPreviewLoad();
+        }
     }
 
     private void OnImportClick(object sender, RoutedEventArgs e)

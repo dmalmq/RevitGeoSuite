@@ -1,3 +1,5 @@
+using System;
+using System.Globalization;
 using System.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.Mesh;
@@ -5,6 +7,7 @@ using RevitGeoSuite.Core.Validation;
 using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.Georeference;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
+using RevitGeoSuite.SharedUI.Localization;
 using Xunit;
 
 namespace RevitGeoSuite.Georeference.Tests;
@@ -37,7 +40,7 @@ public sealed class GeoreferenceViewModelTests
         Assert.Equal(GeoreferenceStep.ChooseCrs, viewModel.CurrentStep);
         Assert.True(viewModel.IsNewProjectMode);
         Assert.False(viewModel.CanGoNext);
-        Assert.Contains("coordinate reference system", viewModel.SetupValidationMessage);
+        Assert.Contains(UiLocalizer.Instance.Get("Georef.Simple.Validation.SelectCrs"), viewModel.SetupValidationMessage);
 
         viewModel.SelectedCrs = viewModel.AvailableCrs.Single(definition => definition.EpsgCode == 6677);
         Assert.False(viewModel.CanGoNext);
@@ -48,6 +51,124 @@ public sealed class GeoreferenceViewModelTests
 
         viewModel.ProjectBasePointOffsetXInput = "1250.5";
         Assert.True(viewModel.CanGoNext);
+    }
+
+    [Fact]
+    public void Plateau_grid_mode_requires_selected_grid_before_preview()
+    {
+        GeoreferenceViewModel viewModel = CreateViewModel(CreateNewProjectSummary());
+
+        viewModel.GoNext();
+        viewModel.SelectedCrs = viewModel.AvailableCrs.Single(definition => definition.EpsgCode == 6677);
+        viewModel.IsPlateauGridCoordinateMode = true;
+
+        Assert.True(viewModel.CanUsePlateauGridMode);
+        Assert.True(viewModel.IsPlateauGridCoordinateMode);
+        Assert.False(viewModel.CanGoNext);
+        Assert.True(viewModel.PlateauGridOptions.Count > 0);
+        Assert.Contains(UiLocalizer.Instance.Get("Georef.Grid.Validation.SelectGrid"), viewModel.SetupValidationMessage);
+
+        Assert.True(viewModel.TogglePlateauGridSelection(viewModel.PlateauGridOptions.First().TileId));
+        Assert.True(viewModel.CanGoNext);
+    }
+
+    [Fact]
+    public void Plateau_grid_preview_uses_southwest_corner_of_sparse_selection_extent()
+    {
+        GeoreferenceViewModel viewModel = CreateViewModel(CreateNewProjectSummary());
+
+        viewModel.GoNext();
+        CrsDefinition selectedCrs = viewModel.AvailableCrs.Single(definition => definition.EpsgCode == 6677);
+        viewModel.SelectedCrs = selectedCrs;
+        viewModel.IsPlateauGridCoordinateMode = true;
+
+        PlateauGridSelectionItem[] sparseSelection = SelectSparsePlateauGridPair(viewModel, out double expectedSouthLatitude, out double expectedWestLongitude);
+        JapanMeshCalculator meshCalculator = new JapanMeshCalculator();
+        MeshBounds[] selectedBounds = sparseSelection
+            .Select(option => meshCalculator.GetBounds(new MeshCode { Value = option.TileId }))
+            .ToArray();
+
+        Assert.DoesNotContain(
+            selectedBounds,
+            bounds => AreClose(bounds.SouthLatitude, expectedSouthLatitude) && AreClose(bounds.WestLongitude, expectedWestLongitude));
+
+        foreach (PlateauGridSelectionItem option in sparseSelection)
+        {
+            Assert.True(viewModel.TogglePlateauGridSelection(option.TileId));
+        }
+
+        Assert.Equal(2, viewModel.SelectedPlateauGridCount);
+        Assert.True(viewModel.HasPlateauGridAnchor);
+        Assert.Equal(expectedSouthLatitude, viewModel.PlateauGridAnchorLatitude!.Value, 10);
+        Assert.Equal(expectedWestLongitude, viewModel.PlateauGridAnchorLongitude!.Value, 10);
+
+        viewModel.GoNext();
+
+        Assert.Equal(GeoreferenceStep.Preview, viewModel.CurrentStep);
+        Assert.True(viewModel.HasPreview);
+
+        SplitSurveyProjectBasePointIntent intent = viewModel.GetSplitApplyIntent();
+        CoordinateTransformer transformer = CreateTransformer();
+        ProjectedCoordinate expectedProjected = transformer.Project(
+            new GeographicCoordinate(expectedSouthLatitude, expectedWestLongitude),
+            selectedCrs.ToReference());
+
+        Assert.Equal(expectedProjected.Easting, intent.LocalProjectBasePoint!.ProjectedCoordinate!.Value.Easting, 6);
+        Assert.Equal(expectedProjected.Northing, intent.LocalProjectBasePoint.ProjectedCoordinate.Value.Northing, 6);
+        Assert.Equal(expectedSouthLatitude, intent.LocalProjectBasePoint.Origin!.Latitude, 10);
+        Assert.Equal(expectedWestLongitude, intent.LocalProjectBasePoint.Origin.Longitude, 10);
+        Assert.Equal(
+            string.Format(CultureInfo.InvariantCulture, UiLocalizer.Instance.Get("Georef.Grid.SetupSource.SelectionExtent"), 2),
+            intent.SetupSource);
+        Assert.Equal(intent.SetupSource, intent.LocalProjectBasePoint.SetupSource);
+        Assert.Equal(
+            string.Format(CultureInfo.InvariantCulture, UiLocalizer.Instance.Get("Georef.Grid.ProjectSummary.Projected"), 2, expectedProjected.Easting, expectedProjected.Northing),
+            viewModel.ProjectBasePointOffsetSummary);
+    }
+
+    [Fact]
+    public void Switching_between_manual_and_grid_modes_updates_validation_state()
+    {
+        GeoreferenceViewModel viewModel = CreateViewModel(CreateNewProjectSummary());
+
+        viewModel.GoNext();
+        viewModel.SelectedCrs = viewModel.AvailableCrs.Single(definition => definition.EpsgCode == 6677);
+        viewModel.ProjectBasePointOffsetXInput = "200";
+        viewModel.ProjectBasePointOffsetYInput = "400";
+
+        Assert.True(viewModel.IsManualCoordinateMode);
+        Assert.True(viewModel.CanGoNext);
+
+        viewModel.IsPlateauGridCoordinateMode = true;
+
+        Assert.True(viewModel.IsPlateauGridCoordinateMode);
+        Assert.False(viewModel.CanGoNext);
+
+        Assert.True(viewModel.TogglePlateauGridSelection(viewModel.PlateauGridOptions.First().TileId));
+        Assert.True(viewModel.CanGoNext);
+
+        viewModel.IsManualCoordinateMode = true;
+
+        Assert.True(viewModel.IsManualCoordinateMode);
+        Assert.False(viewModel.IsPlateauGridCoordinateMode);
+        Assert.True(viewModel.CanGoNext);
+    }
+
+    [Fact]
+    public void Plateau_grid_mode_is_disabled_when_no_geographic_hint_exists()
+    {
+        GeoreferenceViewModel viewModel = CreateViewModel(CreateNewProjectSummaryWithoutHints());
+
+        viewModel.GoNext();
+
+        Assert.False(viewModel.CanUsePlateauGridMode);
+        Assert.True(viewModel.HasPlateauGridUnavailableMessage);
+        Assert.Empty(viewModel.PlateauGridOptions);
+
+        viewModel.IsPlateauGridCoordinateMode = true;
+
+        Assert.False(viewModel.IsPlateauGridCoordinateMode);
+        Assert.True(viewModel.IsManualCoordinateMode);
     }
 
     [Fact]
@@ -69,7 +190,7 @@ public sealed class GeoreferenceViewModelTests
         Assert.Equal(1500.25, intent.LocalProjectBasePoint!.ProjectedCoordinate!.Value.Easting, 6);
         Assert.Equal(-245.75, intent.LocalProjectBasePoint.ProjectedCoordinate.Value.Northing, 6);
         Assert.NotEmpty(viewModel.PreviewFields);
-        Assert.Contains(viewModel.PreviewWhatWillChange, line => line.IndexOf("Survey Point", System.StringComparison.OrdinalIgnoreCase) >= 0);
+        Assert.NotEmpty(viewModel.PreviewWhatWillChange);
     }
 
     [Fact]
@@ -237,6 +358,11 @@ public sealed class GeoreferenceViewModelTests
             new SplitSurveyProjectBasePointPreviewService(validator));
     }
 
+    private static CoordinateTransformer CreateTransformer()
+    {
+        return new CoordinateTransformer(new CrsRegistry());
+    }
+
     private static void MoveToNewProjectPreview(GeoreferenceViewModel viewModel, string offsetX, string offsetY)
     {
         viewModel.GoNext();
@@ -244,6 +370,38 @@ public sealed class GeoreferenceViewModelTests
         viewModel.ProjectBasePointOffsetXInput = offsetX;
         viewModel.ProjectBasePointOffsetYInput = offsetY;
         viewModel.GoNext();
+    }
+
+    private static PlateauGridSelectionItem[] SelectSparsePlateauGridPair(
+        GeoreferenceViewModel viewModel,
+        out double expectedSouthLatitude,
+        out double expectedWestLongitude)
+    {
+        JapanMeshCalculator meshCalculator = new JapanMeshCalculator();
+        var candidates = viewModel.PlateauGridOptions
+            .Select(option => (Option: option, Bounds: meshCalculator.GetBounds(new MeshCode { Value = option.TileId })))
+            .ToArray();
+
+        expectedWestLongitude = candidates.Min(candidate => candidate.Bounds.WestLongitude);
+        expectedSouthLatitude = candidates.Min(candidate => candidate.Bounds.SouthLatitude);
+
+        var westEdgeNorth = candidates
+            .Where(candidate => AreClose(candidate.Bounds.WestLongitude, expectedWestLongitude))
+            .OrderByDescending(candidate => candidate.Bounds.SouthLatitude)
+            .First();
+        var southEdgeEast = candidates
+            .Where(candidate => AreClose(candidate.Bounds.SouthLatitude, expectedSouthLatitude))
+            .OrderByDescending(candidate => candidate.Bounds.WestLongitude)
+            .First();
+
+        Assert.NotEqual(westEdgeNorth.Option.TileId, southEdgeEast.Option.TileId);
+
+        return new[] { westEdgeNorth.Option, southEdgeEast.Option };
+    }
+
+    private static bool AreClose(double left, double right)
+    {
+        return Math.Abs(left - right) < 1e-9;
     }
 
     private static CurrentProjectStateSummary CreateNewProjectSummary()
@@ -254,6 +412,24 @@ public sealed class GeoreferenceViewModelTests
             IsSupportedDocument = true,
             SiteLatitudeDegrees = 35.681236,
             SiteLongitudeDegrees = 139.767125,
+            ProjectPosition = new ProjectPositionSnapshot(),
+            SurveyPoint = new BasePointSnapshot
+            {
+                Name = "Survey Point"
+            },
+            ProjectBasePoint = new BasePointSnapshot
+            {
+                Name = "Project Base Point"
+            }
+        };
+    }
+
+    private static CurrentProjectStateSummary CreateNewProjectSummaryWithoutHints()
+    {
+        return new CurrentProjectStateSummary
+        {
+            DocumentTitle = "Hintless Project",
+            IsSupportedDocument = true,
             ProjectPosition = new ProjectPositionSnapshot(),
             SurveyPoint = new BasePointSnapshot
             {

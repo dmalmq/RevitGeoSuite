@@ -4,8 +4,8 @@
         xmlns:shared="clr-namespace:RevitGeoSuite.SharedUI.Controls;assembly=RevitGeoSuite.SharedUI"
         xmlns:loc="clr-namespace:RevitGeoSuite.SharedUI.Localization;assembly=RevitGeoSuite.SharedUI"
         Title="Georeference Setup"
-        Height="940"
-        Width="1500"
+        Height="980"
+        Width="1520"
         MinWidth="1180"
         MinHeight="780"
         WindowStartupLocation="CenterOwner">
@@ -166,37 +166,132 @@
               <StackPanel>
                 <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Section.SetupDetails]}" />
                 <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.StepDescription.NewProject]}" TextWrapping="Wrap" />
-                <Grid Margin="0,14,0,0">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" />
-                    <ColumnDefinition Width="220" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.EastingLabel]}" />
-                    <TextBox Margin="0,8,0,0" Text="{Binding ProjectBasePointOffsetXInput, UpdateSourceTrigger=PropertyChanged}" />
-                  </StackPanel>
-                  <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                    <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.NorthingLabel]}" />
-                    <TextBox Margin="0,8,0,0" Text="{Binding ProjectBasePointOffsetYInput, UpdateSourceTrigger=PropertyChanged}" />
-                  </StackPanel>
-                </Grid>
-                <Grid Margin="0,14,0,0">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Survey]}" />
-                  <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SurveyOriginSummary}" TextWrapping="Wrap" />
-                </Grid>
+                <TextBlock Margin="0,14,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.InputModeLabel]}" />
                 <Grid Margin="0,10,0,0">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
-                  <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Project]}" />
-                  <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding ProjectBasePointOffsetSummary}" TextWrapping="Wrap" />
+                  <Border Grid.Column="0" Style="{StaticResource ShellCardBorderStyle}" Padding="12">
+                    <RadioButton GroupName="ProjectBasePointInputMode" IsChecked="{Binding IsManualCoordinateMode, Mode=TwoWay}">
+                      <StackPanel>
+                        <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.Mode.Manual]}" />
+                        <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.Mode.Manual.Description]}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </RadioButton>
+                  </Border>
+                  <Border Grid.Column="2" Style="{StaticResource ShellCardBorderStyle}" Padding="12">
+                    <RadioButton GroupName="ProjectBasePointInputMode" IsChecked="{Binding IsPlateauGridCoordinateMode, Mode=TwoWay}" IsEnabled="{Binding CanUsePlateauGridMode}">
+                      <StackPanel>
+                        <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.Mode.Grid]}" />
+                        <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.Mode.Grid.Description]}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </RadioButton>
+                  </Border>
                 </Grid>
+                <Border Margin="0,14,0,0" Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasPlateauGridUnavailableMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <TextBlock Text="{Binding PlateauGridUnavailableMessage}" TextWrapping="Wrap" />
+                </Border>
+
+                <StackPanel Margin="0,14,0,0" Visibility="{Binding IsManualCoordinateMode, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                      <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.EastingLabel]}" />
+                      <TextBox Margin="0,8,0,0" Text="{Binding ProjectBasePointOffsetXInput, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                      <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.QuickSetup.NorthingLabel]}" />
+                      <TextBox Margin="0,8,0,0" Text="{Binding ProjectBasePointOffsetYInput, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                  </Grid>
+                  <Grid Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Survey]}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SurveyOriginSummary}" TextWrapping="Wrap" />
+                  </Grid>
+                  <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Project]}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding ProjectBasePointOffsetSummary}" TextWrapping="Wrap" />
+                  </Grid>
+                </StackPanel>
+
+                <StackPanel Margin="0,14,0,0" Visibility="{Binding IsPlateauGridCoordinateMode, Converter={StaticResource BoolToVisibilityConverter}}">
+                  <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.Section.Title]}" />
+                  <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.Section.Description]}" TextWrapping="Wrap" />
+                  <Grid Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="2*" />
+                      <ColumnDefinition Width="16" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                      <shared:MapControl x:Name="PlateauGridMap" Height="320" />
+                      <Border Margin="0,12,0,0" Style="{StaticResource ShellCardBorderStyle}" Padding="12" Background="#F7F5F0">
+                        <TextBlock Text="{Binding PlateauGridStatusText}" TextWrapping="Wrap" />
+                      </Border>
+                      <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding PlateauGridAnchorSummary}" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Clear]}" Click="OnClearPlateauGridSelectionClick" IsEnabled="{Binding CanClearPlateauGridSelection}" />
+                      </Grid>
+                    </StackPanel>
+                    <Border Grid.Column="2" Style="{StaticResource ShellCardBorderStyle}">
+                      <StackPanel>
+                        <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.List.Title]}" />
+                        <TextBlock Margin="0,8,0,12" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.List.Description]}" TextWrapping="Wrap" />
+                        <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasPlateauGridOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+                          <ItemsControl ItemsSource="{Binding PlateauGridOptions}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <Border Margin="0,0,0,8" Padding="10" Background="#FAFAF6" BorderBrush="{StaticResource SuiteBorderBrush}" BorderThickness="1" CornerRadius="5">
+                                  <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
+                                    <StackPanel>
+                                      <TextBlock FontFamily="Consolas" FontWeight="SemiBold" Text="{Binding Title}" />
+                                      <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Description}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                  </CheckBox>
+                                </Border>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Grid.NoCandidates]}" Visibility="{Binding HasNoPlateauGridOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+                  <Grid Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Survey]}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding SurveyOriginSummary}" TextWrapping="Wrap" />
+                  </Grid>
+                  <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Georef.Simple.Planned.Project]}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding ProjectBasePointOffsetSummary}" TextWrapping="Wrap" />
+                  </Grid>
+                </StackPanel>
               </StackPanel>
             </Border>
 

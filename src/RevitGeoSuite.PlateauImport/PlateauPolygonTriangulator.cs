@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace RevitGeoSuite.PlateauImport;
 
@@ -35,7 +34,17 @@ internal static class PlateauPolygonTriangulator
             return true;
         }
 
-        List<int> remaining = Enumerable.Range(0, points.Count).ToList();
+        if (points.Count == 4 && TryTriangulateQuad(points, planarPoints, isCounterClockwise, out triangles))
+        {
+            return true;
+        }
+
+        List<int> remaining = new List<int>(points.Count);
+        for (int index = 0; index < points.Count; index++)
+        {
+            remaining.Add(index);
+        }
+
         List<ContextShapeTriangle> result = new List<ContextShapeTriangle>(points.Count - 2);
         int guard = points.Count * points.Count;
 
@@ -57,9 +66,22 @@ internal static class PlateauPolygonTriangulator
                     continue;
                 }
 
-                bool containsOtherVertex = remaining
-                    .Where(candidate => candidate != previousIndex && candidate != currentIndex && candidate != nextIndex)
-                    .Any(candidate => IsPointInsideTriangle(planarPoints[candidate], previous, current, next));
+                bool containsOtherVertex = false;
+                for (int candidateIndex = 0; candidateIndex < remaining.Count; candidateIndex++)
+                {
+                    int candidate = remaining[candidateIndex];
+                    if (candidate == previousIndex || candidate == currentIndex || candidate == nextIndex)
+                    {
+                        continue;
+                    }
+
+                    if (IsPointInsideTriangle(planarPoints[candidate], previous, current, next))
+                    {
+                        containsOtherVertex = true;
+                        break;
+                    }
+                }
+
                 if (containsOtherVertex)
                 {
                     continue;
@@ -89,9 +111,47 @@ internal static class PlateauPolygonTriangulator
         return true;
     }
 
+    private static bool TryTriangulateQuad(
+        IReadOnlyList<ContextShapePoint3D> points,
+        IReadOnlyList<PlanarPoint> planarPoints,
+        bool isCounterClockwise,
+        out IReadOnlyCollection<ContextShapeTriangle> triangles)
+    {
+        triangles = Array.Empty<ContextShapeTriangle>();
+        if (!IsConvexPolygon(planarPoints, isCounterClockwise))
+        {
+            return false;
+        }
+
+        triangles = new[]
+        {
+            CreateTriangle(points[0], points[1], points[2], isCounterClockwise),
+            CreateTriangle(points[0], points[2], points[3], isCounterClockwise)
+        };
+        return true;
+    }
+
+    private static bool IsConvexPolygon(IReadOnlyList<PlanarPoint> points, bool isCounterClockwise)
+    {
+        for (int index = 0; index < points.Count; index++)
+        {
+            PlanarPoint previous = points[(index - 1 + points.Count) % points.Count];
+            PlanarPoint current = points[index];
+            PlanarPoint next = points[(index + 1) % points.Count];
+            if (!IsConvex(previous, current, next, isCounterClockwise))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static List<ContextShapePoint3D> Normalize(IReadOnlyCollection<ContextShapePoint3D> inputPoints)
     {
-        List<ContextShapePoint3D> points = inputPoints?.ToList() ?? new List<ContextShapePoint3D>();
+        List<ContextShapePoint3D> points = inputPoints is null
+            ? new List<ContextShapePoint3D>()
+            : new List<ContextShapePoint3D>(inputPoints);
         if (points.Count > 1 && AreEqual(points[0], points[points.Count - 1]))
         {
             points.RemoveAt(points.Count - 1);

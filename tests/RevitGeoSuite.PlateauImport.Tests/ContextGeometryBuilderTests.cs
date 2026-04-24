@@ -88,8 +88,18 @@ public sealed class ContextGeometryBuilderTests
         ContextImportPlan plan = builder.BuildPlan(model, referenceContext);
 
         Assert.Equal(2, plan.Shapes.Count);
-        Assert.Equal(new[] { 1000d + ((40.82d - 40d) / 0.3048d), 1000d + ((41.15d - 40d) / 0.3048d) }, plan.Shapes.Select(shape => shape.BaseElevationFeet).ToArray());
-        Assert.Equal(new[] { 1.640d, 1.640d }, plan.Shapes.Select(shape => shape.HeightFeet).ToArray());
+        double[] expectedBaseElevations = { 1000d + ((40.82d - 40d) / 0.3048d), 1000d + ((41.15d - 40d) / 0.3048d) };
+        double[] actualBaseElevations = plan.Shapes.Select(shape => shape.BaseElevationFeet).ToArray();
+        for (int index = 0; index < expectedBaseElevations.Length; index++)
+        {
+            Assert.Equal(expectedBaseElevations[index], actualBaseElevations[index], 12);
+        }
+        double[] expectedHeights = { 0.5d / 0.3048d, 0.5d / 0.3048d };
+        double[] actualHeights = plan.Shapes.Select(shape => shape.HeightFeet).ToArray();
+        for (int index = 0; index < expectedHeights.Length; index++)
+        {
+            Assert.Equal(expectedHeights[index], actualHeights[index], 12);
+        }
     }
 
     [Fact]
@@ -523,6 +533,74 @@ public sealed class ContextGeometryBuilderTests
         Assert.Contains("EPSG:6697", ex.Message);
     }
 
+
+    [Fact]
+    public void BuildPlan_transforms_mixed_crs_models_with_a_shared_transform_strategy_cache()
+    {
+        CrsRegistry crsRegistry = new CrsRegistry();
+        CoordinateTransformer coordinateTransformer = new CoordinateTransformer(crsRegistry);
+        ContextGeometryBuilder builder = new ContextGeometryBuilder(coordinateTransformer);
+        PlateauFolderScanResult scanResult = new PlateauFolderScanResult
+        {
+            CityModels = new PlateauCityModel[]
+            {
+                new PlateauCityModel
+                {
+                    EpsgCode = 6677,
+                    Features = new PlateauContextFeature[]
+                    {
+                        CreateFeature(
+                            PlateauFeatureType.Building,
+                            "projected-bldg",
+                            "Projected Building",
+                            "tile-a",
+                            new PlateauCoordinate3D(100.0, 150.0, 0),
+                            new PlateauCoordinate3D(110.0, 150.0, 0),
+                            new PlateauCoordinate3D(110.0, 160.0, 0),
+                            new PlateauCoordinate3D(100.0, 160.0, 0),
+                            new PlateauCoordinate3D(100.0, 150.0, 0))
+                    }
+                },
+                new PlateauCityModel
+                {
+                    EpsgCode = 6697,
+                    SrsName = "urn:ogc:def:crs:EPSG::6697",
+                    Features = new PlateauContextFeature[]
+                    {
+                        CreateFeature(
+                            PlateauFeatureType.Bridge,
+                            "geographic-bridge",
+                            "Geographic Bridge",
+                            "tile-b",
+                            new PlateauCoordinate3D(35.6800, 139.7700, 0),
+                            new PlateauCoordinate3D(35.6800, 139.7702, 0),
+                            new PlateauCoordinate3D(35.6802, 139.7702, 0),
+                            new PlateauCoordinate3D(35.6802, 139.7700, 0),
+                            new PlateauCoordinate3D(35.6800, 139.7700, 0))
+                    }
+                }
+            }
+        };
+        PlateauImportReferenceContext referenceContext = new PlateauImportReferenceContext
+        {
+            ProjectCrs = new CrsReference { EpsgCode = 6677, NameSnapshot = "JGD2011 / Japan Plane Rectangular CS IX" },
+            AnchorProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
+            AnchorElevationMeters = 0d,
+            AnchorXFeet = 0d,
+            AnchorYFeet = 0d,
+            AnchorZFeet = 0d
+        };
+
+        ContextImportPlan plan = builder.BuildPlan(scanResult, referenceContext, null, null);
+        ContextShapePlan projectedShape = Assert.Single(plan.Shapes.Where(shape => shape.SourceFeatureId == "projected-bldg"));
+        ContextShapePlan geographicShape = Assert.Single(plan.Shapes.Where(shape => shape.SourceFeatureId == "geographic-bridge"));
+        ProjectedCoordinate expectedProjected = coordinateTransformer.Project(new GeographicCoordinate(35.6800, 139.7700), referenceContext.ProjectCrs);
+
+        Assert.Equal(2, plan.Shapes.Count);
+        Assert.Equal(328.084, projectedShape.FootprintPointsFeet.First().XFeet, 3);
+        Assert.Equal(expectedProjected.Easting / 0.3048d, geographicShape.FootprintPointsFeet.First().XFeet, 3);
+        Assert.Equal(expectedProjected.Northing / 0.3048d, geographicShape.FootprintPointsFeet.First().YFeet, 3);
+    }
     private static PlateauContextFeature CreateFeature(PlateauFeatureType featureType, string id, string name, string tileId, params PlateauCoordinate3D[] ring)
     {
         PlateauGeometrySurface surface = CreateSurface(id + "-surface", 0, ring);

@@ -33,6 +33,8 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
     private string scanProgressStatusText;
     private bool showModelOverlay;
     private bool isScanning;
+    private bool isPreparingPreview;
+    private int previewRequestVersion;
     private bool isScanProgressIndeterminate;
     private double scanProgressPercent;
     private int scanProgressCurrent;
@@ -170,7 +172,7 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         }
     }
 
-    public bool CanScanFolder => !string.IsNullOrWhiteSpace(SelectedFolderPath) && !IsScanning;
+    public bool CanScanFolder => !string.IsNullOrWhiteSpace(SelectedFolderPath) && !IsScanning && !IsPreparingPreview;
 
     public bool IsScanning
     {
@@ -181,15 +183,41 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
             isScanning = value;
             RaisePropertyChanged(nameof(IsScanning));
             RaisePropertyChanged(nameof(CanScanFolder));
+            RaisePropertyChanged(nameof(CanLoadPreview));
+            RaisePropertyChanged(nameof(CanImport));
         }
     }
 
-    public bool CanLoadPreview => referenceContext is not null
+    public bool IsPreparingPreview
+    {
+        get => isPreparingPreview;
+        private set
+        {
+            if (isPreparingPreview == value)
+            {
+                return;
+            }
+
+            isPreparingPreview = value;
+            RaisePropertyChanged(nameof(IsPreparingPreview));
+            RaisePropertyChanged(nameof(CanScanFolder));
+            RaisePropertyChanged(nameof(CanLoadPreview));
+            RaisePropertyChanged(nameof(CanImport));
+        }
+    }
+
+    public bool CanLoadPreview => !IsScanning
+        && !IsPreparingPreview
+        && referenceContext is not null
         && scanResult is not null
         && FeatureTypeOptions.Any(option => option.IsSelected)
         && TileOptions.Any(option => option.IsSelected);
 
-    public bool CanImport => preparedPlan is not null && currentState.IsSupportedDocument && !currentState.IsReadOnly;
+    public bool CanImport => !IsScanning
+        && !IsPreparingPreview
+        && preparedPlan is not null
+        && currentState.IsSupportedDocument
+        && !currentState.IsReadOnly;
 
     public double ScanProgressPercent
     {
@@ -469,6 +497,13 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         ActionMessage = string.Empty;
         folderPath = SelectedFolderPath;
 
+        if (IsPreparingPreview)
+        {
+            StatusMessage = "Wait for the current preview to finish loading before starting a new scan.";
+            ResetScanProgress();
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(folderPath))
         {
             StatusMessage = "Choose a PLATEAU folder before scanning.";
@@ -542,7 +577,43 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
 
     public bool TryLoadPreview()
     {
+        if (!TryStartPreviewLoad(out PreviewBuildRequest? request) || request is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            PreviewBuildResult result = BuildPreviewResult(request);
+            return ApplyPreviewResult(result);
+        }
+        catch (Exception ex)
+        {
+            HandlePreviewFailure(ex);
+            return false;
+        }
+        finally
+        {
+            FinishPreviewLoad();
+        }
+    }
+
+    internal bool TryStartPreviewLoad(out PreviewBuildRequest? request)
+    {
         ActionMessage = string.Empty;
+        request = null;
+
+        if (IsScanning)
+        {
+            StatusMessage = "Wait for the current folder scan to finish before loading a preview.";
+            return false;
+        }
+
+        if (IsPreparingPreview)
+        {
+            StatusMessage = "Preview generation is already running.";
+            return false;
+        }
 
         if (referenceContext is null)
         {
@@ -564,25 +635,69 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
             return false;
         }
 
-        try
+        previewRequestVersion = unchecked(previewRequestVersion + 1);
+        IsPreparingPreview = true;
+        StatusMessage = string.Format(
+            CultureInfo.InvariantCulture,
+            "Loading preview using {0} in {1} mode...",
+            referenceContext.Title,
+            SelectedGeometryImportMode.GetDisplayName());
+        request = new PreviewBuildRequest(
+            previewRequestVersion,
+            scanResult,
+            referenceContext,
+            selectedFeatureTypes,
+            selectedTileIds,
+            SelectedGeometryImportMode);
+        return true;
+    }
+
+    internal PreviewBuildResult BuildPreviewResult(PreviewBuildRequest request)
+    {
+        ContextImportPlan plan = geometryBuilder.BuildPlan(
+            request.ScanResult,
+            request.ReferenceContext,
+            request.SelectedFeatureTypes,
+            request.SelectedTileIds,
+            request.GeometryImportMode);
+        IReadOnlyCollection<DetailRow> previewRows = BuildPreviewRows(plan);
+        IReadOnlyCollection<string> featureNames = BuildFeatureNames(plan);
+        IReadOnlyCollection<string> warnings = request.ScanResult.WarningMessages
+            .Concat(plan.WarningMessages)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        string importMode = request.GeometryImportMode.GetDisplayName();
+        string status = currentState.IsReadOnly
+            ? string.Format(CultureInfo.InvariantCulture, "Preview loaded. {0} context shapes are ready in {1} mode, but this Revit project is read-only so import is disabled until the model is editable.", plan.Shapes.Count, importMode)
+            : string.Format(CultureInfo.InvariantCulture, "Preview loaded. {0} context shapes are ready to import using {1} in {2} mode.", plan.Shapes.Count, request.ReferenceContext.Title, importMode);
+        return new PreviewBuildResult(request.RequestVersion, plan, previewRows, featureNames, warnings, status);
+    }
+
+    internal bool ApplyPreviewResult(PreviewBuildResult result)
+    {
+        if (result.RequestVersion != previewRequestVersion)
         {
-            preparedPlan = geometryBuilder.BuildPlan(scanResult, referenceContext, selectedFeatureTypes, selectedTileIds, SelectedGeometryImportMode);
-            ReplaceCollection(PreviewRows, BuildPreviewRows(preparedPlan));
-            ReplaceCollection(FeatureNames, BuildFeatureNames(preparedPlan));
-            ReplaceCollection(WarningMessages, scanResult.WarningMessages.Concat(preparedPlan.WarningMessages).Distinct(StringComparer.Ordinal));
-            string importMode = SelectedGeometryImportMode.GetDisplayName();
-            StatusMessage = currentState.IsReadOnly
-                ? string.Format(CultureInfo.InvariantCulture, "Preview loaded. {0} context shapes are ready in {1} mode, but this Revit project is read-only so import is disabled until the model is editable.", PreparedShapeCount, importMode)
-                : string.Format(CultureInfo.InvariantCulture, "Preview loaded. {0} context shapes are ready to import using {1} in {2} mode.", PreparedShapeCount, referenceContext.Title, importMode);
-            RaisePreviewProperties();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            ClearPreview(clearWarnings: false);
-            StatusMessage = ex.Message;
             return false;
         }
+
+        preparedPlan = result.Plan;
+        ReplaceCollection(PreviewRows, result.PreviewRows);
+        ReplaceCollection(FeatureNames, result.FeatureNames);
+        ReplaceCollection(WarningMessages, result.WarningMessages);
+        StatusMessage = result.StatusMessage;
+        RaisePreviewProperties();
+        return true;
+    }
+
+    internal void HandlePreviewFailure(Exception ex)
+    {
+        ClearPreview(clearWarnings: false);
+        StatusMessage = ex.Message;
+    }
+
+    internal void FinishPreviewLoad()
+    {
+        IsPreparingPreview = false;
     }
 
     public void MarkImportSucceeded(PlateauImportResult result)
@@ -1032,6 +1147,7 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
 
     private void ClearPreview(bool clearWarnings)
     {
+        previewRequestVersion = unchecked(previewRequestVersion + 1);
         preparedPlan = null;
         ReplaceCollection(PreviewRows, Array.Empty<DetailRow>());
         ReplaceCollection(FeatureNames, Array.Empty<string>());
@@ -1246,15 +1362,71 @@ public sealed class PlateauImportViewModel : INotifyPropertyChanged
         }
     }
 
+    internal sealed class PreviewBuildRequest
+    {
+        public PreviewBuildRequest(
+            int requestVersion,
+            PlateauFolderScanResult scanResult,
+            PlateauImportReferenceContext referenceContext,
+            IReadOnlyCollection<PlateauFeatureType> selectedFeatureTypes,
+            IReadOnlyCollection<string> selectedTileIds,
+            PlateauGeometryImportMode geometryImportMode)
+        {
+            RequestVersion = requestVersion;
+            ScanResult = scanResult;
+            ReferenceContext = referenceContext;
+            SelectedFeatureTypes = selectedFeatureTypes;
+            SelectedTileIds = selectedTileIds;
+            GeometryImportMode = geometryImportMode;
+        }
+
+        public int RequestVersion { get; }
+
+        public PlateauFolderScanResult ScanResult { get; }
+
+        public PlateauImportReferenceContext ReferenceContext { get; }
+
+        public IReadOnlyCollection<PlateauFeatureType> SelectedFeatureTypes { get; }
+
+        public IReadOnlyCollection<string> SelectedTileIds { get; }
+
+        public PlateauGeometryImportMode GeometryImportMode { get; }
+    }
+
+    internal sealed class PreviewBuildResult
+    {
+        public PreviewBuildResult(
+            int requestVersion,
+            ContextImportPlan plan,
+            IReadOnlyCollection<DetailRow> previewRows,
+            IReadOnlyCollection<string> featureNames,
+            IReadOnlyCollection<string> warningMessages,
+            string statusMessage)
+        {
+            RequestVersion = requestVersion;
+            Plan = plan;
+            PreviewRows = previewRows;
+            FeatureNames = featureNames;
+            WarningMessages = warningMessages;
+            StatusMessage = statusMessage;
+        }
+
+        public int RequestVersion { get; }
+
+        public ContextImportPlan Plan { get; }
+
+        public IReadOnlyCollection<DetailRow> PreviewRows { get; }
+
+        public IReadOnlyCollection<string> FeatureNames { get; }
+
+        public IReadOnlyCollection<string> WarningMessages { get; }
+
+        public string StatusMessage { get; }
+    }
+
     private void RaisePropertyChanged(string propertyName)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
-
-
-
-
-
-
 
