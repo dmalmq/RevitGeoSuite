@@ -13,17 +13,20 @@ public sealed class Tiles3DExportCoordinator
     private readonly Tiles3DGeometrySimplifier geometrySimplifier;
     private readonly Tiles3DPackageWriter packageWriter;
     private readonly Tiles3DExportStateService stateService;
+    private readonly Tiles3DLevelGrouper levelGrouper;
 
     public Tiles3DExportCoordinator(
         Tiles3DGeometryExtractor? geometryExtractor = null,
         Tiles3DGeometrySimplifier? geometrySimplifier = null,
         Tiles3DPackageWriter? packageWriter = null,
-        Tiles3DExportStateService? stateService = null)
+        Tiles3DExportStateService? stateService = null,
+        Tiles3DLevelGrouper? levelGrouper = null)
     {
         this.geometryExtractor = geometryExtractor ?? new Tiles3DGeometryExtractor();
         this.geometrySimplifier = geometrySimplifier ?? new Tiles3DGeometrySimplifier();
         this.packageWriter = packageWriter ?? new Tiles3DPackageWriter();
         this.stateService = stateService ?? new Tiles3DExportStateService();
+        this.levelGrouper = levelGrouper ?? new Tiles3DLevelGrouper();
     }
 
     public Tiles3DExportPreparationResult Prepare(
@@ -53,6 +56,8 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("No exportable model geometry was found for the selected 3D Tiles scope.");
         }
 
+        IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(simplified.ToList());
+
         Tiles3DExportPackage package = new Tiles3DExportPackage
         {
             ReferenceContext = referenceContext,
@@ -67,7 +72,7 @@ public sealed class Tiles3DExportCoordinator
         return new Tiles3DExportPreparationResult
         {
             Package = package,
-            PreparedRows = BuildPreparedRows(package, scope),
+            PreparedRows = BuildPreparedRows(package, scope, levelGroups),
             FeatureNames = BuildFeatureNames(package),
             StatusMessage = BuildStatusMessage(package, scope)
         };
@@ -142,7 +147,9 @@ public sealed class Tiles3DExportCoordinator
             LastSelectedLinkUniqueIds = scope.SelectedLinkedModels.Select(option => option.UniqueId).ToList(),
             LastSelectedLinkNames = scope.SelectedLinkedModels.Select(option => option.Title).ToList(),
             LastExportedElementCount = package.ElementCount,
-            LastExportedTriangleCount = package.TriangleCount
+            LastExportedTriangleCount = package.TriangleCount,
+            LastSplitByLevel = false,
+            LastExportedLevelCount = 0
         };
     }
 
@@ -151,12 +158,12 @@ public sealed class Tiles3DExportCoordinator
         string persistenceText = statePersisted
             ? "The export state was saved in module storage separately from GeoProjectInfo."
             : "The export state was not saved because the Revit document is read-only.";
-        return $"Exported {package.ElementCount} elements and {package.TriangleCount} triangles to '{state.LastExportPath}' using {FormatReferenceSource(state.LastReferenceSource)} from {BuildScopeSummary(state.LastScopeMode, state.LastViewName)} with {BuildLinkSummary(state.LastSelectedLinkNames)}. {persistenceText}";
+        return $"Exported {package.ElementCount} elements and {package.TriangleCount} triangles to '{state.LastExportPath}' using {FormatReferenceSource(state.LastReferenceSource)} from {BuildScopeSummary(state.LastScopeMode, state.LastViewName)} with {BuildLinkSummary(state.LastSelectedLinkNames)}. Wrote per-object metadata and {package.LevelManifestFileName}. {persistenceText}";
     }
 
     private static string BuildStatusMessage(Tiles3DExportPackage package, Tiles3DExportScopeSelection scope)
     {
-        return $"Prepared {package.ElementCount} exportable elements and {package.TriangleCount} triangles for 3D Tiles export from {BuildScopeSummary(scope.ScopeMode, scope.SelectedView?.Title)} with {BuildLinkSummary(scope.SelectedLinkedModelNames)} using {package.ReferenceContext.Title}.";
+        return $"Prepared {package.ElementCount} exportable elements and {package.TriangleCount} triangles with per-object metadata for 3D Tiles export from {BuildScopeSummary(scope.ScopeMode, scope.SelectedView?.Title)} with {BuildLinkSummary(scope.SelectedLinkedModelNames)} using {package.ReferenceContext.Title}.";
     }
 
     private static string FormatReferenceSource(Tiles3DExportReferenceSource referenceSource)
@@ -237,9 +244,12 @@ public sealed class Tiles3DExportCoordinator
         };
     }
 
-    private static IReadOnlyCollection<DetailRow> BuildPreparedRows(Tiles3DExportPackage package, Tiles3DExportScopeSelection scope)
+    private static IReadOnlyCollection<DetailRow> BuildPreparedRows(
+        Tiles3DExportPackage package,
+        Tiles3DExportScopeSelection scope,
+        IReadOnlyList<Tiles3DLevelGroup> levelGroups)
     {
-        return new[]
+        List<DetailRow> rows = new List<DetailRow>
         {
             new DetailRow("Export Reference", package.ReferenceContext.Title),
             new DetailRow("Reference CRS", $"EPSG:{package.ReferenceContext.ProjectCrs.EpsgCode}  {package.ReferenceContext.ProjectCrs.NameSnapshot}"),
@@ -249,10 +259,20 @@ public sealed class Tiles3DExportCoordinator
             new DetailRow("Linked Models", BuildLinkSummary(scope.SelectedLinkedModelNames)),
             new DetailRow("Exportable Elements", package.ElementCount.ToString()),
             new DetailRow("Exportable Triangles", package.TriangleCount.ToString()),
+            new DetailRow("Level Groups", levelGroups.Count.ToString()),
+            new DetailRow("Object Metadata", "Enabled"),
             new DetailRow("Geometric Error", package.GeometricError.ToString("F3")),
             new DetailRow("Tileset File", "tileset.json"),
-            new DetailRow("Content File", package.ContentFileName)
+            new DetailRow("Content File", package.ContentFileName),
+            new DetailRow("Level Manifest", package.LevelManifestFileName)
         };
+
+        foreach (Tiles3DLevelGroup group in levelGroups)
+        {
+            rows.Add(new DetailRow($"  {group.LevelName}", $"{group.ElementCount} elements"));
+        }
+
+        return rows;
     }
 
     private static IReadOnlyCollection<string> BuildFeatureNames(Tiles3DExportPackage package)

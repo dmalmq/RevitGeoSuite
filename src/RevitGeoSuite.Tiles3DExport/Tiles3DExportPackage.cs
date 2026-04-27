@@ -19,4 +19,6 @@ public sealed class Tiles3DExportPackage
     public double[] BoundingBox { get; set; } = new double[12];
 
     public string ContentFileName { get; set; } = "content.glb";
+
+    public string LevelManifestFileName { get; set; } = "levels.json";
 }

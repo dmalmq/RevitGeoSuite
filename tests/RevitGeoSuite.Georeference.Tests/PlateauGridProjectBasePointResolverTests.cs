@@ -77,12 +77,15 @@ public sealed class PlateauGridProjectBasePointResolverTests
         expectedWestLongitude = withBounds.Min(candidate => candidate.Bounds.WestLongitude);
         expectedSouthLatitude = withBounds.Min(candidate => candidate.Bounds.SouthLatitude);
 
+        double westLon = expectedWestLongitude;
+        double southLat = expectedSouthLatitude;
+
         var westEdgeNorth = withBounds
-            .Where(candidate => AreClose(candidate.Bounds.WestLongitude, expectedWestLongitude))
+            .Where(candidate => AreClose(candidate.Bounds.WestLongitude, westLon))
             .OrderByDescending(candidate => candidate.Bounds.SouthLatitude)
             .First();
         var southEdgeEast = withBounds
-            .Where(candidate => AreClose(candidate.Bounds.SouthLatitude, expectedSouthLatitude))
+            .Where(candidate => AreClose(candidate.Bounds.SouthLatitude, southLat))
             .OrderByDescending(candidate => candidate.Bounds.WestLongitude)
             .First();
 

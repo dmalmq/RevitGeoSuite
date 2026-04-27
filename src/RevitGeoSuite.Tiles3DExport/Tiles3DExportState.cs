@@ -26,4 +26,8 @@ public sealed class Tiles3DExportState
     public int LastExportedElementCount { get; set; }
 
     public int LastExportedTriangleCount { get; set; }
+
+    public bool LastSplitByLevel { get; set; }
+
+    public int LastExportedLevelCount { get; set; }
 }

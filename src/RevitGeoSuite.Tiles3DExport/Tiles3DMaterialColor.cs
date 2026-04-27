@@ -4,29 +4,41 @@ namespace RevitGeoSuite.Tiles3DExport;
 
 public readonly struct Tiles3DMaterialColor : IEquatable<Tiles3DMaterialColor>
 {
-    public static readonly Tiles3DMaterialColor Default = new Tiles3DMaterialColor(184, 191, 199);
+    public static readonly Tiles3DMaterialColor Default = new Tiles3DMaterialColor(184, 191, 199, 255);
 
-    public Tiles3DMaterialColor(byte r, byte g, byte b)
+    public Tiles3DMaterialColor(byte red, byte green, byte blue, byte alpha)
     {
-        R = r;
-        G = g;
-        B = b;
+        Red = red;
+        Green = green;
+        Blue = blue;
+        Alpha = alpha;
     }
 
-    public byte R { get; }
+    public byte Red { get; }
 
-    public byte G { get; }
+    public byte Green { get; }
 
-    public byte B { get; }
+    public byte Blue { get; }
 
-    public double[] ToNormalizedArray()
+    public byte Alpha { get; }
+
+    public double[] ToBaseColorFactor()
     {
-        return new[] { R / 255d, G / 255d, B / 255d, 1d };
+        return new[]
+        {
+            Red / 255d,
+            Green / 255d,
+            Blue / 255d,
+            Alpha / 255d
+        };
     }
 
     public bool Equals(Tiles3DMaterialColor other)
     {
-        return R == other.R && G == other.G && B == other.B;
+        return Red == other.Red
+            && Green == other.Green
+            && Blue == other.Blue
+            && Alpha == other.Alpha;
     }
 
     public override bool Equals(object? obj)
@@ -36,16 +48,6 @@ public readonly struct Tiles3DMaterialColor : IEquatable<Tiles3DMaterialColor>
 
     public override int GetHashCode()
     {
-        return (R << 16) | (G << 8) | B;
-    }
-
-    public static bool operator ==(Tiles3DMaterialColor left, Tiles3DMaterialColor right)
-    {
-        return left.Equals(right);
-    }
-
-    public static bool operator !=(Tiles3DMaterialColor left, Tiles3DMaterialColor right)
-    {
-        return !left.Equals(right);
+        return (Red << 24) ^ (Green << 16) ^ (Blue << 8) ^ Alpha;
     }
 }

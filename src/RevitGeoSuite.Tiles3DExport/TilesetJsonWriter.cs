@@ -48,4 +48,5 @@ public sealed class TilesetJsonWriter
 
         return JsonConvert.SerializeObject(document, Formatting.Indented);
     }
+
 }

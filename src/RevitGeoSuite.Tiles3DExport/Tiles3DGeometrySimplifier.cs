@@ -52,9 +52,7 @@ public sealed class Tiles3DGeometrySimplifier
 
         return new Tiles3DMeshPrimitive
         {
-            Name = source.Name,
-            CategoryName = source.CategoryName,
-            Color = source.Color,
+            Metadata = source.Metadata.Clone(),
             Triangles = retained
         };
     }
@@ -63,9 +61,7 @@ public sealed class Tiles3DGeometrySimplifier
     {
         return new Tiles3DMeshPrimitive
         {
-            Name = source.Name,
-            CategoryName = source.CategoryName,
-            Color = source.Color,
+            Metadata = source.Metadata.Clone(),
             Triangles = source.Triangles.ToList()
         };
     }

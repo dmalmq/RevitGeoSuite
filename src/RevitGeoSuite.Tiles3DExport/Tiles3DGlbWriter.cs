@@ -13,6 +13,8 @@ public sealed class Tiles3DGlbWriter
     private const uint GlbVersion = 2;
     private const uint JsonChunkType = 0x4E4F534A;
     private const uint BinChunkType = 0x004E4942;
+    private const string ExtMeshFeatures = "EXT_mesh_features";
+    private const string ExtStructuralMetadata = "EXT_structural_metadata";
     private static readonly double[] ZUpToYUpMatrix =
     {
         1d, 0d, 0d, 0d,
@@ -53,56 +55,87 @@ public sealed class Tiles3DGlbWriter
 
     private static GlbDocument BuildDocument(Tiles3DExportPackage package)
     {
+        List<Tiles3DMeshPrimitive> meshes = package.Meshes
+            .Where(mesh => mesh.Triangles.Count > 0)
+            .ToList();
         List<object> accessors = new List<object>();
         List<object> bufferViews = new List<object>();
         List<object> primitives = new List<object>();
+        List<Tiles3DMaterialColor> materialColors = new List<Tiles3DMaterialColor>();
+        Dictionary<Tiles3DMaterialColor, int> materialIndexes = new Dictionary<Tiles3DMaterialColor, int>();
         MemoryStream binary = new MemoryStream();
 
-        IReadOnlyList<Tiles3DMeshPrimitive> activeMeshes = package.Meshes.Where(mesh => mesh.Triangles.Count > 0).ToArray();
-        Dictionary<Tiles3DMaterialColor, int> materialIndexMap = new Dictionary<Tiles3DMaterialColor, int>();
-        foreach (Tiles3DMeshPrimitive mesh in activeMeshes)
+        int featureCount = meshes.Count;
+        for (int featureIndex = 0; featureIndex < meshes.Count; featureIndex++)
         {
-            if (!materialIndexMap.ContainsKey(mesh.Color))
+            Tiles3DMeshPrimitive mesh = meshes[featureIndex];
+            foreach (MaterialTriangleGroup group in GroupTrianglesByMaterial(mesh.Triangles))
             {
-                materialIndexMap[mesh.Color] = materialIndexMap.Count;
+                int materialIndex = GetMaterialIndex(group.MaterialColor, materialColors, materialIndexes);
+                AddPositionBufferView(binary, group.Triangles, bufferViews, out int positionAccessor, out int normalAccessor, accessors);
+                AddFeatureIdBufferView(binary, group.Triangles.Count * 3, featureIndex, bufferViews, out int featureIdAccessor, accessors);
+                AddIndexBufferView(binary, group.Triangles, bufferViews, out int indexAccessor, accessors);
+
+                Dictionary<string, object> primitive = new Dictionary<string, object>
+                {
+                    ["attributes"] = new Dictionary<string, object>
+                    {
+                        ["POSITION"] = positionAccessor,
+                        ["NORMAL"] = normalAccessor,
+                        ["_FEATURE_ID_0"] = featureIdAccessor
+                    },
+                    ["indices"] = indexAccessor,
+                    ["material"] = materialIndex,
+                    ["mode"] = 4,
+                    ["extensions"] = new Dictionary<string, object>
+                    {
+                        [ExtMeshFeatures] = new
+                        {
+                            featureIds = new object[]
+                            {
+                                new
+                                {
+                                    featureCount,
+                                    attribute = 0,
+                                    propertyTable = 0,
+                                    label = "element"
+                                }
+                            }
+                        }
+                    }
+                };
+
+                primitives.Add(primitive);
             }
         }
 
-        foreach (Tiles3DMeshPrimitive mesh in activeMeshes)
+        if (materialColors.Count == 0)
         {
-            int positionView = AddPositionBufferView(binary, mesh, bufferViews, out int positionAccessor, out int normalAccessor, accessors);
-            int normalView = positionView + 1;
-            int indexView = AddIndexBufferView(binary, mesh, bufferViews, out int indexAccessor, accessors);
-
-            primitives.Add(new
-            {
-                attributes = new
-                {
-                    POSITION = positionAccessor,
-                    NORMAL = normalAccessor
-                },
-                indices = indexAccessor,
-                material = materialIndexMap[mesh.Color],
-                mode = 4
-            });
+            materialColors.Add(Tiles3DMaterialColor.Default);
         }
 
-        object document = new
+        object structuralMetadata = BuildStructuralMetadataExtension(binary, bufferViews, meshes.Select(mesh => mesh.Metadata).ToList());
+        Dictionary<string, object> document = new Dictionary<string, object>
         {
-            asset = new
+            ["asset"] = new
             {
                 version = "2.0",
                 generator = "RevitGeoSuite.Tiles3DExport"
             },
-            scene = 0,
-            scenes = new object[]
+            ["extensionsUsed"] = new[] { ExtMeshFeatures, ExtStructuralMetadata },
+            ["extensions"] = new Dictionary<string, object>
+            {
+                [ExtStructuralMetadata] = structuralMetadata
+            },
+            ["scene"] = 0,
+            ["scenes"] = new object[]
             {
                 new
                 {
                     nodes = new[] { 0 }
                 }
             },
-            nodes = new object[]
+            ["nodes"] = new object[]
             {
                 new
                 {
@@ -111,17 +144,17 @@ public sealed class Tiles3DGlbWriter
                     matrix = ZUpToYUpMatrix
                 }
             },
-            meshes = new object[]
+            ["meshes"] = new object[]
             {
                 new
                 {
-                    primitives = primitives
+                    primitives
                 }
             },
-            materials = BuildMaterials(materialIndexMap),
-            accessors = accessors,
-            bufferViews = bufferViews,
-            buffers = new object[]
+            ["materials"] = materialColors.Select(BuildMaterial).ToArray(),
+            ["accessors"] = accessors,
+            ["bufferViews"] = bufferViews,
+            ["buffers"] = new object[]
             {
                 new
                 {
@@ -137,29 +170,9 @@ public sealed class Tiles3DGlbWriter
         };
     }
 
-    private static object[] BuildMaterials(Dictionary<Tiles3DMaterialColor, int> materialIndexMap)
-    {
-        object[] materials = new object[materialIndexMap.Count];
-        foreach (KeyValuePair<Tiles3DMaterialColor, int> entry in materialIndexMap)
-        {
-            materials[entry.Value] = new
-            {
-                pbrMetallicRoughness = new
-                {
-                    baseColorFactor = entry.Key.ToNormalizedArray(),
-                    metallicFactor = 0d,
-                    roughnessFactor = 0.95d
-                },
-                doubleSided = true
-            };
-        }
-
-        return materials;
-    }
-
     private static int AddPositionBufferView(
         MemoryStream binary,
-        Tiles3DMeshPrimitive mesh,
+        IReadOnlyList<Tiles3DTriangle> triangles,
         List<object> bufferViews,
         out int positionAccessorIndex,
         out int normalAccessorIndex,
@@ -175,7 +188,7 @@ public sealed class Tiles3DGlbWriter
         double maxZ = double.MinValue;
         List<Tiles3DPoint> normals = new List<Tiles3DPoint>();
 
-        foreach (Tiles3DTriangle triangle in mesh.Triangles)
+        foreach (Tiles3DTriangle triangle in triangles)
         {
             Tiles3DPoint normal = CalculateNormal(triangle);
             AppendPoint(binary, triangle.A);
@@ -204,7 +217,7 @@ public sealed class Tiles3DGlbWriter
         {
             bufferView = positionViewIndex,
             componentType = 5126,
-            count = mesh.Triangles.Count * 3,
+            count = triangles.Count * 3,
             type = "VEC3",
             min = new[] { minX, minY, minZ },
             max = new[] { maxX, maxY, maxZ }
@@ -232,16 +245,55 @@ public sealed class Tiles3DGlbWriter
         {
             bufferView = normalViewIndex,
             componentType = 5126,
-            count = mesh.Triangles.Count * 3,
+            count = triangles.Count * 3,
             type = "VEC3"
         });
 
         return positionViewIndex;
     }
 
+    private static int AddFeatureIdBufferView(
+        MemoryStream binary,
+        int vertexCount,
+        int featureId,
+        List<object> bufferViews,
+        out int featureIdAccessorIndex,
+        List<object> accessors)
+    {
+        AlignToFourBytes(binary);
+        int featureIdOffset = (int)binary.Position;
+        for (int index = 0; index < vertexCount; index++)
+        {
+            WriteUInt32(binary, (uint)featureId);
+        }
+
+        int featureIdByteLength = (int)binary.Position - featureIdOffset;
+        int featureIdViewIndex = bufferViews.Count;
+        bufferViews.Add(new
+        {
+            buffer = 0,
+            byteOffset = featureIdOffset,
+            byteLength = featureIdByteLength,
+            target = 34962
+        });
+
+        featureIdAccessorIndex = accessors.Count;
+        accessors.Add(new
+        {
+            bufferView = featureIdViewIndex,
+            componentType = 5125,
+            count = vertexCount,
+            type = "SCALAR",
+            min = new[] { (uint)featureId },
+            max = new[] { (uint)featureId }
+        });
+
+        return featureIdViewIndex;
+    }
+
     private static int AddIndexBufferView(
         MemoryStream binary,
-        Tiles3DMeshPrimitive mesh,
+        IReadOnlyList<Tiles3DTriangle> triangles,
         List<object> bufferViews,
         out int indexAccessorIndex,
         List<object> accessors)
@@ -250,7 +302,7 @@ public sealed class Tiles3DGlbWriter
         int indexOffset = (int)binary.Position;
         uint maxIndex = 0;
         uint nextIndex = 0;
-        foreach (Tiles3DTriangle _ in mesh.Triangles)
+        foreach (Tiles3DTriangle _ in triangles)
         {
             WriteUInt32(binary, nextIndex++);
             WriteUInt32(binary, nextIndex++);
@@ -273,13 +325,236 @@ public sealed class Tiles3DGlbWriter
         {
             bufferView = indexViewIndex,
             componentType = 5125,
-            count = mesh.Triangles.Count * 3,
+            count = triangles.Count * 3,
             type = "SCALAR",
             min = new[] { 0u },
             max = new[] { maxIndex }
         });
 
         return indexViewIndex;
+    }
+
+    private static object BuildStructuralMetadataExtension(
+        MemoryStream binary,
+        List<object> bufferViews,
+        IReadOnlyList<Tiles3DObjectMetadata> metadata)
+    {
+        Dictionary<string, object> properties = new Dictionary<string, object>
+        {
+            ["revitElementId"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.RevitElementId)),
+            ["revitUniqueId"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.RevitUniqueId)),
+            ["name"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.Name)),
+            ["category"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.Category)),
+            ["familyName"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.FamilyName)),
+            ["typeName"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.TypeName)),
+            ["levelName"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.LevelName)),
+            ["levelKey"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.LevelKey)),
+            ["levelElevationMeters"] = AddFloat32Property(binary, bufferViews, metadata.Select(item => item.LevelElevationMeters)),
+            ["heightMeters"] = AddFloat32Property(binary, bufferViews, metadata.Select(item => item.HeightMeters)),
+            ["minZMeters"] = AddFloat32Property(binary, bufferViews, metadata.Select(item => item.MinZMeters)),
+            ["maxZMeters"] = AddFloat32Property(binary, bufferViews, metadata.Select(item => item.MaxZMeters)),
+            ["sourceDocument"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.SourceDocument)),
+            ["sourceLinkName"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.SourceLinkName))
+        };
+
+        Dictionary<string, object> propertyTable = new Dictionary<string, object>
+        {
+            ["class"] = "element",
+            ["count"] = metadata.Count,
+            ["properties"] = properties
+        };
+
+        return new Dictionary<string, object>
+        {
+            ["schema"] = new
+            {
+                classes = new Dictionary<string, object>
+                {
+                    ["element"] = new
+                    {
+                        properties = new Dictionary<string, object>
+                        {
+                            ["revitElementId"] = StringPropertySchema(),
+                            ["revitUniqueId"] = StringPropertySchema(),
+                            ["name"] = StringPropertySchema(),
+                            ["category"] = StringPropertySchema(),
+                            ["familyName"] = StringPropertySchema(),
+                            ["typeName"] = StringPropertySchema(),
+                            ["levelName"] = StringPropertySchema(),
+                            ["levelKey"] = StringPropertySchema(),
+                            ["levelElevationMeters"] = Float32PropertySchema(),
+                            ["heightMeters"] = Float32PropertySchema(),
+                            ["minZMeters"] = Float32PropertySchema(),
+                            ["maxZMeters"] = Float32PropertySchema(),
+                            ["sourceDocument"] = StringPropertySchema(),
+                            ["sourceLinkName"] = StringPropertySchema()
+                        }
+                    }
+                }
+            },
+            ["propertyTables"] = new object[] { propertyTable }
+        };
+    }
+
+    private static object AddStringProperty(
+        MemoryStream binary,
+        List<object> bufferViews,
+        IEnumerable<string> values)
+    {
+        MemoryStream valueBytes = new MemoryStream();
+        List<uint> offsets = new List<uint>();
+        foreach (string value in values)
+        {
+            offsets.Add((uint)valueBytes.Length);
+            byte[] bytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
+            valueBytes.Write(bytes, 0, bytes.Length);
+        }
+
+        offsets.Add((uint)valueBytes.Length);
+
+        AlignToFourBytes(binary);
+        int offsetByteOffset = (int)binary.Position;
+        foreach (uint offset in offsets)
+        {
+            WriteUInt32(binary, offset);
+        }
+
+        int offsetByteLength = (int)binary.Position - offsetByteOffset;
+        int offsetsViewIndex = bufferViews.Count;
+        bufferViews.Add(new
+        {
+            buffer = 0,
+            byteOffset = offsetByteOffset,
+            byteLength = offsetByteLength
+        });
+
+        AlignToFourBytes(binary);
+        int valueByteOffset = (int)binary.Position;
+        byte[] bytesArray = valueBytes.ToArray();
+        if (bytesArray.Length == 0)
+        {
+            binary.WriteByte(0);
+        }
+        else
+        {
+            binary.Write(bytesArray, 0, bytesArray.Length);
+        }
+
+        int valueByteLength = Math.Max(bytesArray.Length, 1);
+        int valuesViewIndex = bufferViews.Count;
+        bufferViews.Add(new
+        {
+            buffer = 0,
+            byteOffset = valueByteOffset,
+            byteLength = valueByteLength
+        });
+
+        return new
+        {
+            values = valuesViewIndex,
+            stringOffsets = offsetsViewIndex
+        };
+    }
+
+    private static object AddFloat32Property(
+        MemoryStream binary,
+        List<object> bufferViews,
+        IEnumerable<double> values)
+    {
+        AlignToFourBytes(binary);
+        int valueByteOffset = (int)binary.Position;
+        foreach (double value in values)
+        {
+            WriteFloat32(binary, value);
+        }
+
+        int valueByteLength = (int)binary.Position - valueByteOffset;
+        int valuesViewIndex = bufferViews.Count;
+        bufferViews.Add(new
+        {
+            buffer = 0,
+            byteOffset = valueByteOffset,
+            byteLength = valueByteLength
+        });
+
+        return new
+        {
+            values = valuesViewIndex
+        };
+    }
+
+    private static object StringPropertySchema()
+    {
+        return new
+        {
+            type = "STRING"
+        };
+    }
+
+    private static object Float32PropertySchema()
+    {
+        return new
+        {
+            type = "SCALAR",
+            componentType = "FLOAT32"
+        };
+    }
+
+    private static IReadOnlyList<MaterialTriangleGroup> GroupTrianglesByMaterial(IReadOnlyList<Tiles3DTriangle> triangles)
+    {
+        List<MaterialTriangleGroup> groups = new List<MaterialTriangleGroup>();
+        Dictionary<Tiles3DMaterialColor, int> indexes = new Dictionary<Tiles3DMaterialColor, int>();
+        foreach (Tiles3DTriangle triangle in triangles)
+        {
+            Tiles3DMaterialColor materialColor = triangle.MaterialColor ?? Tiles3DMaterialColor.Default;
+            if (!indexes.TryGetValue(materialColor, out int groupIndex))
+            {
+                groupIndex = groups.Count;
+                indexes[materialColor] = groupIndex;
+                groups.Add(new MaterialTriangleGroup(materialColor));
+            }
+
+            groups[groupIndex].Triangles.Add(triangle);
+        }
+
+        return groups;
+    }
+
+    private static int GetMaterialIndex(
+        Tiles3DMaterialColor materialColor,
+        List<Tiles3DMaterialColor> materialColors,
+        Dictionary<Tiles3DMaterialColor, int> materialIndexes)
+    {
+        if (materialIndexes.TryGetValue(materialColor, out int materialIndex))
+        {
+            return materialIndex;
+        }
+
+        materialIndex = materialColors.Count;
+        materialIndexes[materialColor] = materialIndex;
+        materialColors.Add(materialColor);
+        return materialIndex;
+    }
+
+    private static object BuildMaterial(Tiles3DMaterialColor color)
+    {
+        Dictionary<string, object> material = new Dictionary<string, object>
+        {
+            ["pbrMetallicRoughness"] = new
+            {
+                baseColorFactor = color.ToBaseColorFactor(),
+                metallicFactor = 0d,
+                roughnessFactor = 0.95d
+            },
+            ["doubleSided"] = true
+        };
+
+        if (color.Alpha < 255)
+        {
+            material["alphaMode"] = "BLEND";
+        }
+
+        return material;
     }
 
     private static Tiles3DPoint CalculateNormal(Tiles3DTriangle triangle)
@@ -375,5 +650,17 @@ public sealed class Tiles3DGlbWriter
         public string Json { get; set; } = string.Empty;
 
         public MemoryStream Binary { get; set; } = new MemoryStream();
+    }
+
+    private sealed class MaterialTriangleGroup
+    {
+        public MaterialTriangleGroup(Tiles3DMaterialColor materialColor)
+        {
+            MaterialColor = materialColor;
+        }
+
+        public Tiles3DMaterialColor MaterialColor { get; }
+
+        public List<Tiles3DTriangle> Triangles { get; } = new List<Tiles3DTriangle>();
     }
 }

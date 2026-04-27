@@ -385,12 +385,15 @@ public sealed class GeoreferenceViewModelTests
         expectedWestLongitude = candidates.Min(candidate => candidate.Bounds.WestLongitude);
         expectedSouthLatitude = candidates.Min(candidate => candidate.Bounds.SouthLatitude);
 
+        double westLon = expectedWestLongitude;
+        double southLat = expectedSouthLatitude;
+
         var westEdgeNorth = candidates
-            .Where(candidate => AreClose(candidate.Bounds.WestLongitude, expectedWestLongitude))
+            .Where(candidate => AreClose(candidate.Bounds.WestLongitude, westLon))
             .OrderByDescending(candidate => candidate.Bounds.SouthLatitude)
             .First();
         var southEdgeEast = candidates
-            .Where(candidate => AreClose(candidate.Bounds.SouthLatitude, expectedSouthLatitude))
+            .Where(candidate => AreClose(candidate.Bounds.SouthLatitude, southLat))
             .OrderByDescending(candidate => candidate.Bounds.WestLongitude)
             .First();
 
