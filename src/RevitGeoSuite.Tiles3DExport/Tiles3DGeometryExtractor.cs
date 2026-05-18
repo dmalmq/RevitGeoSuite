@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Architecture;
 
 namespace RevitGeoSuite.Tiles3DExport;
 
@@ -246,17 +247,23 @@ public sealed class Tiles3DGeometryExtractor
 
     private static void ResolveElementLevel(Element element, Tiles3DObjectMetadata metadata)
     {
-        ElementId levelId = element.LevelId;
-        if (levelId == ElementId.InvalidElementId)
+        ElementId levelId = ResolveLevelIdFromElement(element);
+
+        if (levelId == ElementId.InvalidElementId && element is StairsRun stairRun)
         {
-            Parameter? levelParam = element.get_Parameter(BuiltInParameter.SCHEDULE_LEVEL_PARAM);
-            if (levelParam != null && levelParam.HasValue)
+            Stairs? parent = stairRun.GetStairs();
+            if (parent is not null)
             {
-                ElementId paramId = levelParam.AsElementId();
-                if (paramId != null && paramId != ElementId.InvalidElementId)
-                {
-                    levelId = paramId;
-                }
+                levelId = ResolveLevelIdFromElement(parent);
+            }
+        }
+
+        if (levelId == ElementId.InvalidElementId && element is StairsLanding stairLanding)
+        {
+            Stairs? parent = stairLanding.GetStairs();
+            if (parent is not null)
+            {
+                levelId = ResolveLevelIdFromElement(parent);
             }
         }
 
@@ -273,7 +280,62 @@ public sealed class Tiles3DGeometryExtractor
         }
     }
 
-    private static void ResolveVerticalExtents(IReadOnlyCollection<Tiles3DTriangle> triangles, Tiles3DObjectMetadata metadata)
+    private static ElementId ResolveLevelIdFromElement(Element element)
+    {
+        ElementId levelId = element.LevelId;
+        if (levelId != ElementId.InvalidElementId)
+        {
+            return levelId;
+        }
+
+        Parameter? levelParam = element.get_Parameter(BuiltInParameter.SCHEDULE_LEVEL_PARAM);
+        if (levelParam != null && levelParam.HasValue)
+        {
+            ElementId paramId = levelParam.AsElementId();
+            if (paramId != null && paramId != ElementId.InvalidElementId)
+            {
+                return paramId;
+            }
+        }
+
+        Parameter? stairsBaseLevelParam = element.get_Parameter(BuiltInParameter.STAIRS_BASE_LEVEL_PARAM);
+        if (stairsBaseLevelParam != null && stairsBaseLevelParam.HasValue)
+        {
+            ElementId paramId = stairsBaseLevelParam.AsElementId();
+            if (paramId != null && paramId != ElementId.InvalidElementId)
+            {
+                return paramId;
+            }
+        }
+
+        return FindLevelIdFromAnyParameter(element);
+    }
+
+    internal static ElementId FindLevelIdFromAnyParameter(Element element)
+    {
+        foreach (Parameter param in element.Parameters)
+        {
+            if (param.StorageType != StorageType.ElementId || !param.HasValue)
+            {
+                continue;
+            }
+
+            ElementId id = param.AsElementId();
+            if (id == null || id == ElementId.InvalidElementId)
+            {
+                continue;
+            }
+
+            if (element.Document.GetElement(id) is Level)
+            {
+                return id;
+            }
+        }
+
+        return ElementId.InvalidElementId;
+    }
+
+    internal static void ResolveVerticalExtents(IReadOnlyCollection<Tiles3DTriangle> triangles, Tiles3DObjectMetadata metadata)
     {
         if (triangles.Count == 0)
         {

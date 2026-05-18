@@ -213,6 +213,29 @@
             </StackPanel>
           </Expander>
 
+          <Expander IsExpanded="True">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Sidebar.Advanced]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <CheckBox IsChecked="{Binding UsePreciseCrsProjection, Mode=TwoWay}"
+                        Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.PreciseCrs]}" />
+              <TextBlock Margin="20,6,0,0" Style="{StaticResource BodyMutedTextStyle}" TextWrapping="Wrap"
+                         Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.PreciseCrsHint]}" />
+
+              <TextBlock Margin="0,14,0,0" Style="{StaticResource CardTitleTextStyle}"
+                         Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.GeoidOffset]}" />
+              <TextBox Margin="0,6,0,0" Text="{Binding GeoidHeightOffsetText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBlock Margin="0,6,0,0"
+                         Foreground="#8A2D2D"
+                         Text="{Binding GeoidHeightOffsetValidationMessage}"
+                         TextWrapping="Wrap"
+                         Visibility="{Binding HasGeoidHeightOffsetValidationMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
+              <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" TextWrapping="Wrap"
+                         Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.GeoidOffsetHint]}" />
+            </StackPanel>
+          </Expander>
+
           <Expander IsExpanded="False">
             <Expander.Header>
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Sidebar.LastExport]}" />

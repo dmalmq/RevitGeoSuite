@@ -23,6 +23,8 @@ public sealed class Tiles3DExportViewModel : INotifyPropertyChanged
     private Tiles3DExportReferenceSourceOption? selectedReferenceSourceOption;
     private Tiles3DExportScopeModeOption? selectedScopeModeOption;
     private Tiles3DExportViewOption? selectedViewOption;
+    private bool usePreciseCrsProjection;
+    private string geoidHeightOffsetText;
 
     public Tiles3DExportViewModel(
         CurrentProjectStateSummary currentState,
@@ -39,6 +41,8 @@ public sealed class Tiles3DExportViewModel : INotifyPropertyChanged
         this.referenceResolver = referenceResolver ?? throw new ArgumentNullException(nameof(referenceResolver));
         actionMessage = BuildInitialActionMessage(exportState);
         outputDirectory = exportState?.LastExportPath ?? string.Empty;
+        usePreciseCrsProjection = exportState?.LastUsedPreciseCrsProjection ?? false;
+        geoidHeightOffsetText = (exportState?.LastGeoidHeightOffsetMeters ?? 0d).ToString("G", CultureInfo.InvariantCulture);
         statusMessage = string.Empty;
         CurrentStateRows = new ObservableCollection<DetailRow>();
         LastExportRows = new ObservableCollection<DetailRow>();
@@ -139,9 +143,54 @@ public sealed class Tiles3DExportViewModel : INotifyPropertyChanged
         }
     }
 
-    public bool CanPrepareExport => referenceContext is not null && (!IsSelected3DViewScope || SelectedViewOption is not null);
+    public bool CanPrepareExport => referenceContext is not null && IsGeoidHeightOffsetValid && (!IsSelected3DViewScope || SelectedViewOption is not null);
 
     public bool CanExport => preparedPackage is not null && !string.IsNullOrWhiteSpace(OutputDirectory);
+
+    public bool UsePreciseCrsProjection
+    {
+        get => usePreciseCrsProjection;
+        set
+        {
+            if (usePreciseCrsProjection == value)
+            {
+                return;
+            }
+
+            usePreciseCrsProjection = value;
+            ClearPrepared();
+            RaisePropertyChanged(nameof(UsePreciseCrsProjection));
+        }
+    }
+
+    public string GeoidHeightOffsetText
+    {
+        get => geoidHeightOffsetText;
+        set
+        {
+            string normalized = value ?? string.Empty;
+            if (string.Equals(geoidHeightOffsetText, normalized, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            geoidHeightOffsetText = normalized;
+            ClearPrepared();
+            StatusMessage = BuildBaseStatusMessage();
+            RaiseGeoidHeightOffsetProperties();
+        }
+    }
+
+    public double GeoidHeightOffsetMeters =>
+        TryGetGeoidHeightOffset(out double meters, out _) ? meters : 0d;
+
+    public bool IsGeoidHeightOffsetValid =>
+        TryGetGeoidHeightOffset(out _, out _);
+
+    public string GeoidHeightOffsetValidationMessage =>
+        TryGetGeoidHeightOffset(out _, out string validationMessage) ? string.Empty : validationMessage;
+
+    public bool HasGeoidHeightOffsetValidationMessage => !string.IsNullOrWhiteSpace(GeoidHeightOffsetValidationMessage);
 
     public Tiles3DExportState? ExportState => exportState;
 
@@ -350,6 +399,11 @@ public sealed class Tiles3DExportViewModel : INotifyPropertyChanged
             return "Select a non-template 3D view. Only model geometry visible in that view will be exported.";
         }
 
+        if (!IsGeoidHeightOffsetValid)
+        {
+            return GeoidHeightOffsetValidationMessage;
+        }
+
         return currentState.IsReadOnly
             ? "This Revit project is read-only. Export is still available, but the last export state cannot be saved back into module storage."
             : "Prepare an export package from the whole host model or a selected 3D view, optionally include checked linked models, choose an output directory, and then write a viewer-oriented 3D Tiles bundle.";
@@ -410,7 +464,9 @@ public sealed class Tiles3DExportViewModel : INotifyPropertyChanged
             new DetailRow("Last Scope", FormatScopeMode(exportState.LastScopeMode)),
             new DetailRow("Last Linked Models", BuildLinkedModelSummary(exportState.LastSelectedLinkNames)),
             new DetailRow("Last Exported Elements", exportState.LastExportedElementCount.ToString(CultureInfo.InvariantCulture)),
-            new DetailRow("Last Exported Triangles", exportState.LastExportedTriangleCount.ToString(CultureInfo.InvariantCulture))
+            new DetailRow("Last Exported Triangles", exportState.LastExportedTriangleCount.ToString(CultureInfo.InvariantCulture)),
+            new DetailRow("Last Precise CRS", exportState.LastUsedPreciseCrsProjection ? "Enabled" : "Disabled"),
+            new DetailRow("Last Geoid Offset", exportState.LastGeoidHeightOffsetMeters == 0d ? "0 m (not set)" : $"{exportState.LastGeoidHeightOffsetMeters:+0.###;-0.###} m")
         };
 
         if (exportState.LastScopeMode == Tiles3DExportScopeMode.Selected3DView)
@@ -588,6 +644,21 @@ public sealed class Tiles3DExportViewModel : INotifyPropertyChanged
         RaisePropertyChanged(nameof(HasNoPreparedRows));
         RaisePropertyChanged(nameof(HasFeatureNames));
         RaisePropertyChanged(nameof(HasNoFeatureNames));
+    }
+
+    private void RaiseGeoidHeightOffsetProperties()
+    {
+        RaisePropertyChanged(nameof(GeoidHeightOffsetText));
+        RaisePropertyChanged(nameof(GeoidHeightOffsetMeters));
+        RaisePropertyChanged(nameof(IsGeoidHeightOffsetValid));
+        RaisePropertyChanged(nameof(GeoidHeightOffsetValidationMessage));
+        RaisePropertyChanged(nameof(HasGeoidHeightOffsetValidationMessage));
+        RaisePropertyChanged(nameof(CanPrepareExport));
+    }
+
+    private bool TryGetGeoidHeightOffset(out double meters, out string validationMessage)
+    {
+        return Tiles3DGeoidHeightOffsetValidator.TryParse(geoidHeightOffsetText, out meters, out validationMessage);
     }
 
     private static void ReplaceCollection<T>(ObservableCollection<T> target, IEnumerable<T> values)

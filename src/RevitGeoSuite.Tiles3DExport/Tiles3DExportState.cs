@@ -30,4 +30,8 @@ public sealed class Tiles3DExportState
     public bool LastSplitByLevel { get; set; }
 
     public int LastExportedLevelCount { get; set; }
+
+    public bool LastUsedPreciseCrsProjection { get; set; }
+
+    public double LastGeoidHeightOffsetMeters { get; set; }
 }

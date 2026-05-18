@@ -21,4 +21,8 @@ public sealed class Tiles3DExportPackage
     public string ContentFileName { get; set; } = "content.glb";
 
     public string LevelManifestFileName { get; set; } = "levels.json";
+
+    public bool UsedPreciseCrsProjection { get; set; }
+
+    public double GeoidHeightOffsetMeters { get; set; }
 }

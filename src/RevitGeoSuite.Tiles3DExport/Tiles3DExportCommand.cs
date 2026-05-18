@@ -42,7 +42,7 @@ public sealed class Tiles3DExportCommand : IExternalCommand
         Tiles3DExportWindow window = new Tiles3DExportWindow(
             viewModel,
             documentHandle,
-            new Tiles3DExportCoordinator(stateService: stateService));
+            new Tiles3DExportCoordinator(stateService: stateService, coordinateTransformer: coordinateTransformer));
         new WindowInteropHelper(window).Owner = uiApplication.MainWindowHandle;
         window.ShowDialog();
 

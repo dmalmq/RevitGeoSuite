@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.Storage;
 using RevitGeoSuite.RevitInterop;
 
@@ -14,25 +15,32 @@ public sealed class Tiles3DExportCoordinator
     private readonly Tiles3DPackageWriter packageWriter;
     private readonly Tiles3DExportStateService stateService;
     private readonly Tiles3DLevelGrouper levelGrouper;
+    private readonly Tiles3DPreciseCrsAnchorRebaser? preciseCrsRebaser;
 
     public Tiles3DExportCoordinator(
         Tiles3DGeometryExtractor? geometryExtractor = null,
         Tiles3DGeometrySimplifier? geometrySimplifier = null,
         Tiles3DPackageWriter? packageWriter = null,
         Tiles3DExportStateService? stateService = null,
-        Tiles3DLevelGrouper? levelGrouper = null)
+        Tiles3DLevelGrouper? levelGrouper = null,
+        ICoordinateTransformer? coordinateTransformer = null)
     {
         this.geometryExtractor = geometryExtractor ?? new Tiles3DGeometryExtractor();
         this.geometrySimplifier = geometrySimplifier ?? new Tiles3DGeometrySimplifier();
         this.packageWriter = packageWriter ?? new Tiles3DPackageWriter();
         this.stateService = stateService ?? new Tiles3DExportStateService();
         this.levelGrouper = levelGrouper ?? new Tiles3DLevelGrouper();
+        preciseCrsRebaser = coordinateTransformer is not null
+            ? new Tiles3DPreciseCrsAnchorRebaser(coordinateTransformer)
+            : null;
     }
 
     public Tiles3DExportPreparationResult Prepare(
         IDocumentHandle document,
         Tiles3DExportReferenceContext referenceContext,
-        Tiles3DExportScopeSelection scope)
+        Tiles3DExportScopeSelection scope,
+        bool usePreciseCrsProjection = false,
+        double geoidHeightOffsetMeters = 0d)
     {
         Tiles3DLevelOfDetail levelOfDetail = Tiles3DLevelOfDetail.Fine;
         RevitDocumentHandle handle = document as RevitDocumentHandle
@@ -49,6 +57,8 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("Select a non-template 3D view before preparing 3D Tiles export from a selected view.");
         }
 
+        Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(geoidHeightOffsetMeters);
+
         IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext, scope);
         IReadOnlyCollection<Tiles3DMeshPrimitive> simplified = geometrySimplifier.Simplify(extracted, levelOfDetail);
         if (simplified.Count == 0)
@@ -56,18 +66,14 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("No exportable model geometry was found for the selected 3D Tiles scope.");
         }
 
-        IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(simplified.ToList());
+        List<Tiles3DMeshPrimitive> meshList = simplified.ToList();
+        IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(meshList);
+        Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, geoidHeightOffsetMeters);
 
-        Tiles3DExportPackage package = new Tiles3DExportPackage
+        if (usePreciseCrsProjection && preciseCrsRebaser is not null)
         {
-            ReferenceContext = referenceContext,
-            LevelOfDetail = levelOfDetail,
-            Meshes = simplified.ToList(),
-            ElementCount = simplified.Count,
-            TriangleCount = simplified.Sum(mesh => mesh.Triangles.Count),
-            GeometricError = CalculateGeometricError(simplified, levelOfDetail),
-            BoundingBox = BuildBoundingBox(simplified)
-        };
+            preciseCrsRebaser.Rebase(package);
+        }
 
         return new Tiles3DExportPreparationResult
         {
@@ -76,6 +82,46 @@ public sealed class Tiles3DExportCoordinator
             FeatureNames = BuildFeatureNames(package),
             StatusMessage = BuildStatusMessage(package, scope)
         };
+    }
+
+    internal static Tiles3DExportPackage BuildPackage(
+        Tiles3DExportReferenceContext referenceContext,
+        IReadOnlyCollection<Tiles3DMeshPrimitive> meshes,
+        Tiles3DLevelOfDetail levelOfDetail,
+        double geoidHeightOffsetMeters)
+    {
+        if (referenceContext is null)
+        {
+            throw new ArgumentNullException(nameof(referenceContext));
+        }
+
+        if (meshes is null)
+        {
+            throw new ArgumentNullException(nameof(meshes));
+        }
+
+        Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(geoidHeightOffsetMeters);
+        List<Tiles3DMeshPrimitive> meshList = meshes.ToList();
+        Tiles3DExportPackage package = new Tiles3DExportPackage
+        {
+            ReferenceContext = referenceContext.Copy(),
+            LevelOfDetail = levelOfDetail,
+            Meshes = meshList,
+            ElementCount = meshList.Count,
+            TriangleCount = meshList.Sum(mesh => mesh.Triangles.Count),
+            GeometricError = CalculateGeometricError(meshList, levelOfDetail),
+            BoundingBox = BuildBoundingBox(meshList),
+            GeoidHeightOffsetMeters = geoidHeightOffsetMeters
+        };
+
+        // Apply the geoid undulation correction to the package-owned context only.
+        // This lifts orthometric height (above sea level) to WGS84 ellipsoidal height.
+        if (geoidHeightOffsetMeters != 0d)
+        {
+            package.ReferenceContext.AnchorElevationMeters += geoidHeightOffsetMeters;
+        }
+
+        return package;
     }
 
     public Tiles3DExportResult Export(
@@ -149,7 +195,9 @@ public sealed class Tiles3DExportCoordinator
             LastExportedElementCount = package.ElementCount,
             LastExportedTriangleCount = package.TriangleCount,
             LastSplitByLevel = false,
-            LastExportedLevelCount = 0
+            LastExportedLevelCount = 0,
+            LastUsedPreciseCrsProjection = package.UsedPreciseCrsProjection,
+            LastGeoidHeightOffsetMeters = package.GeoidHeightOffsetMeters
         };
     }
 
@@ -164,6 +212,11 @@ public sealed class Tiles3DExportCoordinator
     private static string BuildStatusMessage(Tiles3DExportPackage package, Tiles3DExportScopeSelection scope)
     {
         return $"Prepared {package.ElementCount} exportable elements and {package.TriangleCount} triangles with per-object metadata for 3D Tiles export from {BuildScopeSummary(scope.ScopeMode, scope.SelectedView?.Title)} with {BuildLinkSummary(scope.SelectedLinkedModelNames)} using {package.ReferenceContext.Title}.";
+    }
+
+    private static string FormatGeoidOffset(double offsetMeters)
+    {
+        return offsetMeters == 0d ? "0 m (not set)" : $"{offsetMeters:+0.###;-0.###} m";
     }
 
     private static string FormatReferenceSource(Tiles3DExportReferenceSource referenceSource)
@@ -262,6 +315,8 @@ public sealed class Tiles3DExportCoordinator
             new DetailRow("Level Groups", levelGroups.Count.ToString()),
             new DetailRow("Object Metadata", "Enabled"),
             new DetailRow("Geometric Error", package.GeometricError.ToString("F3")),
+            new DetailRow("Geoid Offset", FormatGeoidOffset(package.GeoidHeightOffsetMeters)),
+            new DetailRow("Precise CRS", package.UsedPreciseCrsProjection ? "Enabled" : "Disabled"),
             new DetailRow("Tileset File", "tileset.json"),
             new DetailRow("Content File", package.ContentFileName),
             new DetailRow("Level Manifest", package.LevelManifestFileName)

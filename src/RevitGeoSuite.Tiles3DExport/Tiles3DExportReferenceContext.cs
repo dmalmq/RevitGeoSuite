@@ -23,4 +23,25 @@ public sealed class Tiles3DExportReferenceContext
     public double AnchorYFeet { get; set; }
 
     public double AnchorZFeet { get; set; }
+
+    public Tiles3DExportReferenceContext Copy()
+    {
+        return new Tiles3DExportReferenceContext
+        {
+            Title = Title,
+            Description = Description,
+            ProjectCrs = new CrsReference
+            {
+                EpsgCode = ProjectCrs.EpsgCode,
+                NameSnapshot = ProjectCrs.NameSnapshot
+            },
+            AnchorProjectedCoordinate = AnchorProjectedCoordinate,
+            AnchorLatitude = AnchorLatitude,
+            AnchorLongitude = AnchorLongitude,
+            AnchorElevationMeters = AnchorElevationMeters,
+            AnchorXFeet = AnchorXFeet,
+            AnchorYFeet = AnchorYFeet,
+            AnchorZFeet = AnchorZFeet
+        };
+    }
 }

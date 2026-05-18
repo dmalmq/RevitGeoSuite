@@ -46,6 +46,62 @@ public sealed class Tiles3DExportViewModelTests
 
         Assert.Equal(Tiles3DExportScopeMode.WholeModel, viewModel.SelectedScopeMode);
         Assert.True(viewModel.CanPrepareExport);
+        Assert.True(viewModel.IsGeoidHeightOffsetValid);
+        Assert.False(viewModel.HasGeoidHeightOffsetValidationMessage);
+    }
+
+    [Fact]
+    public void Previous_geoid_height_offset_is_restored_on_startup()
+    {
+        Tiles3DExportState exportState = new Tiles3DExportState
+        {
+            LastGeoidHeightOffsetMeters = 37.5d
+        };
+
+        Tiles3DExportViewModel viewModel = CreateViewModel(
+            CreateCurrentState(),
+            CreateGeoProjectInfo(),
+            exportState);
+
+        Assert.Equal("37.5", viewModel.GeoidHeightOffsetText);
+        Assert.Equal(37.5d, viewModel.GeoidHeightOffsetMeters, precision: 6);
+        Assert.True(viewModel.IsGeoidHeightOffsetValid);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-number")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("151")]
+    [InlineData("-151")]
+    public void Invalid_geoid_height_offset_blocks_prepare(string text)
+    {
+        Tiles3DExportViewModel viewModel = CreateViewModel(
+            CreateCurrentState(),
+            CreateGeoProjectInfo());
+
+        viewModel.GeoidHeightOffsetText = text;
+
+        Assert.False(viewModel.IsGeoidHeightOffsetValid);
+        Assert.True(viewModel.HasGeoidHeightOffsetValidationMessage);
+        Assert.False(viewModel.CanPrepareExport);
+        Assert.Equal(0d, viewModel.GeoidHeightOffsetMeters, precision: 6);
+    }
+
+    [Fact]
+    public void Changing_geoid_height_offset_clears_prepared_state()
+    {
+        Tiles3DExportViewModel viewModel = CreateViewModel(
+            CreateCurrentState(),
+            CreateGeoProjectInfo());
+
+        viewModel.MarkPrepared(CreatePreparedResult());
+        viewModel.GeoidHeightOffsetText = "37.5";
+
+        Assert.Null(viewModel.PreparedPackage);
+        Assert.True(viewModel.CanPrepareExport);
+        Assert.Equal(37.5d, viewModel.GeoidHeightOffsetMeters, precision: 6);
     }
 
     [Fact]

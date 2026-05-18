@@ -57,7 +57,7 @@ public partial class Tiles3DExportWindow : Window
 
     private void OnPrepareClick(object sender, RoutedEventArgs e)
     {
-        if (documentHandle is null || ViewModel.ResolvedReferenceContext is null)
+        if (documentHandle is null || ViewModel.ResolvedReferenceContext is null || !ViewModel.CanPrepareExport)
         {
             return;
         }
@@ -67,7 +67,9 @@ public partial class Tiles3DExportWindow : Window
             Tiles3DExportPreparationResult result = exportCoordinator.Prepare(
                 documentHandle,
                 ViewModel.ResolvedReferenceContext,
-                ViewModel.ScopeSelection);
+                ViewModel.ScopeSelection,
+                ViewModel.UsePreciseCrsProjection,
+                ViewModel.GeoidHeightOffsetMeters);
             ViewModel.MarkPrepared(result);
         }
         catch (System.Exception ex)
