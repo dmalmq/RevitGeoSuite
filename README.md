@@ -20,7 +20,8 @@ From coordinate system setup to CityGML and 3D Tiles export — without the lega
   <img src="https://img.shields.io/badge/UI-WPF_+_WebView2-393552?style=flat-square" />
   <img src="https://img.shields.io/badge/Maps-Leaflet_+_OSM-9ccfd8?style=flat-square" />
   <img src="https://img.shields.io/badge/CRS-ProjNet-907aa9?style=flat-square" />
-  <img src="https://img.shields.io/badge/Focus-Japanese_CRS_&_PLATEAU-f6c177?style=flat-square" />
+  <img src="https://img.shields.io/badge/Languages-EN_/_JA-f6c177?style=flat-square" />
+  <img src="https://img.shields.io/badge/Focus-Japanese_CRS_&_PLATEAU-eb6f92?style=flat-square" />
 </p>
 
 </div>
@@ -37,14 +38,16 @@ The suite is especially focused on Japanese coordinate reference systems and [PL
 
 ## Modules
 
+Six modules surface on a single **Revit Geo Suite** ribbon tab, grouped into *Project Setup*, *PLATEAU*, and *Export* panels. The UI ships in English and Japanese with a runtime language toggle.
+
 | Module | Description |
 |--------|-------------|
-| **Georeference** | CRS selection with Japanese presets, OSM map-based point picking, placement preview, and atomic apply |
-| **Mesh Inspector** | Japanese mesh code lookup, boundary calculation, and 8-neighbor display as GeoJSON overlay |
-| **Validation** | Project health checks for coordinate setup, export readiness, and suspicious value warnings |
-| **PLATEAU Import** | PLATEAU context data import with codelist parsing and tile indexing |
-| **3D Tiles Export** | Export pipeline for 3D Tiles format |
-| **CityGML Export** | CityGML export with semantic mapping |
+| **Georeference** | CRS selection with Japanese presets, OSM map-based point picking, PLATEAU grid-tile snapping, and a split survey / project base point apply path with placement preview |
+| **Mesh Inspector** | Japanese JIS X 0410 mesh code lookup, boundary calculation, and 8-neighbor display as a GeoJSON overlay |
+| **Validation** | Read-only project health checks for coordinate setup, export readiness, and suspicious-value warnings against the shared `GeoProjectInfo` |
+| **PLATEAU Import** | Folder scan with codelist parsing and tile indexing, grid-tile selection, building/feature filtering, and a shape-based context geometry import pipeline with lightweight or detailed modes |
+| **3D Tiles Export** | Scoped export (whole model or selected 3D view) with per-object metadata, RGBA material colors, level grouping with a manifest, optional precise CRS anchor rebasing, and geoid undulation offset to convert orthometric anchors to WGS84 ellipsoidal height |
+| **CityGML Export** | Lightweight CityGML export with semantic and attribute mapping, codelist assignment, and a separate module export state |
 
 ---
 
@@ -53,16 +56,17 @@ The suite is especially focused on Japanese coordinate reference systems and [PL
 Modules are independent over a shared foundation. No module depends on another — they communicate through a small, stable shared state contract (`GeoProjectInfo`).
 
 ```text
-┌─────────────────────────────────────────────────┐
-│ Shell (Ribbon UI + Module Registration)         │
-├─────────┬──────────┬──────────┬────────┬────────┤
-│ Geo     │ Mesh     │ PLATEAU  │ 3D     │ CityGML│
-│Reference│ Inspector│ Import   │ Tiles  │ Export │
-├─────────┴──────────┴──────────┴────────┴────────┤
-│  SharedUI (WPF)  │  RevitInterop (API wrappers) │
-├──────────────────┴──────────────────────────────┤
-│ Core (CRS, Transforms, Mesh, Metadata)          │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│ Shell (Ribbon UI + Module Registration)                  │
+├──────────┬──────────┬────────────┬──────────┬────────────┤
+│   Geo    │   Mesh   │ Validation │ PLATEAU  │  3D Tiles  │
+│ Reference│ Inspector│            │  Import  │  + CityGML │
+├──────────┴──────────┴────────────┴──────────┴────────────┤
+│   SharedUI (WPF + WebView2)  │  RevitInterop (API)       │
+├──────────────────────────────┴────────────┬──────────────┤
+│ Core (CRS, Transforms, Mesh, Workflow,    │     Core     │
+│        Storage, Validation, Versioning)   │   .Plateau   │
+└───────────────────────────────────────────┴──────────────┘
 ```
 
 ---
@@ -97,6 +101,7 @@ RevitGeoSuite/
 - **.NET Framework 4.8 SDK**
 - **Visual Studio 2022** (or later) with the ".NET desktop development" workload
 - **WebView2 Runtime** (typically pre-installed on Windows 10/11)
+- **Inno Setup 6** *(optional — only needed to build the installer `.exe`)*
 
 ## Build
 
@@ -116,13 +121,13 @@ All output DLLs are written to `bin/Deploy/`.
 
 ### Installer EXE
 
-After building the solution, create a distributable installer `.exe` with:
+After building the solution, create a distributable installer `.exe` (requires Inno Setup 6) with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install\build-installer.ps1
+pwsh ./install/build-installer.ps1 -RevitYear 2024
 ```
 
-The installer EXE is written to `install/output/` and installs the add-in payload under `C:\ProgramData\Autodesk\Revit\Addins\2024\RevitGeoSuite\` with `RevitGeoSuite.addin` placed in `C:\ProgramData\Autodesk\Revit\Addins\2024\`.
+The installer EXE is written to `install/output/` and installs the add-in payload under `C:\ProgramData\Autodesk\Revit\Addins\2024\RevitGeoSuite\` with `RevitGeoSuite.addin` placed in `C:\ProgramData\Autodesk\Revit\Addins\2024\`. It registers a normal uninstall entry in Windows Apps. See [`install/README.md`](install/README.md) for parameters and dev-only direct copy install.
 
 ### Manual Install
 
@@ -167,10 +172,10 @@ See the [`docs/`](docs/) folder for detailed design documentation:
 ![3D Tiles](https://img.shields.io/badge/3D_Tiles-0284c7?style=for-the-badge)
 
 ### Spatial Data
-![GeoPackage](https://img.shields.io/badge/GeoPackage-0369a1?style=for-the-badge)
 ![PLATEAU](https://img.shields.io/badge/PLATEAU-0891b2?style=for-the-badge)
 ![JIS Mesh](https://img.shields.io/badge/JIS_X_0410_Mesh-56949f?style=for-the-badge)
-![IMDF](https://img.shields.io/badge/IMDF-0ea5e9?style=for-the-badge)
+![ProjNET](https://img.shields.io/badge/ProjNET-907aa9?style=for-the-badge)
+![GeoJSON](https://img.shields.io/badge/GeoJSON-0369a1?style=for-the-badge)
 
 ### Programming
 ![C Sharp](https://img.shields.io/badge/C%23_12-68217a?style=for-the-badge&logo=csharp&logoColor=ffffff)
