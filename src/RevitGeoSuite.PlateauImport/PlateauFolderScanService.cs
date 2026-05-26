@@ -37,6 +37,17 @@ public sealed class PlateauFolderScanService
             .Where(IsSupportedFile)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        string cacheKey = PlateauScanSessionCache.BuildPlateauKey(
+            folderPath,
+            scanTarget.SearchRootPath,
+            scanTarget.IsRecursivePackageScan,
+            supportedFiles);
+        if (PlateauScanSessionCache.TryGetPlateau(cacheKey, out PlateauFolderScanResult? cachedResult) && cachedResult is not null)
+        {
+            reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Completed, supportedFiles.Length, supportedFiles.Length, string.Empty));
+            return CreateCachedResult(cachedResult);
+        }
+
         reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Parsing, 0, supportedFiles.Length, string.Empty));
 
         IndexedParseResult[] parseResults = new IndexedParseResult[supportedFiles.Length];
@@ -74,15 +85,16 @@ public sealed class PlateauFolderScanService
 
         for (int index = 0; index < parseResults.Length; index++)
         {
-            IndexedParseResult result = parseResults[index];
-            if (result.Model is not null)
+            IndexedParseResult parseResult = parseResults[index];
+            if (parseResult.Model is not null)
             {
-                models.Add(result.Model);
+                models.Add(parseResult.Model);
             }
 
-            if (!string.IsNullOrWhiteSpace(result.Warning))
+            string? parseWarning = parseResult.Warning;
+            if (!string.IsNullOrWhiteSpace(parseWarning))
             {
-                warnings.Add(result.Warning);
+                warnings.Add(parseWarning!);
             }
         }
 
@@ -95,7 +107,7 @@ public sealed class PlateauFolderScanService
 
         reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Completed, supportedFiles.Length, supportedFiles.Length, string.Empty));
 
-        return new PlateauFolderScanResult
+        PlateauFolderScanResult result = new PlateauFolderScanResult
         {
             FolderPath = folderPath,
             SearchRootPath = scanTarget.SearchRootPath,
@@ -103,6 +115,22 @@ public sealed class PlateauFolderScanService
             SupportedFilePaths = supportedFiles,
             CityModels = models,
             WarningMessages = warnings
+        };
+        PlateauScanSessionCache.StorePlateau(cacheKey, result);
+        return result;
+    }
+
+    private static PlateauFolderScanResult CreateCachedResult(PlateauFolderScanResult cachedResult)
+    {
+        return new PlateauFolderScanResult
+        {
+            FolderPath = cachedResult.FolderPath,
+            SearchRootPath = cachedResult.SearchRootPath,
+            IsRecursivePackageScan = cachedResult.IsRecursivePackageScan,
+            SupportedFilePaths = cachedResult.SupportedFilePaths,
+            CityModels = cachedResult.CityModels,
+            WarningMessages = cachedResult.WarningMessages,
+            IsFromCache = true
         };
     }
 

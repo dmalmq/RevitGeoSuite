@@ -60,11 +60,44 @@ public sealed class CodelistReader
                     Description = (description ?? string.Empty).Trim()
                 });
             }
+
+            if (IsNumericCode(name)
+                && !string.Equals(name, code, StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(description))
+            {
+                string aliasCode = name!.Trim();
+                string aliasName = description!.Trim();
+                entries.Add(new CodelistEntry
+                {
+                    Code = aliasCode,
+                    Name = aliasName,
+                    Description = aliasName
+                });
+            }
         }
 
         return entries
             .GroupBy(entry => entry.Code, StringComparer.Ordinal)
             .Select(group => group.First())
             .ToArray();
+    }
+
+    private static bool IsNumericCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string trimmed = value!.Trim();
+        for (int index = 0; index < trimmed.Length; index++)
+        {
+            if (!char.IsDigit(trimmed[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

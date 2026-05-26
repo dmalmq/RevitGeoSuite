@@ -5,10 +5,10 @@
         xmlns:loc="clr-namespace:RevitGeoSuite.SharedUI.Localization;assembly=RevitGeoSuite.SharedUI"
         xmlns:shared="clr-namespace:RevitGeoSuite.SharedUI.Controls;assembly=RevitGeoSuite.SharedUI"
         Title="Check Project"
-        Height="820"
-        Width="1340"
-        MinWidth="1100"
-        MinHeight="720"
+        Height="800"
+        Width="1180"
+        MinWidth="980"
+        MinHeight="700"
         WindowStartupLocation="CenterOwner">
   <Window.Resources>
     <ResourceDictionary>
@@ -23,7 +23,6 @@
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="94" />
       <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="320" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -33,15 +32,14 @@
 
     <shared:ModuleNavRailControl x:Name="ModuleNavRail" Grid.RowSpan="3" CurrentModuleKey="Validation" />
 
-    <Border Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource ShellHeaderBorderStyle}">
+    <Border Grid.Column="1" Style="{StaticResource ShellHeaderBorderStyle}">
       <DockPanel>
         <shared:LanguageToggleControl DockPanel.Dock="Right" />
         <StackPanel Margin="0,0,18,0">
           <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[App.ProductTitle]}" />
           <TextBlock Margin="0,6,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.Validation]}" />
-          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Validation.WindowTitle]}" />
           <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding DocumentTitle}" />
-          <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Validation.Header]}" />
+          <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Validation.Header]}" />
         </StackPanel>
       </DockPanel>
     </Border>
@@ -139,48 +137,35 @@
             </StackPanel>
           </Border>
         </Grid>
-      </StackPanel>
-    </ScrollViewer>
 
-    <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource ShellDetailsPanelBorderStyle}">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel>
-          <Border Style="{StaticResource StatusPillBorderStyle}">
-            <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Shell.RightPanel]}" />
-          </Border>
-
-          <Expander IsExpanded="True">
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <Expander IsExpanded="False">
             <Expander.Header>
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Validation.Sidebar.Snapshot]}" />
             </Expander.Header>
             <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding DetailRows}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Grid Margin="0,0,0,10">
+                  <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="130" />
+                      <ColumnDefinition Width="200" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
                   </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </Expander>
-        </StackPanel>
-      </ScrollViewer>
-    </Border>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
 
-    <Border Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource FooterBarBorderStyle}">
+    <Border Grid.Row="2" Grid.Column="1" Style="{StaticResource FooterBarBorderStyle}">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
         <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Close]}" Click="OnCloseClick" />
       </StackPanel>
     </Border>
   </Grid>
 </Window>
-
-
-
-
-

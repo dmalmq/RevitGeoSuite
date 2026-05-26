@@ -14,6 +14,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="NetTopologySuite" Version="2.5.0" GeneratePathProperty="true" />
+    <PackageReference Include="NetTopologySuite.Features" Version="2.2.0" GeneratePathProperty="true" />
+    <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" Version="1.2.0" GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="RevitAPI">
       <HintPath>$(RevitInstallDir)\RevitAPI.dll</HintPath>
       <Private>false</Private>
@@ -23,4 +29,22 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <Target Name="CopyNetTopologySuiteToOutput" AfterTargets="Build">
+    <Copy
+      SourceFiles="$(PkgNetTopologySuite)\lib\netstandard2.0\NetTopologySuite.dll"
+      DestinationFolder="$(OutputPath)"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(PkgNetTopologySuite)\lib\netstandard2.0\NetTopologySuite.dll')" />
+    <Copy
+      SourceFiles="$(PkgNetTopologySuite_Features)\lib\netstandard2.0\NetTopologySuite.Features.dll"
+      DestinationFolder="$(OutputPath)"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(PkgNetTopologySuite_Features)\lib\netstandard2.0\NetTopologySuite.Features.dll')" />
+    <Copy
+      SourceFiles="$(PkgNetTopologySuite_IO_Esri_Shapefile)\lib\netstandard2.0\NetTopologySuite.IO.Esri.Shapefile.dll"
+      DestinationFolder="$(OutputPath)"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(PkgNetTopologySuite_IO_Esri_Shapefile)\lib\netstandard2.0\NetTopologySuite.IO.Esri.Shapefile.dll')" />
+  </Target>
 </Project>

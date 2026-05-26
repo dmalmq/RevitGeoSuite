@@ -4,10 +4,10 @@
         xmlns:loc="clr-namespace:RevitGeoSuite.SharedUI.Localization;assembly=RevitGeoSuite.SharedUI"
         xmlns:shared="clr-namespace:RevitGeoSuite.SharedUI.Controls;assembly=RevitGeoSuite.SharedUI"
         Title="CityGML Export"
-        Height="920"
-        Width="1420"
-        MinWidth="1160"
-        MinHeight="760"
+        Height="880"
+        Width="1240"
+        MinWidth="1040"
+        MinHeight="740"
         WindowStartupLocation="CenterOwner">
   <Window.Resources>
     <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
@@ -17,7 +17,6 @@
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="94" />
       <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="308" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -27,15 +26,14 @@
 
     <shared:ModuleNavRailControl x:Name="ModuleNavRail" Grid.RowSpan="3" CurrentModuleKey="CityGmlExport" />
 
-    <Border Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource ShellHeaderBorderStyle}">
+    <Border Grid.Column="1" Style="{StaticResource ShellHeaderBorderStyle}">
       <DockPanel>
         <shared:LanguageToggleControl DockPanel.Dock="Right" />
         <StackPanel Margin="0,0,18,0">
           <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[App.ProductTitle]}" />
           <TextBlock Margin="0,6,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.CityGmlExport]}" />
-          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.WindowTitle]}" />
           <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding DocumentTitle}" />
-          <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Header]}" />
+          <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Header]}" />
         </StackPanel>
       </DockPanel>
     </Border>
@@ -107,6 +105,81 @@
           </StackPanel>
         </Border>
 
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <Expander IsExpanded="False">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Sidebar.Reference]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <ComboBox ItemsSource="{Binding ReferenceSourceOptions}"
+                        SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
+                        DisplayMemberPath="Title" />
+              <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding ReferenceSourceTitle}" />
+              <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReferenceSourceDescription}" />
+              <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding CurrentStateRows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Expander>
+        </Border>
+
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <Expander IsExpanded="False">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Sidebar.Advanced]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.TargetProfile]}" />
+              <ComboBox Margin="0,8,0,0"
+                        ItemsSource="{Binding SchemaVersionOptions}"
+                        SelectedItem="{Binding SelectedSchemaVersionOption, Mode=TwoWay}"
+                        DisplayMemberPath="Title" />
+              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedSchemaVersionOption.Description}" />
+
+              <Expander Margin="0,16,0,0" IsExpanded="False">
+                <Expander.Header>
+                  <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.CodelistOverrides]}" />
+                </Expander.Header>
+                <StackPanel Margin="0,12,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="12" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="12" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                      <TextBlock Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.BuildingFunctionCode]}" />
+                      <TextBox Margin="0,4,0,0" Text="{Binding BuildingCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.RoadFunctionCode]}" />
+                      <TextBox Margin="0,4,0,0" Text="{Binding RoadCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4">
+                      <TextBlock Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.VegetationFunctionCode]}" />
+                      <TextBox Margin="0,4,0,0" Text="{Binding VegetationCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.CodelistHint]}" />
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </Expander>
+        </Border>
+
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -170,43 +243,8 @@
             <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.NoFeatures]}" Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
           </StackPanel>
         </Border>
-      </StackPanel>
-    </ScrollViewer>
 
-    <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource ShellDetailsPanelBorderStyle}">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel>
-          <Border Style="{StaticResource StatusPillBorderStyle}">
-            <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Shell.RightPanel]}" />
-          </Border>
-
-          <Expander IsExpanded="False">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Sidebar.Reference]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <ComboBox ItemsSource="{Binding ReferenceSourceOptions}"
-                        SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
-                        DisplayMemberPath="Title" />
-              <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding ReferenceSourceTitle}" />
-              <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReferenceSourceDescription}" />
-              <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding CurrentStateRows}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Grid Margin="0,0,0,10">
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130" />
-                        <ColumnDefinition Width="*" />
-                      </Grid.ColumnDefinitions>
-                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
-                    </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </Expander>
-
+        <Border Style="{StaticResource ShellCardBorderStyle}">
           <Expander IsExpanded="False">
             <Expander.Header>
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Sidebar.LastExport]}" />
@@ -215,13 +253,13 @@
               <ItemsControl ItemsSource="{Binding LastExportRows}" Visibility="{Binding HasLastExportRows, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Grid Margin="0,0,0,10">
+                    <Grid Margin="0,0,0,8">
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="200" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
                       <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -229,41 +267,11 @@
               <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.NoLastExport]}" Visibility="{Binding HasNoLastExportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Expander>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
 
-          <Expander IsExpanded="True">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.Sidebar.Advanced]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.TargetProfile]}" />
-              <ComboBox Margin="0,8,0,0"
-                        ItemsSource="{Binding SchemaVersionOptions}"
-                        SelectedItem="{Binding SelectedSchemaVersionOption, Mode=TwoWay}"
-                        DisplayMemberPath="Title" />
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedSchemaVersionOption.Description}" />
-
-              <Expander Margin="0,16,0,0" IsExpanded="False">
-                <Expander.Header>
-                  <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.CodelistOverrides]}" />
-                </Expander.Header>
-                <StackPanel Margin="0,12,0,0">
-                  <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.CodelistHint]}" />
-                  <TextBlock Margin="0,12,0,0" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.BuildingFunctionCode]}" />
-                  <TextBox Margin="0,4,0,0" Text="{Binding BuildingCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                  <TextBlock Margin="0,12,0,0" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.RoadFunctionCode]}" />
-                  <TextBox Margin="0,4,0,0" Text="{Binding RoadCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                  <TextBlock Margin="0,12,0,0" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[City.VegetationFunctionCode]}" />
-                  <TextBox Margin="0,4,0,0" Text="{Binding VegetationCodeOverride, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                </StackPanel>
-              </Expander>
-
-            </StackPanel>
-          </Expander>
-        </StackPanel>
-      </ScrollViewer>
-    </Border>
-
-    <Border Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource FooterBarBorderStyle}">
+    <Border Grid.Row="2" Grid.Column="1" Style="{StaticResource FooterBarBorderStyle}">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
         <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.PrepareExport]}" Click="OnPrepareClick" IsEnabled="{Binding CanPrepareExport}" />
         <Button Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ExportCityGml]}" Click="OnExportClick" IsEnabled="{Binding CanExport}" />
@@ -272,8 +280,3 @@
     </Border>
   </Grid>
 </Window>
-
-
-
-
-

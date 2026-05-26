@@ -31,6 +31,8 @@ public partial class MapControl : UserControl
 
     public event EventHandler<MapOverlayFeatureClickedEventArgs>? OverlayFeatureClicked;
 
+    public event EventHandler<MapOverlayFeaturesRectangleSelectedEventArgs>? OverlayFeaturesRectangleSelected;
+
     public async Task SearchAsync(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -233,6 +235,13 @@ public partial class MapControl : UserControl
             && !string.IsNullOrWhiteSpace(message.FeatureId))
         {
             OverlayFeatureClicked?.Invoke(this, new MapOverlayFeatureClickedEventArgs(message.FeatureId));
+            return;
+        }
+
+        if (string.Equals(message.Type, "overlayRectangleSelect", StringComparison.OrdinalIgnoreCase)
+            && message.FeatureIds.Count > 0)
+        {
+            OverlayFeaturesRectangleSelected?.Invoke(this, new MapOverlayFeaturesRectangleSelectedEventArgs(message.FeatureIds));
         }
     }
 

@@ -3,5 +3,6 @@ namespace RevitGeoSuite.PlateauImport;
 public enum PlateauGeometryImportMode
 {
     LightweightExtrusion,
-    DetailedDirectShape
+    DetailedDirectShape,
+    LightweightMassOnRelief
 }

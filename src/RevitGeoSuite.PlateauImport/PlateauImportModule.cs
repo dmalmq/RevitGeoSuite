@@ -28,6 +28,15 @@ public sealed class PlateauImportModule : IRevitGeoModule
                 CommandClassName = "RevitGeoSuite.PlateauImport.PlateauImportCommand",
                 AssemblyPath = Assembly.GetExecutingAssembly().Location,
                 IconKind = RibbonIconKind.PlateauImport
+            },
+            new RevitCommandDescriptor
+            {
+                CommandId = "PlateauImportOnline",
+                ButtonText = "Import\nPLATEAU\nOnline",
+                ToolTip = "Download PLATEAU 3D Tiles from the public datacatalog API for a chosen prefecture/municipality and import them as LOD2 DirectShape buildings, or export their footprints to DXF.",
+                CommandClassName = "RevitGeoSuite.PlateauImport.Online.PlateauOnlineImportCommand",
+                AssemblyPath = Assembly.GetExecutingAssembly().Location,
+                IconKind = RibbonIconKind.PlateauImport
             }
         };
     }

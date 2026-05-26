@@ -38,6 +38,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
     private string plateauGridSeedTitle = string.Empty;
     private double? plateauGridSeedLatitude;
     private double? plateauGridSeedLongitude;
+    private PlateauGridSeedSource plateauGridSeedSource = PlateauGridSeedSource.None;
     private PlateauGridProjectBasePointSelection? plateauGridSelection;
 
     public GeoreferenceViewModel(
@@ -119,12 +120,16 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             }
 
             selectedCrs = value;
+            RefreshPlateauGridFromManualCoordinateInputs();
             RefreshPlateauGridSelectionState();
             OnSetupChanged(
                 nameof(SelectedCrs),
                 nameof(SelectedCrsSummary),
                 nameof(SurveyOriginSummary),
                 nameof(ProjectBasePointOffsetSummary),
+                nameof(IsPlateauGridMapVisible),
+                nameof(PlateauGridMapCenterLatitude),
+                nameof(PlateauGridMapCenterLongitude),
                 nameof(PlateauGridStatusText),
                 nameof(PlateauGridAnchorSummary));
         }
@@ -141,6 +146,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             }
 
             projectBasePointOffsetXInput = value ?? string.Empty;
+            RefreshPlateauGridFromManualCoordinateInputs();
             OnSetupChanged(nameof(ProjectBasePointOffsetXInput), nameof(ProjectBasePointOffsetSummary));
         }
     }
@@ -156,6 +162,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             }
 
             projectBasePointOffsetYInput = value ?? string.Empty;
+            RefreshPlateauGridFromManualCoordinateInputs();
             OnSetupChanged(nameof(ProjectBasePointOffsetYInput), nameof(ProjectBasePointOffsetSummary));
         }
     }
@@ -198,6 +205,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
                 nameof(StepDescription),
                 nameof(ProjectBasePointOffsetSummary),
                 nameof(SurveyOriginSummary),
+                nameof(IsPlateauGridMapVisible),
                 nameof(IsManualCoordinateMode),
                 nameof(IsPlateauGridCoordinateMode));
         }
@@ -251,6 +259,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             preview = value;
             RaisePropertyChanged(nameof(Preview));
             RaisePropertyChanged(nameof(HasPreview));
+            RaisePropertyChanged(nameof(HasNoPreview));
             RaisePropertyChanged(nameof(PreviewPersistenceSummary));
             RaisePropertyChanged(nameof(PreviewChangeImpactSummary));
             RaisePropertyChanged(nameof(PreviewConfidenceSummary));
@@ -268,6 +277,10 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     public bool HasPreview => Preview is not null;
 
+    public bool HasNoPreview => Preview is null;
+
+    public string CurrentStateSummary => BuildCurrentStateSummary();
+
     public bool HasPreviewWarnings => PreviewWarnings.Count > 0;
 
     public bool HasSetupValidationMessage => !string.IsNullOrWhiteSpace(SetupValidationMessage);
@@ -280,7 +293,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     public string StatusMessage => CurrentState.StatusMessage;
 
-    public bool CanUsePlateauGridMode => string.IsNullOrWhiteSpace(PlateauGridUnavailableMessage);
+    public bool CanUsePlateauGridMode => string.IsNullOrWhiteSpace(PlateauGridUnavailableMessage) && HasPlateauGridOptions;
 
     public string PlateauGridUnavailableMessage => plateauGridUnavailableMessage;
 
@@ -294,6 +307,8 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     public bool HasNoPlateauGridOptions => !HasPlateauGridOptions;
 
+    public bool IsPlateauGridMapVisible => IsNewProjectMode && SelectedCrs is not null;
+
     public int SelectedPlateauGridCount => PlateauGridOptions.Count(option => option.IsSelected);
 
     public bool HasPlateauGridSelection => SelectedPlateauGridCount > 0;
@@ -305,6 +320,12 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
     public double? PlateauGridSeedLongitude => plateauGridSeedLongitude;
 
     public string PlateauGridSeedTitle => plateauGridSeedTitle;
+
+    public double? PlateauGridMapCenterLatitude => PlateauGridSeedLatitude
+        ?? (IsPlateauGridMapVisible ? SelectedCrs?.LatitudeOfOrigin : null);
+
+    public double? PlateauGridMapCenterLongitude => PlateauGridSeedLongitude
+        ?? (IsPlateauGridMapVisible ? SelectedCrs?.CentralMeridian : null);
 
     public double? PlateauGridAnchorLatitude => plateauGridSelection?.AnchorLatitude;
 
@@ -358,7 +379,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     public string NextButtonText => CurrentStep == GeoreferenceStep.ChooseCrs ? L("Common.Preview") : L("Common.Next");
 
-    public bool CanApply => CurrentStep == GeoreferenceStep.Preview && Preview?.IsReadyToApply == true && CurrentState.IsSupportedDocument && !CurrentState.IsReadOnly;
+    public bool CanApply => Preview?.IsReadyToApply == true && CurrentState.IsSupportedDocument && !CurrentState.IsReadOnly;
 
     public bool CanGoNext => CurrentStep switch
     {
@@ -484,6 +505,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         }
 
         option.IsSelected = !option.IsSelected;
+        ActivatePlateauGridModeIfSelectionExists();
         return true;
     }
 
@@ -703,7 +725,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     private void OnSetupChanged(params string[] propertyNames)
     {
-        InvalidatePreview();
+        RefreshPreview();
         RefreshPlannedSetupRows();
         foreach (string propertyName in propertyNames)
         {
@@ -713,6 +735,13 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         RaisePropertyChanged(nameof(SetupModeDescription));
         RaisePropertyChanged(nameof(CanGoNext));
         RaisePropertyChanged(nameof(CanApply));
+    }
+
+    private void RefreshPreview()
+    {
+        BuildPreview();
+        RaisePropertyChanged(nameof(CanApply));
+        RaisePropertyChanged(nameof(CanNavigateToPreview));
     }
 
     private void SetCoordinateInputMode(GeoreferenceCoordinateInputMode mode)
@@ -740,14 +769,21 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
     {
         if (!TryResolvePlateauGridSeed(out double latitude, out double longitude, out string title))
         {
-            plateauGridUnavailableMessage = L("Georef.Grid.Unavailable.NoHint");
-            plateauGridSeedLatitude = null;
-            plateauGridSeedLongitude = null;
-            plateauGridSeedTitle = string.Empty;
-            plateauGridSelection = null;
-            plateauGridOverlayGeoJson = string.Empty;
-            ReplacePlateauGridOptions(Array.Empty<PlateauGridSelectionItem>());
-            RaisePlateauGridProperties();
+            DisablePlateauGridPicker(L("Georef.Grid.Unavailable.NoHint"));
+            return;
+        }
+
+        if (!JapanMeshDomain.IsSupportedCoordinate(latitude, longitude))
+        {
+            DisablePlateauGridPicker(string.Format(
+                CultureInfo.InvariantCulture,
+                L("Georef.Grid.Unavailable.OutsideJapanMeshRange"),
+                latitude,
+                longitude,
+                JapanMeshDomain.MinLatitude,
+                JapanMeshDomain.MaxLatitude,
+                JapanMeshDomain.MinLongitude,
+                JapanMeshDomain.MaxLongitude));
             return;
         }
 
@@ -755,6 +791,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         plateauGridSeedLatitude = latitude;
         plateauGridSeedLongitude = longitude;
         plateauGridSeedTitle = title;
+        plateauGridSeedSource = PlateauGridSeedSource.RevitHint;
 
         PlateauGridSelectionItem[] options = plateauGridCandidateIndex.GetCandidateGrids(latitude, longitude)
             .Select(CreatePlateauGridSelectionItem)
@@ -762,6 +799,146 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
         ReplacePlateauGridOptions(options);
         RefreshPlateauGridSelectionState();
+        RaisePlateauGridProperties();
+    }
+
+    public bool LoadPlateauGridCandidatesFromMapPoint(double latitude, double longitude)
+    {
+        if (!IsPlateauGridMapVisible)
+        {
+            return false;
+        }
+
+        bool loaded = TryLoadPlateauGridCandidates(
+            latitude,
+            longitude,
+            L("Georef.Grid.Seed.MapClick"),
+            PlateauGridSeedSource.MapClick,
+            switchToManualOnSeedChange: true);
+
+        RefreshPreview();
+        RefreshPlannedSetupRows();
+        RaisePropertyChanged(nameof(CanGoNext));
+        RaisePropertyChanged(nameof(CanApply));
+        return loaded;
+    }
+
+    private void RefreshPlateauGridFromManualCoordinateInputs()
+    {
+        if (!IsNewProjectMode || SelectedCrs is null)
+        {
+            return;
+        }
+
+        bool hasAnyManualInput = !string.IsNullOrWhiteSpace(ProjectBasePointOffsetXInput)
+            || !string.IsNullOrWhiteSpace(ProjectBasePointOffsetYInput);
+
+        if (!hasAnyManualInput)
+        {
+            if (plateauGridSeedSource == PlateauGridSeedSource.None
+                || plateauGridSeedSource == PlateauGridSeedSource.ManualCoordinates)
+            {
+                PreparePlateauGridSeedPrompt();
+            }
+
+            return;
+        }
+
+        if (!TryGetManualOffsetCoordinate(out ProjectedCoordinate offset))
+        {
+            if (plateauGridSeedSource == PlateauGridSeedSource.ManualCoordinates)
+            {
+                PreparePlateauGridSeedPrompt();
+            }
+
+            return;
+        }
+
+        GeographicCoordinate coordinate = coordinateTransformer.Unproject(offset, SelectedCrs.ToReference());
+        TryLoadPlateauGridCandidates(
+            coordinate.Latitude,
+            coordinate.Longitude,
+            L("Georef.Grid.Seed.ManualCoordinates"),
+            PlateauGridSeedSource.ManualCoordinates,
+            switchToManualOnSeedChange: true);
+    }
+
+    private bool TryLoadPlateauGridCandidates(
+        double latitude,
+        double longitude,
+        string title,
+        PlateauGridSeedSource source,
+        bool switchToManualOnSeedChange)
+    {
+        if (!JapanMeshDomain.IsSupportedCoordinate(latitude, longitude))
+        {
+            DisablePlateauGridPicker(FormatOutsideJapanMeshRangeMessage(latitude, longitude));
+            return false;
+        }
+
+        bool seedChanged = plateauGridSeedSource != source
+            || !plateauGridSeedLatitude.HasValue
+            || !plateauGridSeedLongitude.HasValue
+            || Math.Abs(plateauGridSeedLatitude.Value - latitude) > 1e-9
+            || Math.Abs(plateauGridSeedLongitude.Value - longitude) > 1e-9;
+
+        plateauGridUnavailableMessage = string.Empty;
+        plateauGridSeedLatitude = latitude;
+        plateauGridSeedLongitude = longitude;
+        plateauGridSeedTitle = title;
+        plateauGridSeedSource = source;
+
+        if (seedChanged)
+        {
+            if (switchToManualOnSeedChange && coordinateInputMode == GeoreferenceCoordinateInputMode.PlateauGrid)
+            {
+                coordinateInputMode = GeoreferenceCoordinateInputMode.Manual;
+            }
+
+            PlateauGridSelectionItem[] options = plateauGridCandidateIndex.GetCandidateGrids(latitude, longitude)
+                .Select(CreatePlateauGridSelectionItem)
+                .ToArray();
+            ReplacePlateauGridOptions(options);
+        }
+
+        RefreshPlateauGridSelectionState();
+        RaisePlateauGridProperties();
+        return PlateauGridOptions.Count > 0;
+    }
+
+    private void PreparePlateauGridSeedPrompt()
+    {
+        if (coordinateInputMode == GeoreferenceCoordinateInputMode.PlateauGrid)
+        {
+            coordinateInputMode = GeoreferenceCoordinateInputMode.Manual;
+        }
+
+        plateauGridUnavailableMessage = string.Empty;
+        plateauGridSeedLatitude = null;
+        plateauGridSeedLongitude = null;
+        plateauGridSeedTitle = string.Empty;
+        plateauGridSeedSource = PlateauGridSeedSource.None;
+        plateauGridSelection = null;
+        plateauGridOverlayGeoJson = string.Empty;
+        ReplacePlateauGridOptions(Array.Empty<PlateauGridSelectionItem>());
+        RaisePlateauGridProperties();
+    }
+
+    private void DisablePlateauGridPicker(string message)
+    {
+        if (coordinateInputMode == GeoreferenceCoordinateInputMode.PlateauGrid)
+        {
+            coordinateInputMode = GeoreferenceCoordinateInputMode.Manual;
+        }
+
+        plateauGridUnavailableMessage = message;
+        plateauGridSeedLatitude = null;
+        plateauGridSeedLongitude = null;
+        plateauGridSeedTitle = string.Empty;
+        plateauGridSeedSource = PlateauGridSeedSource.None;
+        plateauGridSelection = null;
+        plateauGridOverlayGeoJson = string.Empty;
+        ReplacePlateauGridOptions(Array.Empty<PlateauGridSelectionItem>());
         RaisePlateauGridProperties();
     }
 
@@ -822,13 +999,24 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             return;
         }
 
+        ActivatePlateauGridModeIfSelectionExists();
         RefreshPlateauGridSelectionState();
         HandlePlateauGridSelectionChanged();
     }
 
+    private void ActivatePlateauGridModeIfSelectionExists()
+    {
+        if (CanUsePlateauGridMode
+            && PlateauGridOptions.Any(option => option.IsSelected)
+            && coordinateInputMode != GeoreferenceCoordinateInputMode.PlateauGrid)
+        {
+            coordinateInputMode = GeoreferenceCoordinateInputMode.PlateauGrid;
+        }
+    }
+
     private void HandlePlateauGridSelectionChanged()
     {
-        InvalidatePreview();
+        RefreshPreview();
         RefreshPlannedSetupRows();
         RaisePlateauGridProperties();
         RaisePropertyChanged(nameof(CanGoNext));
@@ -853,7 +1041,7 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     private string BuildPlateauGridProjectBasePointSummary()
     {
-        if (!CanUsePlateauGridMode)
+        if (!CanUsePlateauGridMode && !string.IsNullOrWhiteSpace(PlateauGridUnavailableMessage))
         {
             return PlateauGridUnavailableMessage;
         }
@@ -884,14 +1072,16 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
 
     private string BuildPlateauGridStatusText()
     {
-        if (!CanUsePlateauGridMode)
+        if (!CanUsePlateauGridMode && !string.IsNullOrWhiteSpace(PlateauGridUnavailableMessage))
         {
             return PlateauGridUnavailableMessage;
         }
 
         if (PlateauGridOptions.Count == 0)
         {
-            return L("Georef.Grid.NoCandidates");
+            return IsPlateauGridMapVisible
+                ? L("Georef.Grid.Status.SeedRequired")
+                : L("Georef.Grid.NoCandidates");
         }
 
         if (plateauGridSelection is null)
@@ -922,7 +1112,9 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
     {
         if (!CanUsePlateauGridMode)
         {
-            return PlateauGridUnavailableMessage;
+            return string.IsNullOrWhiteSpace(PlateauGridUnavailableMessage)
+                ? L("Georef.Grid.Anchor.Pending")
+                : PlateauGridUnavailableMessage;
         }
 
         if (plateauGridSelection is null)
@@ -1054,19 +1246,6 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         return offset;
     }
 
-    private void InvalidatePreview()
-    {
-        previewIntent = null;
-        splitPreviewIntent = null;
-        Preview = null;
-        ResetPreviewCollections();
-        SetupValidationMessage = CurrentStep == GeoreferenceStep.ChooseCrs
-            ? string.Join(Environment.NewLine, BuildSetupValidationResult().Errors)
-            : string.Empty;
-        RaisePropertyChanged(nameof(CanApply));
-        RaisePropertyChanged(nameof(CanNavigateToPreview));
-    }
-
     private void ResetPreviewCollections()
     {
         PreviewFields.Clear();
@@ -1115,18 +1294,36 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         RaisePropertyChanged(nameof(HasPlateauGridOverlay));
         RaisePropertyChanged(nameof(HasPlateauGridOptions));
         RaisePropertyChanged(nameof(HasNoPlateauGridOptions));
+        RaisePropertyChanged(nameof(IsPlateauGridMapVisible));
         RaisePropertyChanged(nameof(SelectedPlateauGridCount));
         RaisePropertyChanged(nameof(HasPlateauGridSelection));
         RaisePropertyChanged(nameof(CanClearPlateauGridSelection));
         RaisePropertyChanged(nameof(PlateauGridSeedLatitude));
         RaisePropertyChanged(nameof(PlateauGridSeedLongitude));
         RaisePropertyChanged(nameof(PlateauGridSeedTitle));
+        RaisePropertyChanged(nameof(PlateauGridMapCenterLatitude));
+        RaisePropertyChanged(nameof(PlateauGridMapCenterLongitude));
         RaisePropertyChanged(nameof(PlateauGridAnchorLatitude));
         RaisePropertyChanged(nameof(PlateauGridAnchorLongitude));
         RaisePropertyChanged(nameof(HasPlateauGridAnchor));
         RaisePropertyChanged(nameof(PlateauGridStatusText));
         RaisePropertyChanged(nameof(PlateauGridAnchorSummary));
         RaisePropertyChanged(nameof(ProjectBasePointOffsetSummary));
+        RaisePropertyChanged(nameof(IsManualCoordinateMode));
+        RaisePropertyChanged(nameof(IsPlateauGridCoordinateMode));
+    }
+
+    private static string FormatOutsideJapanMeshRangeMessage(double latitude, double longitude)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            L("Georef.Grid.Unavailable.OutsideJapanMeshRange"),
+            latitude,
+            longitude,
+            JapanMeshDomain.MinLatitude,
+            JapanMeshDomain.MaxLatitude,
+            JapanMeshDomain.MinLongitude,
+            JapanMeshDomain.MaxLongitude);
     }
 
     private static bool TryParseCoordinateValue(string? text, out double value)
@@ -1157,6 +1354,24 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
             "E {0:F3} m, N {1:F3} m",
             point.SharedEastWestFeet!.Value * FeetToMeters,
             point.SharedNorthSouthFeet!.Value * FeetToMeters);
+    }
+
+    private string BuildCurrentStateSummary()
+    {
+        List<string> parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(CurrentState.DocumentTitle))
+        {
+            parts.Add(CurrentState.DocumentTitle);
+        }
+
+        parts.Add(string.Format(CultureInfo.InvariantCulture, "{0}: {1}", L("Georef.Current.StoredMetadata"), CurrentState.HasStoredGeoInfo ? L("Common.Yes") : L("Common.No")));
+        if (CurrentState.IsReadOnly)
+        {
+            parts.Add(L("Georef.Current.ReadOnly") + ": " + L("Common.Yes"));
+        }
+
+        parts.Add(string.Format(CultureInfo.InvariantCulture, "{0}: {1:F3}°", L("Georef.Current.TrueNorthAngle"), CurrentState.ProjectPosition.AngleDegrees));
+        return string.Join(" · ", parts);
     }
 
     private static IEnumerable<SummaryRow> CreateCurrentStateRows(CurrentProjectStateSummary summary)
@@ -1205,5 +1420,13 @@ public sealed class GeoreferenceViewModel : INotifyPropertyChanged
         public List<string> Errors { get; } = new List<string>();
 
         public bool IsValid => Errors.Count == 0;
+    }
+
+    private enum PlateauGridSeedSource
+    {
+        None,
+        RevitHint,
+        ManualCoordinates,
+        MapClick
     }
 }

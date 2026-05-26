@@ -25,4 +25,8 @@ public sealed class ContextShapePlan
     public double HeightFeet { get; set; }
 
     public IReadOnlyCollection<ContextShapeTriangle> Triangles { get; set; } = new ContextShapeTriangle[0];
+
+    public string ClassCode { get; set; } = string.Empty;
+
+    public string ClassName { get; set; } = string.Empty;
 }

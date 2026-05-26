@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -7,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using Autodesk.Revit.DB;
+using Microsoft.Win32;
 using Forms = System.Windows.Forms;
 using RevitGeoSuite.Core.Storage;
 using RevitGeoSuite.SharedUI.Controls;
@@ -40,6 +42,7 @@ public partial class PlateauImportWindow : Window
         Closed += OnWindowClosed;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         TilePreviewMap.OverlayFeatureClicked += OnTilePreviewOverlayFeatureClicked;
+        TilePreviewMap.OverlayFeaturesRectangleSelected += OnTilePreviewOverlayFeaturesRectangleSelected;
         ModuleNavRail.ModuleRequested += OnModuleRequested;
     }
 
@@ -61,6 +64,7 @@ public partial class PlateauImportWindow : Window
     {
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         TilePreviewMap.OverlayFeatureClicked -= OnTilePreviewOverlayFeatureClicked;
+        TilePreviewMap.OverlayFeaturesRectangleSelected -= OnTilePreviewOverlayFeaturesRectangleSelected;
         ModuleNavRail.ModuleRequested -= OnModuleRequested;
     }
 
@@ -107,6 +111,46 @@ public partial class PlateauImportWindow : Window
         finally
         {
             ViewModel.FinishFolderScan();
+        }
+    }
+
+    private void OnBrowseKibanFolderClick(object sender, RoutedEventArgs e)
+    {
+        using Forms.FolderBrowserDialog dialog = new Forms.FolderBrowserDialog
+        {
+            Description = "Select GSI Kiban Folder",
+            ShowNewFolderButton = false,
+            SelectedPath = ViewModel.KibanFolderPath
+        };
+
+        if (dialog.ShowDialog() == Forms.DialogResult.OK)
+        {
+            ViewModel.KibanFolderPath = dialog.SelectedPath;
+        }
+    }
+
+    private async void OnScanKibanFolderClick(object sender, RoutedEventArgs e)
+    {
+        KibanFolderPathTextBox.GetBindingExpression(System.Windows.Controls.TextBox.TextProperty)?.UpdateSource();
+        ViewModel.KibanFolderPath = KibanFolderPathTextBox.Text;
+        if (!ViewModel.TryStartKibanFolderScan(out PlateauImportViewModel.KibanScanRequest? request) || request is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Yield();
+            PlateauImportViewModel.KibanScanResult result = await Task.Run(() => ViewModel.ScanKibanFolder(request));
+            ViewModel.ApplyKibanScanResult(result);
+        }
+        catch (Exception ex)
+        {
+            ViewModel.HandleKibanScanFailure(ex);
+        }
+        finally
+        {
+            ViewModel.FinishKibanFolderScan();
         }
     }
 
@@ -177,6 +221,318 @@ public partial class PlateauImportWindow : Window
         }
     }
 
+    private async void OnExportShapefileClick(object sender, RoutedEventArgs e)
+    {
+        bool isExportMode = ViewModel.IsExportMode;
+        if (isExportMode ? !ViewModel.CanExportSelected : !ViewModel.CanExportOutlines)
+        {
+            return;
+        }
+
+        bool wantShapefile = !isExportMode || ViewModel.ExportFormatShapefile;
+        bool wantDxf = isExportMode && ViewModel.ExportFormatDxf;
+        bool includePlateau = !isExportMode || ViewModel.ExportIncludePlateauContext;
+        bool includeKiban = !isExportMode || ViewModel.ExportIncludeKibanData;
+        bool includeRevitModel = isExportMode && ViewModel.ExportIncludeRevitModel;
+
+        string defaultName = BuildDefaultShapefileFileName();
+        SaveFileDialog dialog = new SaveFileDialog
+        {
+            FileName = defaultName,
+            Filter = "Output base name (*.shp/*.dxf)|*.shp;*.dxf|All files (*.*)|*.*",
+            DefaultExt = ".shp",
+            AddExtension = true,
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        if (!ViewModel.TryStartShapefileExport(out PlateauImportViewModel.ShapefileExportRequest? request) || request is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<RevitModelFootprintFeature> revitFootprints = Array.Empty<RevitModelFootprintFeature>();
+        List<string> revitWarnings = new List<string>();
+        if (includeRevitModel)
+        {
+            ViewModel.ReportExportProgress(new PlateauImportViewModel.PlateauExportProgress("Extracting Revit footprints"));
+            try
+            {
+                revitFootprints = new RevitModelFootprintExportService()
+                    .ExtractFootprints(document, ViewModel.CurrentReferenceContext, revitWarnings);
+            }
+            catch (Exception ex)
+            {
+                revitWarnings.Add($"Revit footprint extraction failed: {ex.Message}");
+            }
+        }
+
+        ExportRunResult result;
+        try
+        {
+            await Task.Yield();
+            string baseFileName = dialog.FileName;
+            IReadOnlyList<RevitModelFootprintFeature> revitFeaturesForRun = revitFootprints;
+            result = await Task.Run(() => RunExport(
+                baseFileName,
+                request,
+                wantShapefile,
+                wantDxf,
+                includePlateau,
+                includeKiban,
+                includeRevitModel,
+                revitFeaturesForRun,
+                progress => Dispatcher.Invoke(() => ViewModel.ReportExportProgress(progress))));
+        }
+        catch (Exception ex)
+        {
+            ViewModel.HandleShapefileExportFailure(ex);
+            MessageBox.Show(this, ex.Message, "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+        finally
+        {
+            ViewModel.FinishShapefileExport();
+        }
+
+        if (result.IsEmpty)
+        {
+            ViewModel.MarkShapefileExportEmpty();
+            MessageBox.Show(
+                this,
+                BuildEmptyExportOutcomeMessage(result.KibanFolderInvolved),
+                "Nothing to Export",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        int warningCount = (result.ShapefileResult?.Warnings.Count ?? 0)
+            + (result.DxfResult?.Warnings.Count ?? 0)
+            + result.OutlineWarnings.Count
+            + revitWarnings.Count;
+        if (result.ShapefileResult is not null)
+        {
+            ViewModel.MarkShapefileExportSucceeded(result.ShapefileResult, warningCount, result.KibanFolderInvolved);
+        }
+
+        MessageBox.Show(
+            this,
+            BuildExportSummaryMessage(dialog.FileName, result, warningCount),
+            "Export Complete",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private ExportRunResult RunExport(
+        string baseFileName,
+        PlateauImportViewModel.ShapefileExportRequest request,
+        bool wantShapefile,
+        bool wantDxf,
+        bool includePlateauContext,
+        bool includeKibanData,
+        bool includeRevitModel,
+        IReadOnlyList<RevitModelFootprintFeature> revitFootprints,
+        Action<PlateauImportViewModel.PlateauExportProgress> progress)
+    {
+        if (wantShapefile && !wantDxf)
+        {
+            PlateauContextShapefileWriter.WriteResult? streamingShapefileResult = null;
+            try
+            {
+                streamingShapefileResult = ViewModel.WriteShapefilesStreaming(
+                    baseFileName,
+                    request,
+                    includePlateauContext,
+                    includeKibanData,
+                    includeRevitModel,
+                    includeRevitModel ? revitFootprints : Array.Empty<RevitModelFootprintFeature>(),
+                    progress);
+            }
+            catch (InvalidOperationException)
+            {
+                streamingShapefileResult = null;
+            }
+
+            return new ExportRunResult(
+                Array.Empty<string>(),
+                streamingShapefileResult,
+                dxfResult: null,
+                isEmpty: streamingShapefileResult is null || streamingShapefileResult.FeatureCount == 0,
+                request.HasKibanFolder);
+        }
+
+        PlateauOutlineDxfExportPackage exportPackage = ViewModel.BuildOutlineDxfExportPackage(
+            request,
+            out IReadOnlyList<string> outlineWarnings,
+            progress,
+            includeRevitModel ? revitFootprints : Array.Empty<RevitModelFootprintFeature>());
+
+        bool plateauHasGeometry = exportPackage.Features.Count > 0
+            || exportPackage.RoadAreas.Count > 0
+            || exportPackage.KibanFeatures.Count > 0;
+        bool kibanHasGeometry = exportPackage.KibanLineFeatures.Count > 0
+            || exportPackage.KibanPolygonFeatures.Count > 0;
+        bool revitHasGeometry = exportPackage.RevitModelFeatures.Count > 0;
+
+        bool plateauForExport = includePlateauContext && plateauHasGeometry;
+        bool kibanForExport = includeKibanData && kibanHasGeometry;
+        bool revitForExport = includeRevitModel && revitHasGeometry;
+
+        if (!plateauForExport && !kibanForExport && !revitForExport)
+        {
+            return new ExportRunResult(outlineWarnings, shapefileResult: null, dxfResult: null, isEmpty: true, request.HasKibanFolder);
+        }
+
+        PlateauContextShapefileWriter.WriteResult? shapefileResult = null;
+        if (wantShapefile)
+        {
+            PlateauOutlineDxfExportPackage shapefilePackage = BuildFilteredPackage(
+                exportPackage,
+                includePlateauContext: plateauForExport,
+                includeKibanData: kibanForExport,
+                includeRevitModel: revitForExport);
+            try
+            {
+                shapefileResult = PlateauContextShapefileWriter.Write(
+                    baseFileName,
+                    shapefilePackage,
+                    stage => progress(new PlateauImportViewModel.PlateauExportProgress(stage)));
+            }
+            catch (InvalidOperationException)
+            {
+                shapefileResult = null;
+            }
+        }
+
+        PlateauContextDxfExportService.WriteResult? dxfResult = null;
+        if (wantDxf)
+        {
+            string dxfPath = System.IO.Path.ChangeExtension(baseFileName, ".dxf");
+            dxfResult = new PlateauContextDxfExportService().Write(
+                dxfPath,
+                exportPackage,
+                includePlateauContext: plateauForExport,
+                includeRevitModel: revitForExport,
+                onStage: stage => progress(new PlateauImportViewModel.PlateauExportProgress(stage)));
+        }
+
+        bool emitted = (shapefileResult is not null && shapefileResult.FeatureCount > 0)
+            || (dxfResult is not null && (dxfResult.PolylineCount > 0 || dxfResult.AreaFillCount > 0));
+        return new ExportRunResult(
+            outlineWarnings,
+            shapefileResult,
+            dxfResult,
+            isEmpty: !emitted,
+            request.HasKibanFolder);
+    }
+
+    private static PlateauOutlineDxfExportPackage BuildFilteredPackage(
+        PlateauOutlineDxfExportPackage source,
+        bool includePlateauContext,
+        bool includeKibanData,
+        bool includeRevitModel)
+    {
+        return new PlateauOutlineDxfExportPackage(
+            includePlateauContext ? source.Features : Array.Empty<PlateauContextOutlinesDxfWriter.OutlineFeature>(),
+            includePlateauContext ? source.RoadAreas : Array.Empty<PlateauContextOutlinesDxfWriter.AreaFeature>(),
+            includePlateauContext ? source.KibanFeatures : Array.Empty<PlateauContextOutlinesDxfWriter.OutlineFeature>(),
+            includeKibanData ? source.KibanLineFeatures : Array.Empty<KibanLineExportFeature>(),
+            includeKibanData ? source.KibanPolygonFeatures : Array.Empty<KibanPolygonExportFeature>(),
+            includeRevitModel ? source.RevitModelFeatures : Array.Empty<RevitModelFootprintFeature>(),
+            source.ProjectCrs,
+            source.ProjectBasePointMarkerMetres,
+            source.OriginOffsetMetres);
+    }
+
+    private static string BuildExportSummaryMessage(
+        string baseFileName,
+        ExportRunResult result,
+        int warningCount)
+    {
+        List<string> lines = new List<string>();
+        if (result.ShapefileResult is not null && result.ShapefileResult.FeatureCount > 0)
+        {
+            int cityGmlCount = result.ShapefileResult.FeatureCount
+                - result.ShapefileResult.LineFeatureCount
+                - result.ShapefileResult.KibanWaterFeatureCount
+                - result.ShapefileResult.KibanLandUseFeatureCount
+                - result.ShapefileResult.RevitModelFeatureCount;
+            lines.Add($"Shapefile: {cityGmlCount} PLATEAU polygon(s), {result.ShapefileResult.SidewalkFeatureCount} sidewalk, {result.ShapefileResult.RailwayFeatureCount} railway, {result.ShapefileResult.KibanWaterFeatureCount} water, {result.ShapefileResult.KibanLandUseFeatureCount} land-use, {result.ShapefileResult.RevitBuildingFeatureCount} Revit building, {result.ShapefileResult.RevitWallFeatureCount} Revit wall.");
+        }
+        if (result.DxfResult is not null && result.DxfResult.PolylineCount > 0)
+        {
+            lines.Add($"DXF: {result.DxfResult.PolylineCount} polyline(s), {result.DxfResult.AreaFillCount} area fill(s) — anchored at the Revit Survey Point.");
+        }
+        if (lines.Count == 0)
+        {
+            lines.Add("No features were written.");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("Base path:");
+        lines.Add(baseFileName);
+
+        if (warningCount > 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add($"{warningCount} warning(s) recorded during export.");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private string BuildDefaultShapefileFileName()
+    {
+        string folder = string.IsNullOrWhiteSpace(ViewModel.SelectedFolderPath)
+            ? "context"
+            : Path.GetFileName(ViewModel.SelectedFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return string.IsNullOrWhiteSpace(folder)
+            ? "PLATEAU_context_polygons.shp"
+            : $"PLATEAU_{folder}_polygons.shp";
+    }
+
+    private static string BuildEmptyExportOutcomeMessage(bool kibanFolderInvolved)
+    {
+        string kibanStatus = kibanFolderInvolved
+            ? "GSI Kiban export: No Kiban geometry produced."
+            : "GSI Kiban export: Not requested.";
+        return "No shapefiles were created.\n\n"
+            + "CityGML polygon export: No polygon geometry produced.\n"
+            + kibanStatus;
+    }
+
+
+    private sealed class ExportRunResult
+    {
+        public ExportRunResult(
+            IReadOnlyList<string> outlineWarnings,
+            PlateauContextShapefileWriter.WriteResult? shapefileResult,
+            PlateauContextDxfExportService.WriteResult? dxfResult,
+            bool isEmpty,
+            bool kibanFolderInvolved)
+        {
+            OutlineWarnings = outlineWarnings ?? Array.Empty<string>();
+            ShapefileResult = shapefileResult;
+            DxfResult = dxfResult;
+            IsEmpty = isEmpty;
+            KibanFolderInvolved = kibanFolderInvolved;
+        }
+
+        public IReadOnlyList<string> OutlineWarnings { get; }
+
+        public PlateauContextShapefileWriter.WriteResult? ShapefileResult { get; }
+
+        public PlateauContextDxfExportService.WriteResult? DxfResult { get; }
+
+        public bool IsEmpty { get; }
+
+        public bool KibanFolderInvolved { get; }
+    }
+
     private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (string.Equals(e.PropertyName, nameof(PlateauImportViewModel.TilePreviewGeoJson), StringComparison.Ordinal)
@@ -206,6 +562,22 @@ public partial class PlateauImportWindow : Window
     private async void OnTilePreviewOverlayFeatureClicked(object? sender, MapOverlayFeatureClickedEventArgs e)
     {
         if (ViewModel.ToggleTileSelection(e.FeatureId))
+        {
+            await RefreshTilePreviewAsync(false, false);
+        }
+    }
+
+    private async void OnTilePreviewOverlayFeaturesRectangleSelected(object? sender, MapOverlayFeaturesRectangleSelectedEventArgs e)
+    {
+        if (ViewModel.SelectTilesByIds(e.FeatureIds) > 0)
+        {
+            await RefreshTilePreviewAsync(false, false);
+        }
+    }
+
+    private async void OnClearTileSelectionClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.ClearAllTileSelections() > 0)
         {
             await RefreshTilePreviewAsync(false, false);
         }

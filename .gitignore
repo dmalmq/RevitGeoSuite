@@ -16,3 +16,5 @@ georef-build*.log
 georef-bpr-false.log
 install/dist/
 install/output/
+src/RevitGeoSuite.Core/repositoriesRevitGeoSuitebinBuildVerify 2/
+native/build/

@@ -24,4 +24,12 @@ public sealed class PlateauSchemaHelperTests
 
         Assert.Equal("53394611", tileId);
     }
+
+    [Fact]
+    public void TryExtractTileIdFromPath_reads_secondary_mesh_code_from_land_use_file_name()
+    {
+        string? tileId = PlateauSchemaHelper.TryExtractTileIdFromPath(@"C:\samples\533945_luse_6697_op.gml");
+
+        Assert.Equal("533945", tileId);
+    }
 }

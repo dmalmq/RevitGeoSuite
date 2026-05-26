@@ -11,11 +11,6 @@ namespace RevitGeoSuite.MeshInspector;
 
 public sealed class MeshInspectorService
 {
-    private const double MinJapanLatitude = 20.0;
-    private const double MaxJapanLatitude = 46.0;
-    private const double MinJapanLongitude = 122.0;
-    private const double MaxJapanLongitude = 154.0;
-
     private readonly IMeshCalculator meshCalculator;
     private readonly MeshNeighborResolver neighborResolver;
     private readonly MeshOverlayService meshOverlayService;
@@ -99,7 +94,7 @@ public sealed class MeshInspectorService
         }
 
         MeshCode calculatedPrimaryMesh = meshCalculator.Calculate(referenceContext.Latitude, referenceContext.Longitude, JapanMeshLevel.Tertiary);
-        if (!IsValidTertiaryMeshCode(calculatedPrimaryMesh))
+        if (!JapanMeshDomain.IsValidTertiaryMeshCode(calculatedPrimaryMesh))
         {
             string meshIssue = $"produced unexpected mesh code '{calculatedPrimaryMesh.Value}'";
             Trace.WriteLine(
@@ -238,15 +233,15 @@ public sealed class MeshInspectorService
 
     private static bool TryValidateReferenceLocation(double latitude, double longitude, out string issue)
     {
-        if (!IsFinite(latitude) || !IsFinite(longitude))
+        if (!JapanMeshDomain.IsFinite(latitude) || !JapanMeshDomain.IsFinite(longitude))
         {
             issue = "is not a finite latitude/longitude value";
             return false;
         }
 
-        if (latitude < MinJapanLatitude || latitude > MaxJapanLatitude || longitude < MinJapanLongitude || longitude > MaxJapanLongitude)
+        if (!JapanMeshDomain.IsSupportedCoordinate(latitude, longitude))
         {
-            issue = $"falls outside the supported Japan mesh range ({MinJapanLatitude:F0}-{MaxJapanLatitude:F0} latitude, {MinJapanLongitude:F0}-{MaxJapanLongitude:F0} longitude)";
+            issue = $"falls outside the supported Japan mesh range ({JapanMeshDomain.MinLatitude:F0}-{JapanMeshDomain.MaxLatitude:F0} latitude, {JapanMeshDomain.MinLongitude:F0}-{JapanMeshDomain.MaxLongitude:F0} longitude)";
             return false;
         }
 
@@ -254,25 +249,12 @@ public sealed class MeshInspectorService
         return true;
     }
 
-    private static bool IsValidTertiaryMeshCode(MeshCode meshCode)
-    {
-        return meshCode is not null
-            && !string.IsNullOrWhiteSpace(meshCode.Value)
-            && meshCode.Value.Length == (int)JapanMeshLevel.Tertiary
-            && meshCode.Value.All(char.IsDigit);
-    }
-
-    private static bool IsFinite(double value)
-    {
-        return !double.IsNaN(value) && !double.IsInfinity(value);
-    }
-
     private static string FormatCoordinate(double latitude, double longitude)
     {
-        string lat = IsFinite(latitude)
+        string lat = JapanMeshDomain.IsFinite(latitude)
             ? latitude.ToString("F6", CultureInfo.InvariantCulture)
             : "n/a";
-        string lon = IsFinite(longitude)
+        string lon = JapanMeshDomain.IsFinite(longitude)
             ? longitude.ToString("F6", CultureInfo.InvariantCulture)
             : "n/a";
         return $"{lat}, {lon}";

@@ -20,6 +20,7 @@ public static class ModuleRegistry
             new MeshInspectorModule(),
             new ValidationModule(),
             new PlateauImportModule(),
+            new PlateauContextExportModule(),
             new Tiles3DExportModule(),
             new CityGmlExportModule()
         }

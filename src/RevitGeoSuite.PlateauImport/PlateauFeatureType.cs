@@ -6,5 +6,6 @@ public enum PlateauFeatureType
     Bridge,
     Road,
     Vegetation,
-    Relief
+    Relief,
+    LandUse
 }

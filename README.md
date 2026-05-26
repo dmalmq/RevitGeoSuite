@@ -45,7 +45,7 @@ Six modules surface on a single **Revit Geo Suite** ribbon tab, grouped into *Pr
 | **Georeference** | CRS selection with Japanese presets, OSM map-based point picking, PLATEAU grid-tile snapping, and a split survey / project base point apply path with placement preview |
 | **Mesh Inspector** | Japanese JIS X 0410 mesh code lookup, boundary calculation, and 8-neighbor display as a GeoJSON overlay |
 | **Validation** | Read-only project health checks for coordinate setup, export readiness, and suspicious-value warnings against the shared `GeoProjectInfo` |
-| **PLATEAU Import** | Folder scan with codelist parsing and tile indexing, grid-tile selection, building/feature filtering, and a shape-based context geometry import pipeline with lightweight or detailed modes |
+| **PLATEAU Import** | Folder scan with codelist parsing and tile indexing, grid-tile selection, building/feature filtering, and a shape-based context geometry import pipeline with lightweight extrusion, detailed DirectShape, and mass-on-Relief modes |
 | **3D Tiles Export** | Scoped export (whole model or selected 3D view) with per-object metadata, RGBA material colors, level grouping with a manifest, optional precise CRS anchor rebasing, and geoid undulation offset to convert orthometric anchors to WGS84 ellipsoidal height |
 | **CityGML Export** | Lightweight CityGML export with semantic and attribute mapping, codelist assignment, and a separate module export state |
 

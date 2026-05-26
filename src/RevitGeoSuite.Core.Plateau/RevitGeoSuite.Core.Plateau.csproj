@@ -2,7 +2,12 @@
   <PropertyGroup>
     <RootNamespace>RevitGeoSuite.Core.Plateau</RootNamespace>
     <AssemblyName>RevitGeoSuite.Core.Plateau</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />

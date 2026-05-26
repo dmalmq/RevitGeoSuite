@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using RevitGeoSuite.Core.Coordinates;
+using RevitGeoSuite.Core.Mesh;
 using Xunit;
 
 namespace RevitGeoSuite.PlateauImport.Tests;
@@ -100,6 +101,64 @@ public sealed class ContextGeometryBuilderTests
         {
             Assert.Equal(expectedHeights[index], actualHeights[index], 12);
         }
+    }
+
+    [Fact]
+    public void BuildPlan_uses_dissolved_highest_lod_bridge_surfaces_for_lightweight_footprint()
+    {
+        PlateauCoordinate3D[] cutTriangle = new[]
+        {
+            new PlateauCoordinate3D(1d, 1d, 0d),
+            new PlateauCoordinate3D(2d, 1d, 0d),
+            new PlateauCoordinate3D(1d, 2d, 0d),
+            new PlateauCoordinate3D(1d, 1d, 0d)
+        };
+        PlateauCityModel model = new PlateauCityModel
+        {
+            EpsgCode = 6677,
+            Features = new PlateauContextFeature[]
+            {
+                new PlateauContextFeature
+                {
+                    FeatureType = PlateauFeatureType.Bridge,
+                    Id = "bridge-deck",
+                    Name = "Bridge Deck",
+                    TileId = "tile-a",
+                    ExteriorRing = cutTriangle,
+                    GeometrySurfaces = new[]
+                    {
+                        CreateSurface(
+                            "deck-triangle-a",
+                            2,
+                            new PlateauCoordinate3D(0d, 0d, 10d),
+                            new PlateauCoordinate3D(20d, 0d, 10d),
+                            new PlateauCoordinate3D(20d, 10d, 10d),
+                            new PlateauCoordinate3D(0d, 0d, 10d)),
+                        CreateSurface(
+                            "deck-triangle-b",
+                            2,
+                            new PlateauCoordinate3D(0d, 0d, 10d),
+                            new PlateauCoordinate3D(20d, 10d, 10d),
+                            new PlateauCoordinate3D(0d, 10d, 10d),
+                            new PlateauCoordinate3D(0d, 0d, 10d)),
+                        CreateSurface("ground-cut-triangle", 2, cutTriangle)
+                    }
+                }
+            }
+        };
+
+        ContextImportPlan plan = new ContextGeometryBuilder().BuildPlan(model, BuildIdentityReferenceContext());
+        ContextShapePlan bridgeShape = Assert.Single(plan.Shapes);
+        double[] xMetres = bridgeShape.FootprintPointsFeet.Select(point => point.XFeet * 0.3048d).ToArray();
+        double[] yMetres = bridgeShape.FootprintPointsFeet.Select(point => point.YFeet * 0.3048d).ToArray();
+
+        Assert.Equal("bridge-deck", bridgeShape.SourceFeatureId);
+        Assert.Equal(PlateauFeatureType.Bridge, bridgeShape.FeatureType);
+        Assert.Equal(200d, ComputeFootprintAreaMeters(bridgeShape), 6);
+        Assert.Equal(0d, xMetres.Min(), 6);
+        Assert.Equal(20d, xMetres.Max(), 6);
+        Assert.Equal(0d, yMetres.Min(), 6);
+        Assert.Equal(10d, yMetres.Max(), 6);
     }
 
     [Fact]
@@ -251,6 +310,94 @@ public sealed class ContextGeometryBuilderTests
         Assert.Equal(new[] { "533925" }, plan.SelectedTileIds);
         Assert.Equal("533925", shape.TileId);
         Assert.Equal(1, plan.SourceFeatureCount);
+    }
+
+    [Fact]
+    public void BuildPlan_drops_secondary_mesh_land_use_when_polygon_lies_outside_selected_tertiary_tile()
+    {
+        PlateauFolderScanResult scanResult = new PlateauFolderScanResult
+        {
+            CityModels = new[]
+            {
+                new PlateauCityModel
+                {
+                    SourcePath = @"C:\fixtures\533945_luse_6697_op.gml",
+                    FileTileId = "533945",
+                    EpsgCode = 6677,
+                    Features = new PlateauContextFeature[]
+                    {
+                        CreateFeature(
+                            PlateauFeatureType.LandUse,
+                            "luse-1",
+                            "Land Use",
+                            "533945",
+                            new PlateauCoordinate3D(100.0, 150.0, 0.0),
+                            new PlateauCoordinate3D(110.0, 150.0, 0.0),
+                            new PlateauCoordinate3D(110.0, 160.0, 0.0),
+                            new PlateauCoordinate3D(100.0, 160.0, 0.0),
+                            new PlateauCoordinate3D(100.0, 150.0, 0.0))
+                    }
+                }
+            }
+        };
+
+        ContextImportPlan plan = new ContextGeometryBuilder().BuildPlan(
+            scanResult,
+            BuildIdentityReferenceContext(),
+            new[] { PlateauFeatureType.LandUse },
+            new[] { "53394536" });
+
+        Assert.Empty(plan.Shapes);
+    }
+
+    [Fact]
+    public void BuildPlan_clips_secondary_mesh_land_use_to_selected_tertiary_tile_when_polygon_is_inside_it()
+    {
+        const string tertiaryTileId = "53394536";
+        JapanMeshCalculator meshCalculator = new JapanMeshCalculator();
+        MeshBounds tileBounds = meshCalculator.GetBounds(new MeshCode { Value = tertiaryTileId });
+        double centerLatitude = (tileBounds.SouthLatitude + tileBounds.NorthLatitude) / 2d;
+        double centerLongitude = (tileBounds.WestLongitude + tileBounds.EastLongitude) / 2d;
+        CoordinateTransformer transformer = new CoordinateTransformer(new CrsRegistry());
+        CrsReference projectCrs = new CrsReference { EpsgCode = 6677, NameSnapshot = "JGD2011 / Japan Plane Rectangular CS IX" };
+        ProjectedCoordinate center = transformer.Project(new GeographicCoordinate(centerLatitude, centerLongitude), projectCrs);
+        const double halfSpanMetres = 50d;
+
+        PlateauFolderScanResult scanResult = new PlateauFolderScanResult
+        {
+            CityModels = new[]
+            {
+                new PlateauCityModel
+                {
+                    SourcePath = @"C:\fixtures\533945_luse_6697_op.gml",
+                    FileTileId = "533945",
+                    EpsgCode = 6677,
+                    Features = new PlateauContextFeature[]
+                    {
+                        CreateFeature(
+                            PlateauFeatureType.LandUse,
+                            "luse-inside",
+                            "Land Use Inside",
+                            "533945",
+                            new PlateauCoordinate3D(center.Easting - halfSpanMetres, center.Northing - halfSpanMetres, 0.0),
+                            new PlateauCoordinate3D(center.Easting + halfSpanMetres, center.Northing - halfSpanMetres, 0.0),
+                            new PlateauCoordinate3D(center.Easting + halfSpanMetres, center.Northing + halfSpanMetres, 0.0),
+                            new PlateauCoordinate3D(center.Easting - halfSpanMetres, center.Northing + halfSpanMetres, 0.0),
+                            new PlateauCoordinate3D(center.Easting - halfSpanMetres, center.Northing - halfSpanMetres, 0.0))
+                    }
+                }
+            }
+        };
+
+        ContextImportPlan plan = new ContextGeometryBuilder().BuildPlan(
+            scanResult,
+            BuildIdentityReferenceContext(),
+            new[] { PlateauFeatureType.LandUse },
+            new[] { tertiaryTileId });
+
+        ContextShapePlan shape = Assert.Single(plan.Shapes);
+        Assert.Equal(PlateauFeatureType.LandUse, shape.FeatureType);
+        Assert.Equal("533945", shape.TileId);
     }
 
     [Fact]
@@ -601,6 +748,144 @@ public sealed class ContextGeometryBuilderTests
         Assert.Equal(expectedProjected.Easting / 0.3048d, geographicShape.FootprintPointsFeet.First().XFeet, 3);
         Assert.Equal(expectedProjected.Northing / 0.3048d, geographicShape.FootprintPointsFeet.First().YFeet, 3);
     }
+    [Fact]
+    public void BuildPlan_mass_on_relief_overrides_building_base_with_sampled_relief_elevation()
+    {
+        PlateauCityModel model = BuildBuildingAndReliefModel();
+        PlateauImportReferenceContext referenceContext = BuildIdentityReferenceContext();
+
+        ContextImportPlan plan = new ContextGeometryBuilder().BuildPlan(
+            model,
+            referenceContext,
+            PlateauGeometryImportMode.LightweightMassOnRelief);
+
+        ContextShapePlan buildingShape = plan.Shapes.Single(shape => shape.FeatureType == PlateauFeatureType.Building);
+
+        // Sloped triangle (0,0,0)-(100,0,10)-(0,100,10) interpolated at building centroid (25, 25)
+        // yields Z = 0.5*0 + 0.25*10 + 0.25*10 = 5 metres. Building height = 20 m (TopZ - BaseZ).
+        Assert.Equal(5d / 0.3048d, buildingShape.BaseElevationFeet, 3);
+        Assert.Equal(20d / 0.3048d, buildingShape.HeightFeet, 3);
+        Assert.Equal(PlateauGeometryImportMode.LightweightMassOnRelief, plan.GeometryImportMode);
+        Assert.DoesNotContain(plan.WarningMessages, w => w.Contains("outside the Relief hull", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(plan.WarningMessages, w => w.Contains("no Relief surfaces", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void BuildPlan_mass_on_relief_warns_and_uses_nearest_triangle_when_building_centroid_is_outside_relief_hull()
+    {
+        PlateauCityModel model = BuildBuildingAndReliefModel(buildingCenterX: 500d, buildingCenterY: 500d);
+        PlateauImportReferenceContext referenceContext = BuildIdentityReferenceContext();
+
+        ContextImportPlan plan = new ContextGeometryBuilder().BuildPlan(
+            model,
+            referenceContext,
+            PlateauGeometryImportMode.LightweightMassOnRelief);
+
+        ContextShapePlan buildingShape = plan.Shapes.Single(shape => shape.FeatureType == PlateauFeatureType.Building);
+
+        // Centroid of the only Relief triangle is (100/3, 100/3, 20/3) m.
+        double expectedNearestZ = 20d / 3d;
+        Assert.Equal(expectedNearestZ / 0.3048d, buildingShape.BaseElevationFeet, 3);
+        Assert.Contains(plan.WarningMessages, w => w.Contains("outside the Relief hull", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void BuildPlan_mass_on_relief_warns_and_falls_back_when_no_relief_surfaces_are_present()
+    {
+        PlateauCityModel model = new PlateauCityModel
+        {
+            EpsgCode = 6677,
+            Features = new PlateauContextFeature[] { BuildSquareBuilding(centerX: 25d, centerY: 25d) }
+        };
+        PlateauImportReferenceContext referenceContext = BuildIdentityReferenceContext();
+
+        ContextImportPlan plan = new ContextGeometryBuilder().BuildPlan(
+            model,
+            referenceContext,
+            PlateauGeometryImportMode.LightweightMassOnRelief);
+
+        ContextShapePlan buildingShape = Assert.Single(plan.Shapes);
+
+        // No Relief: falls back to the building's own BaseElevationMeters = 0 m.
+        Assert.Equal(0d, buildingShape.BaseElevationFeet, 3);
+        Assert.Equal(20d / 0.3048d, buildingShape.HeightFeet, 3);
+        Assert.Contains(plan.WarningMessages, w => w.Contains("no Relief surfaces", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static PlateauCityModel BuildBuildingAndReliefModel(double buildingCenterX = 25d, double buildingCenterY = 25d)
+    {
+        return new PlateauCityModel
+        {
+            EpsgCode = 6677,
+            Features = new PlateauContextFeature[]
+            {
+                BuildSquareBuilding(buildingCenterX, buildingCenterY),
+                new PlateauContextFeature
+                {
+                    FeatureType = PlateauFeatureType.Relief,
+                    Id = "relief-1",
+                    Name = "Relief",
+                    TileId = "tile-a",
+                    ExteriorRing = new[]
+                    {
+                        new PlateauCoordinate3D(0d, 0d, 0d),
+                        new PlateauCoordinate3D(100d, 0d, 10d),
+                        new PlateauCoordinate3D(0d, 100d, 10d)
+                    },
+                    GeometrySurfaces = new[]
+                    {
+                        new PlateauGeometrySurface
+                        {
+                            SurfaceId = "relief-1-surface",
+                            Lod = 1,
+                            ExteriorRing = new[]
+                            {
+                                new PlateauCoordinate3D(0d, 0d, 0d),
+                                new PlateauCoordinate3D(100d, 0d, 10d),
+                                new PlateauCoordinate3D(0d, 100d, 10d)
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    private static PlateauBuildingFeature BuildSquareBuilding(double centerX, double centerY)
+    {
+        PlateauCoordinate3D[] ring = new[]
+        {
+            new PlateauCoordinate3D(centerX - 5d, centerY - 5d, 0d),
+            new PlateauCoordinate3D(centerX + 5d, centerY - 5d, 0d),
+            new PlateauCoordinate3D(centerX + 5d, centerY + 5d, 0d),
+            new PlateauCoordinate3D(centerX - 5d, centerY + 5d, 0d),
+            new PlateauCoordinate3D(centerX - 5d, centerY - 5d, 0d)
+        };
+        return new PlateauBuildingFeature
+        {
+            Id = "bldg-1",
+            Name = "Test Building",
+            TileId = "tile-a",
+            ExteriorRing = ring,
+            GeometrySurfaces = new[] { CreateSurface("bldg-1-surface", 1, ring) },
+            BaseElevationMeters = 0d,
+            TopElevationMeters = 20d
+        };
+    }
+
+    private static PlateauImportReferenceContext BuildIdentityReferenceContext()
+    {
+        return new PlateauImportReferenceContext
+        {
+            ProjectCrs = new CrsReference { EpsgCode = 6677, NameSnapshot = "JGD2011 / Japan Plane Rectangular CS IX" },
+            AnchorProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
+            AnchorElevationMeters = 0d,
+            AnchorXFeet = 0d,
+            AnchorYFeet = 0d,
+            AnchorZFeet = 0d
+        };
+    }
+
     private static PlateauContextFeature CreateFeature(PlateauFeatureType featureType, string id, string name, string tileId, params PlateauCoordinate3D[] ring)
     {
         PlateauGeometrySurface surface = CreateSurface(id + "-surface", 0, ring);
@@ -632,6 +917,20 @@ public sealed class ContextGeometryBuilderTests
             Lod = lod,
             ExteriorRing = ring
         };
+    }
+
+    private static double ComputeFootprintAreaMeters(ContextShapePlan shape)
+    {
+        var points = shape.FootprintPointsFeet.Select(point => (X: point.XFeet * 0.3048d, Y: point.YFeet * 0.3048d)).ToArray();
+        double areaTwice = 0d;
+        for (int index = 0; index < points.Length; index++)
+        {
+            var current = points[index];
+            var next = points[(index + 1) % points.Length];
+            areaTwice += (current.X * next.Y) - (next.X * current.Y);
+        }
+
+        return Math.Abs(areaTwice) * 0.5d;
     }
 
     private static IEnumerable<ContextShapePoint3D> GetVertices(ContextShapeTriangle triangle)

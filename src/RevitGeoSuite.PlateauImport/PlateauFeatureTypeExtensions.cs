@@ -18,6 +18,8 @@ public static class PlateauFeatureTypeExtensions
                 return "Vegetation";
             case PlateauFeatureType.Relief:
                 return "Relief";
+            case PlateauFeatureType.LandUse:
+                return "Land use";
             default:
                 throw new ArgumentOutOfRangeException(nameof(featureType), featureType, "Unsupported PLATEAU feature type.");
         }
@@ -37,6 +39,8 @@ public static class PlateauFeatureTypeExtensions
                 return "Vegetation";
             case PlateauFeatureType.Relief:
                 return "Relief";
+            case PlateauFeatureType.LandUse:
+                return "Land use";
             default:
                 throw new ArgumentOutOfRangeException(nameof(featureType), featureType, "Unsupported PLATEAU feature type.");
         }

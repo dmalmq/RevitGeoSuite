@@ -77,6 +77,29 @@ public sealed class JapanMeshCalculatorTests
         Assert.Contains("53395700", actual);
     }
 
+    [Theory]
+    [InlineData(35.681236, 139.767125, true)]
+    [InlineData(20.0, 122.0, true)]
+    [InlineData(46.0, 154.0, true)]
+    [InlineData(0.0, 0.0, false)]
+    [InlineData(35.0, 100.0, false)]
+    [InlineData(double.NaN, 139.0, false)]
+    [InlineData(35.0, double.PositiveInfinity, false)]
+    public void Japan_mesh_domain_validates_supported_coordinates(double latitude, double longitude, bool expected)
+    {
+        Assert.Equal(expected, JapanMeshDomain.IsSupportedCoordinate(latitude, longitude));
+    }
+
+    [Fact]
+    public void Japan_mesh_domain_validates_tertiary_mesh_codes()
+    {
+        Assert.True(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "53394611" }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(null));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = string.Empty }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "533946" }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "5339461A" }));
+    }
+
     private static List<MeshFixture> LoadFixtures()
     {
         string path = TestPaths.GetRepoPath("tests/Fixtures/Mesh/japan-mesh-samples.json");

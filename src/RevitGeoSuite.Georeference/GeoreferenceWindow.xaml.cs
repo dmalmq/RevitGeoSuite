@@ -1,10 +1,13 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using RevitGeoSuite.Core.Storage;
 using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.SharedUI.Controls;
+using RevitGeoSuite.SharedUI.Localization;
 
 namespace RevitGeoSuite.Georeference;
 
@@ -28,6 +31,7 @@ public partial class GeoreferenceWindow : Window
         DataContext = viewModel;
         Loaded += OnWindowLoaded;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        PlateauGridMap.MapPointSelected += OnPlateauGridMapPointSelected;
         PlateauGridMap.OverlayFeatureClicked += OnPlateauGridOverlayFeatureClicked;
         ModuleNavRail.ModuleRequested += OnModuleRequested;
         Closed += OnWindowClosed;
@@ -45,30 +49,11 @@ public partial class GeoreferenceWindow : Window
     private void OnWindowClosed(object? sender, EventArgs e)
     {
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        PlateauGridMap.MapPointSelected -= OnPlateauGridMapPointSelected;
         PlateauGridMap.OverlayFeatureClicked -= OnPlateauGridOverlayFeatureClicked;
         ModuleNavRail.ModuleRequested -= OnModuleRequested;
         Loaded -= OnWindowLoaded;
         Closed -= OnWindowClosed;
-    }
-
-    private void OnBackClick(object sender, RoutedEventArgs e)
-    {
-        ViewModel.GoBack();
-    }
-
-    private void OnNextClick(object sender, RoutedEventArgs e)
-    {
-        ViewModel.GoNext();
-    }
-
-    private void OnStepChipClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement element || element.Tag is not string stepName || !Enum.TryParse(stepName, out GeoreferenceStep step))
-        {
-            return;
-        }
-
-        ViewModel.NavigateToStep(step);
     }
 
     private async void OnClearPlateauGridSelectionClick(object sender, RoutedEventArgs e)
@@ -84,14 +69,26 @@ public partial class GeoreferenceWindow : Window
             || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridStatusText)
             || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridAnchorLatitude)
             || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridAnchorLongitude)
+            || e.PropertyName == nameof(GeoreferenceViewModel.IsPlateauGridMapVisible)
+            || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridMapCenterLatitude)
+            || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridMapCenterLongitude)
             || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridSeedLatitude)
             || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridSeedLongitude))
         {
             bool fitToBounds = e.PropertyName == nameof(GeoreferenceViewModel.IsPlateauGridCoordinateMode)
+                || e.PropertyName == nameof(GeoreferenceViewModel.IsPlateauGridMapVisible)
+                || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridMapCenterLatitude)
+                || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridMapCenterLongitude)
                 || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridSeedLatitude)
                 || e.PropertyName == nameof(GeoreferenceViewModel.PlateauGridSeedLongitude);
             await RefreshPlateauGridMapAsync(fitToBounds);
         }
+    }
+
+    private async void OnPlateauGridMapPointSelected(object? sender, MapPointSelectedEventArgs e)
+    {
+        ViewModel.LoadPlateauGridCandidatesFromMapPoint(e.Latitude, e.Longitude);
+        await RefreshPlateauGridMapAsync(true);
     }
 
     private async void OnPlateauGridOverlayFeatureClicked(object? sender, MapOverlayFeatureClickedEventArgs e)
@@ -104,12 +101,12 @@ public partial class GeoreferenceWindow : Window
 
     private async Task RefreshPlateauGridMapAsync(bool fitToBounds)
     {
-        await PlateauGridMap.SetPointSelectionEnabledAsync(false);
+        await PlateauGridMap.SetPointSelectionEnabledAsync(ViewModel.IsPlateauGridMapVisible);
         await PlateauGridMap.ClearMeshGridAsync();
         await PlateauGridMap.ClearFeatureSelectionOverlayAsync();
         await PlateauGridMap.ClearMarkerAsync();
 
-        if (!ViewModel.IsPlateauGridCoordinateMode)
+        if (!ViewModel.IsPlateauGridMapVisible)
         {
             return;
         }
@@ -123,9 +120,9 @@ public partial class GeoreferenceWindow : Window
                 ViewModel.PlateauGridSeedLongitude,
                 ViewModel.PlateauGridStatusText);
         }
-        else if (fitToBounds && ViewModel.PlateauGridSeedLatitude.HasValue && ViewModel.PlateauGridSeedLongitude.HasValue)
+        else if (fitToBounds && ViewModel.PlateauGridMapCenterLatitude.HasValue && ViewModel.PlateauGridMapCenterLongitude.HasValue)
         {
-            await PlateauGridMap.SetViewAsync(ViewModel.PlateauGridSeedLatitude.Value, ViewModel.PlateauGridSeedLongitude.Value, 14);
+            await PlateauGridMap.SetViewAsync(ViewModel.PlateauGridMapCenterLatitude.Value, ViewModel.PlateauGridMapCenterLongitude.Value, 11);
         }
 
         if (ViewModel.HasPlateauGridAnchor && ViewModel.PlateauGridAnchorLatitude.HasValue && ViewModel.PlateauGridAnchorLongitude.HasValue)
@@ -181,21 +178,62 @@ public partial class GeoreferenceWindow : Window
 
     private string BuildApplyConfirmationMessage()
     {
-        string message = ViewModel.UsesSplitApply
+        StringBuilder builder = new StringBuilder();
+
+        builder.Append(ViewModel.UsesSplitApply
             ? $"Apply the new-project georeference setup to '{ViewModel.CurrentState.DocumentTitle}'?\n\nSurvey Point will become CRS origin E 0.000 m, N 0.000 m.\nProject Base Point shared coordinates will resolve to {ViewModel.ProjectBasePointOffsetSummary}.\n\nShared geo metadata and the latest audit summary will be saved in the same Revit transaction."
-            : $"Create georeference metadata from the existing setup in '{ViewModel.CurrentState.DocumentTitle}'?\n\nThe current Survey Point and Project Base Point geometry will stay unchanged. The add-in will save canonical CRS metadata and the current Project Base Point offset for downstream workflows.\n\nShared geo metadata and the latest audit summary will be saved in the same Revit transaction.";
+            : $"Create georeference metadata from the existing setup in '{ViewModel.CurrentState.DocumentTitle}'?\n\nThe current Survey Point and Project Base Point geometry will stay unchanged. The add-in will save canonical CRS metadata and the current Project Base Point offset for downstream workflows.\n\nShared geo metadata and the latest audit summary will be saved in the same Revit transaction.");
 
         if (ViewModel.IsPlateauGridCoordinateMode && ViewModel.HasPlateauGridSelection)
         {
-            message += "\n\nGrid-derived anchor: " + ViewModel.PlateauGridAnchorSummary;
+            builder.Append("\n\nGrid-derived anchor: ").Append(ViewModel.PlateauGridAnchorSummary);
+        }
+
+        PlacementPreviewField[] changedFields = ViewModel.PreviewFields
+            .Where(field => !string.Equals(field.CurrentValue, field.ProposedValue, StringComparison.Ordinal))
+            .ToArray();
+        if (changedFields.Length > 0)
+        {
+            builder.Append("\n\n").Append(UiLocalizer.Instance.Get("Georef.ApplyChangesTitle")).Append(':');
+            foreach (PlacementPreviewField field in changedFields)
+            {
+                builder.Append("\n  • ").Append(field.Label).Append(": ").Append(field.CurrentValue).Append(" → ").Append(field.ProposedValue);
+            }
+        }
+
+        if (ViewModel.PreviewWhatWillChange.Count > 0)
+        {
+            builder.Append("\n\n").Append(UiLocalizer.Instance.Get("Georef.Preview.WhatWillChange")).Append(':');
+            foreach (string item in ViewModel.PreviewWhatWillChange)
+            {
+                builder.Append("\n  • ").Append(item);
+            }
+        }
+
+        if (ViewModel.PreviewWhatWillNotChange.Count > 0)
+        {
+            builder.Append("\n\n").Append(UiLocalizer.Instance.Get("Georef.Preview.WhatWillNotChange")).Append(':');
+            foreach (string item in ViewModel.PreviewWhatWillNotChange)
+            {
+                builder.Append("\n  • ").Append(item);
+            }
+        }
+
+        if (ViewModel.PreviewWarnings.Count > 0)
+        {
+            builder.Append("\n\n⚠");
+            foreach (string warning in ViewModel.PreviewWarnings)
+            {
+                builder.Append("\n  ").Append(warning);
+            }
         }
 
         if (ViewModel.HasExistingSetupMessage)
         {
-            message += "\n\nWarning: " + ViewModel.ExistingSetupMessage;
+            builder.Append("\n\nWarning: ").Append(ViewModel.ExistingSetupMessage);
         }
 
-        return message;
+        return builder.ToString();
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)
@@ -227,8 +265,7 @@ public partial class GeoreferenceWindow : Window
 
     private bool HasPendingNavigationChanges()
     {
-        return ViewModel.CurrentStep != GeoreferenceStep.CurrentState
-            || ViewModel.SelectedCrs is not null
+        return ViewModel.SelectedCrs is not null
             || !string.IsNullOrWhiteSpace(ViewModel.ProjectBasePointOffsetXInput)
             || !string.IsNullOrWhiteSpace(ViewModel.ProjectBasePointOffsetYInput)
             || ViewModel.ConfirmExistingSetup

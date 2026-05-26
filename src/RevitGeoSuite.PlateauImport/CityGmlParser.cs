@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Xml.Linq;
+using RevitGeoSuite.Core.Plateau.Codelists;
 using RevitGeoSuite.Core.Plateau.Schema;
 
 namespace RevitGeoSuite.PlateauImport;
@@ -15,9 +16,13 @@ public sealed class CityGmlParser
         new SupportedFeatureDescriptor(PlateauConstants.BridgeNamespace, PlateauFeatureType.Bridge, "Bridge", "BridgePart", "BridgeConstructionElement"),
         new SupportedFeatureDescriptor(PlateauConstants.TransportationNamespace, PlateauFeatureType.Road, "Road", "TrafficArea", "AuxiliaryTrafficArea"),
         new SupportedFeatureDescriptor(PlateauConstants.VegetationNamespace, PlateauFeatureType.Vegetation, "SolitaryVegetationObject", "PlantCover"),
-        new SupportedFeatureDescriptor(PlateauConstants.ReliefNamespace, PlateauFeatureType.Relief, "ReliefFeature", "TINRelief", "MassPointRelief", "BreaklineRelief")
+        new SupportedFeatureDescriptor(PlateauConstants.ReliefNamespace, PlateauFeatureType.Relief, "ReliefFeature", "TINRelief", "MassPointRelief", "BreaklineRelief"),
+        new SupportedFeatureDescriptor(PlateauConstants.LandUseNamespace, PlateauFeatureType.LandUse, "LandUse")
     };
     private static readonly Dictionary<XName, SupportedFeatureDescriptor> SupportedFeatureLookup = BuildSupportedFeatureLookup();
+
+    private readonly Dictionary<string, CodelistRegistry?> codelistCache = new Dictionary<string, CodelistRegistry?>(StringComparer.OrdinalIgnoreCase);
+    private readonly CodelistReader codelistReader = new CodelistReader();
 
     public PlateauCityModel ParseFile(string filePath)
     {
@@ -49,7 +54,7 @@ public sealed class CityGmlParser
             }
         }
 
-        string srsName = document.Root?.Attribute("srsName")?.Value;
+        string? srsName = document.Root?.Attribute("srsName")?.Value;
         if (string.IsNullOrWhiteSpace(srsName))
         {
             srsName = envelopeSrsName;
@@ -100,6 +105,11 @@ public sealed class CityGmlParser
         XElement featureElement,
         IDictionary<XElement, RoadChildSummary> roadChildSummaries)
     {
+        if (featureType == PlateauFeatureType.Bridge)
+        {
+            return HasNestedSupportedBridgeFeature(featureElement);
+        }
+
         if (featureType != PlateauFeatureType.Road)
         {
             return false;
@@ -136,6 +146,52 @@ public sealed class CityGmlParser
         return currentMaxLod > 0 && currentMaxLod < parentMaxChildLod;
     }
 
+    private static bool HasNestedSupportedBridgeFeature(XElement featureElement)
+    {
+        foreach (XElement descendant in featureElement.Descendants())
+        {
+            if (descendant.Name.Namespace != PlateauConstants.BridgeNamespace)
+            {
+                continue;
+            }
+
+            if (IsSupportedBridgeFeature(descendant)
+                && ContainsSupportedSurfaceGeometry(descendant))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsSupportedBridgeFeature(XElement element)
+    {
+        if (element.Name.Namespace != PlateauConstants.BridgeNamespace)
+        {
+            return false;
+        }
+
+        string localName = element.Name.LocalName;
+        return string.Equals(localName, "Bridge", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(localName, "BridgePart", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(localName, "BridgeConstructionElement", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsSupportedSurfaceGeometry(XElement element)
+    {
+        XNamespace gml = PlateauConstants.GmlNamespace;
+        foreach (XElement descendant in element.Descendants())
+        {
+            if (descendant.Name == gml + "Polygon" || descendant.Name == gml + "Triangle")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static int DetermineElementMaxLod(XElement element)
     {
         int maxLod = 0;
@@ -151,7 +207,7 @@ public sealed class CityGmlParser
         return maxLod;
     }
 
-    private static IReadOnlyCollection<PlateauContextFeature> ParseFeatures(
+    private IReadOnlyCollection<PlateauContextFeature> ParseFeatures(
         XElement featureElement,
         PlateauFeatureType featureType,
         XNamespace gml,
@@ -163,6 +219,10 @@ public sealed class CityGmlParser
         {
             return Array.Empty<PlateauContextFeature>();
         }
+
+        (string classCode, string className) classification = featureType == PlateauFeatureType.LandUse
+            ? ResolveLandUseClassification(featureElement, sourcePath)
+            : (string.Empty, string.Empty);
 
         string baseId = (string?)featureElement.Attribute(gml + "id") ?? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         string? baseName = null;
@@ -207,6 +267,8 @@ public sealed class CityGmlParser
                 candidates,
                 highestLod,
                 BuildGeometrySurfaces(highestLodCandidates));
+            feature.ClassCode = classification.classCode;
+            feature.ClassName = classification.className;
             return new[] { feature };
         }
 
@@ -221,7 +283,7 @@ public sealed class CityGmlParser
             string featureName = needsSuffix
                 ? string.Format(CultureInfo.InvariantCulture, "{0} [{1}]", baseName, index + 1)
                 : baseName;
-            features.Add(CreateFeature(
+            PlateauContextFeature feature = CreateFeature(
                 featureType,
                 featureId,
                 featureName,
@@ -230,10 +292,110 @@ public sealed class CityGmlParser
                 candidate.Coordinates,
                 new[] { candidate },
                 candidate.Surface.Lod,
-                new[] { candidate.Surface }));
+                new[] { candidate.Surface });
+            feature.ClassCode = classification.classCode;
+            feature.ClassName = classification.className;
+            features.Add(feature);
         }
 
         return features;
+    }
+
+    private (string ClassCode, string ClassName) ResolveLandUseClassification(XElement featureElement, string sourcePath)
+    {
+        XElement? classElement = null;
+        foreach (XElement child in featureElement.Elements())
+        {
+            if (child.Name.Namespace == PlateauConstants.LandUseNamespace
+                && string.Equals(child.Name.LocalName, "class", StringComparison.Ordinal))
+            {
+                classElement = child;
+                break;
+            }
+        }
+
+        if (classElement is null)
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        string code = (classElement.Value ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(code))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        string codeSpace = (string?)classElement.Attribute("codeSpace") ?? string.Empty;
+        string name = ResolveCodelistName(sourcePath, codeSpace, code);
+        return (code, name);
+    }
+
+    private string ResolveCodelistName(string sourcePath, string codeSpace, string code)
+    {
+        if (string.IsNullOrWhiteSpace(codeSpace) || string.IsNullOrWhiteSpace(code))
+        {
+            return string.Empty;
+        }
+
+        string? absoluteCodelistPath = TryResolveCodelistPath(sourcePath, codeSpace);
+        if (absoluteCodelistPath is null)
+        {
+            return string.Empty;
+        }
+
+        if (!codelistCache.TryGetValue(absoluteCodelistPath, out CodelistRegistry? registry))
+        {
+            registry = TryLoadCodelist(absoluteCodelistPath);
+            codelistCache[absoluteCodelistPath] = registry;
+        }
+
+        if (registry is null)
+        {
+            return string.Empty;
+        }
+
+        return registry.TryGetByCode(code, out CodelistEntry? entry) && entry is not null
+            ? entry.Name
+            : string.Empty;
+    }
+
+    private CodelistRegistry? TryLoadCodelist(string absolutePath)
+    {
+        try
+        {
+            if (!File.Exists(absolutePath))
+            {
+                return null;
+            }
+
+            IReadOnlyCollection<CodelistEntry> entries = codelistReader.ReadFromFile(absolutePath);
+            return new CodelistRegistry(entries);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? TryResolveCodelistPath(string sourcePath, string codeSpace)
+    {
+        try
+        {
+            string? sourceDirectory = Path.GetDirectoryName(sourcePath);
+            if (string.IsNullOrEmpty(sourceDirectory))
+            {
+                return null;
+            }
+
+            string combined = Path.IsPathRooted(codeSpace)
+                ? codeSpace
+                : Path.GetFullPath(Path.Combine(sourceDirectory, codeSpace));
+            return combined;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static bool ShouldPreserveAllTransportRings(PlateauFeatureType featureType)

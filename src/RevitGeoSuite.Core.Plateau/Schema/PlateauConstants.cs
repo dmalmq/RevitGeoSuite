@@ -11,6 +11,7 @@ public static class PlateauConstants
     public static readonly XNamespace TransportationNamespace = "http://www.opengis.net/citygml/transportation/2.0";
     public static readonly XNamespace VegetationNamespace = "http://www.opengis.net/citygml/vegetation/2.0";
     public static readonly XNamespace ReliefNamespace = "http://www.opengis.net/citygml/relief/2.0";
+    public static readonly XNamespace LandUseNamespace = "http://www.opengis.net/citygml/landuse/2.0";
     public static readonly XNamespace GmlNamespace = "http://www.opengis.net/gml";
 
     public const string DefaultImportCategoryName = "PLATEAU Context";

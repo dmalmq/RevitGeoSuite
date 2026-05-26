@@ -70,18 +70,97 @@ public sealed class PlateauFolderScanServiceTests
     public void ScanFolder_reports_progress_for_each_supported_file()
     {
         string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
-        List<PlateauScanProgress> reported = new List<PlateauScanProgress>();
+        string tempFolder = CopyFixtureToTemp(fixtureFolder);
+        try
+        {
+            List<PlateauScanProgress> reported = new List<PlateauScanProgress>();
 
-        PlateauFolderScanResult result = new PlateauFolderScanService(new CityGmlParser()).ScanFolder(fixtureFolder, reported.Add);
+            PlateauFolderScanResult result = new PlateauFolderScanService(new CityGmlParser()).ScanFolder(tempFolder, reported.Add);
 
-        Assert.NotEmpty(reported);
-        Assert.Equal(PlateauScanPhase.Enumerating, reported[0].Phase);
-        Assert.Contains(reported, progress => progress.Phase == PlateauScanPhase.Parsing && progress.Current == 0 && progress.Total == result.SupportedFilePaths.Count);
-        Assert.Equal(result.SupportedFilePaths.Count, reported.Count(progress => progress.Phase == PlateauScanPhase.Parsing && progress.Current > 0));
-        PlateauScanProgress lastProgress = reported[reported.Count - 1];
-        Assert.Equal(PlateauScanPhase.Completed, lastProgress.Phase);
-        Assert.Equal(result.SupportedFilePaths.Count, lastProgress.Current);
-        Assert.Equal(result.SupportedFilePaths.Count, lastProgress.Total);
+            Assert.NotEmpty(reported);
+            Assert.Equal(PlateauScanPhase.Enumerating, reported[0].Phase);
+            Assert.Contains(reported, progress => progress.Phase == PlateauScanPhase.Parsing && progress.Current == 0 && progress.Total == result.SupportedFilePaths.Count);
+            Assert.Equal(result.SupportedFilePaths.Count, reported.Count(progress => progress.Phase == PlateauScanPhase.Parsing && progress.Current > 0));
+            PlateauScanProgress lastProgress = reported[reported.Count - 1];
+            Assert.Equal(PlateauScanPhase.Completed, lastProgress.Phase);
+            Assert.Equal(result.SupportedFilePaths.Count, lastProgress.Current);
+            Assert.Equal(result.SupportedFilePaths.Count, lastProgress.Total);
+        }
+        finally
+        {
+            Directory.Delete(tempFolder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ScanFolder_reuses_unchanged_session_cache()
+    {
+        string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
+        string tempFolder = CopyFixtureToTemp(fixtureFolder);
+        try
+        {
+            PlateauFolderScanService service = new PlateauFolderScanService(new CityGmlParser());
+
+            PlateauFolderScanResult first = service.ScanFolder(tempFolder);
+            PlateauFolderScanResult second = service.ScanFolder(tempFolder);
+
+            Assert.False(first.IsFromCache);
+            Assert.True(second.IsFromCache);
+            Assert.Same(first.CityModels, second.CityModels);
+            Assert.Same(first.WarningMessages, second.WarningMessages);
+        }
+        finally
+        {
+            Directory.Delete(tempFolder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ScanFolder_invalidates_cache_when_file_timestamp_changes()
+    {
+        string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
+        string tempFolder = CopyFixtureToTemp(fixtureFolder);
+        try
+        {
+            PlateauFolderScanService service = new PlateauFolderScanService(new CityGmlParser());
+            string changedFile = Directory.EnumerateFiles(tempFolder, "*.gml").First();
+
+            PlateauFolderScanResult first = service.ScanFolder(tempFolder);
+            PlateauFolderScanResult second = service.ScanFolder(tempFolder);
+            File.SetLastWriteTimeUtc(changedFile, DateTime.UtcNow.AddMinutes(5));
+            PlateauFolderScanResult third = service.ScanFolder(tempFolder);
+
+            Assert.False(first.IsFromCache);
+            Assert.True(second.IsFromCache);
+            Assert.False(third.IsFromCache);
+        }
+        finally
+        {
+            Directory.Delete(tempFolder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ScanFolder_does_not_reuse_cache_for_different_folder_path()
+    {
+        string fixtureFolder = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport");
+        string firstFolder = CopyFixtureToTemp(fixtureFolder);
+        string secondFolder = CopyFixtureToTemp(fixtureFolder);
+        try
+        {
+            PlateauFolderScanService service = new PlateauFolderScanService(new CityGmlParser());
+
+            PlateauFolderScanResult first = service.ScanFolder(firstFolder);
+            PlateauFolderScanResult second = service.ScanFolder(secondFolder);
+
+            Assert.False(first.IsFromCache);
+            Assert.False(second.IsFromCache);
+        }
+        finally
+        {
+            Directory.Delete(firstFolder, recursive: true);
+            Directory.Delete(secondFolder, recursive: true);
+        }
     }
 
     private static string GetWarningFileName(string warning)
@@ -91,5 +170,26 @@ public sealed class PlateauFolderScanServiceTests
         return start >= 0 && end > start
             ? warning.Substring(start + 1, end - start - 1)
             : warning;
+    }
+
+    private static string CopyFixtureToTemp(string sourceFolder)
+    {
+        string tempFolder = Path.Combine(Path.GetTempPath(), "RevitGeoSuitePlateauScanCacheTests", Guid.NewGuid().ToString("N"));
+        CopyDirectory(sourceFolder, tempFolder);
+        return tempFolder;
+    }
+
+    private static void CopyDirectory(string sourceFolder, string targetFolder)
+    {
+        Directory.CreateDirectory(targetFolder);
+        foreach (string filePath in Directory.EnumerateFiles(sourceFolder))
+        {
+            File.Copy(filePath, Path.Combine(targetFolder, Path.GetFileName(filePath)));
+        }
+
+        foreach (string sourceSubfolder in Directory.EnumerateDirectories(sourceFolder))
+        {
+            CopyDirectory(sourceSubfolder, Path.Combine(targetFolder, Path.GetFileName(sourceSubfolder)));
+        }
     }
 }

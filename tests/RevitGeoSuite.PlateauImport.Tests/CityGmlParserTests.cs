@@ -199,6 +199,90 @@ public sealed class CityGmlParserTests
     }
 
     [Fact]
+    public void ParseFile_skips_parent_bridge_when_child_bridge_parts_are_available()
+    {
+        string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".gml");
+        string xml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<core:CityModel xmlns:core=""{PlateauConstants.CoreNamespace.NamespaceName}""
+                xmlns:gml=""{PlateauConstants.GmlNamespace.NamespaceName}""
+                xmlns:brid=""{PlateauConstants.BridgeNamespace.NamespaceName}""
+                srsName=""urn:ogc:def:crs:EPSG::6677"">
+  <core:cityObjectMember>
+    <brid:Bridge gml:id=""bridge-parent"">
+      <gml:name>Parent Bridge</gml:name>
+      <brid:lod1MultiSurface>
+        <gml:MultiSurface>
+          <gml:surfaceMember>
+            <gml:Polygon gml:id=""parent-poly"">
+              <gml:exterior>
+                <gml:LinearRing>
+                  <gml:posList>0 0 0 40 0 0 40 10 0 0 10 0 0 0 0</gml:posList>
+                </gml:LinearRing>
+              </gml:exterior>
+            </gml:Polygon>
+          </gml:surfaceMember>
+        </gml:MultiSurface>
+      </brid:lod1MultiSurface>
+      <brid:consistsOfBridgePart>
+        <brid:BridgePart gml:id=""bridge-part-1"">
+          <gml:name>Deck Part</gml:name>
+          <brid:lod2MultiSurface>
+            <gml:MultiSurface>
+              <gml:surfaceMember>
+                <gml:Polygon gml:id=""part-poly"">
+                  <gml:exterior>
+                    <gml:LinearRing>
+                      <gml:posList>0 0 10 20 0 10 20 8 10 0 8 10 0 0 10</gml:posList>
+                    </gml:LinearRing>
+                  </gml:exterior>
+                </gml:Polygon>
+              </gml:surfaceMember>
+            </gml:MultiSurface>
+          </brid:lod2MultiSurface>
+        </brid:BridgePart>
+      </brid:consistsOfBridgePart>
+      <brid:outerBridgeConstruction>
+        <brid:BridgeConstructionElement gml:id=""bridge-element-1"">
+          <gml:name>Pier Element</gml:name>
+          <brid:lod2Geometry>
+            <gml:MultiSurface>
+              <gml:surfaceMember>
+                <gml:Polygon gml:id=""element-poly"">
+                  <gml:exterior>
+                    <gml:LinearRing>
+                      <gml:posList>24 2 0 28 2 0 28 6 0 24 6 0 24 2 0</gml:posList>
+                    </gml:LinearRing>
+                  </gml:exterior>
+                </gml:Polygon>
+              </gml:surfaceMember>
+            </gml:MultiSurface>
+          </brid:lod2Geometry>
+        </brid:BridgeConstructionElement>
+      </brid:outerBridgeConstruction>
+    </brid:Bridge>
+  </core:cityObjectMember>
+</core:CityModel>";
+
+        try
+        {
+            File.WriteAllText(tempPath, xml);
+            PlateauCityModel model = new CityGmlParser().ParseFile(tempPath);
+
+            Assert.Equal(2, model.Features.Count);
+            Assert.All(model.Features, feature => Assert.Equal(PlateauFeatureType.Bridge, feature.FeatureType));
+            Assert.Equal(new[] { "bridge-part-1", "bridge-element-1" }, model.Features.Select(feature => feature.Id).ToArray());
+            Assert.Equal(new[] { "Deck Part", "Pier Element" }, model.Features.Select(feature => feature.Name).ToArray());
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
+    [Fact]
     public void ParseFile_reads_bridge_features_and_tile_id_from_path()
     {
         string fixturePath = TestPathHelper.GetFixturePath("tests", "Fixtures", "Plateau", "FolderImport", "54394536_brid_sample.gml");
@@ -213,5 +297,71 @@ public sealed class CityGmlParserTests
         Assert.Equal("Folder Bridge A", bridge.Name);
         Assert.True(bridge.ExteriorRing.Count >= 4);
         Assert.Single(bridge.GeometrySurfaces);
+    }
+
+    [Fact]
+    public void ParseFile_reads_land_use_secondary_mesh_and_common_land_use_type_codelist()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "RevitGeoSuiteLandUseParserTests", Guid.NewGuid().ToString("N"));
+        string luseDirectory = Path.Combine(root, "udx", "luse");
+        string codelistDirectory = Path.Combine(root, "codelists");
+        string filePath = Path.Combine(luseDirectory, "533945_luse_6697_op.gml");
+        try
+        {
+            Directory.CreateDirectory(luseDirectory);
+            Directory.CreateDirectory(codelistDirectory);
+            File.WriteAllText(
+                Path.Combine(codelistDirectory, "Common_landUseType.xml"),
+                @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<gml:Dictionary xmlns:gml=""http://www.opengis.net/gml"">
+  <gml:dictionaryEntry>
+    <gml:Definition gml:id=""Common_landUseType_6"">
+      <gml:description>住宅用地</gml:description>
+      <gml:name>211</gml:name>
+    </gml:Definition>
+  </gml:dictionaryEntry>
+</gml:Dictionary>");
+            string xml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<core:CityModel xmlns:core=""{PlateauConstants.CoreNamespace.NamespaceName}""
+                xmlns:gml=""{PlateauConstants.GmlNamespace.NamespaceName}""
+                xmlns:luse=""{PlateauConstants.LandUseNamespace.NamespaceName}""
+                srsName=""urn:ogc:def:crs:EPSG::6697"">
+  <core:cityObjectMember>
+    <luse:LandUse gml:id=""luse-1"">
+      <luse:class codeSpace=""../../codelists/Common_landUseType.xml"">211</luse:class>
+      <luse:lod1MultiSurface>
+        <gml:MultiSurface>
+          <gml:surfaceMember>
+            <gml:Polygon>
+              <gml:exterior>
+                <gml:LinearRing>
+                  <gml:posList>35.0 139.0 0 35.0 139.1 0 35.1 139.1 0 35.1 139.0 0 35.0 139.0 0</gml:posList>
+                </gml:LinearRing>
+              </gml:exterior>
+            </gml:Polygon>
+          </gml:surfaceMember>
+        </gml:MultiSurface>
+      </luse:lod1MultiSurface>
+    </luse:LandUse>
+  </core:cityObjectMember>
+</core:CityModel>";
+            File.WriteAllText(filePath, xml);
+
+            PlateauCityModel model = new CityGmlParser().ParseFile(filePath);
+            PlateauContextFeature landUse = Assert.Single(model.Features);
+
+            Assert.Equal("533945", model.FileTileId);
+            Assert.Equal(PlateauFeatureType.LandUse, landUse.FeatureType);
+            Assert.Equal("533945", landUse.TileId);
+            Assert.Equal("211", landUse.ClassCode);
+            Assert.Equal("住宅用地", landUse.ClassName);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 }

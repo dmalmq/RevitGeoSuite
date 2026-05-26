@@ -7,7 +7,8 @@ namespace RevitGeoSuite.Core.Plateau.Schema;
 public static class PlateauSchemaHelper
 {
     private static readonly Regex EpsgRegex = new Regex(@"(?<!\d)(\d{4,5})(?!\d)", RegexOptions.Compiled);
-    private static readonly Regex MeshCodeRegex = new Regex(@"(?<!\d)(\d{8})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex TertiaryMeshCodeRegex = new Regex(@"(?<!\d)(\d{8})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex SecondaryMeshCodeRegex = new Regex(@"(?<!\d)(\d{6})(?!\d)", RegexOptions.Compiled);
 
     public static bool TryExtractEpsgCode(string? srsName, out int epsgCode)
     {
@@ -46,7 +47,13 @@ public static class PlateauSchemaHelper
         }
 
         string fileName = Path.GetFileNameWithoutExtension(filePath) ?? string.Empty;
-        Match match = MeshCodeRegex.Match(fileName);
-        return match.Success ? match.Groups[1].Value : null;
+        Match tertiaryMatch = TertiaryMeshCodeRegex.Match(fileName);
+        if (tertiaryMatch.Success)
+        {
+            return tertiaryMatch.Groups[1].Value;
+        }
+
+        Match secondaryMatch = SecondaryMeshCodeRegex.Match(fileName);
+        return secondaryMatch.Success ? secondaryMatch.Groups[1].Value : null;
     }
 }

@@ -19,4 +19,8 @@ public class PlateauContextFeature
     public IReadOnlyCollection<PlateauCoordinate3D> ExteriorRing { get; set; } = new PlateauCoordinate3D[0];
 
     public IReadOnlyCollection<PlateauGeometrySurface> GeometrySurfaces { get; set; } = new PlateauGeometrySurface[0];
+
+    public string ClassCode { get; set; } = string.Empty;
+
+    public string ClassName { get; set; } = string.Empty;
 }

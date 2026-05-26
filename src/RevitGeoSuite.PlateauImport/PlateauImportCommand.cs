@@ -38,7 +38,8 @@ public sealed class PlateauImportCommand : IExternalCommand
             new PlateauImportReferenceResolver(coordinateTransformer, document is null ? null : new RevitPlateauImportLocalBasisProvider(document)),
             new PlateauTileIndex(),
             new PlateauFolderScanService(new CityGmlParser()),
-            new ContextGeometryBuilder());
+            new ContextGeometryBuilder(),
+            kibanCoordinateTransformer: coordinateTransformer);
 
         PlateauImportWindow window = new PlateauImportWindow(
             viewModel,

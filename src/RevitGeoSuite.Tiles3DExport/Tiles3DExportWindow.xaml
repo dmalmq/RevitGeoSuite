@@ -4,10 +4,10 @@
         xmlns:loc="clr-namespace:RevitGeoSuite.SharedUI.Localization;assembly=RevitGeoSuite.SharedUI"
         xmlns:shared="clr-namespace:RevitGeoSuite.SharedUI.Controls;assembly=RevitGeoSuite.SharedUI"
         Title="3D Tiles Export"
-        Height="920"
-        Width="1420"
-        MinWidth="1160"
-        MinHeight="760"
+        Height="880"
+        Width="1240"
+        MinWidth="1040"
+        MinHeight="740"
         WindowStartupLocation="CenterOwner">
   <Window.Resources>
     <ResourceDictionary>
@@ -22,7 +22,6 @@
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="94" />
       <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="308" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -32,15 +31,14 @@
 
     <shared:ModuleNavRailControl x:Name="ModuleNavRail" Grid.RowSpan="3" CurrentModuleKey="Tiles3DExport" />
 
-    <Border Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource ShellHeaderBorderStyle}">
+    <Border Grid.Column="1" Style="{StaticResource ShellHeaderBorderStyle}">
       <DockPanel>
         <shared:LanguageToggleControl DockPanel.Dock="Right" />
         <StackPanel Margin="0,0,18,0">
           <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[App.ProductTitle]}" />
           <TextBlock Margin="0,6,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.Tiles3DExport]}" />
-          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.WindowTitle]}" />
           <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding DocumentTitle}" />
-          <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Header]}" />
+          <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Header]}" />
         </StackPanel>
       </DockPanel>
     </Border>
@@ -76,31 +74,38 @@
             <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Center.Scope]}" />
             <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.ScopeHint]}" />
 
-            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.ScopeMode]}" />
-            <ComboBox Margin="0,8,0,0"
-                      ItemsSource="{Binding ScopeModeOptions}"
-                      SelectedItem="{Binding SelectedScopeModeOption, Mode=TwoWay}"
-                      DisplayMemberPath="Title" />
-            <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedScopeModeDescription}" />
-
-            <TextBlock Margin="0,18,0,0"
-                       Style="{StaticResource CardTitleTextStyle}"
-                       Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.VisibleExportView]}"
-                       Visibility="{Binding ShouldShowViewSelector, Converter={StaticResource BoolToVisibilityConverter}}" />
-            <ComboBox Margin="0,8,0,0"
-                      ItemsSource="{Binding AvailableViewOptions}"
-                      SelectedItem="{Binding SelectedViewOption, Mode=TwoWay}"
-                      DisplayMemberPath="Title"
-                      Visibility="{Binding ShouldShowViewSelector, Converter={StaticResource BoolToVisibilityConverter}}" />
-            <TextBlock Margin="0,8,0,0"
-                       Style="{StaticResource BodyMutedTextStyle}"
-                       Text="{Binding SelectedViewDescription}"
-                       Visibility="{Binding IsSelected3DViewScope, Converter={StaticResource BoolToVisibilityConverter}}" />
-            <TextBlock Margin="0,8,0,0"
-                       Foreground="#8A2D2D"
-                       Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.NoView]}"
-                       Visibility="{Binding ShouldShowNoAvailableViewsMessage, Converter={StaticResource BoolToVisibilityConverter}}"
-                       TextWrapping="Wrap" />
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.ScopeMode]}" />
+                <ComboBox Margin="0,8,0,0"
+                          ItemsSource="{Binding ScopeModeOptions}"
+                          SelectedItem="{Binding SelectedScopeModeOption, Mode=TwoWay}"
+                          DisplayMemberPath="Title" />
+                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SelectedScopeModeDescription}" />
+              </StackPanel>
+              <StackPanel Grid.Column="2" Visibility="{Binding ShouldShowViewSelector, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Style="{StaticResource CardTitleTextStyle}"
+                           Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.VisibleExportView]}" />
+                <ComboBox Margin="0,8,0,0"
+                          ItemsSource="{Binding AvailableViewOptions}"
+                          SelectedItem="{Binding SelectedViewOption, Mode=TwoWay}"
+                          DisplayMemberPath="Title" />
+                <TextBlock Margin="0,8,0,0"
+                           Style="{StaticResource BodyMutedTextStyle}"
+                           Text="{Binding SelectedViewDescription}"
+                           Visibility="{Binding IsSelected3DViewScope, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Margin="0,8,0,0"
+                           Foreground="#8A2D2D"
+                           Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.NoView]}"
+                           Visibility="{Binding ShouldShowNoAvailableViewsMessage, Converter={StaticResource BoolToVisibilityConverter}}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
 
             <Expander Margin="0,18,0,0" IsExpanded="True">
               <Expander.Header>
@@ -128,6 +133,68 @@
             </Expander>
 
           </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <Expander IsExpanded="False">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Sidebar.Reference]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+              <ComboBox ItemsSource="{Binding ReferenceSourceOptions}"
+                        SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
+                        DisplayMemberPath="Title" />
+              <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding ReferenceSourceTitle}" />
+              <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReferenceSourceDescription}" />
+              <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding CurrentStateRows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Expander>
+        </Border>
+
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <Expander IsExpanded="False">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Sidebar.Advanced]}" />
+            </Expander.Header>
+            <Grid Margin="0,12,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <CheckBox IsChecked="{Binding UsePreciseCrsProjection, Mode=TwoWay}"
+                          Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.PreciseCrs]}" />
+                <TextBlock Margin="20,6,0,0" Style="{StaticResource BodyMutedTextStyle}" TextWrapping="Wrap"
+                           Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.PreciseCrsHint]}" />
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Style="{StaticResource CardTitleTextStyle}"
+                           Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.GeoidOffset]}" />
+                <TextBox Margin="0,6,0,0" Text="{Binding GeoidHeightOffsetText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Margin="0,6,0,0"
+                           Foreground="#8A2D2D"
+                           Text="{Binding GeoidHeightOffsetValidationMessage}"
+                           TextWrapping="Wrap"
+                           Visibility="{Binding HasGeoidHeightOffsetValidationMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" TextWrapping="Wrap"
+                           Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.GeoidOffsetHint]}" />
+              </StackPanel>
+            </Grid>
+          </Expander>
         </Border>
 
         <Grid>
@@ -176,66 +243,8 @@
             </StackPanel>
           </Border>
         </Grid>
-      </StackPanel>
-    </ScrollViewer>
 
-    <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource ShellDetailsPanelBorderStyle}">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel>
-          <Border Style="{StaticResource StatusPillBorderStyle}">
-            <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Shell.RightPanel]}" />
-          </Border>
-
-          <Expander IsExpanded="False">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Sidebar.Reference]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <ComboBox ItemsSource="{Binding ReferenceSourceOptions}"
-                        SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
-                        DisplayMemberPath="Title" />
-              <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding ReferenceSourceTitle}" />
-              <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReferenceSourceDescription}" />
-              <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding CurrentStateRows}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Grid Margin="0,0,0,10">
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130" />
-                        <ColumnDefinition Width="*" />
-                      </Grid.ColumnDefinitions>
-                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
-                    </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </Expander>
-
-          <Expander IsExpanded="True">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Sidebar.Advanced]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <CheckBox IsChecked="{Binding UsePreciseCrsProjection, Mode=TwoWay}"
-                        Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.PreciseCrs]}" />
-              <TextBlock Margin="20,6,0,0" Style="{StaticResource BodyMutedTextStyle}" TextWrapping="Wrap"
-                         Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.PreciseCrsHint]}" />
-
-              <TextBlock Margin="0,14,0,0" Style="{StaticResource CardTitleTextStyle}"
-                         Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.GeoidOffset]}" />
-              <TextBox Margin="0,6,0,0" Text="{Binding GeoidHeightOffsetText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-              <TextBlock Margin="0,6,0,0"
-                         Foreground="#8A2D2D"
-                         Text="{Binding GeoidHeightOffsetValidationMessage}"
-                         TextWrapping="Wrap"
-                         Visibility="{Binding HasGeoidHeightOffsetValidationMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
-              <TextBlock Margin="0,6,0,0" Style="{StaticResource BodyMutedTextStyle}" TextWrapping="Wrap"
-                         Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.GeoidOffsetHint]}" />
-            </StackPanel>
-          </Expander>
-
+        <Border Style="{StaticResource ShellCardBorderStyle}">
           <Expander IsExpanded="False">
             <Expander.Header>
               <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.Sidebar.LastExport]}" />
@@ -244,13 +253,13 @@
               <ItemsControl ItemsSource="{Binding LastExportRows}" Visibility="{Binding HasLastExportRows, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Grid Margin="0,0,0,10">
+                    <Grid Margin="0,0,0,8">
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="200" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
                       <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -258,12 +267,11 @@
               <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Tiles.NoLastExport]}" Visibility="{Binding HasNoLastExportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Expander>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
 
-        </StackPanel>
-      </ScrollViewer>
-    </Border>
-
-    <Border Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource FooterBarBorderStyle}">
+    <Border Grid.Row="2" Grid.Column="1" Style="{StaticResource FooterBarBorderStyle}">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
         <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.PrepareExport]}" Click="OnPrepareClick" IsEnabled="{Binding CanPrepareExport}" />
         <Button Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Export3DTiles]}" Click="OnExportClick" IsEnabled="{Binding CanExport}" />

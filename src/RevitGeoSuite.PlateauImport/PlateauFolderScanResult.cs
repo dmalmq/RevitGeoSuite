@@ -15,4 +15,6 @@ public sealed class PlateauFolderScanResult
     public IReadOnlyCollection<PlateauCityModel> CityModels { get; set; } = new PlateauCityModel[0];
 
     public IReadOnlyCollection<string> WarningMessages { get; set; } = new string[0];
+
+    public bool IsFromCache { get; set; }
 }

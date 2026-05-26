@@ -5,10 +5,10 @@
         xmlns:loc="clr-namespace:RevitGeoSuite.SharedUI.Localization;assembly=RevitGeoSuite.SharedUI"
         xmlns:sharedUi="clr-namespace:RevitGeoSuite.SharedUI.Controls;assembly=RevitGeoSuite.SharedUI"
         Title="PLATEAU Context Import"
-        Height="980"
-        Width="1500"
-        MinWidth="1180"
-        MinHeight="800"
+        Height="900"
+        Width="1280"
+        MinWidth="1040"
+        MinHeight="720"
         WindowStartupLocation="CenterOwner">
   <Window.Resources>
     <ResourceDictionary>
@@ -16,6 +16,40 @@
         <ResourceDictionary Source="/RevitGeoSuite.SharedUI;component/Styles/SuiteTheme.xaml" />
       </ResourceDictionary.MergedDictionaries>
       <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+      <Style x:Key="FilterChipToggleButtonStyle" TargetType="ToggleButton">
+        <Setter Property="Margin" Value="0,0,8,8" />
+        <Setter Property="Padding" Value="12,5" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Background" Value="#F4EFE5" />
+        <Setter Property="BorderBrush" Value="{StaticResource SuiteBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{StaticResource SuiteInkBrush}" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ToggleButton">
+              <Border Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      CornerRadius="14"
+                      Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+          <Trigger Property="IsChecked" Value="True">
+            <Setter Property="Background" Value="{StaticResource SuiteAccentSoftBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource SuiteAccentBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource SuiteAccentBrush}" />
+          </Trigger>
+          <Trigger Property="IsMouseOver" Value="True">
+            <Setter Property="BorderBrush" Value="{StaticResource SuiteAccentBrush}" />
+          </Trigger>
+        </Style.Triggers>
+      </Style>
     </ResourceDictionary>
   </Window.Resources>
 
@@ -23,7 +57,6 @@
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="94" />
       <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="308" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -33,21 +66,20 @@
 
     <sharedUi:ModuleNavRailControl x:Name="ModuleNavRail" Grid.RowSpan="3" CurrentModuleKey="PlateauImport" />
 
-    <Border Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource ShellHeaderBorderStyle}">
+    <Border Grid.Column="1" Style="{StaticResource ShellHeaderBorderStyle}">
       <DockPanel>
         <sharedUi:LanguageToggleControl DockPanel.Dock="Right" />
         <StackPanel Margin="0,0,18,0">
           <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[App.ProductTitle]}" />
-          <TextBlock Margin="0,6,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.PlateauImport]}" />
-          <TextBlock Margin="0,6,0,0" FontSize="18" FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.WindowTitle]}" />
+          <TextBlock Margin="0,4,0,0" Style="{StaticResource WindowTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Module.PlateauImport]}" />
           <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding DocumentTitle}" />
-          <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Header]}" />
         </StackPanel>
       </DockPanel>
     </Border>
 
     <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto">
       <StackPanel>
+
         <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
           <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
         </Border>
@@ -56,10 +88,9 @@
           <TextBlock Text="{Binding ActionMessage}" TextWrapping="Wrap" />
         </Border>
 
+        <!-- Package Scan -->
         <Border Style="{StaticResource ShellCardBorderStyle}">
           <StackPanel>
-            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Package]}" />
-            <TextBlock Margin="0,8,0,16" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.PackageHint]}" />
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -72,7 +103,6 @@
               <Button Grid.Column="2" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Browse]}" Click="OnBrowseFolderClick" />
               <Button Grid.Column="4" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ScanFolder]}" Click="OnScanFolderClick" IsEnabled="{Binding CanScanFolder}" />
             </Grid>
-            <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.PackageAutoScanHint]}" />
             <ProgressBar Margin="0,12,0,0"
                          Height="8"
                          Maximum="100"
@@ -85,127 +115,186 @@
                        Text="{Binding ScanProgressStatusText}"
                        TextWrapping="Wrap"
                        Visibility="{Binding IsScanning, Converter={StaticResource BoolToVisibilityConverter}}" />
-            <ItemsControl Margin="0,14,0,0" ItemsSource="{Binding ScanRows}" Visibility="{Binding HasScanRows, Converter={StaticResource BoolToVisibilityConverter}}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Grid Margin="0,0,0,10">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="150" />
-                      <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                    <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoScan]}" Visibility="{Binding HasNoScanRows, Converter={StaticResource BoolToVisibilityConverter}}" />
           </StackPanel>
         </Border>
 
+        <!-- GSI Kiban Folder Scan -->
+        <Border Style="{StaticResource ShellCardBorderStyle}" Margin="0,8,0,0">
+          <StackPanel>
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="GSI Kiban Data (Sidewalks, Railways, Water &amp; Land Use)" />
+            <TextBlock Margin="0,4,0,8" Style="{StaticResource BodyMutedTextStyle}" Text="Select a folder containing downloaded GSI Kiban FG-GML-*.xml files to add sidewalk, railway, water, and land-use layers to the shapefile export." />
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="118" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="138" />
+              </Grid.ColumnDefinitions>
+              <TextBox x:Name="KibanFolderPathTextBox" Grid.Column="0" Text="{Binding KibanFolderPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+              <Button Grid.Column="2" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Browse]}" Click="OnBrowseKibanFolderClick" />
+              <Button Grid.Column="4" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ScanFolder]}" Click="OnScanKibanFolderClick" IsEnabled="{Binding CanScanKibanFolder}" />
+            </Grid>
+            <ProgressBar Margin="0,8,0,0"
+                         Height="8"
+                         Maximum="100"
+                         IsIndeterminate="True"
+                         Foreground="{StaticResource SuiteAccentBrush}"
+                         Visibility="{Binding IsScanningKiban, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <StackPanel Margin="0,10,0,0">
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}"
+                         Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.AdditionalLandUseHeading]}"
+                         Margin="0,0,0,4" />
+              <ItemsControl ItemsSource="{Binding OptionalKibanLandUseOptions}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <CheckBox Margin="0,0,12,4"
+                              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                              Content="{Binding Title}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Kiban filter chips -->
+        <StackPanel Margin="2,8,2,2" Visibility="{Binding HasKibanFeatureOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+          <ItemsControl ItemsSource="{Binding KibanFeatureOptions}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <ToggleButton Style="{StaticResource FilterChipToggleButtonStyle}"
+                              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                              Content="{Binding Title}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <!-- Filter chips -->
+        <StackPanel Margin="2,8,2,2" Visibility="{Binding HasFeatureTypeOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+          <ItemsControl ItemsSource="{Binding FeatureTypeOptions}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <ToggleButton Style="{StaticResource FilterChipToggleButtonStyle}"
+                              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                              Content="{Binding Title}"
+                              ToolTip="{Binding Description}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <!-- LandUse class-name (名称) sub-filter -->
+        <StackPanel Margin="2,8,2,2" Visibility="{Binding HasLandUseClassOptions, Converter={StaticResource BoolToVisibilityConverter}}">
+          <TextBlock Style="{StaticResource BodyMutedTextStyle}"
+                     Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.LandUseClassFilterHeading]}"
+                     Margin="0,0,0,4" />
+          <ItemsControl ItemsSource="{Binding LandUseClassOptions}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <ToggleButton Style="{StaticResource FilterChipToggleButtonStyle}"
+                              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                              Content="{Binding Title}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <!-- Map -->
         <Border Style="{StaticResource ShellCardBorderStyle}">
           <StackPanel>
-            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.TileMap]}" />
-            <TextBlock Margin="0,8,0,12" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.TileMapHint]}" />
-            <Grid Margin="0,0,0,12">
+            <Grid Margin="0,0,0,8">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Style="{StaticResource CardTitleTextStyle}" VerticalAlignment="Center" Text="{Binding TileSelectionHeaderText}" />
+              <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Map.DragHint]}" />
+              <Button Grid.Column="2" Style="{StaticResource SecondaryButtonStyle}" Margin="0" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ClearSelection]}" Click="OnClearTileSelectionClick" />
+            </Grid>
+            <sharedUi:MapControl x:Name="TilePreviewMap" Height="460" />
+            <TextBlock Margin="0,10,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding TilePreviewStatusText}" TextWrapping="Wrap" />
+            <Grid Margin="0,8,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="14" />
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
               <CheckBox Grid.Column="0" VerticalAlignment="Center" IsChecked="{Binding ShowModelOverlay, Mode=TwoWay}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.ShowModelOverlay]}" />
               <TextBlock Grid.Column="2" VerticalAlignment="Center" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ModelOverlayStatusMessage}" TextWrapping="Wrap" />
             </Grid>
-            <sharedUi:MapControl x:Name="TilePreviewMap" Height="420" />
-            <Border Margin="0,12,0,0" Style="{StaticResource ShellCardBorderStyle}" Padding="12" Background="#F7F5F0">
-              <TextBlock Text="{Binding TilePreviewStatusText}" TextWrapping="Wrap" />
-            </Border>
           </StackPanel>
         </Border>
 
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="16" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
-
-          <Border Grid.Column="0" Style="{StaticResource ShellCardBorderStyle}">
-            <StackPanel>
-              <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Filters]}" />
-              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.FiltersHint]}" />
-              <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasFeatureTypeOptions, Converter={StaticResource BoolToVisibilityConverter}}">
-                <ItemsControl ItemsSource="{Binding FeatureTypeOptions}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
-                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
-                          <StackPanel>
-                            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Title}" />
-                            <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Description}" />
-                          </StackPanel>
-                        </CheckBox>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </ScrollViewer>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoFeatureTypes]}" Visibility="{Binding HasNoFeatureTypeOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
-            </StackPanel>
-          </Border>
-
-          <Border Grid.Column="2" Style="{StaticResource ShellCardBorderStyle}">
-            <StackPanel>
-              <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.TileSelectionSummary]}" />
-              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.TileSelectionHint]}" />
-              <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasTileOptions, Converter={StaticResource BoolToVisibilityConverter}}">
-                <ItemsControl ItemsSource="{Binding TileOptions}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Border Margin="0,0,0,6" Padding="8" Background="#FAFAF6" BorderBrush="{StaticResource SuiteBorderBrush}" BorderThickness="1" CornerRadius="5">
-                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
-                          <StackPanel Orientation="Horizontal">
-                            <TextBlock FontFamily="Consolas" FontWeight="SemiBold" Text="{Binding TileId}" />
-                            <TextBlock Margin="12,0,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding FeatureCount, StringFormat={}{0} features}" />
-                            <TextBlock Margin="8,0,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding SourceFileCount, StringFormat={}{0} files}" />
-                          </StackPanel>
-                        </CheckBox>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </ScrollViewer>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoTileOptions]}" Visibility="{Binding HasNoTileOptions, Converter={StaticResource BoolToVisibilityConverter}}" />
-            </StackPanel>
-          </Border>
-        </Grid>
-
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="16" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
-
-          <Border Grid.Column="0" Style="{StaticResource ShellCardBorderStyle}">
-            <StackPanel>
-              <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Preview]}" />
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.PreviewHint]}" />
-              <TextBlock Margin="0,12,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.GeometryModeLabel]}" />
+        <!-- Geometry mode -->
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="220" />
+              <ColumnDefinition Width="12" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.GeometryModeLabel]}" />
               <ComboBox Margin="0,8,0,0"
                         ItemsSource="{Binding GeometryImportModeOptions}"
                         SelectedItem="{Binding SelectedGeometryImportModeOption, Mode=TwoWay}"
                         DisplayMemberPath="Title" />
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding GeometryImportModeDescription}" TextWrapping="Wrap" />
-              <TextBlock Margin="0,12,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding SelectedCategoryCount, StringFormat=Selected categories: {0}}" />
-              <TextBlock Margin="0,4,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding SelectedTileCount, StringFormat=Selected tiles: {0}}" />
-              <TextBlock Margin="0,4,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding PreparedShapeCount, StringFormat=Importable shapes: {0}}" />
-              <ItemsControl Margin="0,14,0,0" ItemsSource="{Binding PreviewRows}" Visibility="{Binding HasPreviewRows, Converter={StaticResource BoolToVisibilityConverter}}">
+            </StackPanel>
+            <TextBlock Grid.Column="2" Margin="0,24,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding GeometryImportModeDescription}" TextWrapping="Wrap" />
+          </Grid>
+        </Border>
+
+        <!-- Details expander (everything else) -->
+        <Border Style="{StaticResource ShellCardBorderStyle}">
+          <Expander IsExpanded="False">
+            <Expander.Header>
+              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Details.Header]}" />
+            </Expander.Header>
+            <StackPanel Margin="0,12,0,0">
+
+              <Border Style="{StaticResource WarningBorderStyle}" Visibility="{Binding HasWarningMessages, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource CardTitleTextStyle}" Foreground="{StaticResource SuiteWarningBrush}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.Warnings]}" />
+                  <ItemsControl Margin="0,6,0,0" ItemsSource="{Binding WarningMessages}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Margin="0,0,0,4" Text="{Binding}" TextWrapping="Wrap" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+
+              <TextBlock Margin="0,4,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Package]}" />
+              <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding ScanRows}" Visibility="{Binding HasScanRows, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Grid Margin="0,0,0,10">
+                    <Grid Margin="0,0,0,6">
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="170" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
                       <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
@@ -214,70 +303,68 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoPreview]}" Visibility="{Binding HasNoPreviewRows, Converter={StaticResource BoolToVisibilityConverter}}" />
-            </StackPanel>
-          </Border>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoScan]}" Visibility="{Binding HasNoScanRows, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-          <Border Grid.Column="2" Style="{StaticResource ShellCardBorderStyle}">
-            <StackPanel>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.PreviewFeatures]}" />
-              <TextBlock Margin="0,8,0,14" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.PreviewFeaturesHint]}" />
-              <ItemsControl ItemsSource="{Binding FeatureNames}" Visibility="{Binding HasFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}">
+              <TextBlock Margin="0,14,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Center.Preview]}" />
+              <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding PreviewRows}" Visibility="{Binding HasPreviewRows, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Border Style="{StaticResource ShellCardBorderStyle}" Padding="12" Margin="0,0,0,10">
-                      <TextBlock Text="{Binding}" TextWrapping="Wrap" />
-                    </Border>
+                    <Grid Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="170" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                    </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoPreview]}" Visibility="{Binding HasNoPreviewRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+              <TextBlock Margin="0,14,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.PreviewFeatures]}" />
+              <ScrollViewer Margin="0,8,0,0" MaxHeight="200" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl ItemsSource="{Binding FeatureNames}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Margin="0,0,0,4" Text="{Binding}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
               <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoFeatureNames]}" Visibility="{Binding HasNoFeatureNames, Converter={StaticResource BoolToVisibilityConverter}}" />
-            </StackPanel>
-          </Border>
-        </Grid>
-      </StackPanel>
-    </ScrollViewer>
 
-    <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource ShellDetailsPanelBorderStyle}">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel>
-          <Border Style="{StaticResource StatusPillBorderStyle}">
-            <TextBlock FontWeight="SemiBold" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Shell.RightPanel]}" />
-          </Border>
+              <TextBlock Margin="0,14,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.SourceFiles]}" />
+              <ScrollViewer Margin="0,8,0,0" MaxHeight="160" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasDetectedSourceFiles, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl ItemsSource="{Binding DetectedSourceFiles}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Margin="0,0,0,4" FontFamily="Consolas" Text="{Binding}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoSourceFiles]}" Visibility="{Binding HasNoDetectedSourceFiles, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-          <Expander IsExpanded="False">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.Reference]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <ComboBox ItemsSource="{Binding ReferenceSourceOptions}"
-                        SelectedItem="{Binding SelectedReferenceSourceOption, Mode=TwoWay}"
-                        DisplayMemberPath="Title" />
-              <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding ReferenceSourceTitle}" />
-              <TextBlock Margin="0,4,0,0" Style="{StaticResource BodyMutedTextStyle}" Text="{Binding ReferenceSourceDescription}" />
-              <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding CurrentStateRows}">
+              <TextBlock Margin="0,14,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.LastImport]}" />
+              <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding LastImportRows}" Visibility="{Binding HasLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Grid Margin="0,0,0,10">
+                    <Grid Margin="0,0,0,6">
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="170" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
                       <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
+                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" TextWrapping="Wrap" />
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-            </StackPanel>
-          </Expander>
+              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoLastImport]}" Visibility="{Binding HasNoLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-          <Expander IsExpanded="False">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.SuggestedTiles]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <ItemsControl ItemsSource="{Binding SuggestedTiles}" Visibility="{Binding HasSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}">
+              <TextBlock Margin="0,14,0,0" Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.SuggestedTiles]}" />
+              <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding SuggestedTiles}" Visibility="{Binding HasSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate>
                     <WrapPanel />
@@ -297,77 +384,62 @@
               <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoSuggestedTiles]}" Visibility="{Binding HasNoSuggestedTiles, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
           </Expander>
+        </Border>
 
-          <Expander IsExpanded="False">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.LastImport]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <ItemsControl ItemsSource="{Binding LastImportRows}" Visibility="{Binding HasLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Grid Margin="0,0,0,10">
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130" />
-                        <ColumnDefinition Width="*" />
-                      </Grid.ColumnDefinitions>
-                      <TextBlock Style="{StaticResource SummaryRowLabelStyle}" Text="{Binding Label}" />
-                      <TextBlock Grid.Column="1" Style="{StaticResource SummaryRowValueStyle}" Text="{Binding Value}" />
-                    </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoLastImport]}" Visibility="{Binding HasNoLastImportRows, Converter={StaticResource BoolToVisibilityConverter}}" />
+        <!-- Export options (visible only in Export mode) -->
+        <Border Style="{StaticResource ShellCardBorderStyle}" Margin="0,8,0,0"
+                Visibility="{Binding ShowExportSurface, Converter={StaticResource BoolToVisibilityConverter}}">
+          <StackPanel>
+            <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="Export Options" />
+            <TextBlock Margin="0,4,0,8" Style="{StaticResource BodyMutedTextStyle}"
+                       Text="Pick which formats and content to write. The exporter produces companion files alongside the chosen output path." />
+            <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Formats" Margin="0,4,0,4" />
+            <StackPanel Orientation="Horizontal">
+              <CheckBox Margin="0,0,16,0" Content="Shapefile (.shp)" IsChecked="{Binding ExportFormatShapefile, Mode=TwoWay}" />
+              <CheckBox Content="DXF (.dxf)" IsChecked="{Binding ExportFormatDxf, Mode=TwoWay}" />
             </StackPanel>
-          </Expander>
-
-          <Expander IsExpanded="False">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.SourceFiles]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <ItemsControl ItemsSource="{Binding DetectedSourceFiles}" Visibility="{Binding HasDetectedSourceFiles, Converter={StaticResource BoolToVisibilityConverter}}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <TextBlock Margin="0,0,0,6" FontFamily="Consolas" Text="{Binding}" TextWrapping="Wrap" />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoSourceFiles]}" Visibility="{Binding HasNoDetectedSourceFiles, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="Content" Margin="0,12,0,4" />
+            <StackPanel Orientation="Horizontal">
+              <CheckBox Margin="0,0,16,0" Content="PLATEAU context"
+                        IsChecked="{Binding ExportIncludePlateauContext, Mode=TwoWay}" />
+              <CheckBox Margin="0,0,16,0" Content="GSI Kiban data"
+                        IsChecked="{Binding ExportIncludeKibanData, Mode=TwoWay}" />
+              <CheckBox Content="Revit model (walls + floors)"
+                        IsChecked="{Binding ExportIncludeRevitModel, Mode=TwoWay}" />
             </StackPanel>
-          </Expander>
-
-          <Expander IsExpanded="True">
-            <Expander.Header>
-              <TextBlock Style="{StaticResource CardTitleTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.Sidebar.Warnings]}" />
-            </Expander.Header>
-            <StackPanel Margin="0,12,0,0">
-              <ItemsControl ItemsSource="{Binding WarningMessages}" Visibility="{Binding HasWarningMessages, Converter={StaticResource BoolToVisibilityConverter}}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Style="{StaticResource WarningBorderStyle}" Margin="0,0,0,10">
-                      <TextBlock Text="{Binding}" TextWrapping="Wrap" />
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-              <TextBlock Style="{StaticResource BodyMutedTextStyle}" Text="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Plateau.NoWarnings]}" Visibility="{Binding HasNoWarningMessages, Converter={StaticResource BoolToVisibilityConverter}}" />
-            </StackPanel>
-          </Expander>
-        </StackPanel>
-      </ScrollViewer>
-    </Border>
-
-    <Border Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource FooterBarBorderStyle}">
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.LoadPreview]}" Click="OnLoadPreviewClick" IsEnabled="{Binding CanLoadPreview}" />
-        <Button Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ImportContext]}" Click="OnImportClick" IsEnabled="{Binding CanImport}" />
-        <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Close]}" Click="OnCloseClick" />
+            <TextBlock Margin="0,12,0,0" Style="{StaticResource BodyMutedTextStyle}"
+                       Text="DXF output uses the Civil 3D shared-coordinates convention: (0,0) at the Revit Survey Point, with a marker at the Project Base Point." />
+          </StackPanel>
+        </Border>
       </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Grid.Column="1" Style="{StaticResource FooterBarBorderStyle}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center"
+                    Visibility="{Binding IsExportingShapefile, Converter={StaticResource BoolToVisibilityConverter}}">
+          <ProgressBar Width="160" Height="8" VerticalAlignment="Center"
+                       IsIndeterminate="{Binding IsExportProgressIndeterminate}"
+                       Foreground="{StaticResource SuiteAccentBrush}" />
+          <TextBlock Margin="8,0,0,0" VerticalAlignment="Center"
+                     Style="{StaticResource BodyMutedTextStyle}"
+                     Text="{Binding ExportProgressStatusText}"
+                     TextWrapping="NoWrap"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.LoadPreview]}" Click="OnLoadPreviewClick" IsEnabled="{Binding CanLoadPreview}" />
+          <Button Content="Export" Click="OnExportShapefileClick" IsEnabled="{Binding CanExportSelected}"
+                  Visibility="{Binding ShowExportSurface, Converter={StaticResource BoolToVisibilityConverter}}" />
+          <Button Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.ImportContext]}" Click="OnImportClick" IsEnabled="{Binding CanImport}"
+                  Visibility="{Binding ShowImportAction, Converter={StaticResource BoolToVisibilityConverter}}" />
+          <Button Style="{StaticResource SecondaryButtonStyle}" Content="{Binding Source={x:Static loc:UiLocalizer.Instance}, Path=[Common.Close]}" Click="OnCloseClick" />
+        </StackPanel>
+      </Grid>
     </Border>
   </Grid>
 </Window>
-
-
-
-

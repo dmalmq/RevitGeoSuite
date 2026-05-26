@@ -3,7 +3,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using NetTopologySuite.Geometries;
 using RevitGeoSuite.Core.Coordinates;
+using RevitGeoSuite.Core.Mesh;
+using RevitGeoSuite.Core.Plateau.Dem;
+using RevitGeoSuite.Core.Plateau.Tiles3D;
 
 namespace RevitGeoSuite.PlateauImport;
 
@@ -12,6 +16,8 @@ public sealed class ContextGeometryBuilder
     private const int Jgd2011GeographicEpsg = 6668;
     private const int Jgd2011CompoundHeightEpsg = 6697;
     private const double MetersToFeet = 1.0 / 0.3048d;
+    private const double BridgePlanAreaEpsilon = 1e-6d;
+    private const double BridgeMinorComponentAreaRatio = 0.05d;
     private readonly ICoordinateTransformer coordinateTransformer;
 
     public ContextGeometryBuilder(ICoordinateTransformer? coordinateTransformer = null)
@@ -58,6 +64,7 @@ public sealed class ContextGeometryBuilder
         HashSet<PlateauFeatureType> selectedTypes = CreateSelectedTypeSet(resolvedFeatures, selectedFeatureTypes);
         HashSet<string> selectedTiles = CreateSelectedTileSet(resolvedFeatures, selectedTileIds);
         Dictionary<PlateauCityModel, TransformStrategy> transformStrategies = CreateTransformStrategies(scanResult.CityModels, referenceContext);
+        Geometry? landUseClipRegion = BuildLandUseClipRegion(selectedTiles, referenceContext);
 
         List<ContextShapePlan> shapes = new List<ContextShapePlan>(resolvedFeatures.Count);
         List<string> warnings = new List<string>(scanResult.WarningMessages);
@@ -65,12 +72,18 @@ public sealed class ContextGeometryBuilder
         int preparedSurfaceCount = 0;
         int preparedTriangleCount = 0;
 
+        DemSampler? reliefSampler = null;
+        if (geometryImportMode == PlateauGeometryImportMode.LightweightMassOnRelief)
+        {
+            reliefSampler = TryBuildReliefSampler(resolvedFeatures, selectedTypes, selectedTiles, transformStrategies, warnings);
+        }
+
         foreach (ResolvedContextFeature resolvedFeature in resolvedFeatures)
         {
             PlateauCityModel cityModel = resolvedFeature.CityModel;
             PlateauContextFeature feature = resolvedFeature.Feature;
             string tileId = resolvedFeature.TileId;
-            if (!selectedTypes.Contains(feature.FeatureType) || !selectedTiles.Contains(tileId))
+            if (!selectedTypes.Contains(feature.FeatureType) || !IsTileSelected(tileId, selectedTiles))
             {
                 continue;
             }
@@ -89,6 +102,13 @@ public sealed class ContextGeometryBuilder
                 continue;
             }
 
+            if (feature.FeatureType == PlateauFeatureType.Bridge
+                && TryBuildBridgeFootprintShapes(feature, cityModel, transformStrategy, referenceContext, tileId, warnings, out IReadOnlyCollection<ContextShapePlan> bridgeShapes))
+            {
+                shapes.AddRange(bridgeShapes);
+                continue;
+            }
+
             PlateauCoordinate3D[] ring = NormalizeRing(feature.ExteriorRing);
             if (ring.Length < 3)
             {
@@ -101,6 +121,14 @@ public sealed class ContextGeometryBuilder
                 transformedRing[index] = TransformPoint(ring[index], transformStrategy);
             }
 
+            IReadOnlyList<PlateauCoordinate3D[]> clippedRings = feature.FeatureType == PlateauFeatureType.LandUse
+                ? ClipLandUseRing(transformedRing, landUseClipRegion)
+                : new[] { transformedRing };
+            if (clippedRings.Count == 0)
+            {
+                continue;
+            }
+
             (double minimumHeightMeters, double defaultHeightMeters) = GetHeightParameters(feature.FeatureType);
             (double baseElevationMeters, double heightMeters) = ResolveElevationAndHeight(
                 feature,
@@ -110,24 +138,62 @@ public sealed class ContextGeometryBuilder
                 defaultHeightMeters,
                 warnings);
 
-            (double XFeet, double YFeet)[] footprintPointsFeet = new (double XFeet, double YFeet)[transformedRing.Length];
-            for (int index = 0; index < transformedRing.Length; index++)
+            if (geometryImportMode == PlateauGeometryImportMode.LightweightMassOnRelief
+                && reliefSampler is not null
+                && feature.FeatureType == PlateauFeatureType.Building)
             {
-                footprintPointsFeet[index] = ToLocalFeet(transformedRing[index], referenceContext);
+                double centroidX = 0d;
+                double centroidY = 0d;
+                for (int index = 0; index < transformedRing.Length; index++)
+                {
+                    centroidX += transformedRing[index].X;
+                    centroidY += transformedRing[index].Y;
+                }
+                centroidX /= transformedRing.Length;
+                centroidY /= transformedRing.Length;
+                double groundZ = reliefSampler.SampleElevationOrNearest(centroidX, centroidY, out bool exactSample);
+                if (!exactSample)
+                {
+                    warnings.Add(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0}: footprint centroid was outside the Relief hull; using nearest-triangle elevation {1:F2} m.",
+                        BuildFeatureLabel(feature, cityModel.SourcePath, tileId),
+                        groundZ));
+                }
+                baseElevationMeters = groundZ;
             }
 
-            shapes.Add(new ContextShapePlan
+            int clippedPartIndex = 0;
+            foreach (PlateauCoordinate3D[] partRing in clippedRings)
             {
-                DisplayName = string.IsNullOrWhiteSpace(feature.Name) ? feature.Id : feature.Name,
-                SourceFeatureId = string.IsNullOrWhiteSpace(feature.Id) ? Guid.NewGuid().ToString("N") : feature.Id,
-                FeatureType = feature.FeatureType,
-                TileId = tileId,
-                SourceFilePath = cityModel.SourcePath,
-                GeometryMode = PlateauGeometryImportMode.LightweightExtrusion,
-                FootprintPointsFeet = footprintPointsFeet,
-                BaseElevationFeet = ToLocalElevationFeet(baseElevationMeters, referenceContext),
-                HeightFeet = heightMeters * MetersToFeet
-            });
+                clippedPartIndex++;
+                (double XFeet, double YFeet)[] footprintPointsFeet = new (double XFeet, double YFeet)[partRing.Length];
+                for (int index = 0; index < partRing.Length; index++)
+                {
+                    footprintPointsFeet[index] = ToLocalFeet(partRing[index], referenceContext);
+                }
+
+                string sourceFeatureId = string.IsNullOrWhiteSpace(feature.Id) ? Guid.NewGuid().ToString("N") : feature.Id;
+                if (clippedRings.Count > 1)
+                {
+                    sourceFeatureId = string.Concat(sourceFeatureId, ":part", clippedPartIndex.ToString(CultureInfo.InvariantCulture));
+                }
+
+                shapes.Add(new ContextShapePlan
+                {
+                    DisplayName = string.IsNullOrWhiteSpace(feature.Name) ? feature.Id : feature.Name,
+                    SourceFeatureId = sourceFeatureId,
+                    FeatureType = feature.FeatureType,
+                    TileId = tileId,
+                    SourceFilePath = cityModel.SourcePath,
+                    GeometryMode = PlateauGeometryImportMode.LightweightExtrusion,
+                    FootprintPointsFeet = footprintPointsFeet,
+                    BaseElevationFeet = ToLocalElevationFeet(baseElevationMeters, referenceContext),
+                    HeightFeet = heightMeters * MetersToFeet,
+                    ClassCode = feature.ClassCode,
+                    ClassName = feature.ClassName
+                });
+            }
         }
 
         return new ContextImportPlan
@@ -144,6 +210,197 @@ public sealed class ContextGeometryBuilder
             PreparedSurfaceCount = preparedSurfaceCount,
             PreparedTriangleCount = preparedTriangleCount
         };
+    }
+
+    private DemSampler? TryBuildReliefSampler(
+        IReadOnlyList<ResolvedContextFeature> resolvedFeatures,
+        ISet<PlateauFeatureType> selectedTypes,
+        ISet<string> selectedTiles,
+        IReadOnlyDictionary<PlateauCityModel, TransformStrategy> transformStrategies,
+        ICollection<string> warnings)
+    {
+        List<(Vector3d A, Vector3d B, Vector3d C)> triangles = new List<(Vector3d, Vector3d, Vector3d)>();
+        foreach (ResolvedContextFeature resolvedFeature in resolvedFeatures)
+        {
+            PlateauContextFeature feature = resolvedFeature.Feature;
+            if (feature.FeatureType != PlateauFeatureType.Relief)
+            {
+                continue;
+            }
+            if (!selectedTypes.Contains(feature.FeatureType) || !IsTileSelected(resolvedFeature.TileId, selectedTiles))
+            {
+                continue;
+            }
+
+            TransformStrategy transformStrategy = transformStrategies[resolvedFeature.CityModel];
+            foreach (PlateauGeometrySurface surface in feature.GeometrySurfaces)
+            {
+                PlateauCoordinate3D[] ring = NormalizeRing(surface.ExteriorRing);
+                if (ring.Length < 3)
+                {
+                    continue;
+                }
+
+                Vector3d[] transformed = new Vector3d[ring.Length];
+                for (int index = 0; index < ring.Length; index++)
+                {
+                    PlateauCoordinate3D projected = TransformPoint(ring[index], transformStrategy);
+                    transformed[index] = new Vector3d(projected.X, projected.Y, projected.Z);
+                }
+
+                // Fan-triangulate (p0, p_i, p_{i+1}) for i in [1..n-2]. Relief surfaces are
+                // overwhelmingly single triangles from gml:Triangle; the fan handles the
+                // occasional gml:Polygon variant without dragging in the full ear-clip path.
+                for (int i = 1; i < transformed.Length - 1; i++)
+                {
+                    triangles.Add((transformed[0], transformed[i], transformed[i + 1]));
+                }
+            }
+        }
+
+        if (triangles.Count == 0)
+        {
+            warnings.Add("Mass on Relief mode is selected but no Relief surfaces were found in the selection; falling back to building min-Z elevation.");
+            return null;
+        }
+
+        return new DemSampler(triangles);
+    }
+
+    private bool TryBuildBridgeFootprintShapes(
+        PlateauContextFeature feature,
+        PlateauCityModel cityModel,
+        TransformStrategy transformStrategy,
+        PlateauImportReferenceContext referenceContext,
+        string tileId,
+        ICollection<string> warnings,
+        out IReadOnlyCollection<ContextShapePlan> shapes)
+    {
+        shapes = Array.Empty<ContextShapePlan>();
+        IReadOnlyCollection<PlateauGeometrySurface> sourceSurfaces = GetHighestLodSurfaces(feature.GeometrySurfaces);
+        if (sourceSurfaces.Count == 0)
+        {
+            return false;
+        }
+
+        GeometryFactory geometryFactory = new GeometryFactory();
+        List<Geometry> surfacePolygons = new List<Geometry>(sourceSurfaces.Count);
+        List<PlateauCoordinate3D> transformedElevationPoints = new List<PlateauCoordinate3D>();
+        foreach (PlateauGeometrySurface surface in sourceSurfaces)
+        {
+            PlateauCoordinate3D[] ring = NormalizeRing(surface.ExteriorRing);
+            if (ring.Length < 3)
+            {
+                continue;
+            }
+
+            PlateauCoordinate3D[] transformedRing = new PlateauCoordinate3D[ring.Length];
+            for (int index = 0; index < ring.Length; index++)
+            {
+                transformedRing[index] = TransformPoint(ring[index], transformStrategy);
+            }
+
+            Geometry? polygon = CreateBridgeSurfacePolygon(geometryFactory, transformedRing);
+            if (polygon is null || polygon.IsEmpty)
+            {
+                continue;
+            }
+
+            AddPolygonalGeometries(polygon, surfacePolygons);
+            transformedElevationPoints.AddRange(transformedRing);
+        }
+
+        if (surfacePolygons.Count == 0)
+        {
+            return false;
+        }
+
+        Geometry unioned;
+        try
+        {
+            unioned = geometryFactory.CreateGeometryCollection(surfacePolygons.ToArray()).Union();
+        }
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException || ex is InvalidOperationException)
+        {
+            warnings.Add($"Bridge footprint dissolve failed for {BuildFeatureLabel(feature, cityModel.SourcePath, tileId)} ({ex.Message}); using separate valid surface footprints.");
+            unioned = geometryFactory.CreateGeometryCollection(surfacePolygons.ToArray());
+        }
+
+        List<Polygon> footprintPolygons = new List<Polygon>();
+        AddPolygons(unioned, footprintPolygons);
+        if (footprintPolygons.Count == 0)
+        {
+            return false;
+        }
+
+        footprintPolygons.Sort(CompareBridgeFootprintPolygons);
+        double largestArea = footprintPolygons[0].Area;
+        List<Polygon> selectedPolygons = new List<Polygon>(footprintPolygons.Count);
+        for (int index = 0; index < footprintPolygons.Count; index++)
+        {
+            Polygon polygon = footprintPolygons[index];
+            if (polygon.Area <= BridgePlanAreaEpsilon)
+            {
+                continue;
+            }
+
+            if (index == 0 || polygon.Area >= largestArea * BridgeMinorComponentAreaRatio)
+            {
+                selectedPolygons.Add(polygon);
+            }
+        }
+
+        if (selectedPolygons.Count == 0)
+        {
+            selectedPolygons.Add(footprintPolygons[0]);
+        }
+
+        (double minimumHeightMeters, double defaultHeightMeters) = GetHeightParameters(feature.FeatureType);
+        (double baseElevationMeters, double heightMeters) = ResolveElevationAndHeight(
+            feature,
+            cityModel,
+            transformedElevationPoints,
+            minimumHeightMeters,
+            defaultHeightMeters,
+            warnings);
+
+        List<ContextShapePlan> bridgeShapes = new List<ContextShapePlan>(selectedPolygons.Count);
+        bool needsSuffix = selectedPolygons.Count > 1;
+        for (int index = 0; index < selectedPolygons.Count; index++)
+        {
+            Polygon polygon = selectedPolygons[index];
+            (double XFeet, double YFeet)[] footprintPointsFeet = BuildFootprintPointsFeet(polygon, referenceContext);
+            if (footprintPointsFeet.Length < 3)
+            {
+                continue;
+            }
+
+            string sourceFeatureId = string.IsNullOrWhiteSpace(feature.Id) ? Guid.NewGuid().ToString("N") : feature.Id;
+            string displayName = string.IsNullOrWhiteSpace(feature.Name) ? sourceFeatureId : feature.Name;
+            if (needsSuffix)
+            {
+                sourceFeatureId = string.Format(CultureInfo.InvariantCulture, "{0}::{1}", sourceFeatureId, index + 1);
+                displayName = string.Format(CultureInfo.InvariantCulture, "{0} [{1}]", displayName, index + 1);
+            }
+
+            bridgeShapes.Add(new ContextShapePlan
+            {
+                DisplayName = displayName,
+                SourceFeatureId = sourceFeatureId,
+                FeatureType = feature.FeatureType,
+                TileId = tileId,
+                SourceFilePath = cityModel.SourcePath,
+                GeometryMode = PlateauGeometryImportMode.LightweightExtrusion,
+                FootprintPointsFeet = footprintPointsFeet,
+                BaseElevationFeet = ToLocalElevationFeet(baseElevationMeters, referenceContext),
+                HeightFeet = heightMeters * MetersToFeet,
+                ClassCode = feature.ClassCode,
+                ClassName = feature.ClassName
+            });
+        }
+
+        shapes = bridgeShapes;
+        return bridgeShapes.Count > 0;
     }
 
     private bool TryBuildDetailedShape(
@@ -209,7 +466,9 @@ public sealed class ContextGeometryBuilder
             SourceFilePath = sourcePath,
             GeometryMode = PlateauGeometryImportMode.DetailedDirectShape,
             SurfaceCount = importedSurfaceCount,
-            Triangles = triangles
+            Triangles = triangles,
+            ClassCode = feature.ClassCode,
+            ClassName = feature.ClassName
         };
         return true;
     }
@@ -388,6 +647,229 @@ public sealed class ContextGeometryBuilder
         return selectedTypes;
     }
 
+    private Geometry? BuildLandUseClipRegion(
+        ICollection<string> selectedTileIds,
+        PlateauImportReferenceContext referenceContext)
+    {
+        if (selectedTileIds.Count == 0)
+        {
+            return null;
+        }
+
+        JapanMeshCalculator meshCalculator = new JapanMeshCalculator();
+        GeometryFactory geometryFactory = new GeometryFactory();
+        List<Polygon> tilePolygons = new List<Polygon>(selectedTileIds.Count);
+
+        foreach (string tileId in selectedTileIds)
+        {
+            string trimmed = tileId?.Trim() ?? string.Empty;
+            if (trimmed.Length == 0 || (trimmed.Length != 6 && trimmed.Length != 8))
+            {
+                continue;
+            }
+
+            bool isAllDigits = true;
+            for (int index = 0; index < trimmed.Length; index++)
+            {
+                if (!char.IsDigit(trimmed[index]))
+                {
+                    isAllDigits = false;
+                    break;
+                }
+            }
+            if (!isAllDigits)
+            {
+                continue;
+            }
+
+            MeshBounds meshBounds;
+            try
+            {
+                meshBounds = meshCalculator.GetBounds(new MeshCode { Value = trimmed });
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            Polygon? projected = TryProjectMeshBoundsToProjectCrs(meshBounds, referenceContext.ProjectCrs, geometryFactory);
+            if (projected is not null && !projected.IsEmpty)
+            {
+                tilePolygons.Add(projected);
+            }
+        }
+
+        if (tilePolygons.Count == 0)
+        {
+            return null;
+        }
+
+        Geometry union = tilePolygons.Count == 1
+            ? tilePolygons[0]
+            : geometryFactory.BuildGeometry(tilePolygons).Union();
+
+        return union.IsEmpty ? null : union;
+    }
+
+    private Polygon? TryProjectMeshBoundsToProjectCrs(MeshBounds meshBounds, CrsReference projectCrs, GeometryFactory geometryFactory)
+    {
+        const int samplesPerEdge = 12;
+        List<Coordinate> ring = new List<Coordinate>((samplesPerEdge * 4) + 1);
+
+        double minLat = Math.Min(meshBounds.SouthLatitude, meshBounds.NorthLatitude);
+        double maxLat = Math.Max(meshBounds.SouthLatitude, meshBounds.NorthLatitude);
+        double minLon = Math.Min(meshBounds.WestLongitude, meshBounds.EastLongitude);
+        double maxLon = Math.Max(meshBounds.WestLongitude, meshBounds.EastLongitude);
+
+        for (int i = 0; i < samplesPerEdge; i++)
+        {
+            double t = (double)i / samplesPerEdge;
+            AppendProjectedCoordinate(ring, minLat, minLon + (t * (maxLon - minLon)), projectCrs);
+        }
+        for (int i = 0; i < samplesPerEdge; i++)
+        {
+            double t = (double)i / samplesPerEdge;
+            AppendProjectedCoordinate(ring, minLat + (t * (maxLat - minLat)), maxLon, projectCrs);
+        }
+        for (int i = 0; i < samplesPerEdge; i++)
+        {
+            double t = (double)i / samplesPerEdge;
+            AppendProjectedCoordinate(ring, maxLat, maxLon - (t * (maxLon - minLon)), projectCrs);
+        }
+        for (int i = 0; i < samplesPerEdge; i++)
+        {
+            double t = (double)i / samplesPerEdge;
+            AppendProjectedCoordinate(ring, maxLat - (t * (maxLat - minLat)), minLon, projectCrs);
+        }
+
+        if (ring.Count < 3)
+        {
+            return null;
+        }
+
+        if (!ring[0].Equals2D(ring[ring.Count - 1]))
+        {
+            ring.Add(new Coordinate(ring[0].X, ring[0].Y));
+        }
+
+        try
+        {
+            LinearRing shell = geometryFactory.CreateLinearRing(ring.ToArray());
+            Polygon polygon = geometryFactory.CreatePolygon(shell);
+            return polygon.IsValid ? polygon : polygon.Buffer(0d) as Polygon;
+        }
+        catch (Exception ex) when (ex is ArgumentException || ex is TopologyException)
+        {
+            return null;
+        }
+    }
+
+    private void AppendProjectedCoordinate(List<Coordinate> ring, double latitude, double longitude, CrsReference projectCrs)
+    {
+        try
+        {
+            ProjectedCoordinate projected = coordinateTransformer.Project(
+                new GeographicCoordinate(latitude, longitude),
+                projectCrs);
+            ring.Add(new Coordinate(projected.Easting, projected.Northing));
+        }
+        catch
+        {
+        }
+    }
+
+    private static IReadOnlyList<PlateauCoordinate3D[]> ClipLandUseRing(
+        PlateauCoordinate3D[] transformedRing,
+        Geometry? clipRegion)
+    {
+        if (clipRegion is null || clipRegion.IsEmpty)
+        {
+            return new[] { transformedRing };
+        }
+
+        GeometryFactory geometryFactory = clipRegion.Factory;
+        Coordinate[] ringCoords = new Coordinate[transformedRing.Length + 1];
+        for (int index = 0; index < transformedRing.Length; index++)
+        {
+            ringCoords[index] = new Coordinate(transformedRing[index].X, transformedRing[index].Y);
+        }
+        ringCoords[transformedRing.Length] = new Coordinate(transformedRing[0].X, transformedRing[0].Y);
+
+        Polygon polygon;
+        try
+        {
+            LinearRing shell = geometryFactory.CreateLinearRing(ringCoords);
+            polygon = geometryFactory.CreatePolygon(shell);
+            if (!polygon.IsValid)
+            {
+                if (polygon.Buffer(0d) is Polygon repaired)
+                {
+                    polygon = repaired;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException || ex is TopologyException)
+        {
+            return Array.Empty<PlateauCoordinate3D[]>();
+        }
+
+        Geometry intersection;
+        try
+        {
+            intersection = polygon.Intersection(clipRegion);
+        }
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException || ex is InvalidOperationException)
+        {
+            return Array.Empty<PlateauCoordinate3D[]>();
+        }
+
+        if (intersection.IsEmpty)
+        {
+            return Array.Empty<PlateauCoordinate3D[]>();
+        }
+
+        List<PlateauCoordinate3D[]> rings = new List<PlateauCoordinate3D[]>();
+        ExtractRings(intersection, transformedRing, rings);
+        return rings;
+    }
+
+    private static void ExtractRings(Geometry geometry, PlateauCoordinate3D[] sourceRing, List<PlateauCoordinate3D[]> rings)
+    {
+        if (geometry.IsEmpty)
+        {
+            return;
+        }
+
+        if (geometry is Polygon polygon)
+        {
+            if (polygon.ExteriorRing is null || polygon.ExteriorRing.NumPoints < 4)
+            {
+                return;
+            }
+
+            double averageZ = 0d;
+            for (int i = 0; i < sourceRing.Length; i++)
+            {
+                averageZ += sourceRing[i].Z;
+            }
+            averageZ /= sourceRing.Length;
+
+            Coordinate[] coords = polygon.ExteriorRing.Coordinates;
+            PlateauCoordinate3D[] ring = new PlateauCoordinate3D[coords.Length];
+            for (int index = 0; index < coords.Length; index++)
+            {
+                ring[index] = new PlateauCoordinate3D(coords[index].X, coords[index].Y, averageZ);
+            }
+            rings.Add(ring);
+            return;
+        }
+
+        for (int index = 0; index < geometry.NumGeometries; index++)
+        {
+            ExtractRings(geometry.GetGeometryN(index), sourceRing, rings);
+        }
+    }
+
     private static HashSet<string> CreateSelectedTileSet(
         IReadOnlyCollection<ResolvedContextFeature> resolvedFeatures,
         IReadOnlyCollection<string>? selectedTileIds)
@@ -404,6 +886,23 @@ public sealed class ContextGeometryBuilder
         }
 
         return selectedTiles;
+    }
+
+    private static bool IsTileSelected(string tileId, ISet<string> selectedTileIds)
+    {
+        if (selectedTileIds.Contains(tileId))
+        {
+            return true;
+        }
+
+        if (tileId.Length == 6)
+        {
+            return selectedTileIds.Any(selectedTileId =>
+                selectedTileId.Length > tileId.Length
+                && selectedTileId.StartsWith(tileId, StringComparison.Ordinal));
+        }
+
+        return false;
     }
 
     private static (double XFeet, double YFeet) ToLocalFeet(PlateauCoordinate3D point, PlateauImportReferenceContext referenceContext)
@@ -424,6 +923,174 @@ public sealed class ContextGeometryBuilder
     private static double ToLocalElevationFeet(double pointElevationMeters, PlateauImportReferenceContext referenceContext)
     {
         return referenceContext.AnchorZFeet + ((pointElevationMeters - referenceContext.AnchorElevationMeters) * MetersToFeet);
+    }
+
+    private static IReadOnlyCollection<PlateauGeometrySurface> GetHighestLodSurfaces(IReadOnlyCollection<PlateauGeometrySurface> surfaces)
+    {
+        if (surfaces is null || surfaces.Count == 0)
+        {
+            return Array.Empty<PlateauGeometrySurface>();
+        }
+
+        int highestLod = 0;
+        foreach (PlateauGeometrySurface surface in surfaces)
+        {
+            if (surface.Lod > highestLod)
+            {
+                highestLod = surface.Lod;
+            }
+        }
+
+        List<PlateauGeometrySurface> highest = new List<PlateauGeometrySurface>();
+        foreach (PlateauGeometrySurface surface in surfaces)
+        {
+            if (surface.Lod == highestLod)
+            {
+                highest.Add(surface);
+            }
+        }
+
+        return highest;
+    }
+
+    private static Geometry? CreateBridgeSurfacePolygon(GeometryFactory geometryFactory, IReadOnlyList<PlateauCoordinate3D> ring)
+    {
+        if (ring.Count < 3)
+        {
+            return null;
+        }
+
+        List<Coordinate> coordinates = new List<Coordinate>(ring.Count + 1);
+        for (int index = 0; index < ring.Count; index++)
+        {
+            Coordinate coordinate = new Coordinate(ring[index].X, ring[index].Y);
+            if (coordinates.Count == 0 || !SameCoordinate(coordinates[coordinates.Count - 1], coordinate))
+            {
+                coordinates.Add(coordinate);
+            }
+        }
+
+        while (coordinates.Count > 1 && SameCoordinate(coordinates[0], coordinates[coordinates.Count - 1]))
+        {
+            coordinates.RemoveAt(coordinates.Count - 1);
+        }
+
+        if (coordinates.Count < 3 || Math.Abs(ComputeSignedArea(coordinates)) <= BridgePlanAreaEpsilon)
+        {
+            return null;
+        }
+
+        coordinates.Add(new Coordinate(coordinates[0]));
+        try
+        {
+            Polygon polygon = geometryFactory.CreatePolygon(geometryFactory.CreateLinearRing(coordinates.ToArray()));
+            if (polygon.IsEmpty || polygon.Area <= BridgePlanAreaEpsilon)
+            {
+                return null;
+            }
+
+            Geometry geometry = polygon.IsValid ? polygon : polygon.Buffer(0d);
+            return geometry.IsEmpty || geometry.Area <= BridgePlanAreaEpsilon ? null : geometry;
+        }
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException || ex is InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static void AddPolygonalGeometries(Geometry geometry, ICollection<Geometry> polygons)
+    {
+        if (geometry is Polygon polygon)
+        {
+            polygons.Add(polygon);
+            return;
+        }
+
+        for (int index = 0; index < geometry.NumGeometries; index++)
+        {
+            Geometry child = geometry.GetGeometryN(index);
+            AddPolygonalGeometries(child, polygons);
+        }
+    }
+
+    private static void AddPolygons(Geometry geometry, ICollection<Polygon> polygons)
+    {
+        if (geometry is Polygon polygon)
+        {
+            polygons.Add(polygon);
+            return;
+        }
+
+        for (int index = 0; index < geometry.NumGeometries; index++)
+        {
+            Geometry child = geometry.GetGeometryN(index);
+            AddPolygons(child, polygons);
+        }
+    }
+
+    private static (double XFeet, double YFeet)[] BuildFootprintPointsFeet(Polygon polygon, PlateauImportReferenceContext referenceContext)
+    {
+        if (polygon.ExteriorRing is null)
+        {
+            return Array.Empty<(double XFeet, double YFeet)>();
+        }
+
+        Coordinate[] coordinates = polygon.ExteriorRing.Coordinates;
+        int count = coordinates.Length;
+        if (count > 1 && SameCoordinate(coordinates[0], coordinates[count - 1]))
+        {
+            count--;
+        }
+
+        if (count < 3)
+        {
+            return Array.Empty<(double XFeet, double YFeet)>();
+        }
+
+        (double XFeet, double YFeet)[] points = new (double XFeet, double YFeet)[count];
+        for (int index = 0; index < count; index++)
+        {
+            points[index] = ToLocalFeet(new PlateauCoordinate3D(coordinates[index].X, coordinates[index].Y, 0d), referenceContext);
+        }
+
+        return points;
+    }
+
+    private static int CompareBridgeFootprintPolygons(Polygon left, Polygon right)
+    {
+        int comparison = right.Area.CompareTo(left.Area);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        Envelope leftEnvelope = left.EnvelopeInternal;
+        Envelope rightEnvelope = right.EnvelopeInternal;
+        comparison = leftEnvelope.MinX.CompareTo(rightEnvelope.MinX);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        return leftEnvelope.MinY.CompareTo(rightEnvelope.MinY);
+    }
+
+    private static double ComputeSignedArea(IReadOnlyList<Coordinate> coordinates)
+    {
+        double areaTwice = 0d;
+        for (int index = 0; index < coordinates.Count; index++)
+        {
+            Coordinate current = coordinates[index];
+            Coordinate next = coordinates[(index + 1) % coordinates.Count];
+            areaTwice += (current.X * next.Y) - (next.X * current.Y);
+        }
+
+        return areaTwice * 0.5d;
+    }
+
+    private static bool SameCoordinate(Coordinate left, Coordinate right)
+    {
+        return left.X == right.X && left.Y == right.Y;
     }
 
     private static bool IsSupportedProjectedJgd2011(int epsgCode)

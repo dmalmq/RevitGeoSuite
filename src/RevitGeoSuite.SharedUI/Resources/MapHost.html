@@ -70,6 +70,9 @@
     let featureSelectionLayer;
     let modelFootprintLayer;
     let pointSelectionEnabled = true;
+    let dragSelectStart = null;
+    let dragSelectRect = null;
+    let dragSelectCompleted = false;
 
     function updateStatus(text) {
       document.getElementById('status').textContent = text;
@@ -409,6 +412,10 @@
           }
 
           layer.on('click', function(event) {
+            if (dragSelectCompleted) {
+              L.DomEvent.stop(event);
+              return;
+            }
             L.DomEvent.stop(event);
             updateStatus(tileId ? `Toggled tile: ${tileId}` : 'Toggled tile selection');
             window.chrome.webview.postMessage({
@@ -498,8 +505,78 @@
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
+      // Disable Leaflet's default Shift+drag-to-zoom — we use Shift+drag for tile selection.
+      if (map.boxZoom) {
+        map.boxZoom.disable();
+      }
+
+      map.on('mousedown', event => {
+        if (!event.originalEvent || !event.originalEvent.shiftKey || !featureSelectionLayer) {
+          return;
+        }
+        L.DomEvent.stop(event.originalEvent);
+        map.dragging.disable();
+        dragSelectStart = event.latlng;
+        dragSelectCompleted = false;
+        if (dragSelectRect) {
+          dragSelectRect.remove();
+        }
+        dragSelectRect = L.rectangle([event.latlng, event.latlng], {
+          color: '#ca6a21',
+          weight: 1.5,
+          dashArray: '4 3',
+          fillColor: '#f0a24b',
+          fillOpacity: 0.10,
+          interactive: false
+        }).addTo(map);
+        updateStatus('Drag to select an area. Release to add tiles to the selection.');
+      });
+
       map.on('mousemove', event => {
+        if (dragSelectStart && dragSelectRect) {
+          dragSelectRect.setBounds([dragSelectStart, event.latlng]);
+          return;
+        }
         updateStatus(`Cursor: ${event.latlng.lat.toFixed(6)}, ${event.latlng.lng.toFixed(6)}`);
+      });
+
+      map.on('mouseup', event => {
+        if (!dragSelectStart || !dragSelectRect) {
+          return;
+        }
+        const bounds = dragSelectRect.getBounds();
+        dragSelectRect.remove();
+        dragSelectRect = null;
+        dragSelectStart = null;
+        map.dragging.enable();
+        dragSelectCompleted = true;
+        // Reset the suppression flag on the next tick so subsequent clicks work normally.
+        setTimeout(() => { dragSelectCompleted = false; }, 0);
+
+        const selectedIds = [];
+        if (featureSelectionLayer && bounds.isValid()) {
+          featureSelectionLayer.eachLayer(layer => {
+            if (!layer.getBounds) return;
+            const layerBounds = layer.getBounds();
+            if (!layerBounds || !layerBounds.isValid()) return;
+            const center = layerBounds.getCenter();
+            if (bounds.contains(center)) {
+              const props = layer.feature && layer.feature.properties ? layer.feature.properties : {};
+              const id = props.featureId || props.tileId;
+              if (id) selectedIds.push(id);
+            }
+          });
+        }
+
+        if (selectedIds.length > 0) {
+          updateStatus(`Selected ${selectedIds.length} tile(s) in the drawn area.`);
+          window.chrome.webview.postMessage({
+            type: 'overlayRectangleSelect',
+            featureIds: selectedIds
+          });
+        } else {
+          updateStatus('No tiles fell inside the drawn area.');
+        }
       });
 
       map.on('click', event => {
@@ -570,7 +647,7 @@
             !!message.fitToBounds,
             message.focusLatitude,
             message.focusLongitude,
-            message.statusText || 'Detected PLATEAU tiles loaded. Click a tile to select or deselect it.');
+            message.statusText || 'Detected PLATEAU tiles loaded. Click a tile to toggle it, or Shift+drag to select an area.');
         }
 
         if (message.type === 'clearFeatureSelectionOverlay') {

@@ -8,6 +8,8 @@ public static class PlateauGeometryImportModeExtensions
         {
             case PlateauGeometryImportMode.DetailedDirectShape:
                 return "Detailed Geometry";
+            case PlateauGeometryImportMode.LightweightMassOnRelief:
+                return "Lightweight Mass on Relief";
             case PlateauGeometryImportMode.LightweightExtrusion:
             default:
                 return "Lightweight Geometry";
