@@ -9,9 +9,12 @@
     <ProjectReference Include="..\..\src\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\src\RevitGeoSuite.Core.Plateau\RevitGeoSuite.Core.Plateau.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\src\RevitGeoSuite.RevitInterop\RevitGeoSuite.RevitInterop.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\..\src\RevitGeoSuite.SharedUI\RevitGeoSuite.SharedUI.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\src\RevitGeoSuite.PlateauImport\RevitGeoSuite.PlateauImport.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\src\RevitGeoSuite.Shell\RevitGeoSuite.Shell.csproj" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
 
   <ItemGroup>

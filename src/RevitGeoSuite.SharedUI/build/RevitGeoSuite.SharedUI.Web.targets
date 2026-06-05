@@ -1,0 +1,47 @@
+<Project>
+
+  <PropertyGroup>
+    <WebProjectDir>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web\</WebProjectDir>
+    <WebDistDir>$(MSBuildThisFileDirectory)..\Resources\Web\dist\</WebDistDir>
+    <WebBuildCacheFile>$(MSBuildThisFileDirectory)..\Resources\Web\.build.cache</WebBuildCacheFile>
+    <ContractsGeneratorProject>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web.Contracts.Generator\RevitGeoSuite.SharedUI.Web.Contracts.Generator.csproj</ContractsGeneratorProject>
+    <ContractsOutputFile>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web\src\lib\bridge\contracts.generated.ts</ContractsOutputFile>
+    <SkipWebBuild Condition="'$(SkipWebBuild)' == ''">false</SkipWebBuild>
+    <NodeMinimumVersion>20</NodeMinimumVersion>
+  </PropertyGroup>
+
+  <Target Name="CheckNodeVersion" BeforeTargets="BuildWebAssets" Condition="'$(SkipWebBuild)' != 'true'">
+    <Exec Command="node --version" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="NodeVersion" />
+    </Exec>
+    <PropertyGroup>
+      <NodeMajorVersion>$([System.Text.RegularExpressions.Regex]::Match($(NodeVersion), 'v(\d+)').Groups[1].Value)</NodeMajorVersion>
+    </PropertyGroup>
+    <Error
+      Condition="$(NodeMajorVersion) &lt; $(NodeMinimumVersion)"
+      Text="Node.js version $(NodeMinimumVersion)+ is required. Found: $(NodeVersion). Download from: https://nodejs.org/" />
+    <Message Text="Node.js version: $(NodeVersion)" Importance="normal" />
+  </Target>
+
+  <Target Name="GenerateTsContracts" BeforeTargets="BuildWebAssets" Condition="'$(SkipWebBuild)' != 'true'">
+    <Message Text="Generating TypeScript contracts..." Importance="high" />
+
+    <MSBuild Projects="$(ContractsGeneratorProject)" Targets="Build" Properties="Configuration=$(Configuration)" />
+
+    <PropertyGroup>
+      <ContractsAssemblyPath>$(RepositoryRoot)bin\Deploy\RevitGeoSuite.SharedUI.Web.Contracts.dll</ContractsAssemblyPath>
+    </PropertyGroup>
+
+    <Exec Command="dotnet run --project &quot;$(ContractsGeneratorProject)&quot; --no-build -- &quot;$(ContractsAssemblyPath)&quot; &quot;$(ContractsOutputFile)&quot;" />
+  </Target>
+
+  <Target Name="BuildWebAssets" BeforeTargets="BeforeBuild" Condition="'$(SkipWebBuild)' != 'true'">
+    <Message Text="Building web assets..." Importance="high" />
+
+    <Exec Command="npm ci" WorkingDirectory="$(WebProjectDir)" />
+    <Exec Command="npm run build" WorkingDirectory="$(WebProjectDir)" />
+
+    <WriteLinesToFile File="$(WebBuildCacheFile)" Lines="$([System.DateTime]::UtcNow.ToString('o'))" Overwrite="true" />
+  </Target>
+
+</Project>

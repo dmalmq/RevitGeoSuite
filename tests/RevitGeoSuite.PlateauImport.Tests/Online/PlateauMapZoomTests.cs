@@ -23,6 +23,6 @@ public sealed class PlateauMapZoomTests
         double westDeg, double southDeg, double eastDeg, double northDeg, int expectedZoom)
     {
         PlateauAreaBounds bounds = new PlateauAreaBounds(westDeg, southDeg, eastDeg, northDeg);
-        Assert.Equal(expectedZoom, PlateauOnlineImportViewModel.PickZoomForBounds(bounds));
+        Assert.Equal(expectedZoom, PlateauOnlineAreaSearch.PickZoomForBounds(bounds));
     }
 }

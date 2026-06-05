@@ -26,7 +26,7 @@ public static class Tiles3DExportDocumentCatalog
             .ThenBy(view => view.Name, StringComparer.OrdinalIgnoreCase)
             .Select(view => new Tiles3DExportViewOption
             {
-                ViewId = view.Id,
+                ViewId = view.Id.Value,
                 UniqueId = view.UniqueId,
                 Title = view.Name,
                 Description = string.Equals(view.UniqueId, activeViewUniqueId, StringComparison.Ordinal)
@@ -53,7 +53,7 @@ public static class Tiles3DExportDocumentCatalog
                 Document linkDocument = instance.GetLinkDocument()!;
                 return new Tiles3DExportLinkOption
                 {
-                    LinkInstanceId = instance.Id,
+                    LinkInstanceId = instance.Id.Value,
                     UniqueId = instance.UniqueId,
                     Title = string.IsNullOrWhiteSpace(linkDocument.Title) ? instance.Name : linkDocument.Title,
                     Description = $"Linked model '{linkDocument.Title}' through instance '{instance.Name}'. Visible geometry follows the selected scope and is exported when checked."

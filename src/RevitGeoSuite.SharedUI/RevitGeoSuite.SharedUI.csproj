@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.SharedUI.Web.Contracts\RevitGeoSuite.SharedUI.Web.Contracts.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -14,9 +15,17 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="Resources\MapHost.html" />
-  </ItemGroup>
+  <!-- The Vite bundle uses content-hashed filenames that change between builds, so it can't be a
+       static <EmbeddedResource> glob (which MSBuild evaluates before BuildWebAssets regenerates
+       dist). Add it after the web build runs but before resource names are assigned, so the
+       freshly built files are the ones embedded (with the usual project-relative manifest names). -->
+  <Target Name="IncludeWebAssets" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <EmbeddedResource Include="Resources\Web\dist\**\*" Condition="Exists('Resources\Web\dist')" />
+    </ItemGroup>
+  </Target>
+
+  <Import Project="build\RevitGeoSuite.SharedUI.Web.targets" />
 
   <Target Name="CopyReferenceAssembliesToCommonOutput" AfterTargets="Build">
     <Copy

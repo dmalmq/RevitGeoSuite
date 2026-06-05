@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: src/RevitGeoSuite.SharedUI.Web/package-lock.json
+
+    - name: Restore .NET dependencies
+      run: dotnet restore
+
+    - name: Build web assets
+      working-directory: src/RevitGeoSuite.SharedUI.Web
+      run: |
+        npm ci
+        npm run build
+
+    - name: Build .NET solution
+      run: dotnet build --no-restore --configuration Release
+
+    - name: Run .NET tests
+      run: dotnet test --no-build --configuration Release --verbosity normal
+
+    - name: Run web tests
+      working-directory: src/RevitGeoSuite.SharedUI.Web
+      run: npm test
+
+    - name: Verify TypeScript contracts
+      run: pwsh tools/VerifyContracts.ps1
+
+    - name: Run svelte-check (non-blocking)
+      continue-on-error: true
+      working-directory: src/RevitGeoSuite.SharedUI.Web
+      run: npm run check

@@ -33,6 +33,7 @@ public sealed class PlateauContextOutlinesDxfWriterTests
         Assert.Contains("\nAC1009\n", dxf);
         Assert.DoesNotContain("AC1015", dxf);
         Assert.DoesNotContain("LWPOLYLINE", dxf);
+        Assert.DoesNotContain("\n420\n", dxf);
 
         Assert.Equal(2, CountOccurrences(dxf, "\nPOLYLINE\n"));
         Assert.Equal(2, CountOccurrences(dxf, "\nSEQEND\n"));
@@ -88,9 +89,43 @@ public sealed class PlateauContextOutlinesDxfWriterTests
         Assert.Contains("\nAC1009\n", dxf);
         Assert.DoesNotContain("\nAC1015\n", dxf);
         Assert.DoesNotContain("\nHATCH\n", dxf);
+        Assert.DoesNotContain("\n420\n", dxf);
         Assert.Equal(2, CountOccurrences(dxf, "\nSOLID\n"));
         Assert.Contains("\n8\nPLATEAU_ROADS\n", dxf);
         Assert.Equal(1, CountOccurrences(dxf, "\nPOLYLINE\n"));
+    }
+
+    [Fact]
+    public void Write_emits_open_polylines_for_line_features()
+    {
+        IReadOnlyCollection<PlateauContextOutlinesDxfWriter.LineFeature> lines = new[]
+        {
+            new PlateauContextOutlinesDxfWriter.LineFeature(
+                "PLATEAU_ROADS",
+                new (double X, double Y)[] { (0d, 0d), (10d, 0d), (10d, 10d) },
+                "mvt-road-line"),
+        };
+
+        StringWriter writer = new StringWriter();
+        PlateauContextOutlinesDxfWriter.WriteResult result = PlateauContextOutlinesDxfWriter.Write(
+            writer,
+            Array.Empty<PlateauContextOutlinesDxfWriter.OutlineFeature>(),
+            Array.Empty<PlateauContextOutlinesDxfWriter.AreaFeature>(),
+            lines,
+            new Vector3d(0, 0, 0),
+            Vector3d.Zero,
+            PlateauDxfRoadFillMode.R12SolidTriangles);
+
+        string dxf = writer.ToString();
+
+        Assert.Equal(1, result.FeatureCount);
+        Assert.Equal(1, result.PolylineCount);
+        Assert.Equal(0, result.FillCount);
+        Assert.Empty(result.Warnings);
+        Assert.Equal(1, CountOccurrences(dxf, "\nPOLYLINE\n"));
+        Assert.Equal(3, CountOccurrences(dxf, "\nVERTEX\n"));
+        Assert.Contains("\n66\n1\n10\n0.0\n20\n0.0\n30\n0.0\n70\n0\n", dxf);
+        Assert.DoesNotContain("\n66\n1\n10\n0.0\n20\n0.0\n30\n0.0\n70\n1\n", dxf);
     }
 
     [Fact]

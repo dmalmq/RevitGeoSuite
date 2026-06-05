@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using RevitGeoSuite.Core.Mesh;
 using RevitGeoSuite.Core.Plateau.Catalog;
 
 namespace RevitGeoSuite.Core.Plateau.Tiles3D;
@@ -52,12 +54,30 @@ public sealed class PlateauTilesetDownloader
         IProgress<PlateauTilesetDownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
+        return await DownloadAsync(entry, areaCode, selectedMeshIds: null, progress, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PlateauTilesetModel> DownloadAsync(
+        PlateauDatasetEntry entry,
+        string areaCode,
+        IReadOnlyCollection<string>? selectedMeshIds,
+        IProgress<PlateauTilesetDownloadProgress>? progress,
+        CancellationToken cancellationToken)
+    {
         if (entry is null) throw new ArgumentNullException(nameof(entry));
         string? sourceUrl = entry.PreferredUrl ?? throw new InvalidOperationException("Dataset entry has no URL.");
         Uri tilesetUri = new Uri(sourceUrl);
         string datasetFolder = cache.GetDatasetFolder(areaCode, entry.TypeEn ?? "unknown", entry.Lod, entry.Texture);
 
         IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(tilesetUri, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<SelectedMeshBounds> selectedBounds = BuildSelectedMeshBounds(selectedMeshIds);
+        if (selectedBounds.Count > 0)
+        {
+            leaves = leaves
+                .Where(leaf => ShouldDownloadLeaf(leaf, selectedBounds))
+                .ToArray();
+        }
+
         Dictionary<string, PlateauTilesetFeatureBuilder> byId = new(StringComparer.Ordinal);
 
         for (int i = 0; i < leaves.Count; i++)
@@ -108,6 +128,58 @@ public sealed class PlateauTilesetDownloader
         return new PlateauTilesetModel(sourceUrl, entry.TypeEn ?? string.Empty, entry.Lod, entry.Texture, areaCode, features);
     }
 
+    private static IReadOnlyList<SelectedMeshBounds> BuildSelectedMeshBounds(IReadOnlyCollection<string>? selectedMeshIds)
+    {
+        if (selectedMeshIds is null || selectedMeshIds.Count == 0)
+        {
+            return Array.Empty<SelectedMeshBounds>();
+        }
+
+        JapanMeshCalculator meshCalculator = new JapanMeshCalculator();
+        List<SelectedMeshBounds> result = new List<SelectedMeshBounds>();
+        foreach (string raw in selectedMeshIds)
+        {
+            string meshId = raw?.Trim() ?? string.Empty;
+            if (meshId.Length == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                MeshBounds bounds = meshCalculator.GetBounds(new MeshCode { Value = meshId });
+                result.Add(new SelectedMeshBounds(
+                    meshId,
+                    bounds.WestLongitude,
+                    bounds.SouthLatitude,
+                    bounds.EastLongitude,
+                    bounds.NorthLatitude));
+            }
+            catch
+            {
+                // Ignore malformed mesh IDs here; the handler validates user-facing payloads.
+            }
+        }
+
+        return result;
+    }
+
+    private static bool ShouldDownloadLeaf(TilesetLeaf leaf, IReadOnlyList<SelectedMeshBounds> selectedBounds)
+    {
+        if (leaf.BoundingRegion is not TilesetRegion region)
+        {
+            // Some tilesets only expose box/sphere bounds. Keep those leaves and let the post-download
+            // feature filter enforce the selected mesh set instead of accidentally dropping data.
+            return true;
+        }
+
+        return selectedBounds.Any(bounds => region.IntersectsDegrees(
+            bounds.WestLongitude,
+            bounds.SouthLatitude,
+            bounds.EastLongitude,
+            bounds.NorthLatitude));
+    }
+
     private void ProjectFeatures(Matrix4x4d tileTransform, IReadOnlyList<PlateauTilesetFeatureMesh> meshes, Dictionary<string, PlateauTilesetFeatureBuilder> byId)
     {
         foreach (PlateauTilesetFeatureMesh feature in meshes)
@@ -143,5 +215,32 @@ public sealed class PlateauTilesetDownloader
 
         public IReadOnlyDictionary<string, object?> Attributes { get; }
         public List<PlateauTilesetTriangle> Triangles { get; } = new();
+    }
+
+    private sealed class SelectedMeshBounds
+    {
+        public SelectedMeshBounds(
+            string meshId,
+            double westLongitude,
+            double southLatitude,
+            double eastLongitude,
+            double northLatitude)
+        {
+            MeshId = meshId;
+            WestLongitude = westLongitude;
+            SouthLatitude = southLatitude;
+            EastLongitude = eastLongitude;
+            NorthLatitude = northLatitude;
+        }
+
+        public string MeshId { get; }
+
+        public double WestLongitude { get; }
+
+        public double SouthLatitude { get; }
+
+        public double EastLongitude { get; }
+
+        public double NorthLatitude { get; }
     }
 }

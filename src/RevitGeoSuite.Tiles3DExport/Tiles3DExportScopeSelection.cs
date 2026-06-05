@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Autodesk.Revit.DB;
 
 namespace RevitGeoSuite.Tiles3DExport;
 
@@ -13,11 +12,7 @@ public sealed class Tiles3DExportScopeSelection
 
     public IReadOnlyCollection<Tiles3DExportLinkOption> SelectedLinkedModels { get; set; } = Array.Empty<Tiles3DExportLinkOption>();
 
-    public bool HasSelectedView => SelectedView is not null && SelectedView.ViewId != ElementId.InvalidElementId;
-
-    public IReadOnlyCollection<ElementId> SelectedLinkedModelIds => SelectedLinkedModels
-        .Select(option => option.LinkInstanceId)
-        .ToArray();
+    public bool HasSelectedView => SelectedView is not null && SelectedView.ViewId > 0;
 
     public IReadOnlyCollection<string> SelectedLinkedModelNames => SelectedLinkedModels
         .Select(option => option.Title)

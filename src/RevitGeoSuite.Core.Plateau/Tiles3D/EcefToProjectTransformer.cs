@@ -64,13 +64,24 @@ public sealed class EcefToProjectTransformer
     public Vector3d TransformEcefToProject(Vector3d ecef)
     {
         GeodeticCoordinate geodetic = EcefGeodeticConverter.ToGeodetic(ecef);
+        return TransformGeographicToProject(geodetic.LatitudeDegrees, geodetic.LongitudeDegrees, geodetic.AltitudeMeters);
+    }
+
+    /// <summary>
+    /// Returns a WGS84 lon/lat (and optional altitude) expressed in project metres, using the same
+    /// projection + local-placement basis as <see cref="TransformEcefToProject"/>. Lets vector sources
+    /// that already carry lon/lat (e.g. MVT tiles) land in the model's internal frame exactly like the
+    /// 3D-Tiles building meshes.
+    /// </summary>
+    public Vector3d TransformGeographicToProject(double latitudeDegrees, double longitudeDegrees, double altitudeMeters = 0d)
+    {
         ProjectedCoordinate projected = transformer.Project(
-            new GeographicCoordinate(geodetic.LatitudeDegrees, geodetic.LongitudeDegrees),
+            new GeographicCoordinate(latitudeDegrees, longitudeDegrees),
             projectCrs);
 
         if (!useLocalPlacement)
         {
-            return new Vector3d(projected.Easting, projected.Northing, geodetic.AltitudeMeters - altitudeAnchorMeters);
+            return new Vector3d(projected.Easting, projected.Northing, altitudeMeters - altitudeAnchorMeters);
         }
 
         double deltaEastMeters = projected.Easting - anchorProjectedCoordinate.Easting;
@@ -83,7 +94,7 @@ public sealed class EcefToProjectTransformer
             (anchorYFeet * FeetToMeters) +
             (deltaEastMeters * sharedEastToLocalY) +
             (deltaNorthMeters * sharedNorthToLocalY);
-        double localZMeters = (anchorZFeet * FeetToMeters) + (geodetic.AltitudeMeters - altitudeAnchorMeters);
+        double localZMeters = (anchorZFeet * FeetToMeters) + (altitudeMeters - altitudeAnchorMeters);
         return new Vector3d(localXMeters, localYMeters, localZMeters);
     }
 }

@@ -1,16 +1,17 @@
-<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RootNamespace>RevitGeoSuite.PlateauImport</RootNamespace>
     <AssemblyName>RevitGeoSuite.PlateauImport</AssemblyName>
-    <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.Core.Plateau\RevitGeoSuite.Core.Plateau.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.RevitInterop\RevitGeoSuite.RevitInterop.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\RevitGeoSuite.SharedUI\RevitGeoSuite.SharedUI.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <ItemGroup>

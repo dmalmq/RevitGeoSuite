@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Autodesk.Revit.DB;
 using RevitGeoSuite.Core.Coordinates;
 using Xunit;
 
@@ -22,7 +21,7 @@ public sealed class Tiles3DExportCoordinatorTests
             ScopeMode = Tiles3DExportScopeMode.Selected3DView,
             SelectedView = new Tiles3DExportViewOption
             {
-                ViewId = new ElementId(101),
+                ViewId = 101,
                 UniqueId = "view-1",
                 Title = "Export View"
             },
@@ -30,13 +29,13 @@ public sealed class Tiles3DExportCoordinatorTests
             {
                 new Tiles3DExportLinkOption
                 {
-                    LinkInstanceId = new ElementId(201),
+                    LinkInstanceId = 201,
                     UniqueId = "link-1",
                     Title = "Architectural Link"
                 },
                 new Tiles3DExportLinkOption
                 {
-                    LinkInstanceId = new ElementId(202),
+                    LinkInstanceId = 202,
                     UniqueId = "link-2",
                     Title = "Structural Link"
                 }

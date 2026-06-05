@@ -1,10 +1,8 @@
-using Autodesk.Revit.DB;
-
 namespace RevitGeoSuite.Tiles3DExport;
 
 public sealed class Tiles3DExportViewOption
 {
-    public ElementId ViewId { get; set; } = ElementId.InvalidElementId;
+    public long ViewId { get; set; } = -1L;
 
     public string UniqueId { get; set; } = string.Empty;
 

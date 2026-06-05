@@ -14,7 +14,7 @@ internal static class PlateauScanSessionCache
     private const int MaxKibanEntries = 2;
     private static readonly object Gate = new object();
     private static readonly Dictionary<string, CacheEntry<PlateauFolderScanResult>> PlateauEntries = new Dictionary<string, CacheEntry<PlateauFolderScanResult>>(StringComparer.Ordinal);
-    private static readonly Dictionary<string, CacheEntry<PlateauImportViewModel.KibanScanResult>> KibanEntries = new Dictionary<string, CacheEntry<PlateauImportViewModel.KibanScanResult>>(StringComparer.Ordinal);
+    private static readonly Dictionary<string, CacheEntry<KibanScanResult>> KibanEntries = new Dictionary<string, CacheEntry<KibanScanResult>>(StringComparer.Ordinal);
     private static long nextAccessOrder;
     private static string lastKibanFolderPath = string.Empty;
 
@@ -97,11 +97,11 @@ internal static class PlateauScanSessionCache
         }
     }
 
-    public static bool TryGetKiban(string key, out PlateauImportViewModel.KibanScanResult? result)
+    public static bool TryGetKiban(string key, out KibanScanResult? result)
     {
         lock (Gate)
         {
-            if (KibanEntries.TryGetValue(key, out CacheEntry<PlateauImportViewModel.KibanScanResult>? entry))
+            if (KibanEntries.TryGetValue(key, out CacheEntry<KibanScanResult>? entry))
             {
                 entry.AccessOrder = ++nextAccessOrder;
                 result = entry.Value;
@@ -113,12 +113,12 @@ internal static class PlateauScanSessionCache
         return false;
     }
 
-    public static void StoreKiban(string key, PlateauImportViewModel.KibanScanResult result)
+    public static void StoreKiban(string key, KibanScanResult result)
     {
         if (result is null) throw new ArgumentNullException(nameof(result));
         lock (Gate)
         {
-            KibanEntries[key] = new CacheEntry<PlateauImportViewModel.KibanScanResult>(result, ++nextAccessOrder);
+            KibanEntries[key] = new CacheEntry<KibanScanResult>(result, ++nextAccessOrder);
             Trim(KibanEntries, MaxKibanEntries);
         }
     }

@@ -31,6 +31,7 @@ public static class PlateauContextOutlinesDxfWriter
         { PlateauFeatureType.Building, "PLATEAU_BUILDINGS" },
         { PlateauFeatureType.Bridge, "PLATEAU_BRIDGES" },
         { PlateauFeatureType.Road, "PLATEAU_ROADS" },
+        { PlateauFeatureType.Sidewalk, "PLATEAU_SIDEWALKS" },
         { PlateauFeatureType.Vegetation, "PLATEAU_VEGETATION" },
         { PlateauFeatureType.Relief, "PLATEAU_RELIEF" },
         { PlateauFeatureType.LandUse, "PLATEAU_LANDUSE" },
@@ -38,19 +39,13 @@ public static class PlateauContextOutlinesDxfWriter
 
     public const string PlateauLandUseLayer = "PLATEAU_LANDUSE";
 
+    public const string PlateauSidewalksLayer = "PLATEAU_SIDEWALKS";
+
     public const string GsiSidewalksLayer = "GSI_SIDEWALKS";
     public const string GsiRailwaysLayer = "GSI_RAILWAYS";
 
-    private static readonly IReadOnlyDictionary<string, int> LayerColors = new Dictionary<string, int>
-    {
-        { "PLATEAU_BUILDINGS", 3 },
-        { "PLATEAU_BRIDGES", 4 },
-        { "PLATEAU_ROADS", 6 },
-        { "PLATEAU_VEGETATION", 2 },
-        { "PLATEAU_RELIEF", 8 },
-        { GsiSidewalksLayer, 30 },
-        { GsiRailwaysLayer, 5 },
-    };
+    // Layer colours come from the shared PlateauLayerStyle palette (see WriteTablesSection) so the DXF
+    // matches the Shapefile FILL_RGB colours: roads grey, buildings near-white, vegetation green, etc.
 
     public sealed class OutlineFeature
     {
@@ -94,6 +89,25 @@ public static class PlateauContextOutlinesDxfWriter
         public IReadOnlyList<(double X, double Y)> ExteriorRingMetres { get; }
 
         public IReadOnlyList<IReadOnlyList<(double X, double Y)>> InteriorRingsMetres { get; }
+
+        public string? SourceId { get; }
+    }
+
+    public sealed class LineFeature
+    {
+        public LineFeature(
+            string layer,
+            IReadOnlyList<(double X, double Y)> verticesMetres,
+            string? sourceId = null)
+        {
+            Layer = layer ?? throw new ArgumentNullException(nameof(layer));
+            VerticesMetres = verticesMetres ?? throw new ArgumentNullException(nameof(verticesMetres));
+            SourceId = sourceId;
+        }
+
+        public string Layer { get; }
+
+        public IReadOnlyList<(double X, double Y)> VerticesMetres { get; }
 
         public string? SourceId { get; }
     }
@@ -154,6 +168,7 @@ public static class PlateauContextOutlinesDxfWriter
             writer,
             features,
             areaFeatures,
+            Array.Empty<LineFeature>(),
             markerMetres,
             originOffsetMetres,
             PlateauDxfRoadFillMode.R12SolidTriangles);
@@ -172,9 +187,29 @@ public static class PlateauContextOutlinesDxfWriter
         Vector3d originOffsetMetres,
         PlateauDxfRoadFillMode roadFillMode)
     {
+        return Write(
+            writer,
+            features,
+            areaFeatures,
+            Array.Empty<LineFeature>(),
+            markerMetres,
+            originOffsetMetres,
+            roadFillMode);
+    }
+
+    public static WriteResult Write(
+        TextWriter writer,
+        IReadOnlyCollection<OutlineFeature> features,
+        IReadOnlyCollection<AreaFeature> areaFeatures,
+        IReadOnlyCollection<LineFeature> lineFeatures,
+        Vector3d markerMetres,
+        Vector3d originOffsetMetres,
+        PlateauDxfRoadFillMode roadFillMode)
+    {
         if (writer is null) throw new ArgumentNullException(nameof(writer));
         if (features is null) throw new ArgumentNullException(nameof(features));
         if (areaFeatures is null) throw new ArgumentNullException(nameof(areaFeatures));
+        if (lineFeatures is null) throw new ArgumentNullException(nameof(lineFeatures));
         if (!Enum.IsDefined(typeof(PlateauDxfRoadFillMode), roadFillMode))
         {
             throw new ArgumentOutOfRangeException(nameof(roadFillMode), roadFillMode, "Unsupported road fill mode.");
@@ -198,6 +233,14 @@ public static class PlateauContextOutlinesDxfWriter
             }
         }
 
+        foreach (LineFeature lineFeature in lineFeatures)
+        {
+            if (lineFeature.VerticesMetres.Count >= 2)
+            {
+                usedLayers.Add(lineFeature.Layer);
+            }
+        }
+
         bool requiresModernDxf = roadFillMode == PlateauDxfRoadFillMode.ModernHatch && areaFeatures.Count > 0;
         WriteHeaderSection(writer, requiresModernDxf);
         WriteTablesSection(writer, usedLayers);
@@ -218,7 +261,20 @@ public static class PlateauContextOutlinesDxfWriter
                 shifted.Add((x - originOffsetMetres.X, y - originOffsetMetres.Y));
             }
 
-            WriteClosedPolyline(writer, shifted, feature.Layer);
+            WritePolyline(writer, shifted, feature.Layer, closed: true);
+            polylines++;
+        }
+
+        foreach (LineFeature lineFeature in lineFeatures)
+        {
+            if (lineFeature.VerticesMetres.Count < 2)
+            {
+                warnings.Add($"Skipped {lineFeature.SourceId ?? "line"}: line collapsed to <2 points.");
+                continue;
+            }
+
+            List<(double X, double Y)> shifted = Shift(lineFeature.VerticesMetres, originOffsetMetres);
+            WritePolyline(writer, shifted, lineFeature.Layer, closed: false);
             polylines++;
         }
 
@@ -279,7 +335,7 @@ public static class PlateauContextOutlinesDxfWriter
         WriteSectionEnd(writer);
         WriteEof(writer);
 
-        return new WriteResult(features.Count + areaFeatures.Count, polylines, fills, solids, hatches, warnings);
+        return new WriteResult(features.Count + areaFeatures.Count + lineFeatures.Count, polylines, fills, solids, hatches, warnings);
     }
 
     private static List<(double X, double Y)> Shift(IReadOnlyList<(double X, double Y)> vertices, Vector3d originOffsetMetres)
@@ -313,8 +369,8 @@ public static class PlateauContextOutlinesDxfWriter
         WriteLayer(w, DefaultLayer, colorIndex: 7);
         foreach (string layer in usedLayers)
         {
-            int color = LayerColors.TryGetValue(layer, out int c) ? c : 7;
-            WriteLayer(w, layer, color);
+            PlateauLayerStyle style = PlateauLayerStyle.ForLayer(layer);
+            WriteLayer(w, layer, style.Aci);
         }
         WriteLayer(w, MarkerLayer, colorIndex: 1);
         WritePair(w, 0, "ENDTAB");
@@ -346,7 +402,7 @@ public static class PlateauContextOutlinesDxfWriter
         WritePair(w, 0, "EOF");
     }
 
-    private static void WriteClosedPolyline(TextWriter w, IReadOnlyList<(double X, double Y)> vertices, string layer)
+    private static void WritePolyline(TextWriter w, IReadOnlyList<(double X, double Y)> vertices, string layer, bool closed)
     {
         WritePair(w, 0, "POLYLINE");
         WritePair(w, 8, layer);
@@ -354,7 +410,7 @@ public static class PlateauContextOutlinesDxfWriter
         WritePair(w, 10, 0.0);
         WritePair(w, 20, 0.0);
         WritePair(w, 30, 0.0);
-        WritePair(w, 70, 1);
+        WritePair(w, 70, closed ? 1 : 0);
         for (int i = 0; i < vertices.Count; i++)
         {
             WritePair(w, 0, "VERTEX");

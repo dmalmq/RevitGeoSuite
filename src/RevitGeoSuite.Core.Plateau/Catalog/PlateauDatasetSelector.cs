@@ -27,12 +27,30 @@ public sealed class PlateauDatasetSelector
         IEnumerable<string> typeEnCodes)
     {
         if (catalog is null) throw new ArgumentNullException(nameof(catalog));
+        return SelectByTypes(catalog.Datasets, area, typeEnCodes);
+    }
+
+    public IReadOnlyList<PlateauDatasetEntry> SelectMvtByTypes(
+        PlateauCatalog catalog,
+        PlateauAreaOption area,
+        IEnumerable<string> typeEnCodes)
+    {
+        if (catalog is null) throw new ArgumentNullException(nameof(catalog));
+        return SelectByTypes(catalog.MvtDatasets, area, typeEnCodes);
+    }
+
+    private IReadOnlyList<PlateauDatasetEntry> SelectByTypes(
+        IEnumerable<PlateauDatasetEntry> datasets,
+        PlateauAreaOption area,
+        IEnumerable<string> typeEnCodes)
+    {
+        if (datasets is null) throw new ArgumentNullException(nameof(datasets));
         if (area is null) throw new ArgumentNullException(nameof(area));
 
         HashSet<string> wanted = new HashSet<string>(typeEnCodes ?? Array.Empty<string>(), StringComparer.Ordinal);
         Dictionary<string, List<PlateauDatasetEntry>> byType = new Dictionary<string, List<PlateauDatasetEntry>>(StringComparer.Ordinal);
 
-        foreach (PlateauDatasetEntry dataset in catalog.Datasets)
+        foreach (PlateauDatasetEntry dataset in datasets)
         {
             string? typeEn = dataset.TypeEn;
             if (typeEn is null) continue;

@@ -188,6 +188,7 @@ public sealed class PlateauContextImporter
             PlateauFeatureType.Building => BuiltInCategory.OST_GenericModel,
             PlateauFeatureType.Bridge => BuiltInCategory.OST_Roads,
             PlateauFeatureType.Road => BuiltInCategory.OST_Roads,
+            PlateauFeatureType.Sidewalk => BuiltInCategory.OST_Roads,
             PlateauFeatureType.Vegetation => BuiltInCategory.OST_Planting,
             PlateauFeatureType.Relief => BuiltInCategory.OST_Topography,
             _ => BuiltInCategory.OST_GenericModel

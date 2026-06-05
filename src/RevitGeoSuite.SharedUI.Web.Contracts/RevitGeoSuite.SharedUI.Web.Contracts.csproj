@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>RevitGeoSuite.SharedUI.Web.Contracts</RootNamespace>
+    <AssemblyName>RevitGeoSuite.SharedUI.Web.Contracts</AssemblyName>
+  </PropertyGroup>
+
+</Project>

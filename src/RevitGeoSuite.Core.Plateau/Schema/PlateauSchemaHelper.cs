@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace RevitGeoSuite.Core.Plateau.Schema;
@@ -55,5 +57,32 @@ public static class PlateauSchemaHelper
 
         Match secondaryMatch = SecondaryMeshCodeRegex.Match(fileName);
         return secondaryMatch.Success ? secondaryMatch.Groups[1].Value : null;
+    }
+
+    /// <summary>
+    /// Returns the distinct tile ids that are not a coarser parent of another id in the set.
+    /// Japan mesh codes are hierarchical by prefix (tertiary <c>53394574</c> extends secondary
+    /// <c>533945</c> extends primary <c>5339</c>), so a parent mesh is dropped only when one of
+    /// its finer children is present; a lone coarse tile with no child is kept. Used to stop a
+    /// secondary-mesh file (e.g. roads/relief) from rendering as one giant cell over the 1 km
+    /// tertiary tiles inside it.
+    /// </summary>
+    public static IReadOnlyList<string> SelectLeafTileIds(IEnumerable<string>? tileIds)
+    {
+        if (tileIds is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        string[] distinct = tileIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return distinct
+            .Where(id => !distinct.Any(other =>
+                other.Length > id.Length && other.StartsWith(id, StringComparison.Ordinal)))
+            .ToList();
     }
 }

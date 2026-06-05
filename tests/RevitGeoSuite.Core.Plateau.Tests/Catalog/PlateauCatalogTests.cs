@@ -25,6 +25,16 @@ public sealed class PlateauCatalogTests
     }
 
     [Fact]
+    public void Normalize_retains_mvt_datasets_separately()
+    {
+        PlateauCatalog catalog = LoadSampleCatalog();
+        PlateauDatasetEntry luse = Assert.Single(catalog.MvtDatasets, d => d.TypeEn == "luse");
+
+        Assert.Equal("MVT", luse.Format);
+        Assert.DoesNotContain(catalog.Datasets, d => ReferenceEquals(d, luse));
+    }
+
+    [Fact]
     public void Normalize_excludes_interior_datasets()
     {
         PlateauCatalog catalog = LoadSampleCatalog();

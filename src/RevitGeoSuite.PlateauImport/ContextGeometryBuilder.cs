@@ -121,7 +121,7 @@ public sealed class ContextGeometryBuilder
                 transformedRing[index] = TransformPoint(ring[index], transformStrategy);
             }
 
-            IReadOnlyList<PlateauCoordinate3D[]> clippedRings = feature.FeatureType == PlateauFeatureType.LandUse
+            IReadOnlyList<PlateauCoordinate3D[]> clippedRings = ShouldClipToTileGrid(feature.FeatureType)
                 ? ClipLandUseRing(transformedRing, landUseClipRegion)
                 : new[] { transformedRing };
             if (clippedRings.Count == 0)
@@ -778,6 +778,11 @@ public sealed class ContextGeometryBuilder
         }
     }
 
+    private static bool ShouldClipToTileGrid(PlateauFeatureType featureType)
+    {
+        return featureType == PlateauFeatureType.LandUse || featureType == PlateauFeatureType.Relief;
+    }
+
     private static IReadOnlyList<PlateauCoordinate3D[]> ClipLandUseRing(
         PlateauCoordinate3D[] transformedRing,
         Geometry? clipRegion)
@@ -1150,6 +1155,8 @@ public sealed class ContextGeometryBuilder
                 return (0.5d, 2.0d);
             case PlateauFeatureType.Road:
                 return (0.2d, 0.5d);
+            case PlateauFeatureType.Sidewalk:
+                return (0.05d, 0.15d);
             case PlateauFeatureType.Vegetation:
                 return (1.0d, 3.0d);
             case PlateauFeatureType.Relief:

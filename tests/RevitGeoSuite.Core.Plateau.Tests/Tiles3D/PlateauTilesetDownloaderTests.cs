@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using RevitGeoSuite.Core.Coordinates;
+using RevitGeoSuite.Core.Mesh;
 using RevitGeoSuite.Core.Plateau.Catalog;
 using RevitGeoSuite.Core.Plateau.Tiles3D;
 using Xunit;
@@ -50,10 +51,89 @@ public sealed class PlateauTilesetDownloaderTests
         Assert.Contains(heights, z => Math.Abs(z - 10.0) < 0.01);
     }
 
+    [Fact]
+    public async Task DownloadAsync_with_selected_mesh_ids_skips_non_intersecting_leaves()
+    {
+        Uri rootUrl = new Uri("https://example.test/area/tileset.json");
+        Uri selectedUrl = new Uri("https://example.test/area/selected.b3dm");
+        Uri skippedUrl = new Uri("https://example.test/area/skipped.b3dm");
+        FakeHttpClient httpClient = new FakeHttpClient();
+        httpClient.StringResponses[rootUrl] = BuildTwoLeafTilesetJson(
+            selectedUri: "selected.b3dm",
+            westDeg: 139.700,
+            southDeg: 35.680,
+            eastDeg: 139.705,
+            northDeg: 35.685,
+            skippedUri: "skipped.b3dm",
+            westDeg2: 139.900,
+            southDeg2: 35.680,
+            eastDeg2: 139.905,
+            northDeg2: 35.685);
+        httpClient.ByteResponses[selectedUrl] = BuildSingleTriangleB3dm();
+        httpClient.ByteResponses[skippedUrl] = BuildSingleTriangleB3dm();
+
+        EcefToProjectTransformer transformer = new EcefToProjectTransformer(
+            new IdentityCoordinateTransformer(),
+            new CrsReference { EpsgCode = 0 },
+            altitudeAnchorMeters: 0);
+        PlateauTilesetDownloader downloader = new PlateauTilesetDownloader(
+            httpClient,
+            new GltfMeshDecoder(new MissingDracoMeshDecoder()),
+            transformer,
+            new PlateauTilesetCache(Path.Combine(Path.GetTempPath(), "RevitGeoSuiteTests", Guid.NewGuid().ToString("N"))));
+
+        PlateauDatasetEntry entry = new PlateauDatasetEntry
+        {
+            Url = rootUrl.AbsoluteUri,
+            TypeEn = "bldg",
+            Lod = "2",
+            Texture = false
+        };
+        string selectedMeshId = new JapanMeshCalculator().Calculate(35.681, 139.701, JapanMeshLevel.Tertiary).Value;
+
+        PlateauTilesetModel model = await downloader.DownloadAsync(entry, "00000", new[] { selectedMeshId }, progress: null, CancellationToken.None);
+
+        Assert.Single(model.Features);
+        Assert.Contains(selectedUrl, httpClient.ByteRequests);
+        Assert.DoesNotContain(skippedUrl, httpClient.ByteRequests);
+    }
+
     private static string BuildRootTilesetJson(double[] transform)
     {
         string transformJson = string.Join(",", transform.Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
         return "{\"root\":{\"transform\":[" + transformJson + "],\"content\":{\"uri\":\"leaf.b3dm\"}}}";
+    }
+
+    private static string BuildTwoLeafTilesetJson(
+        string selectedUri,
+        double westDeg,
+        double southDeg,
+        double eastDeg,
+        double northDeg,
+        string skippedUri,
+        double westDeg2,
+        double southDeg2,
+        double eastDeg2,
+        double northDeg2)
+    {
+        string transformJson = string.Join(",", BuildEquatorEastNorthUpTransform().Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
+        return "{\"root\":{\"children\":[" +
+            BuildLeafJson(selectedUri, westDeg, southDeg, eastDeg, northDeg, transformJson) + "," +
+            BuildLeafJson(skippedUri, westDeg2, southDeg2, eastDeg2, northDeg2, transformJson) +
+            "]}}";
+    }
+
+    private static string BuildLeafJson(string uri, double westDeg, double southDeg, double eastDeg, double northDeg, string transformJson)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"boundingVolume\":{{\"region\":[{0},{1},{2},{3},0,100]}},\"transform\":[{4}],\"content\":{{\"uri\":\"{5}\"}}}}",
+            DegreesToRadians(westDeg),
+            DegreesToRadians(southDeg),
+            DegreesToRadians(eastDeg),
+            DegreesToRadians(northDeg),
+            transformJson,
+            uri);
     }
 
     private static double[] BuildEquatorEastNorthUpTransform()
@@ -66,6 +146,11 @@ public sealed class PlateauTilesetDownloaderTests
             1.0, 0.0, 0.0, 0.0,
             a, 0.0, 0.0, 1.0
         };
+    }
+
+    private static double DegreesToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180.0;
     }
 
     private static byte[] BuildSingleTriangleB3dm()
@@ -179,6 +264,8 @@ public sealed class PlateauTilesetDownloaderTests
 
         public Dictionary<Uri, byte[]> ByteResponses { get; } = new Dictionary<Uri, byte[]>();
 
+        public List<Uri> ByteRequests { get; } = new List<Uri>();
+
         public Task<string> GetStringAsync(Uri url, CancellationToken cancellationToken)
         {
             if (StringResponses.TryGetValue(url, out string? body)) return Task.FromResult(body);
@@ -187,6 +274,7 @@ public sealed class PlateauTilesetDownloaderTests
 
         public Task<byte[]> GetBytesAsync(Uri url, CancellationToken cancellationToken)
         {
+            ByteRequests.Add(url);
             if (ByteResponses.TryGetValue(url, out byte[]? body)) return Task.FromResult(body);
             throw new InvalidOperationException("No byte response for " + url.AbsoluteUri);
         }

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Standalone dev tool. Run once (needs internet) to regenerate
+    src/RevitGeoSuite.PlateauImport/Online/MunicipalityCentroids.cs from PLATEAU's catalog and
+    per-area 3D Tiles bounds, via: dotnet run (project tools/MunicipalityCentroidGenerator).
+    It reuses RevitGeoSuite.Core.Plateau (PlateauApiClient and PlateauAreaGeometryService) so the
+    catalog parsing, dataset selection, and tileset bounds reading stay identical to the runtime.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- Keep this tool's build output out of the add-in deploy folder set by Directory.Build.props. -->
+    <OutputPath>$(MSBuildThisFileDirectory)bin\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <UseCommonOutputDirectory>false</UseCommonOutputDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RevitGeoSuite.Core.Plateau\RevitGeoSuite.Core.Plateau.csproj" />
+  </ItemGroup>
+
+</Project>

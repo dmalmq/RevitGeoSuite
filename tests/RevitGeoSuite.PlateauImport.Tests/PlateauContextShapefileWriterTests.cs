@@ -478,6 +478,83 @@ public sealed class PlateauContextShapefileWriterTests
         }
     }
 
+    [Fact]
+    public void Write_drops_tiny_road_polygons_below_minimum_area_threshold()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            string shapefilePath = Path.Combine(directory, "context.shp");
+            IReadOnlyCollection<PlateauContextOutlinesDxfWriter.AreaFeature> roads = new[]
+            {
+                new PlateauContextOutlinesDxfWriter.AreaFeature(
+                    "PLATEAU_ROADS",
+                    new (double X, double Y)[]
+                    {
+                        (0d, 0d),
+                        (5d, 0d),
+                        (5d, 5d),
+                        (0d, 5d),
+                    },
+                    sourceId: "large-road"),
+                new PlateauContextOutlinesDxfWriter.AreaFeature(
+                    "PLATEAU_ROADS",
+                    new (double X, double Y)[]
+                    {
+                        (10d, 10d),
+                        (10.05d, 10d),
+                        (10.05d, 10.05d),
+                        (10d, 10.05d),
+                    },
+                    sourceId: "tiny-road-sliver"),
+            };
+
+            PlateauContextShapefileWriter.WriteResult result = PlateauContextShapefileWriter.Write(
+                shapefilePath,
+                Array.Empty<PlateauContextOutlinesDxfWriter.OutlineFeature>(),
+                roads,
+                CreateCrs());
+
+            Assert.Equal(1, result.FeatureCount);
+            Assert.Equal(1, result.RoadFeatureCount);
+            Assert.Single(result.Warnings);
+            AssertSidecarsExist(shapefilePath);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Write_keeps_tiny_building_polygons_below_road_threshold()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            string shapefilePath = Path.Combine(directory, "context.shp");
+            IReadOnlyCollection<PlateauContextOutlinesDxfWriter.OutlineFeature> features = new[]
+            {
+                BuildSquare("PLATEAU_BUILDINGS", 10d, 10d, 0.05d, "tiny-building"),
+            };
+
+            PlateauContextShapefileWriter.WriteResult result = PlateauContextShapefileWriter.Write(
+                shapefilePath,
+                features,
+                Array.Empty<PlateauContextOutlinesDxfWriter.AreaFeature>(),
+                CreateCrs());
+
+            Assert.Equal(1, result.FeatureCount);
+            Assert.Equal(1, result.FootprintFeatureCount);
+            Assert.Empty(result.Warnings);
+            AssertSidecarsExist(shapefilePath);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static PlateauContextOutlinesDxfWriter.OutlineFeature BuildSquare(
         string layer,
         double originX,

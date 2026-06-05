@@ -42,6 +42,29 @@ public sealed class TilesetWalkerTests
         Assert.Equal(300, subTransformed.Z);
     }
 
+    [Fact]
+    public async Task WalkAsync_carries_leaf_bounding_regions_and_stable_ids()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri rootUrl = new Uri("https://example.com/area/tileset.json");
+        fake.StringResponses[rootUrl] =
+            "{\"root\":{\"children\":[" +
+            "{\"boundingVolume\":{\"region\":[2.438461,0.622908,2.438636,0.623083,0,100]},\"content\":{\"uri\":\"a.b3dm\"}}," +
+            "{\"boundingVolume\":{\"region\":[2.439461,0.623908,2.439636,0.624083,0,100]},\"content\":{\"uri\":\"b.b3dm\"}}" +
+            "]}}";
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(rootUrl, CancellationToken.None);
+
+        Assert.Equal(2, leaves.Count);
+        TilesetLeaf first = leaves.Single(leaf => leaf.B3dmUrl.AbsoluteUri.EndsWith("a.b3dm", StringComparison.Ordinal));
+        TilesetLeaf second = leaves.Single(leaf => leaf.B3dmUrl.AbsoluteUri.EndsWith("b.b3dm", StringComparison.Ordinal));
+        Assert.True(first.BoundingRegion.HasValue);
+        Assert.Equal(2.438461, first.BoundingRegion!.Value.WestRadians, 6);
+        Assert.False(string.IsNullOrWhiteSpace(first.Id));
+        Assert.NotEqual(first.Id, second.Id);
+    }
+
     private sealed class FakeHttpClient : IPlateauHttpClient
     {
         public Dictionary<Uri, string> StringResponses { get; } = new();

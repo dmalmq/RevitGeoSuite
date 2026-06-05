@@ -7,13 +7,19 @@ namespace RevitGeoSuite.Core.Plateau.Catalog;
 
 public sealed class PlateauCatalog
 {
-    private PlateauCatalog(IReadOnlyList<PlateauDatasetEntry> datasets, IReadOnlyList<PlateauAreaOption> areaOptions)
+    private PlateauCatalog(
+        IReadOnlyList<PlateauDatasetEntry> datasets,
+        IReadOnlyList<PlateauDatasetEntry> mvtDatasets,
+        IReadOnlyList<PlateauAreaOption> areaOptions)
     {
         Datasets = datasets;
+        MvtDatasets = mvtDatasets;
         AreaOptions = areaOptions;
     }
 
     public IReadOnlyList<PlateauDatasetEntry> Datasets { get; }
+
+    public IReadOnlyList<PlateauDatasetEntry> MvtDatasets { get; }
 
     public IReadOnlyList<PlateauAreaOption> AreaOptions { get; }
 
@@ -38,8 +44,9 @@ public sealed class PlateauCatalog
         all.AddRange(regular);
 
         List<PlateauDatasetEntry> tiles = all.Where(IsPlateau3dTilesDataset).ToList();
+        List<PlateauDatasetEntry> mvt = all.Where(IsPlateauMvtDataset).ToList();
         List<PlateauAreaOption> areaOptions = BuildAreaOptions(tiles);
-        return new PlateauCatalog(tiles, areaOptions);
+        return new PlateauCatalog(tiles, mvt, areaOptions);
     }
 
     public static bool IsPlateau3dTilesDataset(PlateauDatasetEntry entry)
@@ -50,6 +57,16 @@ public sealed class PlateauCatalog
         string? url = entry.PreferredUrl;
         if (string.IsNullOrEmpty(url)) return false;
         if (!url!.Contains("tileset.json")) return false;
+        if (entry.Interior == true) return false;
+        return true;
+    }
+
+    public static bool IsPlateauMvtDataset(PlateauDatasetEntry entry)
+    {
+        if (entry is null) return false;
+        if (!string.Equals(entry.Format, "MVT", StringComparison.Ordinal)) return false;
+        if (string.IsNullOrEmpty(entry.TypeEn)) return false;
+        if (string.IsNullOrEmpty(entry.PreferredUrl)) return false;
         if (entry.Interior == true) return false;
         return true;
     }

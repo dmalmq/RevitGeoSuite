@@ -1,14 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RootNamespace>RevitGeoSuite.Validation</RootNamespace>
     <AssemblyName>RevitGeoSuite.Validation</AssemblyName>
-    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.RevitInterop\RevitGeoSuite.RevitInterop.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\RevitGeoSuite.SharedUI\RevitGeoSuite.SharedUI.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <ItemGroup>

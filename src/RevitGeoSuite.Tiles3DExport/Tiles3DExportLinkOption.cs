@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Autodesk.Revit.DB;
 
 namespace RevitGeoSuite.Tiles3DExport;
 
@@ -9,7 +8,7 @@ public sealed class Tiles3DExportLinkOption : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public ElementId LinkInstanceId { get; set; } = ElementId.InvalidElementId;
+    public long LinkInstanceId { get; set; } = -1L;
 
     public string UniqueId { get; set; } = string.Empty;
 

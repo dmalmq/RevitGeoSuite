@@ -113,7 +113,6 @@ public static class KibanGeometryConverter
             return Array.Empty<KibanPolygonExportFeature>();
         }
 
-        GeometryFactory geometryFactory = new GeometryFactory();
         List<KibanPolygonExportFeature> exportFeatures = new List<KibanPolygonExportFeature>();
         int featureIndex = 0;
         foreach (KibanParsedPolygonFeature kibanFeature in polygonFeatures)
@@ -135,42 +134,30 @@ public static class KibanGeometryConverter
                     continue;
                 }
 
-                Polygon? projectedPolygon = ProjectPolygon(
-                    geometryFactory,
-                    kibanFeature.ExteriorRings,
-                    kibanFeature.InteriorRings,
+                IReadOnlyList<(double Latitude, double Longitude)> exteriorRing = kibanFeature.ExteriorRings[0];
+                IReadOnlyList<(double Latitude, double Longitude)> clippedExterior = bounds.Contains(featureBounds)
+                    ? exteriorRing
+                    : ClipPolygonRingToBounds(exteriorRing, bounds);
+                if (clippedExterior.Count < 3)
+                {
+                    continue;
+                }
+
+                IReadOnlyList<(double X, double Y)>? projectedExterior = ProjectPolygonRing(
+                    clippedExterior,
                     targetCrs,
                     coordinateTransformer);
-                if (projectedPolygon is null || projectedPolygon.IsEmpty)
+                if (projectedExterior is null || projectedExterior.Count < 3)
                 {
                     continue;
                 }
 
-                Polygon clipBox = CreateBoundsPolygon(geometryFactory, bounds, targetCrs, coordinateTransformer);
-                if (clipBox is null || clipBox.IsEmpty)
-                {
-                    continue;
-                }
-
-                Geometry intersection;
-                try
-                {
-                    intersection = projectedPolygon.Intersection(clipBox);
-                }
-                catch (Exception ex) when (ex is TopologyException || ex is ArgumentException || ex is InvalidOperationException)
-                {
-                    warnings?.Add(string.Format(
-                        CultureInfo.InvariantCulture,
-                        "GSI Kiban {0} polygon '{1}' could not be clipped to tile '{2}': {3}",
-                        GetPolygonLayerLabel(kibanFeature.Layer),
-                        baseSourceId,
-                        bounds.TileId,
-                        ex.Message));
-                    continue;
-                }
-
-                AppendPolygonExportFeatures(
-                    intersection,
+                IReadOnlyList<IReadOnlyList<(double X, double Y)>> projectedInteriors = bounds.Contains(featureBounds)
+                    ? ProjectInteriorRings(kibanFeature.InteriorRings, targetCrs, coordinateTransformer)
+                    : Array.Empty<IReadOnlyList<(double X, double Y)>>();
+                AppendPolygonExportFeature(
+                    projectedExterior,
+                    projectedInteriors,
                     kibanFeature,
                     bounds,
                     baseSourceId,
@@ -236,6 +223,164 @@ public static class KibanGeometryConverter
         }
 
         return "polygon";
+    }
+
+    private static IReadOnlyList<IReadOnlyList<(double X, double Y)>> ProjectInteriorRings(
+        IReadOnlyList<List<(double Latitude, double Longitude)>> interiorRings,
+        CrsReference targetCrs,
+        ICoordinateTransformer coordinateTransformer)
+    {
+        List<IReadOnlyList<(double X, double Y)>> projectedInteriors = new List<IReadOnlyList<(double X, double Y)>>(interiorRings.Count);
+        foreach (List<(double Latitude, double Longitude)> interiorRing in interiorRings)
+        {
+            IReadOnlyList<(double X, double Y)>? projected = ProjectPolygonRing(interiorRing, targetCrs, coordinateTransformer);
+            if (projected is not null && projected.Count >= 3)
+            {
+                projectedInteriors.Add(projected);
+            }
+        }
+
+        return projectedInteriors;
+    }
+
+    private static IReadOnlyList<(double X, double Y)>? ProjectPolygonRing(
+        IReadOnlyList<(double Latitude, double Longitude)> ring,
+        CrsReference targetCrs,
+        ICoordinateTransformer coordinateTransformer)
+    {
+        IReadOnlyList<(double X, double Y)>? projected = ProjectVertices(ring, targetCrs, coordinateTransformer);
+        if (projected is null || projected.Count < 3)
+        {
+            return null;
+        }
+
+        List<(double X, double Y)> distinct = new List<(double X, double Y)>(projected.Count);
+        foreach ((double x, double y) in projected)
+        {
+            if (distinct.Count == 0 || distinct[distinct.Count - 1].X != x || distinct[distinct.Count - 1].Y != y)
+            {
+                distinct.Add((x, y));
+            }
+        }
+
+        while (distinct.Count > 1 && distinct[0].X == distinct[distinct.Count - 1].X && distinct[0].Y == distinct[distinct.Count - 1].Y)
+        {
+            distinct.RemoveAt(distinct.Count - 1);
+        }
+
+        return distinct.Count < 3 ? null : distinct;
+    }
+
+    private static IReadOnlyList<(double Latitude, double Longitude)> ClipPolygonRingToBounds(
+        IReadOnlyList<(double Latitude, double Longitude)> ring,
+        GeographicBounds bounds)
+    {
+        if (ring.Count < 3)
+        {
+            return Array.Empty<(double Latitude, double Longitude)>();
+        }
+
+        List<(double Latitude, double Longitude)> clipped = RemoveClosingPoint(ring);
+        clipped = ClipPolygonBoundary(clipped, point => point.Longitude >= bounds.WestLongitude - CoordinateEpsilon, (current, previous) => IntersectLongitude(previous, current, bounds.WestLongitude));
+        clipped = ClipPolygonBoundary(clipped, point => point.Longitude <= bounds.EastLongitude + CoordinateEpsilon, (current, previous) => IntersectLongitude(previous, current, bounds.EastLongitude));
+        clipped = ClipPolygonBoundary(clipped, point => point.Latitude >= bounds.SouthLatitude - CoordinateEpsilon, (current, previous) => IntersectLatitude(previous, current, bounds.SouthLatitude));
+        clipped = ClipPolygonBoundary(clipped, point => point.Latitude <= bounds.NorthLatitude + CoordinateEpsilon, (current, previous) => IntersectLatitude(previous, current, bounds.NorthLatitude));
+        return clipped.Count < 3 ? Array.Empty<(double Latitude, double Longitude)>() : clipped;
+    }
+
+    private static List<(double Latitude, double Longitude)> RemoveClosingPoint(IReadOnlyList<(double Latitude, double Longitude)> ring)
+    {
+        List<(double Latitude, double Longitude)> result = new List<(double Latitude, double Longitude)>(ring);
+        while (result.Count > 1 && SamePoint(result[0], result[result.Count - 1]))
+        {
+            result.RemoveAt(result.Count - 1);
+        }
+
+        return result;
+    }
+
+    private static List<(double Latitude, double Longitude)> ClipPolygonBoundary(
+        IReadOnlyList<(double Latitude, double Longitude)> input,
+        Func<(double Latitude, double Longitude), bool> isInside,
+        Func<(double Latitude, double Longitude), (double Latitude, double Longitude), (double Latitude, double Longitude)> intersect)
+    {
+        if (input.Count == 0)
+        {
+            return new List<(double Latitude, double Longitude)>();
+        }
+
+        List<(double Latitude, double Longitude)> output = new List<(double Latitude, double Longitude)>(input.Count + 4);
+        (double Latitude, double Longitude) previous = input[input.Count - 1];
+        bool previousInside = isInside(previous);
+        foreach ((double Latitude, double Longitude) current in input)
+        {
+            bool currentInside = isInside(current);
+            if (currentInside)
+            {
+                if (!previousInside)
+                {
+                    AddDistinctPoint(output, intersect(current, previous));
+                }
+
+                AddDistinctPoint(output, current);
+            }
+            else if (previousInside)
+            {
+                AddDistinctPoint(output, intersect(current, previous));
+            }
+
+            previous = current;
+            previousInside = currentInside;
+        }
+
+        while (output.Count > 1 && SamePoint(output[0], output[output.Count - 1]))
+        {
+            output.RemoveAt(output.Count - 1);
+        }
+
+        return output;
+    }
+
+    private static void AddDistinctPoint(ICollection<(double Latitude, double Longitude)> output, (double Latitude, double Longitude) point)
+    {
+        if (output is List<(double Latitude, double Longitude)> list
+            && list.Count > 0
+            && SamePoint(list[list.Count - 1], point))
+        {
+            return;
+        }
+
+        output.Add(point);
+    }
+
+    private static (double Latitude, double Longitude) IntersectLongitude(
+        (double Latitude, double Longitude) start,
+        (double Latitude, double Longitude) end,
+        double longitude)
+    {
+        double delta = end.Longitude - start.Longitude;
+        if (Math.Abs(delta) <= CoordinateEpsilon)
+        {
+            return (start.Latitude, longitude);
+        }
+
+        double t = (longitude - start.Longitude) / delta;
+        return (start.Latitude + (t * (end.Latitude - start.Latitude)), longitude);
+    }
+
+    private static (double Latitude, double Longitude) IntersectLatitude(
+        (double Latitude, double Longitude) start,
+        (double Latitude, double Longitude) end,
+        double latitude)
+    {
+        double delta = end.Latitude - start.Latitude;
+        if (Math.Abs(delta) <= CoordinateEpsilon)
+        {
+            return (latitude, start.Longitude);
+        }
+
+        double t = (latitude - start.Latitude) / delta;
+        return (latitude, start.Longitude + (t * (end.Longitude - start.Longitude)));
     }
 
     private static Polygon? ProjectPolygon(
@@ -374,6 +519,31 @@ public static class KibanGeometryConverter
         }
 
         return geometryFactory.CreatePolygon(shell);
+    }
+
+    private static void AppendPolygonExportFeature(
+        IReadOnlyList<(double X, double Y)> exterior,
+        IReadOnlyList<IReadOnlyList<(double X, double Y)>> interiors,
+        KibanParsedPolygonFeature kibanFeature,
+        GeographicBounds bounds,
+        string baseSourceId,
+        ref int partIndex,
+        List<KibanPolygonExportFeature> exportFeatures)
+    {
+        partIndex++;
+        string sourceId = partIndex == 1
+            ? baseSourceId
+            : string.Format(CultureInfo.InvariantCulture, "{0}:{1}:part{2}", baseSourceId, bounds.TileId, partIndex);
+
+        exportFeatures.Add(new KibanPolygonExportFeature(
+            kibanFeature.Layer,
+            exterior,
+            interiors,
+            sourceId,
+            kibanFeature.MeshCode,
+            kibanFeature.SourcePath,
+            kibanFeature.FeatureType,
+            kibanFeature.Visibility));
     }
 
     private static void AppendPolygonExportFeatures(
@@ -776,6 +946,14 @@ public static class KibanGeometryConverter
                 && EastLongitude >= other.WestLongitude
                 && SouthLatitude <= other.NorthLatitude
                 && NorthLatitude >= other.SouthLatitude;
+        }
+
+        public bool Contains(GeographicBounds other)
+        {
+            return WestLongitude <= other.WestLongitude + CoordinateEpsilon
+                && EastLongitude >= other.EastLongitude - CoordinateEpsilon
+                && SouthLatitude <= other.SouthLatitude + CoordinateEpsilon
+                && NorthLatitude >= other.NorthLatitude - CoordinateEpsilon;
         }
     }
 

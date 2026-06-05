@@ -8,7 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\src\RevitGeoSuite.RevitInterop\RevitGeoSuite.RevitInterop.csproj" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\..\src\RevitGeoSuite.SharedUI\RevitGeoSuite.SharedUI.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\src\RevitGeoSuite.MeshInspector\RevitGeoSuite.MeshInspector.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\src\RevitGeoSuite.Shell\RevitGeoSuite.Shell.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>

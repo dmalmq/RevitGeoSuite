@@ -20,39 +20,34 @@ public sealed class DependencyGraphTests
             "RevitGeoSuite.Core.csproj");
         AssertProjectReferences(
             "src/RevitGeoSuite.SharedUI/RevitGeoSuite.SharedUI.csproj",
-            "RevitGeoSuite.Core.csproj");
+            "RevitGeoSuite.Core.csproj",
+            "RevitGeoSuite.SharedUI.Web.Contracts.csproj");
         AssertProjectReferences(
             "src/RevitGeoSuite.Georeference/RevitGeoSuite.Georeference.csproj",
             "RevitGeoSuite.Core.csproj",
-            "RevitGeoSuite.RevitInterop.csproj",
-            "RevitGeoSuite.SharedUI.csproj");
+            "RevitGeoSuite.RevitInterop.csproj");
         AssertProjectReferences(
             "src/RevitGeoSuite.MeshInspector/RevitGeoSuite.MeshInspector.csproj",
             "RevitGeoSuite.Core.csproj",
-            "RevitGeoSuite.RevitInterop.csproj",
-            "RevitGeoSuite.SharedUI.csproj");
+            "RevitGeoSuite.RevitInterop.csproj");
         AssertProjectReferences(
             "src/RevitGeoSuite.Validation/RevitGeoSuite.Validation.csproj",
             "RevitGeoSuite.Core.csproj",
-            "RevitGeoSuite.RevitInterop.csproj",
-            "RevitGeoSuite.SharedUI.csproj");
+            "RevitGeoSuite.RevitInterop.csproj");
         AssertProjectReferences(
             "src/RevitGeoSuite.PlateauImport/RevitGeoSuite.PlateauImport.csproj",
             "RevitGeoSuite.Core.csproj",
             "RevitGeoSuite.Core.Plateau.csproj",
-            "RevitGeoSuite.RevitInterop.csproj",
-            "RevitGeoSuite.SharedUI.csproj");
+            "RevitGeoSuite.RevitInterop.csproj");
         AssertProjectReferences(
             "src/RevitGeoSuite.Tiles3DExport/RevitGeoSuite.Tiles3DExport.csproj",
             "RevitGeoSuite.Core.csproj",
-            "RevitGeoSuite.RevitInterop.csproj",
-            "RevitGeoSuite.SharedUI.csproj");
+            "RevitGeoSuite.RevitInterop.csproj");
         AssertProjectReferences(
             "src/RevitGeoSuite.CityGmlExport/RevitGeoSuite.CityGmlExport.csproj",
             "RevitGeoSuite.Core.csproj",
             "RevitGeoSuite.Core.Plateau.csproj",
-            "RevitGeoSuite.RevitInterop.csproj",
-            "RevitGeoSuite.SharedUI.csproj");
+            "RevitGeoSuite.RevitInterop.csproj");
         AssertProjectReferences(
             "src/RevitGeoSuite.Shell/RevitGeoSuite.Shell.csproj",
             "RevitGeoSuite.Core.csproj",

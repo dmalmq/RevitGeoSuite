@@ -14,6 +14,8 @@ public static class PlateauFeatureTypeExtensions
                 return "Bridge";
             case PlateauFeatureType.Road:
                 return "Road";
+            case PlateauFeatureType.Sidewalk:
+                return "Sidewalk";
             case PlateauFeatureType.Vegetation:
                 return "Vegetation";
             case PlateauFeatureType.Relief:
@@ -35,6 +37,8 @@ public static class PlateauFeatureTypeExtensions
                 return "Bridges";
             case PlateauFeatureType.Road:
                 return "Roads";
+            case PlateauFeatureType.Sidewalk:
+                return "Sidewalks";
             case PlateauFeatureType.Vegetation:
                 return "Vegetation";
             case PlateauFeatureType.Relief:

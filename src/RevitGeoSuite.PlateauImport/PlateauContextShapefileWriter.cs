@@ -18,6 +18,24 @@ public static class PlateauContextShapefileWriter
     private const double AreaEpsilon = 1e-9d;
     private const string RoadLayer = "PLATEAU_ROADS";
 
+    // Per-layer minimum polygon area (in projected m²). Layers not listed here use AreaEpsilon
+    // (effectively zero) so behaviour is unchanged for Buildings/Sidewalks/etc. The PLATEAU_ROADS
+    // threshold filters out sliver fragments from near-vertical curb faces and tiny triangulation
+    // noise that would otherwise appear as "spike" artifacts at road junctions.
+    private static readonly IReadOnlyDictionary<string, double> MinAreaByLayer = new Dictionary<string, double>(StringComparer.Ordinal)
+    {
+        { RoadLayer, 0.1d },
+    };
+
+    private static double ResolveMinArea(string? layer)
+    {
+        if (layer is not null && MinAreaByLayer.TryGetValue(layer, out double threshold))
+        {
+            return threshold;
+        }
+        return AreaEpsilon;
+    }
+
     public const string RevitBuildingsLayer = "REVIT_BUILDINGS";
     public const string RevitWallsLayer = "REVIT_WALLS";
 
@@ -27,6 +45,7 @@ public static class PlateauContextShapefileWriter
     {
         ("PLATEAU_BUILDINGS", "_plateau_buildings", "Writing PLATEAU building polygons"),
         ("PLATEAU_BRIDGES", "_plateau_bridges", "Writing PLATEAU bridge polygons"),
+        (PlateauContextOutlinesDxfWriter.PlateauSidewalksLayer, "_plateau_sidewalks", "Writing PLATEAU sidewalk polygons"),
         ("PLATEAU_VEGETATION", "_plateau_vegetation", "Writing PLATEAU vegetation polygons"),
         ("PLATEAU_RELIEF", "_plateau_relief", "Writing PLATEAU relief polygons"),
         (PlateauContextOutlinesDxfWriter.PlateauLandUseLayer, "_plateau_landuse", "Writing PLATEAU land-use polygons"),
@@ -37,6 +56,7 @@ public static class PlateauContextShapefileWriter
         "_plateau_roads",
         "_plateau_buildings",
         "_plateau_bridges",
+        "_plateau_sidewalks",
         "_plateau_vegetation",
         "_plateau_relief",
         "_plateau_landuse",
@@ -192,7 +212,8 @@ public static class PlateauContextShapefileWriter
             if (roadAreas is null) throw new ArgumentNullException(nameof(roadAreas));
             foreach (PlateauContextOutlinesDxfWriter.AreaFeature roadArea in roadAreas)
             {
-                IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(roadArea.ExteriorRingMetres, roadArea.InteriorRingsMetres);
+                double roadMinArea = ResolveMinArea(RoadLayer);
+                IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(roadArea.ExteriorRingMetres, roadArea.InteriorRingsMetres, roadMinArea);
                 if (polygons.Count == 0)
                 {
                     warnings.Add($"Skipped {roadArea.SourceId ?? "road"}: road polygon boundary could not be written.");
@@ -227,7 +248,8 @@ public static class PlateauContextShapefileWriter
 
                 IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(
                     source.VerticesMetres,
-                    Array.Empty<IReadOnlyList<(double X, double Y)>>());
+                    Array.Empty<IReadOnlyList<(double X, double Y)>>(),
+                    ResolveMinArea(source.Layer));
                 if (polygons.Count == 0)
                 {
                     warnings.Add($"Skipped {source.SourceId ?? "feature"}: footprint polygon boundary could not be written.");
@@ -286,7 +308,7 @@ public static class PlateauContextShapefileWriter
                     continue;
                 }
 
-                IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(source.ExteriorRingMetres, source.InteriorRingsMetres);
+                IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(source.ExteriorRingMetres, source.InteriorRingsMetres, ResolveMinArea(source.Layer));
                 if (polygons.Count == 0)
                 {
                     warnings.Add($"Skipped {source.SourceId ?? "gsi-polygon"}: {featureLabel} polygon boundary could not be written.");
@@ -389,7 +411,8 @@ public static class PlateauContextShapefileWriter
         {
             IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(
                 source.VerticesMetres,
-                Array.Empty<IReadOnlyList<(double X, double Y)>>());
+                Array.Empty<IReadOnlyList<(double X, double Y)>>(),
+                ResolveMinArea(RevitBuildingsLayer));
             if (polygons.Count == 0)
             {
                 warnings.Add($"Skipped Revit element {source.ElementId}: footprint polygon could not be written.");
@@ -643,7 +666,8 @@ public static class PlateauContextShapefileWriter
 
         foreach (PlateauContextOutlinesDxfWriter.AreaFeature roadArea in roadAreas)
         {
-            IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(roadArea.ExteriorRingMetres, roadArea.InteriorRingsMetres);
+            double roadMinArea = ResolveMinArea(RoadLayer);
+            IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(roadArea.ExteriorRingMetres, roadArea.InteriorRingsMetres, roadMinArea);
             if (polygons.Count == 0)
             {
                 warnings.Add($"Skipped {roadArea.SourceId ?? "road"}: road polygon boundary could not be written.");
@@ -667,7 +691,8 @@ public static class PlateauContextShapefileWriter
         {
             IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(
                 feature.VerticesMetres,
-                Array.Empty<IReadOnlyList<(double X, double Y)>>());
+                Array.Empty<IReadOnlyList<(double X, double Y)>>(),
+                ResolveMinArea(feature.Layer));
             if (polygons.Count == 0)
             {
                 warnings.Add($"Skipped {feature.SourceId ?? "feature"}: footprint polygon boundary could not be written.");
@@ -793,7 +818,7 @@ public static class PlateauContextShapefileWriter
 
         foreach (KibanPolygonExportFeature feature in features)
         {
-            IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(feature.ExteriorRingMetres, feature.InteriorRingsMetres);
+            IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(feature.ExteriorRingMetres, feature.InteriorRingsMetres, ResolveMinArea(feature.Layer));
             if (polygons.Count == 0)
             {
                 warnings.Add($"Skipped {feature.SourceId ?? "gsi-polygon"}: {featureLabel} polygon boundary could not be written.");
@@ -868,7 +893,8 @@ public static class PlateauContextShapefileWriter
         {
             IReadOnlyList<Polygon> polygons = CreatePolygonalGeometries(
                 feature.VerticesMetres,
-                Array.Empty<IReadOnlyList<(double X, double Y)>>());
+                Array.Empty<IReadOnlyList<(double X, double Y)>>(),
+                ResolveMinArea(RevitBuildingsLayer));
             if (polygons.Count == 0)
             {
                 warnings.Add($"Skipped Revit element {feature.ElementId}: footprint polygon could not be written.");
@@ -1294,22 +1320,24 @@ public static class PlateauContextShapefileWriter
 
     private static IReadOnlyList<Polygon> CreatePolygonalGeometries(
         IReadOnlyList<(double X, double Y)> exterior,
-        IReadOnlyList<IReadOnlyList<(double X, double Y)>> interiors)
+        IReadOnlyList<IReadOnlyList<(double X, double Y)>> interiors,
+        double minAreaThreshold = AreaEpsilon)
     {
-        Geometry? geometry = CreatePolygonGeometry(exterior, interiors);
+        Geometry? geometry = CreatePolygonGeometry(exterior, interiors, minAreaThreshold);
         if (geometry is null || geometry.IsEmpty)
         {
             return Array.Empty<Polygon>();
         }
 
         List<Polygon> polygons = new List<Polygon>();
-        AddPolygons(geometry, polygons);
+        AddPolygons(geometry, polygons, minAreaThreshold);
         return polygons;
     }
 
     private static Geometry? CreatePolygonGeometry(
         IReadOnlyList<(double X, double Y)> exterior,
-        IReadOnlyList<IReadOnlyList<(double X, double Y)>> interiors)
+        IReadOnlyList<IReadOnlyList<(double X, double Y)>> interiors,
+        double minAreaThreshold = AreaEpsilon)
     {
         GeometryFactory geometryFactory = new GeometryFactory();
         LinearRing? shell = CreateLinearRing(geometryFactory, exterior);
@@ -1331,13 +1359,13 @@ public static class PlateauContextShapefileWriter
         try
         {
             Polygon polygon = geometryFactory.CreatePolygon(shell, holes.ToArray());
-            if (polygon.IsEmpty || polygon.Area <= AreaEpsilon)
+            if (polygon.IsEmpty || polygon.Area <= minAreaThreshold)
             {
                 return null;
             }
 
             Geometry geometry = polygon.IsValid ? polygon : polygon.Buffer(0d);
-            return geometry.IsEmpty || geometry.Area <= AreaEpsilon ? null : geometry;
+            return geometry.IsEmpty || geometry.Area <= minAreaThreshold ? null : geometry;
         }
         catch (Exception ex) when (ex is TopologyException || ex is ArgumentException || ex is InvalidOperationException)
         {
@@ -1347,33 +1375,7 @@ public static class PlateauContextShapefileWriter
 
     private static LinearRing? CreateLinearRing(GeometryFactory geometryFactory, IReadOnlyList<(double X, double Y)> ring)
     {
-        if (ring.Count < 3)
-        {
-            return null;
-        }
-
-        List<Coordinate> coordinates = new List<Coordinate>(ring.Count + 1);
-        foreach ((double x, double y) in ring)
-        {
-            Coordinate coordinate = new Coordinate(x, y);
-            if (coordinates.Count == 0 || !SameCoordinate(coordinates[coordinates.Count - 1], coordinate))
-            {
-                coordinates.Add(coordinate);
-            }
-        }
-
-        while (coordinates.Count > 1 && SameCoordinate(coordinates[0], coordinates[coordinates.Count - 1]))
-        {
-            coordinates.RemoveAt(coordinates.Count - 1);
-        }
-
-        if (coordinates.Count < 3)
-        {
-            return null;
-        }
-
-        coordinates.Add(new Coordinate(coordinates[0]));
-        return geometryFactory.CreateLinearRing(coordinates.ToArray());
+        return PlateauPolygonHelpers.CreateLinearRing(geometryFactory, ring);
     }
 
     private static LineString? CreateLineGeometry(IReadOnlyList<(double X, double Y)> vertices)
@@ -1410,11 +1412,11 @@ public static class PlateauContextShapefileWriter
         }
     }
 
-    private static void AddPolygons(Geometry geometry, ICollection<Polygon> polygons)
+    private static void AddPolygons(Geometry geometry, ICollection<Polygon> polygons, double minAreaThreshold = AreaEpsilon)
     {
         if (geometry is Polygon polygon)
         {
-            if (!polygon.IsEmpty && polygon.Area > AreaEpsilon)
+            if (!polygon.IsEmpty && polygon.Area > minAreaThreshold)
             {
                 polygons.Add(polygon);
             }
@@ -1427,7 +1429,7 @@ public static class PlateauContextShapefileWriter
             Geometry child = geometry.GetGeometryN(index);
             if (!child.IsEmpty)
             {
-                AddPolygons(child, polygons);
+                AddPolygons(child, polygons, minAreaThreshold);
             }
         }
     }
@@ -1568,35 +1570,10 @@ public static class PlateauContextShapefileWriter
 
     private static FeatureStyle GetStyle(string layer)
     {
-        switch (layer)
-        {
-            case "PLATEAU_ROADS":
-                return new FeatureStyle("ROAD", "205,205,205", "170,170,170", 30);
-            case "PLATEAU_BUILDINGS":
-                return new FeatureStyle("BUILDING", "232,235,235", "190,195,195", 40);
-            case "PLATEAU_BRIDGES":
-                return new FeatureStyle("BRIDGE", "234,224,206", "190,180,165", 50);
-            case "PLATEAU_VEGETATION":
-                return new FeatureStyle("VEGETATION", "150,200,150", "105,160,105", 60);
-            case "PLATEAU_LANDUSE":
-                return new FeatureStyle("LANDUSE", "200,220,160", "120,160,80", 35);
-            case "PLATEAU_RELIEF":
-                return new FeatureStyle("RELIEF", "238,238,238", "205,205,205", 10);
-            case "GSI_SIDEWALKS":
-                return new FeatureStyle("SIDEWALK", "240,230,220", "180,160,140", 22);
-            case "GSI_RAILWAYS":
-                return new FeatureStyle("RAILWAY", "200,200,220", "160,160,180", 20);
-            case "GSI_WATER":
-                return new FeatureStyle("WATER", "175,210,235", "115,160,200", 15);
-            case "GSI_LANDUSE":
-                return new FeatureStyle("LANDUSE", "185,220,150", "95,150,75", 18);
-            case RevitBuildingsLayer:
-                return new FeatureStyle("REVIT_BUILDING", "255,230,180", "200,160,80", 70);
-            case RevitWallsLayer:
-                return new FeatureStyle("REVIT_WALL", "255,200,150", "180,100,40", 75);
-            default:
-                return new FeatureStyle("OTHER", "220,220,220", "180,180,180", 90);
-        }
+        // Per-layer colours live in the shared PlateauLayerStyle palette so the Shapefile FILL_RGB/
+        // OUT_RGB fields and the DXF layer colours stay in lock-step.
+        PlateauLayerStyle style = PlateauLayerStyle.ForLayer(layer);
+        return new FeatureStyle(style.Type, style.FillRgb, style.OutlineRgb, style.DrawOrder);
     }
 
     private static FeatureStyle GetLandUseStyleByName(string? className, FeatureStyle defaultStyle)

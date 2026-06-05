@@ -74,7 +74,7 @@ public sealed class Tiles3DGeometryExtractor
             throw new InvalidOperationException("Select a non-template 3D view before extracting 3D Tiles geometry from a selected view.");
         }
 
-        return document.GetElement(scope.SelectedView!.ViewId) as View3D
+        return document.GetElement(ToElementId(scope.SelectedView!.ViewId)) as View3D
             ?? throw new InvalidOperationException("The selected 3D Tiles export view could not be resolved as a 3D view.");
     }
 
@@ -105,7 +105,12 @@ public sealed class Tiles3DGeometryExtractor
         Tiles3DExportScopeMode scopeMode,
         List<Tiles3DMeshPrimitive> meshes)
     {
-        RevitLinkInstance? linkInstance = hostDocument.GetElement(linkOption.LinkInstanceId) as RevitLinkInstance;
+        if (linkOption.LinkInstanceId <= 0)
+        {
+            return;
+        }
+
+        RevitLinkInstance? linkInstance = hostDocument.GetElement(ToElementId(linkOption.LinkInstanceId)) as RevitLinkInstance;
         if (linkInstance is null)
         {
             return;
@@ -142,6 +147,11 @@ public sealed class Tiles3DGeometryExtractor
         {
             AppendElementMesh(element, options, frame, linkTransform, meshes, linkDocument.Title, linkOption.Title);
         }
+    }
+
+    private static ElementId ToElementId(long value)
+    {
+        return new ElementId(value);
     }
 
     private static void AppendElementMesh(

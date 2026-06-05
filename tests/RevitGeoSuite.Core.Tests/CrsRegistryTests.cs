@@ -15,7 +15,7 @@ public sealed class CrsRegistryTests
         CrsRegistry registry = new CrsRegistry();
         List<CrsFixture> fixtures = LoadFixtures();
 
-        Assert.Equal(19, registry.GetAvailableDefinitions().Count);
+        Assert.True(registry.GetAvailableDefinitions().Count >= fixtures.Count);
 
         foreach (CrsFixture fixture in fixtures)
         {

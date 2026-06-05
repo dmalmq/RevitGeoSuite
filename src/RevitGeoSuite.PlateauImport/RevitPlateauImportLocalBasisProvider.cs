@@ -3,7 +3,7 @@ using Autodesk.Revit.DB;
 
 namespace RevitGeoSuite.PlateauImport;
 
-internal sealed class RevitPlateauImportLocalBasisProvider : IPlateauImportLocalBasisProvider
+public sealed class RevitPlateauImportLocalBasisProvider : IPlateauImportLocalBasisProvider
 {
     private readonly Document document;
 

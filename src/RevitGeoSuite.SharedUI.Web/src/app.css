@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* Enable class-based dark mode (Tailwind v4 CSS-first config). Without this, the `dark:`
+   variant is never generated and the theme.ts module's add/remove `dark` class is a no-op. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-canvas: #F3EFE7;
+  --color-canvas-light: #FBF8F1;
+  --color-nav: #17323B;
+  --color-accent: #0F7B7B;
+  --color-accent-hover: #0D6B6B;
+}
+
+:root {
+  /* Drive native UI (scrollbars, form controls) from the app theme — the `.dark` class on
+     <html> — not the OS preference. `light dark` let a dark-mode OS paint dark scrollbars even
+     while the app was in its light theme. */
+  color-scheme: light;
+
+  /* Leaflet map chrome — overridden in .dark below. */
+  --map-bg: #F3EFE7;
+  --map-tooltip-bg: rgba(251, 248, 241, 0.92);
+  --map-tooltip-border: #E5E0D5;
+  --map-tooltip-text: #17323B;
+  --map-control-bg: #FBF8F1;
+  --map-control-border: #E5E0D5;
+  --map-control-text: #17323B;
+  --map-accent: #0F7B7B;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --map-bg: #262626;
+  --map-tooltip-bg: rgba(23, 23, 23, 0.92);
+  --map-tooltip-border: #404040;
+  --map-tooltip-text: #e5e5e5;
+  --map-control-bg: #262626;
+  --map-control-border: #404040;
+  --map-control-text: #e5e5e5;
+  --map-accent: #5eead4;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+}

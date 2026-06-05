@@ -6,6 +6,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\src\RevitGeoSuite.Core.Plateau\RevitGeoSuite.Core.Plateau.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
