@@ -42,8 +42,15 @@
   let scanProgress = $state<any>(null)
   let tiles = $state<any[]>([])
   let selectedTiles = $state<Set<string>>(new Set())
-  // 'solids' = 3D DirectShapes; 'dxf' = lightweight 2D CAD basemap.
-  let geometryMode = $state<'solids' | 'dxf'>('solids')
+  // 'solids' = 3D DirectShapes; 'dxf' = lightweight 2D CAD basemap; 'ground' = native Revit
+  // topography from the PLATEAU DEM (local source only for now).
+  let geometryMode = $state<'solids' | 'dxf' | 'ground'>('solids')
+  // Ground/terrain grid resolution in metres (used when geometryMode === 'ground').
+  let groundSpacingMeters = $state(10)
+  // Online terrain: radius (m) around the project to fetch, and the geoid undulation offset
+  // (ellipsoidal Cesium terrain → orthometric model; Japan ≈ 36–42 m).
+  let groundRadiusMeters = $state(600)
+  let groundGeoidOffsetMeters = $state(36)
   let onlineBasemapCategories = $state<Set<OnlineBasemapCategory>>(new Set(['buildings', 'roads', 'landuse']))
   let importing = $state(false)
   let importProgress = $state<any>(null)
@@ -249,6 +256,60 @@
       importing = false
     } catch (err: any) {
       error = err.message || ($strings['Import.Error.Failed'] ?? 'Import failed')
+      importing = false
+    } finally {
+      importCancel = null
+    }
+  }
+
+  // Dispatches the "select" step's primary button to the right import based on source + mode.
+  function runImport() {
+    if (geometryMode === 'ground') {
+      startGroundImport()
+    } else if (source === 'online') {
+      startOnlineImport()
+    } else {
+      startImport()
+    }
+  }
+
+  async function startGroundImport() {
+    // Local ground needs selected dem tiles; online terrain uses a radius around the project.
+    if (source === 'local' && selectedTiles.size === 0) {
+      error = $strings['Import.Error.NoTiles'] ?? 'Please select at least one tile'
+      return
+    }
+
+    importing = true
+    error = null
+    importProgress = null
+    step = 'import'
+
+    const payload = source === 'online'
+      ? {
+          source: 'online',
+          radiusMeters: groundRadiusMeters,
+          gridSpacingMeters: groundSpacingMeters,
+          geoidOffsetMeters: groundGeoidOffsetMeters
+        }
+      : {
+          source: 'local',
+          path: folderPath,
+          tileIds: Array.from(selectedTiles),
+          gridSpacingMeters: groundSpacingMeters
+        }
+
+    const job = startJob<{ surfaceId?: number; pointCount?: number; replaced?: number; spacingMeters?: number; summary?: string; warnings?: string[] }>('plateau.importGround', payload, {
+      onProgress: (p) => { importProgress = p }
+    })
+    importCancel = job.cancel
+
+    try {
+      const result = await job.result
+      importProgress = { ...importProgress, complete: true, ...result }
+      importing = false
+    } catch (err: any) {
+      error = err.message || ($strings['Import.Error.GroundFailed'] ?? 'Ground import failed')
       importing = false
     } finally {
       importCancel = null
@@ -1542,8 +1603,69 @@
                   : $strings['Import.GeometryMode.DxfDesc'] ?? 'Lightweight CAD outlines on layers — buildings, roads, vegetation & more'}
               </div>
             </button>
+            <button
+              class="w-full p-3 border rounded-lg text-left transition-colors {geometryMode === 'ground' ? 'bg-teal-50 border-teal-500 dark:bg-teal-900/30 dark:border-teal-500' : 'bg-white border-neutral-200 hover:border-teal-500 dark:bg-neutral-900 dark:border-neutral-700'}"
+              onclick={() => geometryMode = 'ground'}
+            >
+              <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Import.GeometryMode.Ground'] ?? 'Ground / terrain (topography)'}</div>
+              <div class="text-xs text-neutral-500 dark:text-neutral-500 mt-0.5">
+                {source === 'online'
+                  ? $strings['Import.Online.GeometryMode.GroundDesc'] ?? 'Native Revit topography from PLATEAU terrain (Cesium Ion), around the project'
+                  : $strings['Import.GeometryMode.GroundDesc'] ?? 'Native Revit topography from the PLATEAU DEM, at correct heights'}
+              </div>
+            </button>
           </div>
         </div>
+
+        {#if geometryMode === 'ground'}
+          <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4 space-y-3">
+            <h3 class="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+              {$strings['Import.Ground.Title'] ?? 'Ground resolution'}
+            </h3>
+            <label class="flex items-center justify-between gap-3 text-sm text-neutral-700 dark:text-neutral-300">
+              <span>{$strings['Import.Ground.GridSpacing'] ?? 'Grid spacing (m)'}</span>
+              <input
+                type="number"
+                min="2"
+                max="100"
+                step="1"
+                bind:value={groundSpacingMeters}
+                class="w-24 rounded-md border border-neutral-300 bg-white px-2 py-1 text-right outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950"
+              />
+            </label>
+            {#if source === 'online'}
+              <label class="flex items-center justify-between gap-3 text-sm text-neutral-700 dark:text-neutral-300">
+                <span>{$strings['Import.Ground.Radius'] ?? 'Radius around project (m)'}</span>
+                <input
+                  type="number"
+                  min="100"
+                  max="5000"
+                  step="50"
+                  bind:value={groundRadiusMeters}
+                  class="w-24 rounded-md border border-neutral-300 bg-white px-2 py-1 text-right outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950"
+                />
+              </label>
+              <label class="flex items-center justify-between gap-3 text-sm text-neutral-700 dark:text-neutral-300">
+                <span>{$strings['Import.Ground.GeoidOffset'] ?? 'Geoid undulation (m)'}</span>
+                <input
+                  type="number"
+                  min="-150"
+                  max="150"
+                  step="0.1"
+                  bind:value={groundGeoidOffsetMeters}
+                  class="w-24 rounded-md border border-neutral-300 bg-white px-2 py-1 text-right outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950"
+                />
+              </label>
+              <p class="text-xs text-neutral-500 dark:text-neutral-500">
+                {$strings['Import.Ground.OnlineHint'] ?? 'PLATEAU terrain is fetched around the georeferenced project. Cesium heights are ellipsoidal — the geoid undulation (Japan ≈ 36–42 m) is subtracted to meet the model datum; adjust if the surface sits too high or low.'}
+              </p>
+            {:else}
+              <p class="text-xs text-neutral-500 dark:text-neutral-500">
+                {$strings['Import.Ground.Hint'] ?? 'Smaller spacing = more detail and more points. Requires tiles that include a dem (Relief) dataset.'}
+              </p>
+            {/if}
+          </div>
+        {/if}
 
         {#if source === 'online' && geometryMode === 'dxf'}
           <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4">
@@ -1572,16 +1694,20 @@
 
         <button
           class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          onclick={source === 'online' ? startOnlineImport : startImport}
-          disabled={selectedTiles.size === 0 || (source === 'online' && geometryMode === 'dxf' && onlineBasemapCategories.size === 0)}
+          onclick={runImport}
+          disabled={(selectedTiles.size === 0 && !(source === 'online' && geometryMode === 'ground')) || (source === 'online' && geometryMode === 'dxf' && onlineBasemapCategories.size === 0)}
         >
-          {source === 'online'
-            ? geometryMode === 'dxf'
+          {#if geometryMode === 'ground'}
+            {$strings['Import.Button.ImportGround'] ?? 'Import Ground'}
+          {:else if source === 'online'}
+            {geometryMode === 'dxf'
               ? $strings['Import.Online.ImportDxf'] ?? 'Import 2D Basemap'
-              : $strings['Import.Online.ImportSelectedGrids'] ?? 'Import Selected Grids'
-            : geometryMode === 'dxf'
+              : $strings['Import.Online.ImportSelectedGrids'] ?? 'Import Selected Grids'}
+          {:else}
+            {geometryMode === 'dxf'
               ? $strings['Import.Button.ImportDxf'] ?? 'Import 2D Basemap'
               : $strings['Import.Button.Import'] ?? 'Import Selected Tiles'}
+          {/if}
         </button>
       </div>
 
@@ -1625,7 +1751,9 @@
             <div class="text-green-600 dark:text-green-400 text-2xl mb-2">✓</div>
             <div class="text-sm text-neutral-800 dark:text-neutral-200 mb-1">{$strings['Import.Complete.Title'] ?? 'Import Complete'}</div>
             <div class="text-xs text-neutral-500 dark:text-neutral-500">
-              {#if importProgress.mode === 'dxf'}
+              {#if importProgress.mode === 'ground'}
+                {fmt($strings['Import.Complete.Ground'] ?? '{0} DEM points imported as a topography surface', importProgress.pointCount ?? 0)}
+              {:else if importProgress.mode === 'dxf'}
                 {fmt($strings['Import.Complete.DxfBasemap'] ?? '{0} outlines imported as a 2D DXF basemap', importedCount)}
               {:else}
                 {importedCount} {importedCount === 1 ? $strings['Import.Complete.ElementsOne'] ?? 'element imported' : $strings['Import.Complete.ElementsOther'] ?? 'elements imported'}{importProgress.groups ? fmt($strings['Import.Complete.InGroups'] ?? ' in {0} group(s)', importProgress.groups) : ''}

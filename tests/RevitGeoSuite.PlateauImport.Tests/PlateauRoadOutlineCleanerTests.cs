@@ -152,7 +152,37 @@ public sealed class PlateauRoadOutlineCleanerTests
         PlateauContextOutlinesDxfWriter.AreaFeature roadArea = Assert.Single(roadAreas);
         Assert.Equal(100d, ComputeArea(roadArea.ExteriorRingMetres), 6);
         Assert.Single(warnings);
-        Assert.Contains("fewer than three vertices", warnings[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Skipped 1", warnings[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("road sub-faces", warnings[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DissolveRoads_aggregates_multiple_skipped_sub_faces_into_a_single_summary_warning()
+    {
+        PlateauContextOutlinesDxfWriter.OutlineFeature valid = BuildSquare(RoadLayer, 0d, 0d, 10d, "valid-road");
+        PlateauContextOutlinesDxfWriter.OutlineFeature tooFewVertices = new PlateauContextOutlinesDxfWriter.OutlineFeature(
+            RoadLayer,
+            new (double X, double Y)[] { (10d, 0d), (20d, 0d) },
+            "too-few-vertices");
+        PlateauContextOutlinesDxfWriter.OutlineFeature sliver = new PlateauContextOutlinesDxfWriter.OutlineFeature(
+            RoadLayer,
+            new (double X, double Y)[] { (0d, 0d), (10d, 0d), (20d, 0.0001d) },
+            "collinear-sliver");
+        PlateauContextOutlinesDxfWriter.OutlineFeature degenerateTriangle = new PlateauContextOutlinesDxfWriter.OutlineFeature(
+            RoadLayer,
+            new (double X, double Y)[] { (0d, 0d), (0.001d, 0d), (0.002d, 0d) },
+            "zero-area-triangle");
+        List<string> warnings = new List<string>();
+
+        IReadOnlyList<PlateauContextOutlinesDxfWriter.AreaFeature> roadAreas = PlateauRoadOutlineCleaner.DissolveRoads(
+            new[] { valid, tooFewVertices, sliver, degenerateTriangle },
+            warnings);
+
+        PlateauContextOutlinesDxfWriter.AreaFeature roadArea = Assert.Single(roadAreas);
+        Assert.Equal(100d, ComputeArea(roadArea.ExteriorRingMetres), 6);
+        string summary = Assert.Single(warnings);
+        Assert.Contains("Skipped 3", summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("road sub-faces", summary, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

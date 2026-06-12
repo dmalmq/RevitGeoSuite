@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.Core.Storage;
 using RevitGeoSuite.RevitInterop;
@@ -26,7 +27,9 @@ public sealed class PlateauImportCoordinator
         IDocumentHandle document,
         ContextImportPlan plan,
         PlateauImportReferenceSource referenceSource,
-        PlateauImportState? existingState)
+        PlateauImportState? existingState,
+        Action<int, int, string>? onProgress = null,
+        CancellationToken ct = default)
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("PLATEAU import requires a RevitDocumentHandle.");
@@ -47,19 +50,81 @@ public sealed class PlateauImportCoordinator
             throw new InvalidOperationException("Another Revit transaction is already active. Finish it before importing PLATEAU context.");
         }
 
-        using Transaction transaction = new Transaction(revitDocument, "Import PLATEAU Context");
-        transaction.Start();
+        if (plan.Shapes.Count == 0)
+        {
+            throw new InvalidOperationException("The selected PLATEAU folder and filters did not produce any importable context geometry.");
+        }
+
+        // Import one tile per transaction inside a TransactionGroup. Committing each tile lets Revit
+        // release transient regeneration memory between tiles; building every tile in a single
+        // transaction exhausts Revit's native heap on large selections and crashes the process. The
+        // group makes the whole import a single undo step (same pattern the DXF basemap path uses).
+        using TransactionGroup transactionGroup = new TransactionGroup(revitDocument, "Import PLATEAU Context");
+        transactionGroup.Start();
         try
         {
-            PlateauContextImportExecutionResult execution = contextImporter.Import(revitDocument, plan);
-            PlateauImportState updatedState = BuildUpdatedState(existingState, plan, execution, referenceSource);
-            stateService.Save(handle, updatedState);
+            List<string> warnings = new List<string>(plan.WarningMessages ?? Array.Empty<string>());
 
-            TransactionStatus status = transaction.Commit();
-            if (status != TransactionStatus.Committed)
+            // 1) One delete pass for all overlapping prior imports before creating anything.
+            using (Transaction deleteTransaction = new Transaction(revitDocument, "Replace PLATEAU Imports"))
             {
-                throw new InvalidOperationException("Revit did not commit the PLATEAU context import transaction.");
+                deleteTransaction.Start();
+                contextImporter.DeleteExistingImports(revitDocument, plan.Shapes);
+                deleteTransaction.Commit();
             }
+
+            // Shared across per-tile transactions so newly created group names stay unique.
+            ISet<string> existingGroupNames = contextImporter.GetImportGroupNames(revitDocument);
+
+            List<IGrouping<string, ContextShapePlan>> tileBatches = plan.Shapes
+                .GroupBy(shape => shape.TileId, StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .ToList();
+
+            int importedCount = 0;
+            int createdGroupCount = 0;
+            for (int index = 0; index < tileBatches.Count; index++)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                IGrouping<string, ContextShapePlan> tileBatch = tileBatches[index];
+                ContextShapePlan[] tileShapes = tileBatch.ToArray();
+
+                using (Transaction tileTransaction = new Transaction(revitDocument, $"Import PLATEAU tile {tileBatch.Key}"))
+                {
+                    tileTransaction.Start();
+                    (int tileImported, int tileGroups) = contextImporter.ImportShapeBatch(revitDocument, tileShapes, warnings, existingGroupNames);
+                    tileTransaction.Commit();
+                    importedCount += tileImported;
+                    createdGroupCount += tileGroups;
+                }
+
+                onProgress?.Invoke(index + 1, tileBatches.Count, $"Importing tile {tileBatch.Key} ({index + 1}/{tileBatches.Count})…");
+            }
+
+            if (importedCount == 0)
+            {
+                throw new InvalidOperationException("None of the filtered PLATEAU features could be converted into valid Revit context geometry. Review the warnings list and adjust the folder or filters before importing again.");
+            }
+
+            PlateauContextImportExecutionResult execution = new PlateauContextImportExecutionResult
+            {
+                ImportedElementCount = importedCount,
+                CreatedGroupCount = createdGroupCount,
+                WarningMessages = warnings
+            };
+
+            PlateauImportState updatedState = BuildUpdatedState(existingState, plan, execution, referenceSource);
+
+            // 2) Persist import state, then assimilate so the whole import collapses to one undo step.
+            using (Transaction stateTransaction = new Transaction(revitDocument, "Record PLATEAU Import State"))
+            {
+                stateTransaction.Start();
+                stateService.Save(handle, updatedState);
+                stateTransaction.Commit();
+            }
+
+            transactionGroup.Assimilate();
 
             return new PlateauImportResult
             {
@@ -70,11 +135,21 @@ public sealed class PlateauImportCoordinator
                 SummaryMessage = BuildSummaryMessage(plan, execution, referenceSource)
             };
         }
+        catch (OperationCanceledException)
+        {
+            // Surface cancellation unchanged so the job layer reports "Cancelled", not a failure.
+            if (transactionGroup.GetStatus() == TransactionStatus.Started)
+            {
+                transactionGroup.RollBack();
+            }
+
+            throw;
+        }
         catch (Exception ex)
         {
-            if (transaction.GetStatus() == TransactionStatus.Started)
+            if (transactionGroup.GetStatus() == TransactionStatus.Started)
             {
-                transaction.RollBack();
+                transactionGroup.RollBack();
             }
 
             throw new InvalidOperationException("PLATEAU context import failed. Revit rolled back the transaction. " + ex.Message, ex);

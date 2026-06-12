@@ -14,12 +14,19 @@
     // In-place SPA navigation: update the hash; App.svelte renders the matching route.
     window.location.hash = route
   }
+
+  // `current` is passed in (rather than read from the closure) so it appears in the markup
+  // expression below — Svelte's legacy reactivity only re-evaluates {isActive(...)} when a
+  // variable referenced in the expression changes, and `item.route` is a const.
+  function isActive(route: string, current: string): boolean {
+    return current === route || (route === '/export' && current.startsWith('/export/'))
+  }
 </script>
 
 <nav class="w-16 bg-white border-r border-neutral-200 dark:bg-neutral-900 dark:border-neutral-800 flex flex-col items-center py-4 gap-2">
   {#each items as item}
     <button
-      class="w-12 h-12 flex flex-col items-center justify-center rounded-lg transition-colors {currentRoute === item.route ? 'bg-teal-600 text-white' : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100'}"
+      class="w-12 h-12 flex flex-col items-center justify-center rounded-lg transition-colors {isActive(item.route, currentRoute) ? 'bg-teal-600 text-white' : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100'}"
       onclick={() => navigate(item.route)}
       aria-label={$strings[item.labelKey] ?? item.labelKey}
       title={$strings[item.labelKey] ?? item.labelKey}

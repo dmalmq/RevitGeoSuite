@@ -12,10 +12,12 @@ public sealed class PlateauContextImporter
 {
     private const string ApplicationId = "RevitGeoSuite.PlateauImport";
     private readonly PlateauFootprintSanitizer footprintSanitizer;
+    private readonly PlateauImportMaterialFactory materialFactory;
 
     public PlateauContextImporter(PlateauFootprintSanitizer? footprintSanitizer = null)
     {
         this.footprintSanitizer = footprintSanitizer ?? new PlateauFootprintSanitizer();
+        this.materialFactory = new PlateauImportMaterialFactory();
     }
 
     public PlateauContextImportExecutionResult Import(Document document, ContextImportPlan plan)
@@ -41,14 +43,72 @@ public sealed class PlateauContextImporter
         }
 
         List<string> warnings = new List<string>(plan.WarningMessages ?? Array.Empty<string>());
-        DeleteMatchingExistingImports(document, plan.Shapes);
+        DeleteExistingImports(document, plan.Shapes);
+        ISet<string> existingGroupNames = GetImportGroupNames(document);
+        (int importedCount, int createdGroupCount) = ImportShapeBatch(document, plan.Shapes, warnings, existingGroupNames);
+
+        if (importedCount == 0)
+        {
+            throw new InvalidOperationException("None of the filtered PLATEAU features could be converted into valid Revit context geometry. Review the warnings list and adjust the folder or filters before importing again.");
+        }
+
+        return new PlateauContextImportExecutionResult
+        {
+            ImportedElementCount = importedCount,
+            CreatedGroupCount = createdGroupCount,
+            WarningMessages = warnings
+        };
+    }
+
+    /// <summary>
+    /// Removes any previous RevitGeoSuite PLATEAU imports whose tile/feature scope overlaps
+    /// <paramref name="shapes"/>. Must run inside an active transaction. Exposed so callers that
+    /// import tile-by-tile can run a single delete pass up front before the per-tile batches.
+    /// </summary>
+    internal void DeleteExistingImports(Document document, IReadOnlyCollection<ContextShapePlan> shapes)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (shapes is null) throw new ArgumentNullException(nameof(shapes));
+        DeleteMatchingExistingImports(document, shapes);
+    }
+
+    /// <summary>
+    /// Returns the model's existing group-type names so a batched import can keep newly created
+    /// group names unique across separate per-tile transactions. The returned set is mutated by
+    /// <see cref="ImportShapeBatch"/> as it assigns names.
+    /// </summary>
+    internal ISet<string> GetImportGroupNames(Document document)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        return GetExistingGroupNames(document);
+    }
+
+    /// <summary>
+    /// Creates DirectShapes for one batch of shapes (typically a single tile) and groups them per
+    /// tile/feature type, inside the caller's already-open transaction. Unlike <see cref="Import"/>
+    /// it neither deletes prior imports nor throws when the batch is empty — the caller aggregates
+    /// counts across batches and decides whether the whole import produced nothing. Committing each
+    /// batch in its own transaction lets Revit release transient regeneration memory between tiles,
+    /// which is what keeps large imports from exhausting Revit's native heap and crashing.
+    /// </summary>
+    internal (int Imported, int Groups) ImportShapeBatch(
+        Document document,
+        IReadOnlyCollection<ContextShapePlan> batchShapes,
+        ICollection<string> warnings,
+        ISet<string> existingGroupNames)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (batchShapes is null) throw new ArgumentNullException(nameof(batchShapes));
+        if (warnings is null) throw new ArgumentNullException(nameof(warnings));
+        if (existingGroupNames is null) throw new ArgumentNullException(nameof(existingGroupNames));
 
         double minSegmentLengthFeet = Math.Max(document.Application.ShortCurveTolerance, 1e-6d);
         Dictionary<string, List<ElementId>> groupedElements = new Dictionary<string, List<ElementId>>(StringComparer.Ordinal);
         int importedCount = 0;
-        foreach (ContextShapePlan shapePlan in plan.Shapes)
+        foreach (ContextShapePlan shapePlan in batchShapes)
         {
-            if (!TryBuildGeometryObjects(shapePlan, warnings, minSegmentLengthFeet, out IList<GeometryObject>? geometryObjects) || geometryObjects is null)
+            ElementId materialId = materialFactory.GetMaterialId(document, shapePlan.FeatureType);
+            if (!TryBuildGeometryObjects(shapePlan, warnings, minSegmentLengthFeet, materialId, out IList<GeometryObject>? geometryObjects) || geometryObjects is null)
             {
                 continue;
             }
@@ -83,12 +143,6 @@ public sealed class PlateauContextImporter
             }
         }
 
-        if (importedCount == 0)
-        {
-            throw new InvalidOperationException("None of the filtered PLATEAU features could be converted into valid Revit context geometry. Review the warnings list and adjust the folder or filters before importing again.");
-        }
-
-        HashSet<string> existingGroupNames = GetExistingGroupNames(document);
         int createdGroupCount = 0;
         foreach (KeyValuePair<string, List<ElementId>> entry in groupedElements.Where(entry => entry.Value.Count > 0))
         {
@@ -109,12 +163,7 @@ public sealed class PlateauContextImporter
             }
         }
 
-        return new PlateauContextImportExecutionResult
-        {
-            ImportedElementCount = importedCount,
-            CreatedGroupCount = createdGroupCount,
-            WarningMessages = warnings
-        };
+        return (importedCount, createdGroupCount);
     }
 
     private static void DeleteMatchingExistingImports(Document document, IReadOnlyCollection<ContextShapePlan> shapes)
@@ -247,14 +296,15 @@ public sealed class PlateauContextImporter
         ContextShapePlan shapePlan,
         ICollection<string> warnings,
         double minSegmentLengthFeet,
+        ElementId materialId,
         out IList<GeometryObject>? geometryObjects)
     {
         geometryObjects = null;
         try
         {
             geometryObjects = shapePlan.GeometryMode == PlateauGeometryImportMode.DetailedDirectShape
-                ? BuildDetailedGeometry(shapePlan, warnings)
-                : BuildLightweightGeometry(shapePlan, warnings, minSegmentLengthFeet);
+                ? BuildDetailedGeometry(shapePlan, warnings, materialId)
+                : BuildLightweightGeometry(shapePlan, warnings, minSegmentLengthFeet, materialId);
             return geometryObjects is not null && geometryObjects.Count > 0;
         }
         catch (Exception ex)
@@ -264,7 +314,7 @@ public sealed class PlateauContextImporter
         }
     }
 
-    private IList<GeometryObject>? BuildLightweightGeometry(ContextShapePlan shapePlan, ICollection<string> warnings, double minSegmentLengthFeet)
+    private IList<GeometryObject>? BuildLightweightGeometry(ContextShapePlan shapePlan, ICollection<string> warnings, double minSegmentLengthFeet, ElementId materialId)
     {
         IReadOnlyCollection<(double XFeet, double YFeet)> sanitizedFootprint = footprintSanitizer.Sanitize(shapePlan.FootprintPointsFeet, minSegmentLengthFeet);
         if (sanitizedFootprint.Count < 3)
@@ -273,11 +323,11 @@ public sealed class PlateauContextImporter
             return null;
         }
 
-        Solid solid = BuildSolid(shapePlan, sanitizedFootprint);
+        Solid solid = BuildSolid(shapePlan, sanitizedFootprint, materialId);
         return new GeometryObject[] { solid };
     }
 
-    private static IList<GeometryObject>? BuildDetailedGeometry(ContextShapePlan shapePlan, ICollection<string> warnings)
+    private static IList<GeometryObject>? BuildDetailedGeometry(ContextShapePlan shapePlan, ICollection<string> warnings, ElementId materialId)
     {
         List<TessellatedFace> faces = new List<TessellatedFace>();
         foreach (ContextShapeTriangle triangle in shapePlan.Triangles)
@@ -294,7 +344,7 @@ public sealed class PlateauContextImporter
                     new XYZ(triangle.B.XFeet, triangle.B.YFeet, triangle.B.ZFeet),
                     new XYZ(triangle.C.XFeet, triangle.C.YFeet, triangle.C.ZFeet)
                 },
-                ElementId.InvalidElementId));
+                materialId));
         }
 
         if (faces.Count == 0)
@@ -339,7 +389,7 @@ public sealed class PlateauContextImporter
         return $"'{displayName}' in tile {shapePlan.TileId} ({sourceFileName})";
     }
 
-    private static Solid BuildSolid(ContextShapePlan shapePlan, IReadOnlyCollection<(double XFeet, double YFeet)> footprintPointsFeet)
+    private static Solid BuildSolid(ContextShapePlan shapePlan, IReadOnlyCollection<(double XFeet, double YFeet)> footprintPointsFeet, ElementId materialId)
     {
         List<XYZ> points = footprintPointsFeet
             .Select(point => new XYZ(point.XFeet, point.YFeet, shapePlan.BaseElevationFeet))
@@ -357,6 +407,7 @@ public sealed class PlateauContextImporter
             loop.Append(Line.CreateBound(start, end));
         }
 
-        return GeometryCreationUtilities.CreateExtrusionGeometry(new List<CurveLoop> { loop }, XYZ.BasisZ, shapePlan.HeightFeet);
+        SolidOptions solidOptions = new SolidOptions(materialId, ElementId.InvalidElementId);
+        return GeometryCreationUtilities.CreateExtrusionGeometry(new List<CurveLoop> { loop }, XYZ.BasisZ, shapePlan.HeightFeet, solidOptions);
     }
 }

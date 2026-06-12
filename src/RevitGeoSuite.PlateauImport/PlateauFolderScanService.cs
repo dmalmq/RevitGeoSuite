@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using RevitGeoSuite.Core.Plateau.Schema;
 
 namespace RevitGeoSuite.PlateauImport;
 
@@ -16,7 +17,16 @@ public sealed class PlateauFolderScanService
         this.cityGmlParser = cityGmlParser ?? new CityGmlParser();
     }
 
-    public PlateauFolderScanResult ScanFolder(string folderPath, Action<PlateauScanProgress>? reportProgress = null)
+    /// <summary>
+    /// Scans the PLATEAU folder and parses its CityGML features. When <paramref name="selectedTileIds"/>
+    /// is non-empty, only files belonging to those tiles are parsed — parse memory then scales with the
+    /// selection instead of the whole municipality, which keeps large imports from exhausting memory.
+    /// A <c>null</c>/empty selection parses every supported file (the folder enumeration behaviour).
+    /// </summary>
+    public PlateauFolderScanResult ScanFolder(
+        string folderPath,
+        Action<PlateauScanProgress>? reportProgress = null,
+        IReadOnlyCollection<string>? selectedTileIds = null)
     {
         if (string.IsNullOrWhiteSpace(folderPath))
         {
@@ -32,11 +42,12 @@ public sealed class PlateauFolderScanService
         reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Enumerating, 0, 0, string.Empty));
         List<PlateauCityModel> models = new List<PlateauCityModel>();
         List<string> warnings = new List<string>();
-        string[] supportedFiles = Directory
-            .EnumerateFiles(scanTarget.SearchRootPath, "*.*", scanTarget.SearchOption)
-            .Where(IsSupportedFile)
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        string[] supportedFiles = FilterFilesForSelectedTiles(
+            Directory
+                .EnumerateFiles(scanTarget.SearchRootPath, "*.*", scanTarget.SearchOption)
+                .Where(IsSupportedFile)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase),
+            selectedTileIds);
         string cacheKey = PlateauScanSessionCache.BuildPlateauKey(
             folderPath,
             scanTarget.SearchRootPath,
@@ -120,6 +131,105 @@ public sealed class PlateauFolderScanService
         return result;
     }
 
+    /// <summary>
+    /// Lists the selectable tiles in a PLATEAU folder <em>without parsing any geometry</em> — tile id and
+    /// total file size come straight from the file names (<see cref="PlateauSchemaHelper.TryExtractTileIdFromPath"/>).
+    /// Used to draw the tile grid on folder selection; parsing the whole package just to count features
+    /// loads the entire municipality into memory and is what crashed large 3D imports.
+    /// </summary>
+    public IReadOnlyList<PlateauTileFileSummary> EnumerateTileFiles(string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            throw new ArgumentException("PLATEAU folder path cannot be empty.", nameof(folderPath));
+        }
+
+        if (!Directory.Exists(folderPath))
+        {
+            throw new DirectoryNotFoundException($"PLATEAU folder '{folderPath}' could not be found.");
+        }
+
+        ScanTarget scanTarget = ResolveScanTarget(folderPath);
+        Dictionary<string, long> sizeByTileId = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (string filePath in Directory.EnumerateFiles(scanTarget.SearchRootPath, "*.*", scanTarget.SearchOption).Where(IsSupportedFile))
+        {
+            string? tileId = PlateauSchemaHelper.TryExtractTileIdFromPath(filePath);
+            if (string.IsNullOrWhiteSpace(tileId))
+            {
+                continue;
+            }
+
+            long length;
+            try
+            {
+                length = new FileInfo(filePath).Length;
+            }
+            catch
+            {
+                length = 0L;
+            }
+
+            sizeByTileId.TryGetValue(tileId!, out long existing);
+            sizeByTileId[tileId!] = existing + length;
+        }
+
+        return sizeByTileId
+            .Select(pair => new PlateauTileFileSummary(pair.Key, pair.Value))
+            .OrderBy(summary => summary.TileId, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Keeps only the files that fall <em>within</em> the selected tiles. Japan mesh codes are
+    /// hierarchical by prefix (tertiary <c>53393559</c> sits inside secondary <c>533935</c>), so a
+    /// file is kept when it is the selected tile itself or a finer child of it
+    /// (<c>fileTileId.StartsWith(selected)</c>). A file's coarser <em>parent</em> mesh is deliberately
+    /// NOT pulled in: those parents are the municipality-wide coverage layers (relief/DEM, land use)
+    /// whose secondary-mesh files run to hundreds of MB and millions of triangles — extruding them
+    /// for a few 1 km tiles is what hung the 3D import. Terrain/land use have their own import modes.
+    /// A <c>null</c>/empty selection keeps everything.
+    /// </summary>
+    private static string[] FilterFilesForSelectedTiles(IEnumerable<string> files, IReadOnlyCollection<string>? selectedTileIds)
+    {
+        if (selectedTileIds is null || selectedTileIds.Count == 0)
+        {
+            return files.ToArray();
+        }
+
+        string[] selected = selectedTileIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (selected.Length == 0)
+        {
+            return files.ToArray();
+        }
+
+        List<string> kept = new List<string>();
+        foreach (string filePath in files)
+        {
+            string? fileTileId = PlateauSchemaHelper.TryExtractTileIdFromPath(filePath);
+            if (string.IsNullOrWhiteSpace(fileTileId))
+            {
+                continue;
+            }
+
+            foreach (string selectedTileId in selected)
+            {
+                // Keep the selected tile's own file and any finer child within it; skip coarser
+                // parent-mesh coverage files (DEM/land use) that span far beyond the selection.
+                if (fileTileId!.StartsWith(selectedTileId, StringComparison.Ordinal))
+                {
+                    kept.Add(filePath);
+                    break;
+                }
+            }
+        }
+
+        return kept.ToArray();
+    }
+
     private static PlateauFolderScanResult CreateCachedResult(PlateauFolderScanResult cachedResult)
     {
         return new PlateauFolderScanResult
@@ -189,4 +299,18 @@ public sealed class PlateauFolderScanService
 
         public string? Warning { get; }
     }
+}
+
+/// <summary>One selectable tile, summarised from file names only (no geometry parsed).</summary>
+public sealed class PlateauTileFileSummary
+{
+    public PlateauTileFileSummary(string tileId, long fileSizeBytes)
+    {
+        TileId = tileId ?? throw new ArgumentNullException(nameof(tileId));
+        FileSizeBytes = fileSizeBytes;
+    }
+
+    public string TileId { get; }
+
+    public long FileSizeBytes { get; }
 }

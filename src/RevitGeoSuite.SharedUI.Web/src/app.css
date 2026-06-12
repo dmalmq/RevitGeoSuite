@@ -52,3 +52,152 @@ html, body {
 #app {
   height: 100%;
 }
+
+.option-section {
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  padding: 0.875rem;
+}
+
+.dark .option-section {
+  border-color: #262626;
+  background: #171717;
+}
+
+.option-section h3 {
+  margin: 0 0 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: #404040;
+}
+
+.dark .option-section h3 {
+  color: #d4d4d4;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #525252;
+}
+
+.dark .field-label {
+  color: #a3a3a3;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid #d4d4d4;
+  background: #fff;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.875rem;
+  color: #171717;
+  outline: none;
+}
+
+.field:focus {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.18);
+}
+
+.dark .field {
+  border-color: #404040;
+  background: #262626;
+  color: #f5f5f5;
+}
+
+.check-row {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #262626;
+}
+
+.dark .check-row {
+  color: #e5e5e5;
+}
+
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.btn-primary {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #115e59;
+}
+
+.btn-secondary {
+  border-color: #d4d4d4;
+  background: #fff;
+  color: #262626;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.dark .btn-secondary {
+  border-color: #404040;
+  background: #262626;
+  color: #f5f5f5;
+}
+
+.dark .btn-secondary:hover:not(:disabled) {
+  background: #404040;
+}
+
+.btn-small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d4d4d4;
+  background: #fff;
+  color: #262626;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.btn-small:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.dark .btn-small {
+  border-color: #404040;
+  background: #262626;
+  color: #f5f5f5;
+}
+
+.dark .btn-small:hover:not(:disabled) {
+  background: #404040;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-small:disabled,
+button:disabled,
+input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}

@@ -32,11 +32,14 @@ public sealed class PlateauTilesImporter
         List<ElementId> createdElements = new List<ElementId>();
         ElementId categoryId = ResolveCategoryId(document, warnings);
 
+        PlateauImportMaterialFactory materialFactory = new PlateauImportMaterialFactory();
+        ElementId buildingMaterialId = materialFactory.GetMaterialId(document, PlateauFeatureType.Building);
+
         foreach (PlateauTilesetFeature feature in buildings.Features)
         {
             try
             {
-                IList<GeometryObject>? geometry = BuildTessellatedGeometry(feature, warnings);
+                IList<GeometryObject>? geometry = BuildTessellatedGeometry(feature, warnings, buildingMaterialId);
                 if (geometry is null || geometry.Count == 0) continue;
 
                 DirectShape directShape = DirectShape.CreateElement(document, categoryId);
@@ -79,7 +82,7 @@ public sealed class PlateauTilesImporter
         return new PlateauTilesImporterResult(createdElements.Count, groupCount, warnings);
     }
 
-    private static IList<GeometryObject>? BuildTessellatedGeometry(PlateauTilesetFeature feature, ICollection<string> warnings)
+    private static IList<GeometryObject>? BuildTessellatedGeometry(PlateauTilesetFeature feature, ICollection<string> warnings, ElementId materialId)
     {
         if (feature.Triangles.Count == 0)
         {
@@ -96,7 +99,7 @@ public sealed class PlateauTilesImporter
             XYZ b = ToFeet(tri.B);
             XYZ c = ToFeet(tri.C);
             if (IsDegenerate(a, b, c)) continue;
-            builder.AddFace(new TessellatedFace(new List<XYZ> { a, b, c }, ElementId.InvalidElementId));
+            builder.AddFace(new TessellatedFace(new List<XYZ> { a, b, c }, materialId));
             facesAdded++;
         }
         builder.CloseConnectedFaceSet();

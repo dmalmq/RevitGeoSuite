@@ -30,56 +30,40 @@ public sealed class PlateauScanFolderHandler : IRpcHandler
             return Task.FromResult<object?>(new { error = "Path is required" });
         }
 
-        // Folder scanning is pure file parsing (no Revit API), so it runs on the thread pool.
+        // Enumerating the tile grid is pure file-name work (no parsing, no Revit API), so it runs on
+        // the thread pool and returns near-instantly. Parsing every file just to count features loads
+        // the whole municipality into memory, which is what crashed large 3D imports.
         string jobId = jobs.Start((ct, progress) =>
         {
             var scanService = new PlateauFolderScanService(new CityGmlParser());
-            var result = scanService.ScanFolder(path!, p =>
-            {
-                ct.ThrowIfCancellationRequested();
-                progress.Report(new JobProgress
-                {
-                    Phase = p.Phase.ToString().ToLower(),
-                    Current = p.Current,
-                    Total = p.Total,
-                    Percent = (int)Math.Round(p.Percent),
-                    Message = p.CurrentFileName
-                });
-            });
+            var tileFiles = scanService.EnumerateTileFiles(path!);
             ct.ThrowIfCancellationRequested();
-            return Task.FromResult<object?>(new { tiles = BuildTileList(result) });
+            return Task.FromResult<object?>(new { tiles = BuildTileList(tileFiles) });
         });
 
         return Task.FromResult<object?>(new JobStarted { JobId = jobId });
     }
 
-    private static object[] BuildTileList(PlateauFolderScanResult result)
+    private static object[] BuildTileList(IReadOnlyList<PlateauTileFileSummary> tileFiles)
     {
         var meshCalculator = new JapanMeshCalculator();
-
-        var models = result.CityModels
-            .Where(m => !string.IsNullOrWhiteSpace(m.FileTileId))
-            .ToArray();
 
         // A secondary-mesh file (e.g. roads "tran" or relief "dem" named "533945") would render
         // as one giant ~10 km cell covering — and intercepting clicks on — every 1 km tertiary
         // tile inside it. Keep only leaf tiles so coarse parents drop out of the selectable grid.
-        // Their features still export: PlateauExportContextSupport.IsTileSelectedForExport ties a
-        // secondary-mesh feature to any selected tertiary child sharing its 6-digit prefix.
+        // Their features still import: the selected tertiary tile pulls in its coarser file via the
+        // hierarchical prefix match in PlateauFolderScanService.
         var selectableTileIds = new HashSet<string>(
-            PlateauSchemaHelper.SelectLeafTileIds(models.Select(m => m.FileTileId!)),
+            PlateauSchemaHelper.SelectLeafTileIds(tileFiles.Select(t => t.TileId)),
             StringComparer.Ordinal);
 
-        return models
-            .Where(m => selectableTileIds.Contains(m.FileTileId!))
-            .GroupBy(m => m.FileTileId!)
-            .Select(g => new
+        return tileFiles
+            .Where(t => selectableTileIds.Contains(t.TileId))
+            .Select(t => new
             {
-                id = g.Key,
-                featureCount = g.Sum(m => m.Features.Count),
-                fileSize = g.Sum(m => new System.IO.FileInfo(m.SourcePath).Length),
-                lod = g.Max(m => m.Features.Max(f => f.HighestLod)),
-                geometry = BuildTileGeometry(g.Key, meshCalculator)
+                id = t.TileId,
+                fileSize = t.FileSizeBytes,
+                geometry = BuildTileGeometry(t.TileId, meshCalculator)
             })
             .ToArray();
     }

@@ -23,6 +23,9 @@ public sealed class DemSampler
     {
     }
 
+    private const int MaxGridCells = 10_000_000;
+    private const int MaxCellsPerTriangle = 10_000;
+
     public DemSampler(IEnumerable<(Vector3d A, Vector3d B, Vector3d C)> sourceTriangles, double cellSizeMeters = 0)
     {
         if (sourceTriangles is null) throw new ArgumentNullException(nameof(sourceTriangles));
@@ -65,12 +68,39 @@ public sealed class DemSampler
         this.maxX = maxX;
         this.maxY = maxY;
 
+        double extentX = maxX - minX;
+        double extentY = maxY - minY;
+        if (extentX > 0 && extentY > 0)
+        {
+            double gridCells = (extentX / this.cellSize) * (extentY / this.cellSize);
+            if (gridCells > MaxGridCells)
+            {
+                this.cellSize = Math.Sqrt((extentX * extentY) / MaxGridCells);
+            }
+        }
+
         foreach (DemTriangle t in triangles)
         {
             int x0 = CellIndex(t.MinX, true);
             int x1 = CellIndex(t.MaxX, false);
             int y0 = CellIndex(t.MinY, true);
             int y1 = CellIndex(t.MaxY, false);
+
+            int spanX = x1 - x0 + 1;
+            int spanY = y1 - y0 + 1;
+            if ((long)spanX * spanY > MaxCellsPerTriangle)
+            {
+                double shrink = Math.Sqrt(MaxCellsPerTriangle / ((double)spanX * spanY));
+                int shrunkSpanX = Math.Max(1, (int)(spanX * shrink));
+                int shrunkSpanY = Math.Max(1, (int)(spanY * shrink));
+                int midX = (x0 + x1) / 2;
+                int midY = (y0 + y1) / 2;
+                x0 = midX - shrunkSpanX / 2;
+                x1 = x0 + shrunkSpanX - 1;
+                y0 = midY - shrunkSpanY / 2;
+                y1 = y0 + shrunkSpanY - 1;
+            }
+
             for (int x = x0; x <= x1; x++)
             {
                 for (int y = y0; y <= y1; y++)
@@ -88,6 +118,18 @@ public sealed class DemSampler
     }
 
     public int TriangleCount => triangles.Count;
+
+    /// <summary>True when the sampler holds no triangles, so the bounds are meaningless.</summary>
+    public bool IsEmpty => triangles.Count == 0;
+
+    /// <summary>Min/max XY extent of the sampled triangles, in the sampler's coordinate frame.</summary>
+    public double MinX => minX;
+
+    public double MinY => minY;
+
+    public double MaxX => maxX;
+
+    public double MaxY => maxY;
 
     public bool TrySampleElevation(double x, double y, out double z)
     {

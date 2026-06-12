@@ -72,6 +72,21 @@ public sealed class PlateauLayerStyle
     /// <summary>Convenience accessor for the DXF layer colour index.</summary>
     public static int AciForLayer(string layer) => ForLayer(layer).Aci;
 
+    /// <summary>
+    /// Returns the canonical style for a <see cref="PlateauFeatureType"/>. Uses the same mapping as
+    /// <see cref="PlateauContextOutlinesDxfWriter.LayerByFeatureType"/> so the import material colors
+    /// match the DXF/shapefile export palette.
+    /// </summary>
+    public static PlateauLayerStyle ForFeatureType(PlateauFeatureType featureType)
+    {
+        if (PlateauContextOutlinesDxfWriter.LayerByFeatureType.TryGetValue(featureType, out string? layer))
+        {
+            return ForLayer(layer);
+        }
+
+        return ForLayer(string.Empty);
+    }
+
     private static int ParseTrueColor(string rgb)
     {
         string[] parts = rgb.Split(',');

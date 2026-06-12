@@ -75,7 +75,7 @@ public sealed class ContextGeometryBuilder
         DemSampler? reliefSampler = null;
         if (geometryImportMode == PlateauGeometryImportMode.LightweightMassOnRelief)
         {
-            reliefSampler = TryBuildReliefSampler(resolvedFeatures, selectedTypes, selectedTiles, transformStrategies, warnings);
+            reliefSampler = TryBuildReliefSampler(resolvedFeatures, selectedTypes, selectedTiles, transformStrategies, referenceContext, warnings);
         }
 
         foreach (ResolvedContextFeature resolvedFeature in resolvedFeatures)
@@ -212,34 +212,140 @@ public sealed class ContextGeometryBuilder
         };
     }
 
+    /// <summary>
+    /// Builds a <see cref="DemSampler"/> from the Relief (dem) surfaces in <paramref name="scanResult"/>,
+    /// in the model's projected CRS. Reuses the same feature-resolution and transform pipeline as
+    /// <see cref="BuildPlan(PlateauFolderScanResult, PlateauImportReferenceContext, IReadOnlyCollection{PlateauFeatureType}?, IReadOnlyCollection{string}?, PlateauGeometryImportMode)"/>,
+    /// so ground sampled here lines up exactly with imported context geometry. Returns <c>null</c>
+    /// when the selection contains no Relief surfaces.
+    /// </summary>
+    public DemSampler? BuildReliefSampler(
+        PlateauFolderScanResult scanResult,
+        PlateauImportReferenceContext referenceContext,
+        IReadOnlyCollection<string>? selectedTileIds,
+        ICollection<string> warnings)
+    {
+        if (scanResult is null) throw new ArgumentNullException(nameof(scanResult));
+        if (referenceContext is null) throw new ArgumentNullException(nameof(referenceContext));
+        if (warnings is null) throw new ArgumentNullException(nameof(warnings));
+
+        List<ResolvedContextFeature> resolvedFeatures = ResolveFeatures(scanResult);
+        HashSet<string> selectedTiles = CreateSelectedTileSet(resolvedFeatures, selectedTileIds);
+        Dictionary<PlateauCityModel, TransformStrategy> transformStrategies = CreateTransformStrategies(scanResult.CityModels, referenceContext);
+        HashSet<PlateauFeatureType> reliefOnly = new HashSet<PlateauFeatureType> { PlateauFeatureType.Relief };
+        return TryBuildReliefSampler(resolvedFeatures, reliefOnly, selectedTiles, transformStrategies, referenceContext, warnings);
+    }
+
+    private const int MaxReliefTriangles = 10_000_000;
+
+    private (double MinX, double MinY, double MaxX, double MaxY)? ComputeSelectedTileBounds(
+        ISet<string> selectedTiles,
+        PlateauImportReferenceContext referenceContext)
+    {
+        JapanMeshCalculator meshCalculator = new JapanMeshCalculator();
+        double minX = double.PositiveInfinity, minY = double.PositiveInfinity;
+        double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity;
+        bool any = false;
+
+        foreach (string tileId in selectedTiles)
+        {
+            string trimmed = tileId?.Trim() ?? string.Empty;
+            if (trimmed.Length != 6 && trimmed.Length != 8) continue;
+
+            bool allDigits = true;
+            for (int i = 0; i < trimmed.Length; i++)
+            {
+                if (!char.IsDigit(trimmed[i])) { allDigits = false; break; }
+            }
+            if (!allDigits) continue;
+
+            MeshBounds meshBounds;
+            try
+            {
+                meshBounds = meshCalculator.GetBounds(new MeshCode { Value = trimmed });
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            try
+            {
+                ProjectedCoordinate sw = coordinateTransformer.Project(
+                    new GeographicCoordinate(meshBounds.SouthLatitude, meshBounds.WestLongitude),
+                    referenceContext.ProjectCrs);
+                ProjectedCoordinate ne = coordinateTransformer.Project(
+                    new GeographicCoordinate(meshBounds.NorthLatitude, meshBounds.EastLongitude),
+                    referenceContext.ProjectCrs);
+
+                double loX = Math.Min(sw.Easting, ne.Easting);
+                double hiX = Math.Max(sw.Easting, ne.Easting);
+                double loY = Math.Min(sw.Northing, ne.Northing);
+                double hiY = Math.Max(sw.Northing, ne.Northing);
+
+                if (loX < minX) minX = loX;
+                if (loY < minY) minY = loY;
+                if (hiX > maxX) maxX = hiX;
+                if (hiY > maxY) maxY = hiY;
+                any = true;
+            }
+            catch
+            {
+            }
+        }
+
+        return any ? (minX, minY, maxX, maxY) : null;
+    }
+
     private DemSampler? TryBuildReliefSampler(
         IReadOnlyList<ResolvedContextFeature> resolvedFeatures,
         ISet<PlateauFeatureType> selectedTypes,
         ISet<string> selectedTiles,
         IReadOnlyDictionary<PlateauCityModel, TransformStrategy> transformStrategies,
+        PlateauImportReferenceContext referenceContext,
         ICollection<string> warnings)
     {
-        List<(Vector3d A, Vector3d B, Vector3d C)> triangles = new List<(Vector3d, Vector3d, Vector3d)>();
+        (double MinX, double MinY, double MaxX, double MaxY)? clipBounds = ComputeSelectedTileBounds(selectedTiles, referenceContext);
+
+        int totalCount = 0;
         foreach (ResolvedContextFeature resolvedFeature in resolvedFeatures)
         {
             PlateauContextFeature feature = resolvedFeature.Feature;
-            if (feature.FeatureType != PlateauFeatureType.Relief)
+            if (feature.FeatureType != PlateauFeatureType.Relief) continue;
+            if (!selectedTypes.Contains(feature.FeatureType) || !IsTileSelected(resolvedFeature.TileId, selectedTiles)) continue;
+
+            foreach (PlateauGeometrySurface surface in feature.GeometrySurfaces)
             {
-                continue;
+                PlateauCoordinate3D[] ring = NormalizeRing(surface.ExteriorRing);
+                if (ring.Length < 3) continue;
+                totalCount += ring.Length - 2;
             }
-            if (!selectedTypes.Contains(feature.FeatureType) || !IsTileSelected(resolvedFeature.TileId, selectedTiles))
-            {
-                continue;
-            }
+        }
+
+        if (totalCount == 0)
+        {
+            warnings.Add("Mass on Relief mode is selected but no Relief surfaces were found in the selection; falling back to building min-Z elevation.");
+            return null;
+        }
+
+        int stride = totalCount > MaxReliefTriangles ? (totalCount + MaxReliefTriangles - 1) / MaxReliefTriangles : 1;
+        int capacity = stride > 1 ? MaxReliefTriangles : totalCount;
+        List<(Vector3d A, Vector3d B, Vector3d C)> triangles = new List<(Vector3d, Vector3d, Vector3d)>(capacity);
+        int emitted = 0;
+        int skippedOutside = 0;
+        int cursor = 0;
+
+        foreach (ResolvedContextFeature resolvedFeature in resolvedFeatures)
+        {
+            PlateauContextFeature feature = resolvedFeature.Feature;
+            if (feature.FeatureType != PlateauFeatureType.Relief) continue;
+            if (!selectedTypes.Contains(feature.FeatureType) || !IsTileSelected(resolvedFeature.TileId, selectedTiles)) continue;
 
             TransformStrategy transformStrategy = transformStrategies[resolvedFeature.CityModel];
             foreach (PlateauGeometrySurface surface in feature.GeometrySurfaces)
             {
                 PlateauCoordinate3D[] ring = NormalizeRing(surface.ExteriorRing);
-                if (ring.Length < 3)
-                {
-                    continue;
-                }
+                if (ring.Length < 3) continue;
 
                 Vector3d[] transformed = new Vector3d[ring.Length];
                 for (int index = 0; index < ring.Length; index++)
@@ -248,19 +354,51 @@ public sealed class ContextGeometryBuilder
                     transformed[index] = new Vector3d(projected.X, projected.Y, projected.Z);
                 }
 
-                // Fan-triangulate (p0, p_i, p_{i+1}) for i in [1..n-2]. Relief surfaces are
-                // overwhelmingly single triangles from gml:Triangle; the fan handles the
-                // occasional gml:Polygon variant without dragging in the full ear-clip path.
                 for (int i = 1; i < transformed.Length - 1; i++)
                 {
-                    triangles.Add((transformed[0], transformed[i], transformed[i + 1]));
+                    if (clipBounds.HasValue)
+                    {
+                        double cx = (transformed[0].X + transformed[i].X + transformed[i + 1].X) / 3.0;
+                        double cy = (transformed[0].Y + transformed[i].Y + transformed[i + 1].Y) / 3.0;
+                        if (cx < clipBounds.Value.MinX || cx > clipBounds.Value.MaxX ||
+                            cy < clipBounds.Value.MinY || cy > clipBounds.Value.MaxY)
+                        {
+                            skippedOutside++;
+                            continue;
+                        }
+                    }
+
+                    if (cursor % stride == 0)
+                    {
+                        triangles.Add((transformed[0], transformed[i], transformed[i + 1]));
+                        emitted++;
+                    }
+                    cursor++;
                 }
             }
         }
 
+        if (stride > 1)
+        {
+            warnings.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "Relief data contained {0:N0} triangles; subsampled to {1:N0} (1 in {2}) to stay within memory limits. Ground elevation is uniformly covered but coarser.",
+                totalCount,
+                emitted,
+                stride));
+        }
+
+        if (skippedOutside > 0)
+        {
+            warnings.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "Skipped {0:N0} relief triangles outside the selected tile bounds.",
+                skippedOutside));
+        }
+
         if (triangles.Count == 0)
         {
-            warnings.Add("Mass on Relief mode is selected but no Relief surfaces were found in the selection; falling back to building min-Z elevation.");
+            warnings.Add("No relief triangles fell within the selected tile bounds; falling back to building min-Z elevation.");
             return null;
         }
 
@@ -912,11 +1050,7 @@ public sealed class ContextGeometryBuilder
 
     private static (double XFeet, double YFeet) ToLocalFeet(PlateauCoordinate3D point, PlateauImportReferenceContext referenceContext)
     {
-        double deltaEastFeet = (point.X - referenceContext.AnchorProjectedCoordinate.Easting) * MetersToFeet;
-        double deltaNorthFeet = (point.Y - referenceContext.AnchorProjectedCoordinate.Northing) * MetersToFeet;
-        return (
-            XFeet: referenceContext.AnchorXFeet + (deltaEastFeet * referenceContext.SharedEastToLocalX) + (deltaNorthFeet * referenceContext.SharedNorthToLocalX),
-            YFeet: referenceContext.AnchorYFeet + (deltaEastFeet * referenceContext.SharedEastToLocalY) + (deltaNorthFeet * referenceContext.SharedNorthToLocalY));
+        return PlateauReferenceFrame.ToLocalFeet(point.X, point.Y, referenceContext);
     }
 
     private static ContextShapePoint3D ToLocalPointFeet(PlateauCoordinate3D point, PlateauImportReferenceContext referenceContext)
@@ -927,7 +1061,7 @@ public sealed class ContextGeometryBuilder
 
     private static double ToLocalElevationFeet(double pointElevationMeters, PlateauImportReferenceContext referenceContext)
     {
-        return referenceContext.AnchorZFeet + ((pointElevationMeters - referenceContext.AnchorElevationMeters) * MetersToFeet);
+        return PlateauReferenceFrame.ToLocalElevationFeet(pointElevationMeters, referenceContext);
     }
 
     private static IReadOnlyCollection<PlateauGeometrySurface> GetHighestLodSurfaces(IReadOnlyCollection<PlateauGeometrySurface> surfaces)

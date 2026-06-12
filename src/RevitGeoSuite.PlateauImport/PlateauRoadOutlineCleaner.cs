@@ -54,15 +54,25 @@ internal static class PlateauRoadOutlineCleaner
 
         GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(1d / snapToleranceMeters));
         List<Geometry> roadPolygons = new List<Geometry>(roadFeatures.Count);
+        int skippedSubFaces = 0;
         foreach (PlateauContextOutlinesDxfWriter.OutlineFeature road in roadFeatures)
         {
-            Geometry? geometry = CreatePolygonGeometry(road, geometryFactory, snapToleranceMeters, warnings);
+            Geometry? geometry = CreatePolygonGeometry(road, geometryFactory, snapToleranceMeters, ref skippedSubFaces);
             if (geometry is null || geometry.IsEmpty)
             {
                 continue;
             }
 
             AddPolygonalGeometries(geometry, roadPolygons);
+        }
+
+        // PLATEAU LOD2/LOD3 traffic areas arrive as tessellated triangle meshes; thin sliver
+        // triangles collapse when snapped to the centimetre grid. They are covered by their
+        // neighbours in the dissolved fill, so report them as one summary line rather than one
+        // warning per triangle.
+        if (skippedSubFaces > 0)
+        {
+            warnings.Add($"Skipped {skippedSubFaces} thin or degenerate road sub-faces while building the road fill (expected for tessellated PLATEAU LOD2/LOD3 road meshes); the dissolved road area already covers them.");
         }
 
         if (roadPolygons.Count == 0)
@@ -167,18 +177,18 @@ internal static class PlateauRoadOutlineCleaner
         PlateauContextOutlinesDxfWriter.OutlineFeature road,
         GeometryFactory geometryFactory,
         double snapToleranceMeters,
-        ICollection<string> warnings)
+        ref int skippedSubFaces)
     {
         if (road.VerticesMetres.Count < 3)
         {
-            warnings.Add($"Skipped road fill for '{road.SourceId ?? "unknown"}' because it has fewer than three vertices.");
+            skippedSubFaces++;
             return null;
         }
 
         Coordinate[] ring = BuildClosedRing(road.VerticesMetres, snapToleranceMeters);
         if (ring.Length < 4 || Math.Abs(ComputeSignedArea(ring)) <= (snapToleranceMeters * snapToleranceMeters))
         {
-            warnings.Add($"Skipped road fill for '{road.SourceId ?? "unknown"}' because its outline collapsed after snapping.");
+            skippedSubFaces++;
             return null;
         }
 
@@ -187,9 +197,9 @@ internal static class PlateauRoadOutlineCleaner
         {
             geometry = geometryFactory.CreatePolygon(geometryFactory.CreateLinearRing(ring));
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            warnings.Add($"Skipped road fill for '{road.SourceId ?? "unknown"}' because its outline is invalid ({ex.Message}).");
+            skippedSubFaces++;
             return null;
         }
 
@@ -201,14 +211,14 @@ internal static class PlateauRoadOutlineCleaner
             }
             catch (Exception ex) when (ex is TopologyException || ex is ArgumentException || ex is InvalidOperationException)
             {
-                warnings.Add($"Skipped road fill for '{road.SourceId ?? "unknown"}' because its outline could not be repaired ({ex.Message}).");
+                skippedSubFaces++;
                 return null;
             }
         }
 
         if (geometry.IsEmpty || !geometry.IsValid || geometry.Area <= (snapToleranceMeters * snapToleranceMeters))
         {
-            warnings.Add($"Skipped road fill for '{road.SourceId ?? "unknown"}' because its outline is empty or invalid after repair.");
+            skippedSubFaces++;
             return null;
         }
 

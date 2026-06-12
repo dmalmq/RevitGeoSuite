@@ -15,6 +15,7 @@
   import GeoreferenceRoute from './routes/georeference/GeoreferenceRoute.svelte'
   import ImportRoute from './routes/import/ImportRoute.svelte'
   import ExportRoute from './routes/export/ExportRoute.svelte'
+  import FloorPlanExportRoute from './routes/export/FloorPlanExportRoute.svelte'
 
   // The route is driven entirely by the URL hash (e.g. index.html#/import). The shell window sets
   // the initial hash via WebShellOptions.InitialRoute; the rail changes it for in-place navigation.
@@ -72,6 +73,10 @@
   }
 
   function getRouteComponent(route: string) {
+    if (route === '/export/geopackage') {
+      return FloorPlanExportRoute
+    }
+
     switch (route) {
       case '/georeference':
         return GeoreferenceRoute

@@ -1,0 +1,550 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using Autodesk.Revit.DB;
+using RevitGeoSuite.FloorPlanExport.Core.Assignments;
+using RevitGeoSuite.FloorPlanExport.Core.Geometry;
+using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Preview;
+using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Utilities;
+
+namespace RevitGeoSuite.FloorPlanExport.Export;
+
+public sealed class ExportPreviewService
+{
+    private const string UnitStrokeColorHex = "4A5568";
+    private const string OpeningStrokeColorHex = "C45100";
+
+    private readonly Document _document;
+    private readonly ZoneCatalog _zoneCatalog;
+    private readonly FloorExportDataPreparer _preparer;
+    private readonly ViewExportContextProvider _contextProvider;
+    private readonly PreviewExportMetadataProvider _metadataProvider;
+    private readonly PreviewPaletteResolver _paletteResolver;
+    private readonly FloorCategoryOverrideStore _floorCategoryOverrideStore;
+    private readonly RoomCategoryOverrideStore _roomCategoryOverrideStore;
+    private readonly FamilyCategoryOverrideStore _familyCategoryOverrideStore;
+    private readonly AcceptedOpeningFamilyStore _acceptedOpeningFamilyStore;
+    private readonly PreviewCategoryAssignmentSession _floorAssignmentSession;
+    private readonly PreviewCategoryAssignmentSession _roomAssignmentSession;
+    private readonly IReadOnlyList<string> _loadWarnings;
+    private readonly string _projectKey;
+    private readonly IReadOnlyList<string> _supportedCategories;
+    private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
+    private readonly IReadOnlyList<string> _acceptedOpeningFamilies;
+    private readonly GeometryRepairOptions _geometryRepairOptions;
+    private readonly UnitSource _unitSource;
+    private readonly UnitGeometrySource _unitGeometrySource;
+    private readonly UnitAttributeSource _unitAttributeSource;
+    private readonly string _roomCategoryParameterName;
+    private readonly LinkExportOptions _linkExportOptions;
+    private readonly SchemaProfile _activeSchemaProfile;
+    private readonly bool _simplifyStairUnits;
+    private readonly bool _simplifyEscalatorUnits;
+    private readonly bool _use3DSectionBoxExport;
+    private readonly double _sectionBoxAboveFloorMeters;
+    private readonly double _sectionBoxBelowFloorMeters;
+    private readonly bool _keep3DTempViewsForDebug;
+
+    public ExportPreviewService(
+        Document document,
+        UnitSource unitSource = UnitSource.Floors,
+        UnitGeometrySource unitGeometrySource = UnitGeometrySource.Unset,
+        UnitAttributeSource unitAttributeSource = UnitAttributeSource.Unset,
+        string roomCategoryParameterName = "Name",
+        GeometryRepairOptions? geometryRepairOptions = null,
+        LinkExportOptions? linkExportOptions = null,
+        SchemaProfile? activeSchemaProfile = null,
+        bool simplifyStairUnits = false,
+        bool simplifyEscalatorUnits = false,
+        bool use3DSectionBoxExport = false,
+        double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
+        double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
+        bool keep3DTempViewsForDebug = false)
+
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        _document = document;
+        ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
+        _zoneCatalog = zoneCatalog;
+        _floorCategoryOverrideStore = new FloorCategoryOverrideStore();
+        _roomCategoryOverrideStore = new RoomCategoryOverrideStore();
+        _familyCategoryOverrideStore = new FamilyCategoryOverrideStore();
+        _acceptedOpeningFamilyStore = new AcceptedOpeningFamilyStore();
+        _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
+        _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, _unitGeometrySource, unitAttributeSource);
+        _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
+        _roomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
+        _projectKey = DocumentProjectKeyBuilder.Create(document);
+        LoadResult<IReadOnlyDictionary<string, string>> floorOverrideLoad =
+            _floorCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
+        LoadResult<IReadOnlyDictionary<string, string>> roomOverrideLoad =
+            _roomCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
+        LoadResult<IReadOnlyDictionary<string, string>> familyOverrideLoad =
+            _familyCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
+        LoadResult<IReadOnlyList<string>> acceptedOpeningLoad =
+            _acceptedOpeningFamilyStore.LoadWithDiagnostics(_projectKey);
+        _floorAssignmentSession = new PreviewCategoryAssignmentSession(floorOverrideLoad.Value);
+        _roomAssignmentSession = new PreviewCategoryAssignmentSession(roomOverrideLoad.Value);
+        _familyCategoryOverrides = familyOverrideLoad.Value;
+        _acceptedOpeningFamilies = acceptedOpeningLoad.Value;
+        _loadWarnings = floorOverrideLoad.Warnings
+            .Concat(roomOverrideLoad.Warnings)
+            .Concat(familyOverrideLoad.Warnings)
+            .Concat(acceptedOpeningLoad.Warnings)
+            .ToList();
+        _preparer = new FloorExportDataPreparer(document, zoneCatalog);
+        _contextProvider = new ViewExportContextProvider(document);
+        _metadataProvider = new PreviewExportMetadataProvider();
+        _paletteResolver = new PreviewPaletteResolver();
+        _supportedCategories = zoneCatalog.GetKnownCategories(includeUnspecified: true);
+        _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
+        _linkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        _activeSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        _simplifyStairUnits = simplifyStairUnits;
+        _simplifyEscalatorUnits = simplifyEscalatorUnits;
+        _use3DSectionBoxExport = use3DSectionBoxExport;
+        _sectionBoxAboveFloorMeters =
+            (sectionBoxAboveFloorMeters > 0d && !double.IsNaN(sectionBoxAboveFloorMeters) && !double.IsInfinity(sectionBoxAboveFloorMeters))
+                ? sectionBoxAboveFloorMeters
+                : Temp3DViewScope.DefaultAboveFloorMeters;
+        _sectionBoxBelowFloorMeters =
+            (!double.IsNaN(sectionBoxBelowFloorMeters) && !double.IsInfinity(sectionBoxBelowFloorMeters))
+                ? sectionBoxBelowFloorMeters
+                : Temp3DViewScope.DefaultBelowFloorMeters;
+        _keep3DTempViewsForDebug = keep3DTempViewsForDebug;
+    }
+
+    public IReadOnlyList<string> GetSupportedFloorCategories()
+    {
+        return _supportedCategories;
+    }
+
+    public string GetAssignmentSourceLabel()
+    {
+        return _unitAttributeSource switch
+        {
+            UnitAttributeSource.Rooms => $"Room Values ({_roomCategoryParameterName})",
+            UnitAttributeSource.Hybrid => $"Hybrid ({_roomCategoryParameterName} + Floor fallback)",
+            _ => "Floor Types",
+        };
+    }
+
+    public bool HasPendingFloorCategoryChanges =>
+        _floorAssignmentSession.HasPendingChanges || _roomAssignmentSession.HasPendingChanges;
+
+    public void StageFloorCategoryOverride(string key, string category)
+    {
+        GetPrimaryAssignmentSession().StageOverride(key, category);
+    }
+
+    public void StageClearFloorCategoryOverride(string key)
+    {
+        GetPrimaryAssignmentSession().StageClearOverride(key);
+    }
+
+    public void ApplyPendingFloorCategoryOverrides()
+    {
+        if (!HasPendingFloorCategoryChanges)
+        {
+            return;
+        }
+
+        if (_floorAssignmentSession.HasPendingChanges)
+        {
+            _floorCategoryOverrideStore.Save(_projectKey, _floorAssignmentSession.ApplyPendingChanges());
+        }
+
+        if (_roomAssignmentSession.HasPendingChanges)
+        {
+            _roomCategoryOverrideStore.Save(_projectKey, _roomAssignmentSession.ApplyPendingChanges());
+        }
+    }
+
+    public void DiscardPendingFloorCategoryOverrides()
+    {
+        _floorAssignmentSession.DiscardPendingChanges();
+        _roomAssignmentSession.DiscardPendingChanges();
+    }
+
+    public PreviewViewData PrepareView(ViewPlan view, ExportFeatureType featureTypes)
+    {
+        if (view is null)
+        {
+            throw new ArgumentNullException(nameof(view));
+        }
+
+        ExportFeatureType previewFeatureTypes = featureTypes & ExportFeatureType.All;
+        if (previewFeatureTypes == ExportFeatureType.None)
+        {
+            throw new ArgumentException("Preview requires at least one feature type.", nameof(featureTypes));
+        }
+
+        Temp3DViewScope? threeDViewScope = null;
+        string? threeDScopeError = null;
+        if (_use3DSectionBoxExport)
+        {
+            try
+            {
+                threeDViewScope = new Temp3DViewScope(_document, new[] { view }, _sectionBoxAboveFloorMeters, _sectionBoxBelowFloorMeters, _keep3DTempViewsForDebug);
+            }
+            catch (Exception ex)
+            {
+                threeDScopeError = $"{ex.GetType().Name}: {ex.Message}";
+            }
+        }
+
+        try
+        {
+            IReadOnlyList<ViewExportContext>? prebuiltContexts = threeDViewScope != null
+                ? _contextProvider.BuildContexts(
+                    new[] { view },
+                    _zoneCatalog,
+                    _familyCategoryOverrides,
+                    _acceptedOpeningFamilies,
+                    _linkExportOptions,
+                    threeDViewScope)
+                : null;
+
+            PreparedViewExportData prepared = _preparer.PrepareView(
+                view,
+                previewFeatureTypes,
+                _metadataProvider,
+                new FloorExportPreparationOptions
+                {
+                    FloorCategoryOverrides = _floorAssignmentSession.GetEffectiveOverrides(),
+                    RoomCategoryOverrides = _roomAssignmentSession.GetEffectiveOverrides(),
+                    FamilyCategoryOverrides = _familyCategoryOverrides,
+                    AcceptedOpeningFamilies = _acceptedOpeningFamilies,
+                    InitialWarnings = _loadWarnings,
+                    GeometryRepairOptions = _geometryRepairOptions,
+                    UnitSource = _unitSource,
+                    UnitGeometrySource = _unitGeometrySource,
+                    UnitAttributeSource = _unitAttributeSource,
+                    RoomCategoryParameterName = _roomCategoryParameterName,
+                    LinkExportOptions = _linkExportOptions,
+                    ActiveSchemaProfile = _activeSchemaProfile,
+                    SimplifyStairUnits = _simplifyStairUnits,
+                    SimplifyEscalatorUnits = _simplifyEscalatorUnits,
+                    ViewContexts = prebuiltContexts,
+                });
+            return BuildPreviewViewData(prepared, threeDViewScope, threeDScopeError);
+        }
+        finally
+        {
+            threeDViewScope?.Dispose();
+        }
+    }
+
+    private PreviewViewData BuildPreviewViewData(
+        PreparedViewExportData prepared,
+        Temp3DViewScope? threeDViewScope,
+        string? threeDScopeError)
+    {
+        List<PreviewFeatureData> features = new();
+
+        if (prepared.UnitLayer != null)
+        {
+            foreach (ExportPolygon feature in prepared.UnitLayer.Features.OfType<ExportPolygon>())
+            {
+                string category = ReadString(feature.Attributes, "category");
+                string? fallbackFillColor = ReadString(feature.Attributes, "preview_fill_color");
+                string? stairVisibilityWarning = ReadNullableString(feature.Attributes, "stair_visibility_warning");
+                features.Add(
+                    new PreviewFeatureData(
+                        ExportFeatureType.Unit,
+                        feature,
+                        ReadNullableLong(feature.Attributes, "source_element_id"),
+                        ReadString(feature.Attributes, "id"),
+                        category,
+                        ReadString(feature.Attributes, "restrict"),
+                        ReadString(feature.Attributes, "name"),
+                        ReadNullableString(feature.Attributes, "source_label"),
+                        _paletteResolver.ResolveFillColor(category, fallbackFillColor),
+                        UnitStrokeColorHex,
+                        ReadNullableString(feature.Attributes, "assignment_source_kind"),
+                        ReadNullableString(feature.Attributes, "assignment_mapping_key") ?? ReadNullableString(feature.Attributes, "source_floor_type_name"),
+                        ReadNullableString(feature.Attributes, "assignment_parsed_candidate") ?? ReadNullableString(feature.Attributes, "parsed_zone_candidate"),
+                        ReadNullableString(feature.Attributes, "assignment_parameter_name"),
+                        ReadBool(feature.Attributes, "is_unassigned"),
+                        ReadResolutionSource(feature.Attributes, "category_resolution_source"),
+                        ReadBool(feature.Attributes, "is_unassigned") || !string.IsNullOrWhiteSpace(stairVisibilityWarning),
+                        ReadNullableString(feature.Attributes, "stair_visibility_source"),
+                        ReadNullableInt(feature.Attributes, "stair_visibility_evidence_count"),
+                        ReadNullableInt(feature.Attributes, "stair_visibility_candidate_count"),
+                        ReadNullableBool(feature.Attributes, "stair_visibility_mask_applied"),
+                        stairVisibilityWarning));
+            }
+        }
+
+        if (prepared.OpeningLayer != null)
+        {
+            foreach (ExportLineString feature in prepared.OpeningLayer.Features.OfType<ExportLineString>())
+            {
+                features.Add(
+                    new PreviewFeatureData(
+                        ExportFeatureType.Opening,
+                        feature,
+                        ReadNullableLong(feature.Attributes, "element_id"),
+                        ReadString(feature.Attributes, "id"),
+                        ReadString(feature.Attributes, "category"),
+                        null,
+                        null,
+                        ReadNullableString(feature.Attributes, "source_label"),
+                        OpeningStrokeColorHex,
+                        OpeningStrokeColorHex,
+                        hasWarning: !ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true)));
+            }
+        }
+
+        if (prepared.DetailLayer != null)
+        {
+            foreach (ExportLineString feature in prepared.DetailLayer.Features.OfType<ExportLineString>())
+            {
+                string? stairVisibilityWarning = ReadNullableString(feature.Attributes, "stair_visibility_warning");
+                features.Add(
+                    new PreviewFeatureData(
+                        ExportFeatureType.Detail,
+                        feature,
+                        ReadNullableLong(feature.Attributes, "element_id"),
+                        ReadString(feature.Attributes, "id"),
+                        "detail",
+                        null,
+                        null,
+                        ReadNullableString(feature.Attributes, "source_label"),
+                        "666666",
+                        "666666",
+                        hasWarning: !string.IsNullOrWhiteSpace(stairVisibilityWarning),
+                        stairVisibilitySource: ReadNullableString(feature.Attributes, "stair_visibility_source"),
+                        stairVisibilityEvidenceCount: ReadNullableInt(feature.Attributes, "stair_visibility_evidence_count"),
+                        stairVisibilityCandidateCount: ReadNullableInt(feature.Attributes, "stair_visibility_candidate_count"),
+                        stairVisibilityMaskApplied: ReadNullableBool(feature.Attributes, "stair_visibility_mask_applied"),
+                        stairVisibilityWarning: stairVisibilityWarning));
+            }
+        }
+
+        if (prepared.LevelLayer != null)
+        {
+            foreach (ExportPolygon feature in prepared.LevelLayer.Features.OfType<ExportPolygon>())
+            {
+                features.Add(
+                    new PreviewFeatureData(
+                        ExportFeatureType.Level,
+                        feature,
+                        null,
+                        ReadString(feature.Attributes, "id"),
+                        "level",
+                        null,
+                        ReadString(feature.Attributes, "name"),
+                        ReadNullableString(feature.Attributes, "name"),
+                        "DDE7F0",
+                        "607D8B"));
+            }
+        }
+
+        if (prepared.FixtureLayer != null)
+        {
+            foreach (ExportPolygon feature in prepared.FixtureLayer.Features.OfType<ExportPolygon>())
+            {
+                features.Add(
+                    new PreviewFeatureData(
+                        ExportFeatureType.Fixture,
+                        feature,
+                        null,
+                        ReadString(feature.Attributes, "id"),
+                        "fixture",
+                        null,
+                        ReadString(feature.Attributes, "name"),
+                        ReadNullableString(feature.Attributes, "name"),
+                        "D4C5A9",
+                        "8D6E63"));
+            }
+        }
+
+        Bounds2D bounds = FeatureBoundsCalculator.FromFeatures(features.Select(x => x.Feature));
+        List<PreviewUnassignedFloorGroup> unassignedFloors = features
+            .Where(feature => feature.FeatureType == ExportFeatureType.Unit &&
+                              feature.IsUnassigned &&
+                              !string.IsNullOrWhiteSpace(feature.AssignmentMappingKey))
+            .GroupBy(feature => $"{feature.AssignmentSourceKind}|{feature.AssignmentParameterName}|{feature.AssignmentMappingKey}", StringComparer.Ordinal)
+            .OrderBy(group => group.First().AssignmentMappingKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                PreviewFeatureData first = group.First();
+                return new PreviewUnassignedFloorGroup(
+                    first.AssignmentMappingKey!,
+                    group.Select(feature => feature.AssignmentParsedCandidate)
+                        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
+                    group.Count(),
+                    first.AssignmentSourceKind ?? (UnitExportSettingsResolver.UsesRoomCategoryAssignments(_unitAttributeSource) ? "room" : "floor"),
+                    first.AssignmentParameterName);
+            })
+            .ToList();
+        List<string> sourceLabels = features
+            .Select(feature => feature.SourceLabel)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        List<string> combinedWarnings = new();
+        combinedWarnings.Add(string.Format(
+            CultureInfo.InvariantCulture,
+            "[3D] _use3DSectionBoxExport={0}, _sectionBoxAboveFloorMeters={1:0.##}",
+            _use3DSectionBoxExport,
+            _sectionBoxAboveFloorMeters));
+        if (threeDScopeError != null)
+        {
+            combinedWarnings.Add($"[3D] Temp3DViewScope construction failed: {threeDScopeError}");
+        }
+        else if (threeDViewScope != null)
+        {
+            combinedWarnings.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "[3D] Temp3DViewScope created {0} view(s)",
+                threeDViewScope.CreatedViewCount));
+            foreach (Temp3DViewScope.SectionBoxDiagnostic d in threeDViewScope.Diagnostics)
+            {
+                string floorZ = d.FloorTopZFeet.HasValue
+                    ? d.FloorTopZFeet.Value.ToString("0.0", CultureInfo.InvariantCulture)
+                    : "n/a";
+                combinedWarnings.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "[3D] view='{0}' xy={1} rot={2:0.#}deg z={3} X=[{4:0.0},{5:0.0}]ft Y=[{6:0.0},{7:0.0}]ft Z=[{8:0.0},{9:0.0}]ft (level.Elev={10:0.0}ft, level.ProjElev={11:0.0}ft, floor_top={12}ft)",
+                    d.PlanViewName,
+                    d.Source,
+                    d.RotationDegrees,
+                    d.ZSource,
+                    d.MinXFeet, d.MaxXFeet,
+                    d.MinYFeet, d.MaxYFeet,
+                    d.ZMinFeet, d.ZMaxFeet,
+                    d.LevelElevationFeet,
+                    d.LevelProjectElevationFeet,
+                    floorZ));
+            }
+        }
+        combinedWarnings.AddRange(prepared.Warnings);
+
+        return new PreviewViewData(
+            prepared.View.Id.Value,
+            prepared.View.Name,
+            prepared.Level.Name,
+            features,
+            unassignedFloors,
+            combinedWarnings,
+            sourceLabels,
+            bounds,
+            _unitSource,
+            _roomCategoryParameterName);
+    }
+
+    private PreviewCategoryAssignmentSession GetPrimaryAssignmentSession()
+    {
+        return UnitExportSettingsResolver.UsesRoomCategoryAssignments(_unitAttributeSource)
+            ? _roomAssignmentSession
+            : _floorAssignmentSession;
+    }
+
+    private static string ReadString(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (attributes.TryGetValue(key, out object? value))
+        {
+            return value?.ToString()?.Trim() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private static string? ReadNullableString(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        string trimmed = value.ToString()?.Trim() ?? string.Empty;
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    private static bool ReadBool(IReadOnlyDictionary<string, object?> attributes, string key, bool defaultValue = false)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return defaultValue;
+        }
+
+        return value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out bool parsed) => parsed,
+            _ => false,
+        };
+    }
+
+    private static long? ReadNullableLong(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            long longValue => longValue,
+            int intValue => intValue,
+            string stringValue when long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static int? ReadNullableInt(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            int intValue => intValue,
+            long longValue when longValue >= int.MinValue && longValue <= int.MaxValue => (int)longValue,
+            string stringValue when int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static bool? ReadNullableBool(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out bool parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static FloorCategoryResolutionSource? ReadResolutionSource(
+        IReadOnlyDictionary<string, object?> attributes,
+        string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return Enum.TryParse(value.ToString(), ignoreCase: true, out FloorCategoryResolutionSource parsed)
+            ? parsed
+            : null;
+    }
+}

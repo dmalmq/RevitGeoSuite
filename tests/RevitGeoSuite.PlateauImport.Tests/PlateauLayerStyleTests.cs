@@ -58,4 +58,19 @@ public class PlateauLayerStyleTests
         int aci = PlateauLayerStyle.AciForLayer(layer);
         Assert.InRange(aci, 1, 255);
     }
+
+    [Theory]
+    [InlineData(PlateauFeatureType.Building, "232,235,235")]
+    [InlineData(PlateauFeatureType.Road, "205,205,205")]
+    [InlineData(PlateauFeatureType.Sidewalk, "230,215,185")]
+    [InlineData(PlateauFeatureType.Vegetation, "150,200,150")]
+    [InlineData(PlateauFeatureType.LandUse, "200,220,160")]
+    [InlineData(PlateauFeatureType.Relief, "238,238,238")]
+    [InlineData(PlateauFeatureType.Bridge, "234,224,206")]
+    public void ForFeatureType_returns_expected_fill_rgb(PlateauFeatureType featureType, string expectedFillRgb)
+    {
+        PlateauLayerStyle style = PlateauLayerStyle.ForFeatureType(featureType);
+
+        Assert.Equal(expectedFillRgb, style.FillRgb);
+    }
 }

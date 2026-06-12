@@ -36,6 +36,9 @@ public sealed class App : IExternalApplication
         {
             RibbonPanel panel = GetOrCreatePanel(application, "Geo Suite");
 
+            // Separators between the three large buttons give a little horizontal breathing
+            // room (Revit has no per-button margin API) while keeping the single "Geo Suite"
+            // panel label.
             panel.AddItem(CreateButton(
                 "GeoreferenceSetup",
                 "Georef",
@@ -43,12 +46,16 @@ public sealed class App : IExternalApplication
                 RibbonIconKind.WebGeoreference,
                 "Open the georeference workflow"));
 
+            panel.AddSeparator();
+
             panel.AddItem(CreateButton(
                 "PlateauImportNew",
                 "Import",
                 typeof(ImportCommand),
                 RibbonIconKind.WebImport,
                 "Open the PLATEAU import workflow"));
+
+            panel.AddSeparator();
 
             panel.AddItem(CreateButton(
                 "ExportNew",

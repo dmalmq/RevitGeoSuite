@@ -1,0 +1,278 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using RevitGeoSuite.FloorPlanExport.Core.Assignments;
+using RevitGeoSuite.FloorPlanExport.Core.Diagnostics;
+using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Validation;
+using System.Globalization;
+
+namespace RevitGeoSuite.FloorPlanExport.Export;
+
+public sealed class ExportDiagnosticsReportBuilder
+{
+    public ExportDiagnosticsReport Build(
+        PreparedExportSession session,
+        ExportValidationResult validationResult,
+        FloorGeoPackageExportResult exportResult,
+        DateTimeOffset exportedAtUtc,
+        TimeSpan duration)
+    {
+        if (session is null)
+        {
+            throw new ArgumentNullException(nameof(session));
+        }
+
+        if (validationResult is null)
+        {
+            throw new ArgumentNullException(nameof(validationResult));
+        }
+
+        if (exportResult is null)
+        {
+            throw new ArgumentNullException(nameof(exportResult));
+        }
+
+        Dictionary<long, PreparedViewExportData> preparedByViewId = session.Prepared.Views
+            .ToDictionary(view => view.View.Id.Value);
+        List<ExportDiagnosticsViewReport> views = new();
+        foreach (ViewExportContext context in session.Contexts)
+        {
+            preparedByViewId.TryGetValue(context.View.Id.Value, out PreparedViewExportData? prepared);
+            views.Add(BuildViewReport(context, prepared));
+        }
+
+        return new ExportDiagnosticsReport
+        {
+            SourceModelName = session.SourceModelName,
+            SourceDocumentKey = session.SourceDocumentKey,
+            TargetEpsg = session.OutputEpsg,
+            SourceEpsg = session.SourceEpsg,
+            SourceCoordinateSystemId = session.SourceCoordinateSystemId,
+            SourceCoordinateSystemDefinition = session.SourceCoordinateSystemDefinition,
+            ProfileName = session.ProfileName,
+            SchemaProfileName = session.ActiveSchemaProfile.Name,
+            ValidationPolicyProfileName = session.ActiveValidationPolicyProfile.Name,
+            OperatorName = Environment.UserName ?? string.Empty,
+            CoordinateMode = session.CoordinateMode.ToString(),
+            PackagingMode = session.PackageOptions.PackagingMode.ToString(),
+            ExportedAtUtc = exportedAtUtc,
+            DurationMilliseconds = (long)Math.Max(0d, duration.TotalMilliseconds),
+            PhaseTimings = exportResult.PhaseTimings.ToList(),
+            Views = views,
+            ValidationIssues = validationResult.Issues.ToList(),
+            ExportWarnings = exportResult.Warnings.ToList(),
+            IncludedLinks = session.IncludedLinks
+                .Select(link => ExportLinkedModelInfo.Create(
+                    link.LinkInstanceId,
+                    link.LinkInstanceName,
+                    link.SourceDocumentKey,
+                    link.SourceDocumentName))
+                .ToList(),
+            OutputFiles = exportResult.ArtifactResults
+                .Select(result => new ExportDiagnosticsOutputFile
+                {
+                    ViewName = result.ContributingViewNames.FirstOrDefault() ?? string.Empty,
+                    ViewId = result.ContributingViewIds.FirstOrDefault(),
+                    FeatureType = result.LayerSummary,
+                    Path = result.OutputFilePath,
+                    FeatureCount = result.FeatureCount,
+                    ArtifactKey = result.ArtifactKey,
+                    RelativePath = Path.GetFileName(result.OutputFilePath),
+                    PackagingMode = result.PackagingMode.ToString(),
+                    Disposition = result.Disposition.ToString(),
+                    ContributingViewIds = result.ContributingViewIds.ToList(),
+                    ContributingViewNames = result.ContributingViewNames.ToList(),
+                    ContributingLevelNames = result.ContributingLevelNames.ToList(),
+                    LayerNames = result.LayerNames.ToList(),
+                })
+                .ToList(),
+            PackageValidationResult = exportResult.PackageValidationResult,
+        };
+    }
+
+    private static ExportDiagnosticsViewReport BuildViewReport(
+        ViewExportContext context,
+        PreparedViewExportData? prepared)
+    {
+        ExportDiagnosticsViewReport report = new()
+        {
+            ViewId = context.View.Id.Value,
+            ViewName = context.View.Name,
+            LevelName = context.Level.Name,
+            UnsupportedOpeningFamilies = context.UnsupportedOpenings
+                .Concat(context.LinkedSources.SelectMany(source => source.UnsupportedOpenings))
+                .GroupBy(opening => OpeningFamilyClassifier.GetFamilyName(opening), StringComparer.OrdinalIgnoreCase)
+                .Select(group => new ExportDiagnosticsFamilyOccurrence
+                {
+                    FamilyName = group.Key,
+                    Count = group.Count(),
+                })
+                .OrderBy(group => group.FamilyName, StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+        };
+
+        if (prepared == null)
+        {
+            return report;
+        }
+
+        AddLayerCounts(report.Layers, "unit", prepared.UnitLayer?.Features);
+        AddLayerCounts(report.Layers, "detail", prepared.DetailLayer?.Features);
+        AddLayerCounts(report.Layers, "opening", prepared.OpeningLayer?.Features);
+        AddLayerCounts(report.Layers, "level", prepared.LevelLayer?.Features);
+
+        report.UnsnappedOpeningCount = prepared.OpeningLayer?.Features
+            .OfType<ExportLineString>()
+            .Count(feature => !ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true))
+            ?? 0;
+        report.DroppedPolygonCount = prepared.GeometryRepair.DroppedPolygons;
+        report.DroppedOpeningCount = prepared.GeometryRepair.DroppedOpenings;
+        report.SimplifiedPolygonCount = prepared.GeometryRepair.SimplifiedPolygons;
+
+        report.UnassignedFloorTypes = prepared.UnitLayer?.Features
+            .OfType<ExportPolygon>()
+            .Where(feature => ReadBool(feature.Attributes, "is_unassigned"))
+            .GroupBy(feature => ReadString(feature.Attributes, "source_floor_type_name") ?? "<unknown floor type>", StringComparer.Ordinal)
+            .Select(group => new ExportDiagnosticsUnassignedFloorGroup
+            {
+                FloorTypeName = group.Key,
+                Count = group.Count(),
+            })
+            .OrderBy(group => group.FloorTypeName, StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<ExportDiagnosticsUnassignedFloorGroup>();
+
+        report.AppliedFloorOverrides = prepared.UnitLayer?.Features
+            .OfType<ExportPolygon>()
+            .Where(feature => string.Equals(
+                ReadString(feature.Attributes, "category_resolution_source"),
+                FloorCategoryResolutionSource.Override.ToString(),
+                StringComparison.OrdinalIgnoreCase))
+            .GroupBy(feature =>
+                $"{ReadString(feature.Attributes, "source_floor_type_name") ?? "<unknown floor type>"}|{ReadString(feature.Attributes, "category") ?? "unspecified"}",
+                StringComparer.Ordinal)
+            .Select(group => new ExportDiagnosticsFloorOverride
+            {
+                FloorTypeName = group.Key.Split(new[] { '|' }, 2)[0],
+                Category = group.Key.Split(new[] { '|' }, 2).Length > 1
+                    ? group.Key.Split(new[] { '|' }, 2)[1]
+                    : "unspecified",
+                Count = group.Count(),
+            })
+            .OrderBy(group => group.FloorTypeName, StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<ExportDiagnosticsFloorOverride>();
+
+        report.StairVisibility = prepared.UnitLayer?.Features
+            .OfType<ExportPolygon>()
+            .Where(feature => !string.IsNullOrWhiteSpace(ReadString(feature.Attributes, "stair_visibility_source")))
+            .Select(feature => new ExportDiagnosticsStairVisibilityInfo
+            {
+                SourceElementId = ReadNullableLong(feature.Attributes, "source_element_id"),
+                ExportId = ReadString(feature.Attributes, "id"),
+                Source = ReadString(feature.Attributes, "stair_visibility_source"),
+                EvidenceCount = ReadNullableInt(feature.Attributes, "stair_visibility_evidence_count"),
+                CandidateCount = ReadNullableInt(feature.Attributes, "stair_visibility_candidate_count"),
+                MaskApplied = ReadNullableBool(feature.Attributes, "stair_visibility_mask_applied"),
+                Warning = ReadString(feature.Attributes, "stair_visibility_warning"),
+            })
+            .OrderBy(entry => entry.SourceElementId ?? long.MaxValue)
+            .ToList() ?? new List<ExportDiagnosticsStairVisibilityInfo>();
+
+        return report;
+    }
+
+    private static void AddLayerCounts(
+        ICollection<ExportDiagnosticsLayerCount> target,
+        string featureType,
+        IEnumerable<IExportFeature>? features)
+    {
+        if (features == null)
+        {
+            return;
+        }
+
+        foreach (IGrouping<string?, IExportFeature> group in features.GroupBy(feature => ReadString(feature.Attributes, "category")))
+        {
+            target.Add(new ExportDiagnosticsLayerCount
+            {
+                FeatureType = featureType,
+                Category = group.Key,
+                Count = group.Count(),
+            });
+        }
+    }
+
+    private static string? ReadString(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        string trimmed = value.ToString()?.Trim() ?? string.Empty;
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    private static bool ReadBool(IReadOnlyDictionary<string, object?> attributes, string key, bool defaultValue = false)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return defaultValue;
+        }
+
+        return value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out bool parsed) => parsed,
+            _ => defaultValue,
+        };
+    }
+
+    private static long? ReadNullableLong(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            long longValue => longValue,
+            int intValue => intValue,
+            string stringValue when long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static int? ReadNullableInt(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            int intValue => intValue,
+            long longValue when longValue >= int.MinValue && longValue <= int.MaxValue => (int)longValue,
+            string stringValue when int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static bool? ReadNullableBool(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out bool parsed) => parsed,
+            _ => null,
+        };
+    }
+}

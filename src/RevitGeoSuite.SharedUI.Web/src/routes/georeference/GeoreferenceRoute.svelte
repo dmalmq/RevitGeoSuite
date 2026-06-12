@@ -87,12 +87,28 @@
 
   let mapRef = $state<LeafletMap | null>(null)
 
+  // All 19 JGD2011 Japan Plane Rectangular zones (EPSG 6669–6687, zone 1→19). The backend
+  // resolves any of these via CrsRegistry (JapanCrsPresets), so every entry is selectable.
   const crsOptions = [
+    { code: 'EPSG:6669', name: 'JGD2011 / Japan Plane Zone 1' },
+    { code: 'EPSG:6670', name: 'JGD2011 / Japan Plane Zone 2' },
+    { code: 'EPSG:6671', name: 'JGD2011 / Japan Plane Zone 3' },
+    { code: 'EPSG:6672', name: 'JGD2011 / Japan Plane Zone 4' },
+    { code: 'EPSG:6673', name: 'JGD2011 / Japan Plane Zone 5' },
+    { code: 'EPSG:6674', name: 'JGD2011 / Japan Plane Zone 6' },
+    { code: 'EPSG:6675', name: 'JGD2011 / Japan Plane Zone 7' },
+    { code: 'EPSG:6676', name: 'JGD2011 / Japan Plane Zone 8' },
     { code: 'EPSG:6677', name: 'JGD2011 / Japan Plane Zone 9' },
     { code: 'EPSG:6678', name: 'JGD2011 / Japan Plane Zone 10' },
     { code: 'EPSG:6679', name: 'JGD2011 / Japan Plane Zone 11' },
-    { code: 'EPSG:6669', name: 'JGD2011 / Japan Plane Zone 12' },
-    { code: 'EPSG:6670', name: 'JGD2011 / Japan Plane Zone 13' }
+    { code: 'EPSG:6680', name: 'JGD2011 / Japan Plane Zone 12' },
+    { code: 'EPSG:6681', name: 'JGD2011 / Japan Plane Zone 13' },
+    { code: 'EPSG:6682', name: 'JGD2011 / Japan Plane Zone 14' },
+    { code: 'EPSG:6683', name: 'JGD2011 / Japan Plane Zone 15' },
+    { code: 'EPSG:6684', name: 'JGD2011 / Japan Plane Zone 16' },
+    { code: 'EPSG:6685', name: 'JGD2011 / Japan Plane Zone 17' },
+    { code: 'EPSG:6686', name: 'JGD2011 / Japan Plane Zone 18' },
+    { code: 'EPSG:6687', name: 'JGD2011 / Japan Plane Zone 19' }
   ]
 
   onMount(async () => {

@@ -28,6 +28,7 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new DialogOpenFolderHandler());
         bridge.RegisterHandler(new PlateauScanFolderHandler(jobs));
         bridge.RegisterHandler(new PlateauImportTilesHandler(jobs));
+        bridge.RegisterHandler(new PlateauGroundImportHandler(jobs));
         bridge.RegisterHandler(new PlateauOnlineCatalogHandler(jobs));
         bridge.RegisterHandler(new PlateauOnlineGridsHandler(jobs));
         bridge.RegisterHandler(new PlateauOnlineImportHandler(jobs));
@@ -43,5 +44,8 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new Tiles3DExportHandler(jobs));
         bridge.RegisterHandler(new CityGmlExportPrepareHandler());
         bridge.RegisterHandler(new CityGmlExportHandler(jobs));
+
+        FloorPlanExportSessionManager floorPlanExport = new(bridge);
+        floorPlanExport.RegisterHandlers(bridge);
     }
 }

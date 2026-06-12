@@ -52,6 +52,7 @@ public sealed class DependencyGraphTests
             "src/RevitGeoSuite.Shell/RevitGeoSuite.Shell.csproj",
             "RevitGeoSuite.Core.csproj",
             "RevitGeoSuite.CityGmlExport.csproj",
+            "RevitGeoSuite.FloorPlanExport.csproj",
             "RevitGeoSuite.Georeference.csproj",
             "RevitGeoSuite.MeshInspector.csproj",
             "RevitGeoSuite.PlateauImport.csproj",

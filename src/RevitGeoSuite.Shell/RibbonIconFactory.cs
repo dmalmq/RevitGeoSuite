@@ -8,6 +8,13 @@ internal static class RibbonIconFactory
 {
     private const double CanvasSize = 32d;
 
+    // The glyphs are authored in the 7..25 range of the 32-unit canvas, leaving large margins.
+    // Scaling them about the canvas centre fills more of the colored tile so the icon reads
+    // bigger within Revit's fixed large-button footprint. 1.3x keeps the artwork inside the
+    // (1,1,30,30) tile (no clipping). Applies to both the 32px and 16px renders.
+    private const double GlyphScale = 1.3d;
+    private const double Center = CanvasSize / 2d;
+
     public static ImageSource CreateLarge(RibbonIconKind iconKind)
     {
         return Create(iconKind, 32d);
@@ -27,6 +34,9 @@ internal static class RibbonIconFactory
         {
             DrawBackground(context, GetBackgroundBrush(iconKind));
 
+            // Enlarge only the glyph (not the tile) so it fills more of the button.
+            context.PushTransform(new ScaleTransform(GlyphScale, GlyphScale, Center, Center));
+
             switch (iconKind)
             {
                 case RibbonIconKind.WebGeoreference:
@@ -42,6 +52,8 @@ internal static class RibbonIconFactory
                     DrawDefault(context);
                     break;
             }
+
+            context.Pop();
         }
 
         Freeze(drawing);
@@ -52,7 +64,7 @@ internal static class RibbonIconFactory
 
     private static void DrawBackground(DrawingContext context, Brush brush)
     {
-        context.DrawRoundedRectangle(brush, null, new Rect(2d, 2d, 28d, 28d), 6d, 6d);
+        context.DrawRoundedRectangle(brush, null, new Rect(1d, 1d, 30d, 30d), 7d, 7d);
     }
 
     // The next three glyphs mirror the in-app web-shell nav rail (Rail.svelte):

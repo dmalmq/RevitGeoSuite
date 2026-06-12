@@ -94,6 +94,11 @@
     step = 'preflight'
   }
 
+  function openFloorPlanExport() {
+    localStorage.setItem('export.lastFormat', 'geopackage')
+    window.location.hash = '/export/geopackage'
+  }
+
   function onPreflightReady() {
     preflightReady = true
     preflightNeedsAttention = false
@@ -434,6 +439,23 @@
                 <div>
                   <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Format.CityGml'] ?? 'CityGML'}</div>
                   <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Format.CityGmlDesc'] ?? 'Export as CityGML for semantic 3D city models'}</div>
+                </div>
+              </div>
+            </button>
+
+            <button
+              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+              onclick={openFloorPlanExport}
+            >
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-amber-50 border border-amber-200 dark:bg-amber-900/30 dark:border-amber-700 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-amber-700 dark:text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7v10a2 2 0 002 2h10a2 2 0 002-2V7M9 11h6M9 15h4M8 3h8a2 2 0 012 2v2H6V5a2 2 0 012-2z" />
+                  </svg>
+                </div>
+                <div>
+                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">GeoPackage / Shapefile</div>
+                  <div class="text-xs text-neutral-500 dark:text-neutral-500">Export floor-plan GIS packages from Revit plan views</div>
                 </div>
               </div>
             </button>

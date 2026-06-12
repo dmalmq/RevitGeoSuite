@@ -41,6 +41,181 @@ export interface DialogOpenFolderResponse {
   path?: string
 }
 
+export interface ExecutionActionResponse {
+  error?: string
+  success: boolean
+}
+
+export interface ExecutionProgressInitialStateRequest {
+}
+
+export interface ExecutionProgressInitialStateResponse {
+  language: string
+  progress: ExecutionProgressPayload
+}
+
+export interface ExecutionProgressPayload {
+  completedSteps: number
+  isCancelling: boolean
+  startedAtUtc: string
+  statusText: string
+  totalSteps: number
+}
+
+export interface ExporterCrsPreset {
+  displayName: string
+  epsg: number
+}
+
+export interface ExporterCrsPresetGroup {
+  entries: ExporterCrsPreset[]
+  region: string
+}
+
+export interface ExporterDeleteProfileRequest {
+  name: string
+  scope: string
+}
+
+export interface ExporterEmptyRequest {
+}
+
+export interface ExporterInitialStateRequest {
+}
+
+export interface ExporterInitialStateResponse {
+  coordinateDetail: string
+  coordinateStatus: string
+  crsPresetGroups: ExporterCrsPresetGroup[]
+  documentName: string
+  links: ExporterLinkOption[]
+  profiles: ExporterProfileOption[]
+  schemaProfiles: ExporterNamedOption[]
+  settings: ExporterSettingsPayload
+  validationPolicies: ExporterNamedOption[]
+  version: string
+  views: ExporterViewOption[]
+}
+
+export interface ExporterLinkOption {
+  displayName: string
+  id: number
+  sourceDocumentName: string
+}
+
+export interface ExporterNamedOption {
+  name: string
+}
+
+export interface ExporterProfileOption {
+  displayName: string
+  name: string
+  scope: string
+  settings: ExporterSettingsPayload
+}
+
+export interface ExporterRunResponse {
+  error?: string
+  result?: ExportResultInitialStateResponse
+  success: boolean
+}
+
+export interface ExporterSaveProfileRequest {
+  name: string
+  scope: string
+  settings: ExporterSettingsPayload
+}
+
+export interface ExporterSettingsPayload {
+  activeSchemaProfileName: string
+  activeValidationPolicyProfileName: string
+  coordinateMode: string
+  detail: boolean
+  fixture: boolean
+  generateDiagnosticsReport: boolean
+  generatePackageOutput: boolean
+  generateQgisArtifacts: boolean
+  includeLinkedModels: boolean
+  includePackageLegend: boolean
+  incrementalExportMode: string
+  keep3DTempViewsForDebug: boolean
+  launchQgis: boolean
+  level: boolean
+  opening: boolean
+  openOutputFolder: boolean
+  outputDirectory: string
+  outputFormat: string
+  packagingMode: string
+  roomCategoryParameterName: string
+  sectionBoxAboveFloorMeters: number
+  sectionBoxBelowFloorMeters: number
+  selectedLinkIds: number[]
+  selectedProfileName?: string
+  selectedViewIds: number[]
+  simplifyEscalatorUnits: boolean
+  simplifyStairUnits: boolean
+  targetEpsg: number
+  unit: boolean
+  unitAttributeSource: string
+  unitGeometrySource: string
+  use3DSectionBoxExport: boolean
+  validateAfterWrite: boolean
+}
+
+export interface ExporterSubmitResponse {
+  accepted: boolean
+  error?: string
+}
+
+export interface ExporterViewOption {
+  displayName: string
+  id: number
+  levelName: string
+  name: string
+}
+
+export interface ExportResultFilePayload {
+  featureCount: number
+  featureType: string
+  levelName: string
+  outputFilePath: string
+  viewName: string
+}
+
+export interface ExportResultInitialStateRequest {
+}
+
+export interface ExportResultInitialStateResponse {
+  canOpenOutputDirectory: boolean
+  changes: string[]
+  files: ExportResultFilePayload[]
+  language: string
+  message: string
+  outputDirectory: string
+  packageLines: string[]
+  summary: ExportResultSummaryPayload
+  timings: ExportResultTimingPayload[]
+  title: string
+  warnings: string[]
+}
+
+export interface ExportResultSummaryPayload {
+  artifactCount: number
+  featureCount: number
+  packageErrorCount: number
+  packageWarningCount: number
+  reusedArtifactCount: number
+  viewCount: number
+  warningCount: number
+  writtenArtifactCount: number
+}
+
+export interface ExportResultTimingPayload {
+  durationMilliseconds: number
+  durationText: string
+  phaseName: string
+}
+
 export interface GeoreferenceApplyRequest {
   confirmExistingSetup: boolean
   crsCode: string
@@ -133,6 +308,37 @@ export interface GeoreferenceProjectPositionSnapshot {
 export interface GeoreferenceResolveBasePointRequest {
   crsCode: string
   selectedMeshCodes: string[]
+}
+
+export interface HelpDocumentPayload {
+  html: string
+  isFallback: boolean
+  language: string
+  title: string
+  topic: string
+}
+
+export interface HelpInitialStateRequest {
+}
+
+export interface HelpInitialStateResponse {
+  contextLabel: string
+  currentTopic: string
+  document: HelpDocumentPayload
+  language: string
+  productName: string
+  topics: HelpTopicOption[]
+  version: string
+}
+
+export interface HelpOpenTopicRequest {
+  language: string
+  topic: string
+}
+
+export interface HelpTopicOption {
+  label: string
+  topic: string
 }
 
 export interface JobCancelRequest {
@@ -425,6 +631,126 @@ export interface PlateauScanRequest {
   path: string
 }
 
+export interface PreviewAssignmentRequest {
+  category: string
+  floorTypeNames: string[]
+}
+
+export interface PreviewAssignmentSummaryPayload {
+  assignedFloorTypeCount: number
+  floorTypeCount: number
+  hasPendingAssignments: boolean
+  pendingMessage: string
+  rows: PreviewCategoryAssignmentRowPayload[]
+  sourceLabel: string
+  unassignedFloorTypeCount: number
+}
+
+export interface PreviewBoundsPayload {
+  isEmpty: boolean
+  maxX: number
+  maxY: number
+  minX: number
+  minY: number
+}
+
+export interface PreviewCategoryAssignmentRowPayload {
+  category: string
+  floorTypeName: string
+  isUnassigned: boolean
+  parsedCandidate: string
+  sampleUnits: string[]
+  status: string
+  unitCount: number
+  usesOverride: boolean
+  viewCount: number
+  viewNames: string[]
+}
+
+export interface PreviewClearAssignmentRequest {
+  floorTypeNames: string[]
+}
+
+export interface PreviewFeaturePayload {
+  category: string
+  exportId: string
+  featureType: string
+  fillColor: string
+  floorTypeName: string
+  geometryType: string
+  hasWarning: boolean
+  index: number
+  isUnassignedFloor: boolean
+  name: string
+  parsedZoneCandidate: string
+  points: PreviewPointPayload[]
+  restriction: string
+  rings: PreviewPointPayload[][]
+  searchText: string
+  sourceLabel: string
+  strokeColor: string
+  supportsFloorCategoryAssignment: boolean
+  usesFloorCategoryOverride: boolean
+}
+
+export interface PreviewInitialStateRequest {
+}
+
+export interface PreviewInitialStateResponse {
+  assignmentSummary: PreviewAssignmentSummaryPayload
+  coordinateSummary: string
+  currentView?: PreviewViewPayload
+  language: string
+  readinessIssueCount: number
+  readinessUnassignedFloorTypeCount: number
+  readinessWarningCount: number
+  supportedCategories: string[]
+  views: PreviewViewOption[]
+}
+
+export interface PreviewLegendPayload {
+  count: number
+  fillColor: string
+  label: string
+}
+
+export interface PreviewLoadViewRequest {
+  viewId: number
+}
+
+export interface PreviewPointPayload {
+  x: number
+  y: number
+}
+
+export interface PreviewUnassignedFloorPayload {
+  floorTypeName: string
+  parsedCandidate: string
+  unitCount: number
+}
+
+export interface PreviewViewOption {
+  displayName: string
+  id: number
+  name: string
+}
+
+export interface PreviewViewPayload {
+  assignmentPendingMessage: string
+  assignmentSourceLabel: string
+  bounds: PreviewBoundsPayload
+  features: PreviewFeaturePayload[]
+  hasPendingAssignments: boolean
+  instruction: string
+  legend: PreviewLegendPayload[]
+  levelName: string
+  quickSummary: string
+  unassignedFloors: PreviewUnassignedFloorPayload[]
+  viewId: number
+  viewName: string
+  warnings: string[]
+}
+
 export interface ReadinessExportItem {
   detail: string
   isSatisfied: boolean
@@ -495,6 +821,21 @@ export interface RpcMethods {
   'citygml.export': { request: CityGmlExportRequest; response: JobStarted }
   'citygml.export.prepare': { request: CityGmlExportPrepareRequest; response: CityGmlExportPrepareResponse }
   'dialog.openFolder': { request: DialogOpenFolderRequest; response: DialogOpenFolderResponse }
+  'floorplan.cancel': { request: ExporterEmptyRequest; response: void }
+  'floorplan.deleteProfile': { request: ExporterDeleteProfileRequest; response: ExporterInitialStateResponse }
+  'floorplan.execution.progress.getInitialState': { request: ExecutionProgressInitialStateRequest; response: ExecutionProgressInitialStateResponse }
+  'floorplan.execution.result.getInitialState': { request: ExportResultInitialStateRequest; response: ExportResultInitialStateResponse }
+  'floorplan.execution.result.openOutputFolder': { request: ExporterEmptyRequest; response: ExecutionActionResponse }
+  'floorplan.getInitialState': { request: ExporterInitialStateRequest; response: ExporterInitialStateResponse }
+  'floorplan.preparePreview': { request: ExporterSettingsPayload; response: PreviewInitialStateResponse }
+  'floorplan.preview.assignCategory': { request: PreviewAssignmentRequest; response: PreviewViewPayload }
+  'floorplan.preview.clearAssignment': { request: PreviewClearAssignmentRequest; response: PreviewViewPayload }
+  'floorplan.preview.discardAssignments': { request: ExporterEmptyRequest; response: PreviewViewPayload }
+  'floorplan.preview.getInitialState': { request: PreviewInitialStateRequest; response: PreviewInitialStateResponse }
+  'floorplan.preview.loadView': { request: PreviewLoadViewRequest; response: PreviewViewPayload }
+  'floorplan.preview.saveAssignments': { request: ExporterEmptyRequest; response: PreviewViewPayload }
+  'floorplan.run': { request: ExporterSettingsPayload; response: ExporterRunResponse }
+  'floorplan.saveProfile': { request: ExporterSaveProfileRequest; response: ExporterInitialStateResponse }
   'georeference.apply': { request: GeoreferenceApplyRequest; response: GeoreferenceApplyResponse }
   'georeference.getCrsOrigin': { request: GeoreferenceCrsOriginRequest; response: GeoreferencePoint }
   'georeference.getCurrentState': { request: GeoreferenceCurrentStateRequest; response: GeoreferenceCurrentStateResponse }
@@ -518,6 +859,7 @@ export interface RpcMethods {
 }
 
 export interface RpcEvents {
+  'floorplan.execution.progress.updated': ExecutionProgressPayload
   'job.completed': JobCompleted
   'job.failed': JobFailed
   'job.progress': JobProgress

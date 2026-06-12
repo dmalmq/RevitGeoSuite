@@ -44,6 +44,33 @@ public sealed class DemSamplerTests
         Assert.True(z >= 0 && z <= 10);
     }
 
+    [Fact]
+    public void TrySampleElevation_handles_outlier_triangle_without_running_out_of_memory()
+    {
+        var triangles = new List<(Vector3d A, Vector3d B, Vector3d C)>
+        {
+            (new Vector3d(0, 0, 0), new Vector3d(5, 0, 0), new Vector3d(5, 5, 10)),
+            (new Vector3d(0, 0, 0), new Vector3d(5, 5, 10), new Vector3d(0, 5, 10)),
+            (new Vector3d(1_000_000, 1_000_000, 50), new Vector3d(1_000_005, 1_000_000, 50), new Vector3d(1_000_005, 1_000_005, 50)),
+        };
+        DemSampler sampler = new DemSampler(triangles);
+        Assert.True(sampler.TrySampleElevation(2.5, 2.5, out double z));
+        Assert.InRange(z, 4.99, 5.01);
+    }
+
+    [Fact]
+    public void TrySampleElevation_handles_degenerate_large_triangle_without_running_out_of_memory()
+    {
+        var triangles = new List<(Vector3d A, Vector3d B, Vector3d C)>
+        {
+            (new Vector3d(0, 0, 0), new Vector3d(5, 0, 0), new Vector3d(5, 5, 10)),
+            (new Vector3d(0, 0, 0), new Vector3d(5, 5, 10), new Vector3d(0, 5, 10)),
+            (new Vector3d(-500_000, -500_000, 0), new Vector3d(500_000, -500_000, 0), new Vector3d(500_000, 500_000, 0)),
+        };
+        DemSampler sampler = new DemSampler(triangles);
+        Assert.Equal(3, sampler.TriangleCount);
+    }
+
     private static DemSampler BuildSampler()
     {
         var triangles = new List<PlateauTilesetTriangle>

@@ -1,0 +1,140 @@
+using System;
+using System.Collections.Generic;
+using Autodesk.Revit.DB;
+using RevitGeoSuite.FloorPlanExport.Core.Geometry;
+using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Preview;
+using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.UI;
+
+namespace RevitGeoSuite.FloorPlanExport.Export;
+
+public sealed class ExportPreviewRequest
+{
+    public ExportPreviewRequest(
+        IReadOnlyList<ViewPlan> selectedViews,
+        ExportFeatureType featureTypes,
+        GeometryRepairOptions geometryRepairOptions,
+        UiLanguage uiLanguage,
+        CoordinateExportMode coordinateMode,
+        int targetEpsg,
+        int? sourceEpsg,
+        string? sourceCoordinateSystemId,
+        string? sourceCoordinateSystemDefinition,
+        Point2D? surveyPointSharedCoordinates,
+        UnitSource unitSource,
+        UnitGeometrySource unitGeometrySource,
+        UnitAttributeSource unitAttributeSource,
+        string roomCategoryParameterName,
+        LinkExportOptions? linkExportOptions,
+        SchemaProfile? activeSchemaProfile,
+        string? previewBasemapUrlTemplate,
+        string? previewBasemapAttribution,
+        bool simplifyStairUnits,
+        bool simplifyEscalatorUnits = false,
+        bool use3DSectionBoxExport = false,
+        double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
+        double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
+        bool keep3DTempViewsForDebug = false)
+    {
+        string normalizedSourceCoordinateSystemId = sourceCoordinateSystemId?.Trim() ?? string.Empty;
+        string normalizedSourceCoordinateSystemDefinition = sourceCoordinateSystemDefinition?.Trim() ?? string.Empty;
+        string normalizedRoomCategoryParameterName = roomCategoryParameterName?.Trim() ?? string.Empty;
+        string normalizedPreviewBasemapUrlTemplate = previewBasemapUrlTemplate == null
+            ? PreviewBasemapSettings.DefaultUrlTemplate
+            : previewBasemapUrlTemplate.Trim();
+        string normalizedPreviewBasemapAttribution = previewBasemapAttribution == null
+            ? PreviewBasemapSettings.DefaultAttribution
+            : previewBasemapAttribution.Trim();
+        GeometryRepairOptions normalizedGeometryRepairOptions = geometryRepairOptions ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
+
+        if (normalizedRoomCategoryParameterName.Length == 0)
+        {
+            normalizedRoomCategoryParameterName = "Name";
+        }
+
+        if (normalizedPreviewBasemapAttribution.Length == 0)
+        {
+            normalizedPreviewBasemapAttribution = PreviewBasemapSettings.DefaultAttribution;
+        }
+
+        SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
+        FeatureTypes = featureTypes;
+        GeometryRepairOptions = normalizedGeometryRepairOptions.Clone();
+        UiLanguage = uiLanguage;
+        CoordinateMode = coordinateMode;
+        TargetEpsg = targetEpsg;
+        SourceEpsg = sourceEpsg;
+        SourceCoordinateSystemId = normalizedSourceCoordinateSystemId;
+        SourceCoordinateSystemDefinition = normalizedSourceCoordinateSystemDefinition;
+        SurveyPointSharedCoordinates = surveyPointSharedCoordinates;
+        UnitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
+        UnitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, UnitGeometrySource, unitAttributeSource);
+        UnitSource = UnitExportSettingsResolver.ToLegacy(UnitGeometrySource, UnitAttributeSource);
+        RoomCategoryParameterName = normalizedRoomCategoryParameterName;
+        LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        PreviewBasemapUrlTemplate = normalizedPreviewBasemapUrlTemplate;
+        PreviewBasemapAttribution = normalizedPreviewBasemapAttribution;
+        SimplifyStairUnits = simplifyStairUnits;
+        SimplifyEscalatorUnits = simplifyEscalatorUnits;
+        Use3DSectionBoxExport = use3DSectionBoxExport;
+        SectionBoxAboveFloorMeters =
+            (sectionBoxAboveFloorMeters > 0d && !double.IsNaN(sectionBoxAboveFloorMeters) && !double.IsInfinity(sectionBoxAboveFloorMeters))
+                ? sectionBoxAboveFloorMeters
+                : Temp3DViewScope.DefaultAboveFloorMeters;
+        SectionBoxBelowFloorMeters =
+            (!double.IsNaN(sectionBoxBelowFloorMeters) && !double.IsInfinity(sectionBoxBelowFloorMeters))
+                ? sectionBoxBelowFloorMeters
+                : Temp3DViewScope.DefaultBelowFloorMeters;
+        Keep3DTempViewsForDebug = keep3DTempViewsForDebug;
+    }
+
+    public IReadOnlyList<ViewPlan> SelectedViews { get; }
+
+    public ExportFeatureType FeatureTypes { get; }
+
+    public GeometryRepairOptions GeometryRepairOptions { get; }
+
+    public UiLanguage UiLanguage { get; }
+
+    public CoordinateExportMode CoordinateMode { get; }
+
+    public int TargetEpsg { get; }
+
+    public int? SourceEpsg { get; }
+
+    public string SourceCoordinateSystemId { get; }
+
+    public string SourceCoordinateSystemDefinition { get; }
+
+    public Point2D? SurveyPointSharedCoordinates { get; }
+
+    public UnitSource UnitSource { get; }
+
+    public UnitGeometrySource UnitGeometrySource { get; }
+
+    public UnitAttributeSource UnitAttributeSource { get; }
+
+    public string RoomCategoryParameterName { get; }
+
+    public LinkExportOptions LinkExportOptions { get; }
+
+    public SchemaProfile ActiveSchemaProfile { get; }
+
+    public string PreviewBasemapUrlTemplate { get; }
+
+    public string PreviewBasemapAttribution { get; }
+
+    public bool SimplifyStairUnits { get; }
+
+    public bool SimplifyEscalatorUnits { get; }
+
+    public bool Use3DSectionBoxExport { get; }
+
+    public double SectionBoxAboveFloorMeters { get; }
+
+    public double SectionBoxBelowFloorMeters { get; }
+
+    public bool Keep3DTempViewsForDebug { get; }
+}
