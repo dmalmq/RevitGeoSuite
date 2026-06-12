@@ -98,8 +98,7 @@ RevitGeoSuite/
 │   ├── RevitGeoSuite.CityGmlExport/         # CityGML export
 │   ├── RevitGeoSuite.FloorPlanExport/       # Floor plan GIS export (Revit-facing)
 │   └── RevitGeoSuite.FloorPlanExport.Core/  # Floor plan export engine (GeoPackage/Shapefile, IMDF schema)
-├── tests/                                   # xUnit test projects mirroring src/
-└── docs/                                    # Architecture and design documentation
+└── tests/                                   # xUnit test projects mirroring src/
 ```
 
 ---
@@ -152,24 +151,6 @@ The installer EXE is written to `install/output/` and installs the add-in payloa
 ```bash
 dotnet test
 ```
-
----
-
-## Documentation
-
-See the [`docs/`](docs/) folder for detailed design documentation:
-
-- [Product Overview](docs/01-product-overview.md) — Vision and goals
-- [User Problems & Goals](docs/02-user-problem-and-goals.md) — Pain points and desired workflows
-- [Scope V1](docs/03-scope-v1.md) — Milestones and boundaries
-- [Technical Architecture](docs/04-technical-architecture.md) — Layer responsibilities and contracts
-- [Revit API Notes](docs/05-revit-api-notes.md) — Revit 2024 API patterns
-- [Geo & CRS Rules](docs/06-geo-and-coordinate-system-rules.md) — Coordinate system handling
-- [UI Flow](docs/07-ui-flow.md) — User workflow design
-- [Implementation Phases](docs/08-implementation-phases.md) — Build order
-- [Test Plan](docs/09-test-plan.md) — Testing strategy
-- [Architecture](docs/Architecture.md) — Module structure and dependency graph
-- [Decisions](docs/DECISIONS.md) — Locked technical decisions
 
 ---
 
