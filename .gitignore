@@ -11,6 +11,14 @@ TestResults/
 *.slnx
 *.log
 .claude/
+# AI assistant docs/config — keep out of the repo
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
+docs/Codex-Task-Index.md
 manual-build-correct/
 meshinspector-manual.rsp
 georef-build*.log

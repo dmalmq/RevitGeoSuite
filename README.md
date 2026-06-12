@@ -7,7 +7,7 @@
 <p>
 A suite of independent tools built on a shared geospatial core,<br />
 designed to close the gap between BIM authoring in Revit and downstream spatial data workflows.<br />
-From coordinate system setup to CityGML and 3D Tiles export — without the legacy conversion chains.
+From coordinate system setup to CityGML, 3D Tiles, and indoor floor-plan GIS export — without the legacy conversion chains.
 </p>
 
 <p>
@@ -17,7 +17,8 @@ From coordinate system setup to CityGML and 3D Tiles export — without the lega
 </p>
 
 <p>
-  <img src="https://img.shields.io/badge/UI-WPF_+_WebView2-393552?style=flat-square" />
+  <img src="https://img.shields.io/badge/UI-WebView2_+_Svelte_5-393552?style=flat-square" />
+  <img src="https://img.shields.io/badge/Web-TypeScript_+_Vite-31748f?style=flat-square" />
   <img src="https://img.shields.io/badge/Maps-Leaflet_+_OSM-9ccfd8?style=flat-square" />
   <img src="https://img.shields.io/badge/CRS-ProjNet-907aa9?style=flat-square" />
   <img src="https://img.shields.io/badge/Languages-EN_/_JA-f6c177?style=flat-square" />
@@ -38,35 +39,40 @@ The suite is especially focused on Japanese coordinate reference systems and [PL
 
 ## Modules
 
-Six modules surface on a single **Revit Geo Suite** ribbon tab, grouped into *Project Setup*, *PLATEAU*, and *Export* panels. The UI ships in English and Japanese with a runtime language toggle.
+All functionality is reached through three web-shell entry points on a single **Geo Suite** ribbon panel — **Georef**, **Import**, and **Export**. Each button opens a shared **WebView2** window hosting a Svelte single-page app, navigated by a left rail (`/georeference`, `/import`, `/export`). C# and the web UI communicate over a typed RPC bridge whose TypeScript contracts are generated from the .NET contract assembly at build time. The UI ships in English and Japanese with a runtime language toggle.
 
-| Module | Description |
-|--------|-------------|
-| **Georeference** | CRS selection with Japanese presets, OSM map-based point picking, PLATEAU grid-tile snapping, and a split survey / project base point apply path with placement preview |
-| **Mesh Inspector** | Japanese JIS X 0410 mesh code lookup, boundary calculation, and 8-neighbor display as a GeoJSON overlay |
-| **Validation** | Read-only project health checks for coordinate setup, export readiness, and suspicious-value warnings against the shared `GeoProjectInfo` |
-| **PLATEAU Import** | Folder scan with codelist parsing and tile indexing, grid-tile selection, building/feature filtering, and a shape-based context geometry import pipeline with lightweight extrusion, detailed DirectShape, and mass-on-Relief modes |
-| **3D Tiles Export** | Scoped export (whole model or selected 3D view) with per-object metadata, RGBA material colors, level grouping with a manifest, optional precise CRS anchor rebasing, and geoid undulation offset to convert orthometric anchors to WGS84 ellipsoidal height |
-| **CityGML Export** | Lightweight CityGML export with semantic and attribute mapping, codelist assignment, and a separate module export state |
+| Module | Entry | Description |
+|--------|-------|-------------|
+| **Georeference** | Georef | CRS selection with Japanese presets, OSM map-based point picking, PLATEAU grid-tile snapping, and a split survey / project base point apply path with placement preview |
+| **Mesh Inspector** | Georef | Japanese JIS X 0410 mesh code lookup, boundary calculation, and 8-neighbor display as a GeoJSON map overlay |
+| **Validation** | shell-wide | Live, read-only project health checks for coordinate setup and export readiness, surfaced in the shell status footer against the shared `GeoProjectInfo` |
+| **PLATEAU Import** | Import | Folder scan with codelist parsing and tile indexing, grid-tile selection, building/feature filtering, a shape-based context geometry pipeline (lightweight extrusion, detailed DirectShape, or mass-on-Relief), road/sidewalk outlines, and DXF basemap export |
+| **Ground / Terrain Import** | Import | Native Revit topography surface built from a local DEM (Kiban GML) or online Cesium Ion quantized-mesh terrain, with configurable radius/spacing and geoid-undulation offset to ellipsoidal height |
+| **3D Tiles Export** | Export | Scoped export (whole model or selected 3D view) with per-object metadata, RGBA material colors, level grouping with a manifest, optional precise CRS anchor rebasing, and geoid undulation offset to convert orthometric anchors to WGS84 ellipsoidal height |
+| **CityGML Export** | Export | Lightweight CityGML export with semantic and attribute mapping, codelist assignment, and a separate module export state |
+| **Floor Plan Export** | Export | Indoor floor-plan GIS export to GeoPackage / Shapefile using an IMDF-style schema (units, zones, openings, levels, vertical circulation), with an interactive map preview, category/floor assignment, validation policies, reusable export profiles, and an export diagnostics manifest |
 
 ---
 
 ## Architecture
 
-Modules are independent over a shared foundation. No module depends on another — they communicate through a small, stable shared state contract (`GeoProjectInfo`).
+Modules are independent over a shared foundation — no module depends on another; they communicate through a small, stable shared-state contract (`GeoProjectInfo`). The C# layers expose their workflows to a single Svelte web UI over a typed RPC bridge whose TypeScript contracts are generated from the .NET contract assembly at build time.
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│ Shell (Ribbon UI + Module Registration)                  │
-├──────────┬──────────┬────────────┬──────────┬────────────┤
-│   Geo    │   Mesh   │ Validation │ PLATEAU  │  3D Tiles  │
-│ Reference│ Inspector│            │  Import  │  + CityGML │
-├──────────┴──────────┴────────────┴──────────┴────────────┤
-│   SharedUI (WPF + WebView2)  │  RevitInterop (API)       │
-├──────────────────────────────┴────────────┬──────────────┤
-│ Core (CRS, Transforms, Mesh, Workflow,    │     Core     │
-│        Storage, Validation, Versioning)   │   .Plateau   │
-└───────────────────────────────────────────┴──────────────┘
+ Shell — Revit add-in · "Geo Suite" ribbon · hosts the WebView2 window
+   │
+ SharedUI.Web — Svelte SPA · routes: /georeference · /import · /export
+   │   ↕ typed RPC bridge (TypeScript contracts generated from .NET)
+   ▼
+ Workflows
+   Georeference · Mesh Inspector · Validation
+   PLATEAU Import · Ground / Terrain Import
+   3D Tiles Export · CityGML Export · Floor Plan Export
+   │
+   ▼
+ Foundation
+   SharedUI (WPF host + WebView2)      RevitInterop (Revit API)
+   Core   ·   Core.Plateau   ·   FloorPlanExport.Core
 ```
 
 ---
@@ -76,21 +82,24 @@ Modules are independent over a shared foundation. No module depends on another �
 ```text
 RevitGeoSuite/
 ├── src/
-│   ├── RevitGeoSuite.Core/              # Generic geo foundation (no Revit dependency)
-│   ├── RevitGeoSuite.Core.Plateau/      # PLATEAU-specific shared logic
-│   ├── RevitGeoSuite.RevitInterop/      # Revit API wrappers (no UI)
-│   ├── RevitGeoSuite.SharedUI/          # Reusable WPF controls
-│   ├── RevitGeoSuite.Shell/             # Add-in entry point and ribbon setup
-│   ├── RevitGeoSuite.Georeference/      # Georeferencing module
-│   ├── RevitGeoSuite.MeshInspector/     # Mesh code inspector module
-│   ├── RevitGeoSuite.Validation/        # Project validation module
-│   ├── RevitGeoSuite.PlateauImport/     # PLATEAU context import
-│   ├── RevitGeoSuite.Tiles3DExport/     # 3D Tiles export
-│   └── RevitGeoSuite.CityGmlExport/     # CityGML export
-├── tests/
-│   ├── RevitGeoSuite.Core.Tests/
-│   └── ...
-└── docs/                                # Architecture and design documentation
+│   ├── RevitGeoSuite.Core/                  # Generic geo foundation (no Revit dependency)
+│   ├── RevitGeoSuite.Core.Plateau/          # PLATEAU + terrain logic (DEM, Cesium Ion, tiling)
+│   ├── RevitGeoSuite.RevitInterop/          # Revit API wrappers (no UI)
+│   ├── RevitGeoSuite.SharedUI/              # WPF shell window hosting WebView2
+│   ├── RevitGeoSuite.SharedUI.Web/          # Svelte + TypeScript single-page UI (Vite)
+│   ├── RevitGeoSuite.SharedUI.Web.Contracts/           # Shared RPC contract types (C#)
+│   ├── RevitGeoSuite.SharedUI.Web.Contracts.Generator/ # Emits contracts.generated.ts
+│   ├── RevitGeoSuite.Shell/                 # Add-in entry point and ribbon setup
+│   ├── RevitGeoSuite.Georeference/          # Georeferencing workflow
+│   ├── RevitGeoSuite.MeshInspector/         # Mesh code inspector
+│   ├── RevitGeoSuite.Validation/            # Project validation
+│   ├── RevitGeoSuite.PlateauImport/         # PLATEAU context + ground/terrain import
+│   ├── RevitGeoSuite.Tiles3DExport/         # 3D Tiles export
+│   ├── RevitGeoSuite.CityGmlExport/         # CityGML export
+│   ├── RevitGeoSuite.FloorPlanExport/       # Floor plan GIS export (Revit-facing)
+│   └── RevitGeoSuite.FloorPlanExport.Core/  # Floor plan export engine (GeoPackage/Shapefile, IMDF schema)
+├── tests/                                   # xUnit test projects mirroring src/
+└── docs/                                    # Architecture and design documentation
 ```
 
 ---
@@ -100,6 +109,7 @@ RevitGeoSuite/
 - **Revit 2024**
 - **.NET Framework 4.8 SDK**
 - **Visual Studio 2022** (or later) with the ".NET desktop development" workload
+- **Node.js 20+** *(builds the Svelte web UI during the solution build; pass `-p:SkipWebBuild=true` to reuse the committed bundle and skip Node)*
 - **WebView2 Runtime** (typically pre-installed on Windows 10/11)
 - **Inno Setup 6** *(optional — only needed to build the installer `.exe`)*
 
@@ -115,7 +125,7 @@ msbuild RevitGeoSuite.sln /p:Configuration=Release
 # Or open RevitGeoSuite.sln in Visual Studio and build
 ```
 
-All output DLLs are written to `bin/Deploy/`.
+The solution build regenerates the TypeScript RPC contracts and runs the web build (`npm ci` + `vite build`) before compiling the WebView2 host, then embeds the bundle. Use `-p:SkipWebBuild=true` to reuse the committed `dist/` bundle when Node.js is unavailable. All output DLLs are written to `bin/Deploy/`.
 
 ## Install
 
@@ -175,13 +185,22 @@ See the [`docs/`](docs/) folder for detailed design documentation:
 ![PLATEAU](https://img.shields.io/badge/PLATEAU-0891b2?style=for-the-badge)
 ![JIS Mesh](https://img.shields.io/badge/JIS_X_0410_Mesh-56949f?style=for-the-badge)
 ![ProjNET](https://img.shields.io/badge/ProjNET-907aa9?style=for-the-badge)
+![NetTopologySuite](https://img.shields.io/badge/NetTopologySuite-1f6f5c?style=for-the-badge)
+![GeoPackage](https://img.shields.io/badge/GeoPackage-2563eb?style=for-the-badge)
+![Shapefile](https://img.shields.io/badge/Shapefile-475569?style=for-the-badge)
+![IMDF](https://img.shields.io/badge/IMDF-0f766e?style=for-the-badge)
+![Cesium Terrain](https://img.shields.io/badge/Cesium_Ion_Terrain-3c8c40?style=for-the-badge)
 ![GeoJSON](https://img.shields.io/badge/GeoJSON-0369a1?style=for-the-badge)
 
 ### Programming
 ![C Sharp](https://img.shields.io/badge/C%23_12-68217a?style=for-the-badge&logo=csharp&logoColor=ffffff)
-![WPF](https://img.shields.io/badge/WPF-3178c6?style=for-the-badge)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=for-the-badge&logo=typescript&logoColor=ffffff)
+![Svelte](https://img.shields.io/badge/Svelte_5-ff3e00?style=for-the-badge&logo=svelte&logoColor=ffffff)
+![Vite](https://img.shields.io/badge/Vite-646cff?style=for-the-badge&logo=vite&logoColor=ffffff)
+![Tailwind](https://img.shields.io/badge/Tailwind-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=ffffff)
+![WPF](https://img.shields.io/badge/WPF-393552?style=for-the-badge)
 ![Leaflet](https://img.shields.io/badge/Leaflet.js-199900?style=for-the-badge&logo=leaflet&logoColor=ffffff)
-![xUnit](https://img.shields.io/badge/xUnit-393552?style=for-the-badge)
+![xUnit](https://img.shields.io/badge/xUnit-2b2d42?style=for-the-badge)
 
 ---
 
