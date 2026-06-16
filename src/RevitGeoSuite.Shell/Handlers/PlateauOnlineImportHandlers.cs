@@ -206,6 +206,42 @@ public sealed class PlateauOnlineCatalogHandler : IRpcHandler
     }
 }
 
+public sealed class PlateauAreaLocationHandler : IRpcHandler
+{
+    public string Method => "plateau.areaLocation";
+
+    public async Task<object?> HandleAsync(object? payload)
+    {
+        JObject? request = payload as JObject;
+        string areaCode = request?.Value<string>("areaCode")?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(areaCode))
+        {
+            throw new InvalidOperationException("Area code is required.");
+        }
+
+        PlateauHttpClient httpClient = new PlateauHttpClient();
+        PlateauApiClient apiClient = new PlateauApiClient(httpClient);
+        PlateauCatalog catalog = await apiClient.FetchCatalogAsync().ConfigureAwait(false);
+        PlateauAreaGeometryService geometryService = new PlateauAreaGeometryService(httpClient);
+        PlateauOnlineAreaLocation? location = await PlateauOnlineAreaLocationResolver
+            .ResolveAsync(catalog, geometryService, areaCode)
+            .ConfigureAwait(false);
+
+        if (location is null)
+        {
+            throw new InvalidOperationException("Could not resolve a map location for the selected PLATEAU area.");
+        }
+
+        return new PlateauAreaLocationResponse
+        {
+            AreaCode = location.AreaCode,
+            Latitude = location.Latitude,
+            Longitude = location.Longitude,
+            Zoom = location.Zoom
+        };
+    }
+}
+
 public sealed class PlateauOnlineGridsHandler : IRpcHandler
 {
     private const int MaxGeneratedGridCount = 5000;

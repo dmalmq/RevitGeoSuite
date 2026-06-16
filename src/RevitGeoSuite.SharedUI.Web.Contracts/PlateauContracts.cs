@@ -21,10 +21,93 @@ public sealed class PlateauImportRequest
     public string Mode { get; set; } = "solids";
 }
 
+/// <summary>Payload of the <c>gis.import</c> request.</summary>
+[TsExport]
+public sealed class GisImportRequest
+{
+    public string Path { get; set; } = string.Empty;
+
+    public string[] Paths { get; set; } = Array.Empty<string>();
+
+    public string BasemapName { get; set; } = string.Empty;
+
+    public string OutputFolder { get; set; } = string.Empty;
+
+    public GisImportFileAssignment[] FileAssignments { get; set; } = Array.Empty<GisImportFileAssignment>();
+
+    public GisImportCategoryColor[] CategoryColors { get; set; } = Array.Empty<GisImportCategoryColor>();
+}
+
+/// <summary>One selected GIS file and the Revit level it should import onto.</summary>
+[TsExport]
+public sealed class GisImportFileAssignment
+{
+    public string Path { get; set; } = string.Empty;
+
+    public long? LevelId { get; set; }
+
+    public string Category { get; set; } = "detail";
+}
+
+/// <summary>Editable DXF layer colour for a GIS import category.</summary>
+[TsExport]
+public sealed class GisImportCategoryColor
+{
+    public string Category { get; set; } = string.Empty;
+
+    public string Color { get; set; } = string.Empty;
+}
+
+/// <summary>Payload of the <c>gis.importOptions</c> request.</summary>
+[TsExport]
+public sealed class GisImportOptionsRequest
+{
+}
+
+/// <summary>Response of the <c>gis.importOptions</c> request.</summary>
+[TsExport]
+public sealed class GisImportOptionsResponse
+{
+    public GisLevelOption[] Levels { get; set; } = Array.Empty<GisLevelOption>();
+
+    public long? DefaultLevelId { get; set; }
+}
+
+/// <summary>One Revit level available for floor-aware GIS basemap import.</summary>
+[TsExport]
+public sealed class GisLevelOption
+{
+    public long Id { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public double ElevationFeet { get; set; }
+}
+
 /// <summary>Payload of the <c>plateau.onlineCatalog</c> request.</summary>
 [TsExport]
 public sealed class PlateauOnlineCatalogRequest
 {
+}
+
+/// <summary>Payload of the <c>plateau.areaLocation</c> request.</summary>
+[TsExport]
+public sealed class PlateauAreaLocationRequest
+{
+    public string AreaCode { get; set; } = string.Empty;
+}
+
+/// <summary>Representative map location for a searchable PLATEAU Online area.</summary>
+[TsExport]
+public sealed class PlateauAreaLocationResponse
+{
+    public string AreaCode { get; set; } = string.Empty;
+
+    public double Latitude { get; set; }
+
+    public double Longitude { get; set; }
+
+    public int Zoom { get; set; }
 }
 
 /// <summary>One searchable PLATEAU Online municipality/ward row.</summary>

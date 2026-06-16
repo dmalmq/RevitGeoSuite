@@ -5,6 +5,9 @@
     <WebDistDir>$(MSBuildThisFileDirectory)..\Resources\Web\dist\</WebDistDir>
     <WebBuildCacheFile>$(MSBuildThisFileDirectory)..\Resources\Web\.build.cache</WebBuildCacheFile>
     <ContractsGeneratorProject>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web.Contracts.Generator\RevitGeoSuite.SharedUI.Web.Contracts.Generator.csproj</ContractsGeneratorProject>
+    <ContractsProject>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web.Contracts\RevitGeoSuite.SharedUI.Web.Contracts.csproj</ContractsProject>
+    <ContractsBuildDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)web-contracts\</ContractsBuildDir>
+    <ContractsGeneratorBuildDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)web-contracts-generator\</ContractsGeneratorBuildDir>
     <ContractsOutputFile>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web\src\lib\bridge\contracts.generated.ts</ContractsOutputFile>
     <SkipWebBuild Condition="'$(SkipWebBuild)' == ''">false</SkipWebBuild>
     <NodeMinimumVersion>20</NodeMinimumVersion>
@@ -26,13 +29,15 @@
   <Target Name="GenerateTsContracts" BeforeTargets="BuildWebAssets" Condition="'$(SkipWebBuild)' != 'true'">
     <Message Text="Generating TypeScript contracts..." Importance="high" />
 
-    <MSBuild Projects="$(ContractsGeneratorProject)" Targets="Build" Properties="Configuration=$(Configuration)" />
+    <MSBuild Projects="$(ContractsProject)" Targets="Build" Properties="Configuration=$(Configuration);OutputPath=$(ContractsBuildDir);UseCommonOutputDirectory=false" />
+    <MSBuild Projects="$(ContractsGeneratorProject)" Targets="Build" Properties="Configuration=$(Configuration);OutputPath=$(ContractsGeneratorBuildDir);UseCommonOutputDirectory=false" />
 
     <PropertyGroup>
-      <ContractsAssemblyPath>$(RepositoryRoot)bin\Deploy\RevitGeoSuite.SharedUI.Web.Contracts.dll</ContractsAssemblyPath>
+      <ContractsAssemblyPath>$(ContractsBuildDir)RevitGeoSuite.SharedUI.Web.Contracts.dll</ContractsAssemblyPath>
+      <ContractsGeneratorPath>$(ContractsGeneratorBuildDir)RevitGeoSuite.SharedUI.Web.Contracts.Generator.dll</ContractsGeneratorPath>
     </PropertyGroup>
 
-    <Exec Command="dotnet run --project &quot;$(ContractsGeneratorProject)&quot; --no-build -- &quot;$(ContractsAssemblyPath)&quot; &quot;$(ContractsOutputFile)&quot;" />
+    <Exec Command="dotnet &quot;$(ContractsGeneratorPath)&quot; &quot;$(ContractsAssemblyPath)&quot; &quot;$(ContractsOutputFile)&quot;" />
   </Target>
 
   <Target Name="BuildWebAssets" BeforeTargets="BeforeBuild" Condition="'$(SkipWebBuild)' != 'true'">

@@ -209,6 +209,56 @@ public static class CoordinateSystemCatalog
         return TransformPoint(point, transformation.MathTransform);
     }
 
+    /// <summary>
+    /// Builds a lightweight projection delegate that maps a source coordinate (in the file's CRS)
+    /// to the target projected CRS, given the source CRS as EPSG and/or WKT. Returns an identity
+    /// projection plus a warning when the source CRS is missing or cannot be resolved, so callers
+    /// can still import (assuming the data already matches the project CRS) and surface the caveat.
+    /// </summary>
+    public static (Func<double, double, (double X, double Y)> Project, string? Warning) CreateReprojector(
+        int? sourceEpsg,
+        string? sourceWkt,
+        int targetEpsg)
+    {
+        Func<double, double, (double X, double Y)> identity = static (x, y) => (x, y);
+
+        bool hasSource = (sourceEpsg.HasValue && sourceEpsg.Value > 0) || !string.IsNullOrWhiteSpace(sourceWkt);
+        if (!hasSource)
+        {
+            return (identity, $"The file did not declare a coordinate system; assuming it is already in the project CRS (EPSG:{targetEpsg}).");
+        }
+
+        if (sourceEpsg.HasValue && sourceEpsg.Value == targetEpsg)
+        {
+            return (identity, null);
+        }
+
+        if (!TryCreateSourceCoordinateSystem(sourceWkt, null, sourceEpsg, out CoordinateSystem? source, out _) || source is null)
+        {
+            return (identity, "The file's coordinate system could not be interpreted; coordinates were imported without reprojection.");
+        }
+
+        if (!TryCreateFromEpsg(targetEpsg, out CoordinateSystem? target) || target is null)
+        {
+            return (identity, $"The project CRS (EPSG:{targetEpsg}) is not supported for reprojection; coordinates were imported without reprojection.");
+        }
+
+        ICoordinateTransformation? transformation = TransformationFactory.CreateFromCoordinateSystems(source, target);
+        if (transformation is null)
+        {
+            return (identity, "A coordinate transformation could not be created; coordinates were imported without reprojection.");
+        }
+
+        MathTransform mathTransform = transformation.MathTransform;
+        Func<double, double, (double X, double Y)> project = (x, y) =>
+        {
+            (double tx, double ty) = mathTransform.Transform(x, y);
+            return (tx, ty);
+        };
+
+        return (project, null);
+    }
+
     private static IExportFeature ReprojectFeature(IExportFeature feature, MathTransform mathTransform)
     {
         return feature switch

@@ -9,6 +9,10 @@ namespace RevitGeoSuite.SharedUI.Web.Contracts.Generator;
 
 public static class Program
 {
+    private const string TsExportAttributeName = "RevitGeoSuite.SharedUI.Web.Contracts.TsExportAttribute";
+    private const string RpcMethodAttributeName = "RevitGeoSuite.SharedUI.Web.Contracts.RpcMethodAttribute";
+    private const string RpcEventAttributeName = "RevitGeoSuite.SharedUI.Web.Contracts.RpcEventAttribute";
+
     private static readonly NullabilityInfoContext NullabilityContext = new NullabilityInfoContext();
 
     public static int Main(string[] args)
@@ -26,7 +30,7 @@ public static class Program
         {
             var assembly = Assembly.LoadFrom(assemblyPath);
             var types = assembly.GetTypes()
-                .Where(t => t.GetCustomAttribute<TsExportAttribute>() != null)
+                .Where(HasTsExportAttribute)
                 .OrderBy(t => t.Name)
                 .ToList();
 
@@ -70,8 +74,7 @@ public static class Program
 
     private static void GenerateInterface(StringBuilder sb, Type type)
     {
-        var attr = type.GetCustomAttribute<TsExportAttribute>();
-        string name = attr?.Name ?? type.Name;
+        string name = GetTsExportName(type);
 
         sb.AppendLine($"export interface {name} {{");
 
@@ -92,8 +95,7 @@ public static class Program
 
     private static void GenerateEnum(StringBuilder sb, Type type)
     {
-        var attr = type.GetCustomAttribute<TsExportAttribute>();
-        string name = attr?.Name ?? type.Name;
+        string name = GetTsExportName(type);
 
         var values = Enum.GetNames(type);
         string union = string.Join(" | ", values.Select(v => $"'{v}'"));
@@ -103,7 +105,11 @@ public static class Program
 
     private static void GenerateMethodMap(StringBuilder sb, Assembly assembly)
     {
-        var methods = assembly.GetCustomAttributes<RpcMethodAttribute>()
+        var methods = assembly.GetCustomAttributesData()
+            .Where(a => a.AttributeType.FullName == RpcMethodAttributeName)
+            .Select(ReadRpcMethod)
+            .Where(m => m != null)
+            .Select(m => m!)
             .OrderBy(a => a.Method, StringComparer.Ordinal)
             .ToList();
         if (methods.Count == 0)
@@ -122,7 +128,11 @@ public static class Program
 
     private static void GenerateEventMap(StringBuilder sb, Assembly assembly)
     {
-        var events = assembly.GetCustomAttributes<RpcEventAttribute>()
+        var events = assembly.GetCustomAttributesData()
+            .Where(a => a.AttributeType.FullName == RpcEventAttributeName)
+            .Select(ReadRpcEvent)
+            .Where(e => e != null)
+            .Select(e => e!)
             .OrderBy(a => a.Method, StringComparer.Ordinal)
             .ToList();
         if (events.Count == 0)
@@ -219,12 +229,60 @@ public static class Program
             return type.Name;
         }
 
-        if (type.GetCustomAttribute<TsExportAttribute>() != null)
+        if (HasTsExportAttribute(type))
         {
-            return type.Name;
+            return GetTsExportName(type);
         }
 
         return "unknown";
+    }
+
+    private static bool HasTsExportAttribute(Type type)
+    {
+        return type.GetCustomAttributesData().Any(a => a.AttributeType.FullName == TsExportAttributeName);
+    }
+
+    private static string GetTsExportName(Type type)
+    {
+        var attr = type.GetCustomAttributesData()
+            .FirstOrDefault(a => a.AttributeType.FullName == TsExportAttributeName);
+
+        string? name = attr?.NamedArguments
+            .FirstOrDefault(a => a.MemberName == "Name")
+            .TypedValue.Value as string;
+
+        return string.IsNullOrWhiteSpace(name) ? type.Name : name;
+    }
+
+    private static RpcMethodContract? ReadRpcMethod(CustomAttributeData attr)
+    {
+        if (attr.ConstructorArguments.Count != 3)
+        {
+            return null;
+        }
+
+        string? method = attr.ConstructorArguments[0].Value as string;
+        Type? requestType = attr.ConstructorArguments[1].Value as Type;
+        Type? responseType = attr.ConstructorArguments[2].Value as Type;
+
+        return string.IsNullOrWhiteSpace(method) || requestType == null || responseType == null
+            ? null
+            : new RpcMethodContract(method, requestType, responseType);
+    }
+
+    private static RpcEventContract? ReadRpcEvent(CustomAttributeData attr)
+    {
+        if (attr.ConstructorArguments.Count != 2)
+        {
+            return null;
+        }
+
+        string? method = attr.ConstructorArguments[0].Value as string;
+        Type? payloadType = attr.ConstructorArguments[1].Value as Type;
+
+        return string.IsNullOrWhiteSpace(method) || payloadType == null
+            ? null
+            : new RpcEventContract(method, payloadType);
     }
 
     private static string ToCamelCase(string name)
@@ -237,4 +295,8 @@ public static class Program
 
         return char.ToLowerInvariant(name[0]) + name.Substring(1);
     }
+
+    private sealed record RpcMethodContract(string Method, Type RequestType, Type ResponseType);
+
+    private sealed record RpcEventContract(string Method, Type PayloadType);
 }

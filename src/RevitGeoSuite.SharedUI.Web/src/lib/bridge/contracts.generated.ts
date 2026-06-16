@@ -31,6 +31,17 @@ export interface CityGmlExportResponse {
   warnings: string[]
 }
 
+export interface DialogOpenFileRequest {
+  initialPath?: string
+  title?: string
+}
+
+export interface DialogOpenFileResponse {
+  error?: string
+  path?: string
+  paths: string[]
+}
+
 export interface DialogOpenFolderRequest {
   initialPath?: string
   title?: string
@@ -310,6 +321,40 @@ export interface GeoreferenceResolveBasePointRequest {
   selectedMeshCodes: string[]
 }
 
+export interface GisImportCategoryColor {
+  category: string
+  color: string
+}
+
+export interface GisImportFileAssignment {
+  category: string
+  levelId?: number
+  path: string
+}
+
+export interface GisImportOptionsRequest {
+}
+
+export interface GisImportOptionsResponse {
+  defaultLevelId?: number
+  levels: GisLevelOption[]
+}
+
+export interface GisImportRequest {
+  basemapName: string
+  categoryColors: GisImportCategoryColor[]
+  fileAssignments: GisImportFileAssignment[]
+  outputFolder: string
+  path: string
+  paths: string[]
+}
+
+export interface GisLevelOption {
+  elevationFeet: number
+  id: number
+  name: string
+}
+
 export interface HelpDocumentPayload {
   html: string
   isFallback: boolean
@@ -411,6 +456,17 @@ export interface NavigateEvent {
 
 export interface NavigateRequest {
   route: string
+}
+
+export interface PlateauAreaLocationRequest {
+  areaCode: string
+}
+
+export interface PlateauAreaLocationResponse {
+  areaCode: string
+  latitude: number
+  longitude: number
+  zoom: number
 }
 
 export interface PlateauCkanArea {
@@ -820,6 +876,7 @@ export interface Tiles3DExportResponse {
 export interface RpcMethods {
   'citygml.export': { request: CityGmlExportRequest; response: JobStarted }
   'citygml.export.prepare': { request: CityGmlExportPrepareRequest; response: CityGmlExportPrepareResponse }
+  'dialog.openFile': { request: DialogOpenFileRequest; response: DialogOpenFileResponse }
   'dialog.openFolder': { request: DialogOpenFolderRequest; response: DialogOpenFolderResponse }
   'floorplan.cancel': { request: ExporterEmptyRequest; response: void }
   'floorplan.deleteProfile': { request: ExporterDeleteProfileRequest; response: ExporterInitialStateResponse }
@@ -841,10 +898,13 @@ export interface RpcMethods {
   'georeference.getCurrentState': { request: GeoreferenceCurrentStateRequest; response: GeoreferenceCurrentStateResponse }
   'georeference.getGridCandidates': { request: GeoreferenceGridCandidatesRequest; response: GeoreferenceGridCandidatesResponse }
   'georeference.resolveGridBasePoint': { request: GeoreferenceResolveBasePointRequest; response: GeoreferenceBasePointResponse }
+  'gis.import': { request: GisImportRequest; response: JobStarted }
+  'gis.importOptions': { request: GisImportOptionsRequest; response: GisImportOptionsResponse }
   'job.cancel': { request: JobCancelRequest; response: JobCancelResponse }
   'localization.getAll': { request: LocalizationGetAllRequest; response: LocalizationStrings }
   'localization.setLanguage': { request: LocalizationSetLanguageRequest; response: LocalizationSetLanguageResponse }
   'mesh.getOverlay': { request: MeshOverlayRequest; response: MeshOverlayResponse }
+  'plateau.areaLocation': { request: PlateauAreaLocationRequest; response: PlateauAreaLocationResponse }
   'plateau.exportContext': { request: PlateauContextExportRequest; response: JobStarted }
   'plateau.exportContext.prepare': { request: PlateauContextExportRequest; response: JobStarted }
   'plateau.importTiles': { request: PlateauImportRequest; response: JobStarted }

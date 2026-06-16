@@ -129,6 +129,44 @@ public sealed class PlateauContextOutlinesDxfWriterTests
     }
 
     [Fact]
+    public void Write_uses_custom_layer_aci_color_when_feature_supplies_layer_color()
+    {
+        DxfLayerColor openingColor = DxfLayerColor.FromRgb(255, 0, 0);
+        IReadOnlyCollection<PlateauContextOutlinesDxfWriter.OutlineFeature> features = new[]
+        {
+            new PlateauContextOutlinesDxfWriter.OutlineFeature(
+                "OPENING",
+                new (double X, double Y)[] { (0d, 0d), (5d, 0d), (5d, 5d), (0d, 5d) },
+                layerColor: openingColor),
+        };
+
+        StringWriter writer = new StringWriter();
+        PlateauContextOutlinesDxfWriter.WriteResult result = PlateauContextOutlinesDxfWriter.Write(
+            writer, features, new Vector3d(0, 0, 0), Vector3d.Zero);
+
+        string dxf = writer.ToString();
+
+        Assert.Equal(1, result.PolylineCount);
+        Assert.Contains("\nAC1009\n", dxf);
+        Assert.DoesNotContain("\nAC1015\n", dxf);
+        Assert.DoesNotContain("\n420\n", dxf);
+        Assert.Contains("\nLAYER\n2\nOPENING\n70\n0\n62\n1\n6\nCONTINUOUS\n", dxf);
+    }
+
+    [Theory]
+    [InlineData("#FF0000", 0xFF0000, 1)]
+    [InlineData("#00B050", 0x00B050, 3)]
+    [InlineData("#0070C0", 0x0070C0, 5)]
+    [InlineData("#A6A6A6", 0xA6A6A6, 9)]
+    public void DxfLayerColor_parses_hex_and_sets_nearest_aci(string hex, int expectedTrueColor, int expectedAci)
+    {
+        Assert.True(DxfLayerColor.TryParseHex(hex, out DxfLayerColor? color));
+        Assert.NotNull(color);
+        Assert.Equal(expectedTrueColor, color!.TrueColor);
+        Assert.Equal(expectedAci, color.Aci);
+    }
+
+    [Fact]
     public void Write_emits_modern_hatch_for_area_features_when_requested()
     {
         IReadOnlyCollection<PlateauContextOutlinesDxfWriter.OutlineFeature> features = new[]

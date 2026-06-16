@@ -155,23 +155,55 @@ public sealed class PlateauContextDxfImporter
     /// </summary>
     public ElementId ImportDxf(Document document, string dxfPath)
     {
+        return ImportDxf(document, dxfPath, preferredView: null);
+    }
+
+    /// <summary>
+    /// Imports a DXF into a preferred model view when supplied, falling back to the active/first
+    /// available model import view. Must run on the Revit API thread.
+    /// </summary>
+    public ElementId ImportDxf(Document document, string dxfPath, View? preferredView)
+    {
+        return ImportOrLinkDxf(document, dxfPath, preferredView, link: false);
+    }
+
+    /// <summary>
+    /// Links a DXF into a preferred model view when supplied, falling back to the active/first
+    /// available model import view. Must run on the Revit API thread.
+    /// </summary>
+    public ElementId LinkDxf(Document document, string dxfPath)
+    {
+        return LinkDxf(document, dxfPath, preferredView: null);
+    }
+
+    /// <summary>
+    /// Links a DXF into a preferred model view when supplied, falling back to the active/first
+    /// available model import view. Must run on the Revit API thread.
+    /// </summary>
+    public ElementId LinkDxf(Document document, string dxfPath, View? preferredView)
+    {
+        return ImportOrLinkDxf(document, dxfPath, preferredView, link: true);
+    }
+
+    private static ElementId ImportOrLinkDxf(Document document, string dxfPath, View? preferredView, bool link)
+    {
         if (document is null) throw new ArgumentNullException(nameof(document));
         if (string.IsNullOrWhiteSpace(dxfPath)) throw new ArgumentException("A DXF path is required.", nameof(dxfPath));
-        if (!File.Exists(dxfPath)) throw new FileNotFoundException("The generated PLATEAU basemap DXF was not found.", dxfPath);
+        if (!File.Exists(dxfPath)) throw new FileNotFoundException("The generated basemap DXF was not found.", dxfPath);
 
         if (document.IsFamilyDocument)
         {
-            throw new InvalidOperationException("PLATEAU 2D basemap import is not supported in family documents.");
+            throw new InvalidOperationException("DXF basemap import/link is not supported in family documents.");
         }
 
         if (document.IsReadOnly)
         {
-            throw new InvalidOperationException("This Revit document is read-only. PLATEAU import requires an editable project.");
+            throw new InvalidOperationException("This Revit document is read-only. DXF basemap import/link requires an editable project.");
         }
 
-        View view = ResolveImportView(document)
+        View view = ResolveImportView(document, preferredView)
             ?? throw new InvalidOperationException(
-                "PLATEAU 2D basemap import needs an open 3D or plan view in the project. Open one and try again.");
+                "DXF basemap import/link needs an open 3D or plan view in the project. Open one and try again.");
 
         DWGImportOptions options = new DWGImportOptions
         {
@@ -184,11 +216,11 @@ public sealed class PlateauContextDxfImporter
 
         if (!document.IsModifiable)
         {
-            using Transaction transaction = new Transaction(document, "Import PLATEAU 2D Basemap");
+            using Transaction transaction = new Transaction(document, link ? "Link 2D Basemap DXF" : "Import 2D Basemap DXF");
             transaction.Start();
             try
             {
-                ElementId importId = ImportDxfCore(document, dxfPath, options, view);
+                ElementId importId = ImportOrLinkDxfCore(document, dxfPath, options, view, link);
                 transaction.Commit();
                 return importId;
             }
@@ -203,21 +235,75 @@ public sealed class PlateauContextDxfImporter
             }
         }
 
-        return ImportDxfCore(document, dxfPath, options, view);
+        return ImportOrLinkDxfCore(document, dxfPath, options, view, link);
     }
 
-    private static ElementId ImportDxfCore(Document document, string dxfPath, DWGImportOptions options, View view)
+    private static ElementId ImportOrLinkDxfCore(Document document, string dxfPath, DWGImportOptions options, View view, bool link)
     {
+        if (link)
+        {
+            return LinkDxfCore(document, dxfPath, options, view);
+        }
+
         if (!document.Import(dxfPath, options, view, out ElementId importId) || importId == ElementId.InvalidElementId)
         {
-            throw new InvalidOperationException($"Revit could not import the generated PLATEAU basemap DXF. The generated file was kept at: {dxfPath}");
+            throw new InvalidOperationException($"Revit could not import the generated basemap DXF. The generated file was kept at: {dxfPath}");
         }
 
         return importId;
     }
 
-    private static View? ResolveImportView(Document document)
+    private static ElementId LinkDxfCore(Document document, string dxfPath, DWGImportOptions options, View view)
     {
+        ImportInstance importInstance = ImportInstance.Create(
+            document,
+            view,
+            dxfPath,
+            options,
+            out LinkLoadResult linkLoadResult);
+
+        LinkLoadResultType loadResult = linkLoadResult is null
+            ? LinkLoadResultType.Uninitialized
+            : linkLoadResult.LoadResult;
+
+        if (importInstance is null
+            || importInstance.Id == ElementId.InvalidElementId
+            || !IsSuccessfulLinkResult(loadResult))
+        {
+            throw new InvalidOperationException(
+                $"Revit could not link the generated basemap DXF ({FormatLinkLoadResult(linkLoadResult)}). The generated file was kept at: {dxfPath}");
+        }
+
+        return importInstance.Id;
+    }
+
+    private static bool IsSuccessfulLinkResult(LinkLoadResultType loadResult)
+    {
+        return LinkLoadResult.IsCodeSuccess(loadResult)
+            || loadResult == LinkLoadResultType.UsedExisting;
+    }
+
+    private static string FormatLinkLoadResult(LinkLoadResult? linkLoadResult)
+    {
+        if (linkLoadResult is null)
+        {
+            return "load result: unavailable";
+        }
+
+        string linkTypeId = linkLoadResult.ElementId == ElementId.InvalidElementId
+            ? "invalid"
+            : linkLoadResult.ElementId.Value.ToString();
+
+        return $"load result: {linkLoadResult.LoadResult}; link type id: {linkTypeId}";
+    }
+
+    private static View? ResolveImportView(Document document, View? preferredView)
+    {
+        if (preferredView is not null && IsModelImportView(preferredView))
+        {
+            return preferredView;
+        }
+
         if (document.ActiveView is View active && IsModelImportView(active))
         {
             return active;

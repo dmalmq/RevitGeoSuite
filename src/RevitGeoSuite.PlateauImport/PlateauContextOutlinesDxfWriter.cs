@@ -54,13 +54,15 @@ public static class PlateauContextOutlinesDxfWriter
             IReadOnlyList<(double X, double Y)> verticesMetres,
             string? sourceId = null,
             string? classCode = null,
-            string? className = null)
+            string? className = null,
+            DxfLayerColor? layerColor = null)
         {
             Layer = layer ?? throw new ArgumentNullException(nameof(layer));
             VerticesMetres = verticesMetres ?? throw new ArgumentNullException(nameof(verticesMetres));
             SourceId = sourceId;
             ClassCode = classCode;
             ClassName = className;
+            LayerColor = layerColor;
         }
 
         public string Layer { get; }
@@ -68,6 +70,7 @@ public static class PlateauContextOutlinesDxfWriter
         public string? SourceId { get; }
         public string? ClassCode { get; }
         public string? ClassName { get; }
+        public DxfLayerColor? LayerColor { get; }
     }
 
     public sealed class AreaFeature
@@ -76,12 +79,14 @@ public static class PlateauContextOutlinesDxfWriter
             string layer,
             IReadOnlyList<(double X, double Y)> exteriorRingMetres,
             IReadOnlyList<IReadOnlyList<(double X, double Y)>>? interiorRingsMetres = null,
-            string? sourceId = null)
+            string? sourceId = null,
+            DxfLayerColor? layerColor = null)
         {
             Layer = layer ?? throw new ArgumentNullException(nameof(layer));
             ExteriorRingMetres = exteriorRingMetres ?? throw new ArgumentNullException(nameof(exteriorRingMetres));
             InteriorRingsMetres = interiorRingsMetres ?? Array.Empty<IReadOnlyList<(double X, double Y)>>();
             SourceId = sourceId;
+            LayerColor = layerColor;
         }
 
         public string Layer { get; }
@@ -91,6 +96,8 @@ public static class PlateauContextOutlinesDxfWriter
         public IReadOnlyList<IReadOnlyList<(double X, double Y)>> InteriorRingsMetres { get; }
 
         public string? SourceId { get; }
+
+        public DxfLayerColor? LayerColor { get; }
     }
 
     public sealed class LineFeature
@@ -98,11 +105,13 @@ public static class PlateauContextOutlinesDxfWriter
         public LineFeature(
             string layer,
             IReadOnlyList<(double X, double Y)> verticesMetres,
-            string? sourceId = null)
+            string? sourceId = null,
+            DxfLayerColor? layerColor = null)
         {
             Layer = layer ?? throw new ArgumentNullException(nameof(layer));
             VerticesMetres = verticesMetres ?? throw new ArgumentNullException(nameof(verticesMetres));
             SourceId = sourceId;
+            LayerColor = layerColor;
         }
 
         public string Layer { get; }
@@ -110,6 +119,8 @@ public static class PlateauContextOutlinesDxfWriter
         public IReadOnlyList<(double X, double Y)> VerticesMetres { get; }
 
         public string? SourceId { get; }
+
+        public DxfLayerColor? LayerColor { get; }
     }
 
     public sealed class WriteResult
@@ -217,11 +228,13 @@ public static class PlateauContextOutlinesDxfWriter
 
         List<string> warnings = new List<string>();
         HashSet<string> usedLayers = new HashSet<string>(StringComparer.Ordinal);
+        Dictionary<string, DxfLayerColor> layerColors = new Dictionary<string, DxfLayerColor>(StringComparer.Ordinal);
         foreach (OutlineFeature feature in features)
         {
             if (feature.VerticesMetres.Count >= 3)
             {
                 usedLayers.Add(feature.Layer);
+                AddLayerColor(layerColors, feature.Layer, feature.LayerColor);
             }
         }
 
@@ -230,6 +243,7 @@ public static class PlateauContextOutlinesDxfWriter
             if (areaFeature.ExteriorRingMetres.Count >= 3)
             {
                 usedLayers.Add(areaFeature.Layer);
+                AddLayerColor(layerColors, areaFeature.Layer, areaFeature.LayerColor);
             }
         }
 
@@ -238,12 +252,15 @@ public static class PlateauContextOutlinesDxfWriter
             if (lineFeature.VerticesMetres.Count >= 2)
             {
                 usedLayers.Add(lineFeature.Layer);
+                AddLayerColor(layerColors, lineFeature.Layer, lineFeature.LayerColor);
             }
         }
 
+        // Keep colour-only files in R12. Revit's CAD link path is stricter about
+        // modern DXF structure, and ACI layer colours are enough for GIS defaults.
         bool requiresModernDxf = roadFillMode == PlateauDxfRoadFillMode.ModernHatch && areaFeatures.Count > 0;
         WriteHeaderSection(writer, requiresModernDxf);
-        WriteTablesSection(writer, usedLayers);
+        WriteTablesSection(writer, usedLayers, layerColors, requiresModernDxf);
         WriteEntitiesStart(writer);
 
         int polylines = 0;
@@ -358,7 +375,19 @@ public static class PlateauContextOutlinesDxfWriter
         WriteSectionEnd(w);
     }
 
-    private static void WriteTablesSection(TextWriter w, ICollection<string> usedLayers)
+    private static void AddLayerColor(IDictionary<string, DxfLayerColor> layerColors, string layer, DxfLayerColor? layerColor)
+    {
+        if (layerColor is not null && !layerColors.ContainsKey(layer))
+        {
+            layerColors.Add(layer, layerColor);
+        }
+    }
+
+    private static void WriteTablesSection(
+        TextWriter w,
+        ICollection<string> usedLayers,
+        IReadOnlyDictionary<string, DxfLayerColor> layerColors,
+        bool modernDxf)
     {
         WritePair(w, 0, "SECTION");
         WritePair(w, 2, "TABLES");
@@ -369,20 +398,31 @@ public static class PlateauContextOutlinesDxfWriter
         WriteLayer(w, DefaultLayer, colorIndex: 7);
         foreach (string layer in usedLayers)
         {
-            PlateauLayerStyle style = PlateauLayerStyle.ForLayer(layer);
-            WriteLayer(w, layer, style.Aci);
+            if (layerColors.TryGetValue(layer, out DxfLayerColor? layerColor))
+            {
+                WriteLayer(w, layer, layerColor.Aci, modernDxf ? layerColor.TrueColor : null);
+            }
+            else
+            {
+                PlateauLayerStyle style = PlateauLayerStyle.ForLayer(layer);
+                WriteLayer(w, layer, style.Aci);
+            }
         }
         WriteLayer(w, MarkerLayer, colorIndex: 1);
         WritePair(w, 0, "ENDTAB");
         WriteSectionEnd(w);
     }
 
-    private static void WriteLayer(TextWriter w, string name, int colorIndex)
+    private static void WriteLayer(TextWriter w, string name, int colorIndex, int? trueColor = null)
     {
         WritePair(w, 0, "LAYER");
         WritePair(w, 2, name);
         WritePair(w, 70, 0);
         WritePair(w, 62, colorIndex);
+        if (trueColor.HasValue)
+        {
+            WritePair(w, 420, trueColor.Value);
+        }
         WritePair(w, 6, Continuous);
     }
 

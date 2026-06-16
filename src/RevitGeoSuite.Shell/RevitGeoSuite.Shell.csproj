@@ -35,5 +35,6 @@
     <ProjectReference Include="..\RevitGeoSuite.Tiles3DExport\RevitGeoSuite.Tiles3DExport.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.CityGmlExport\RevitGeoSuite.CityGmlExport.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.FloorPlanExport\RevitGeoSuite.FloorPlanExport.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.FloorPlanExport.Core\RevitGeoSuite.FloorPlanExport.Core.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 </Project>

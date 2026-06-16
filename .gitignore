@@ -27,3 +27,6 @@ install/dist/
 install/output/
 src/RevitGeoSuite.Core/repositoriesRevitGeoSuitebinBuildVerify 2/
 native/build/
+# Stray contract-generation build output (belongs under the intermediate output path)
+src/RevitGeoSuite.SharedUI/web-contracts/
+src/RevitGeoSuite.SharedUI/web-contracts-generator/

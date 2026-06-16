@@ -26,10 +26,14 @@ internal static class WebShellHandlerRegistry
 
         // Import route
         bridge.RegisterHandler(new DialogOpenFolderHandler());
+        bridge.RegisterHandler(new DialogOpenFileHandler());
         bridge.RegisterHandler(new PlateauScanFolderHandler(jobs));
         bridge.RegisterHandler(new PlateauImportTilesHandler(jobs));
+        bridge.RegisterHandler(new GisImportOptionsHandler());
+        bridge.RegisterHandler(new GisImportHandler(jobs));
         bridge.RegisterHandler(new PlateauGroundImportHandler(jobs));
         bridge.RegisterHandler(new PlateauOnlineCatalogHandler(jobs));
+        bridge.RegisterHandler(new PlateauAreaLocationHandler());
         bridge.RegisterHandler(new PlateauOnlineGridsHandler(jobs));
         bridge.RegisterHandler(new PlateauOnlineImportHandler(jobs));
         bridge.RegisterHandler(new PlateauCkanCatalogHandler(jobs));

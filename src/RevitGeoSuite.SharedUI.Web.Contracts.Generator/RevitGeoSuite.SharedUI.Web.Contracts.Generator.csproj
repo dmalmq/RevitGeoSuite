@@ -10,8 +10,4 @@
     <AssemblyName>RevitGeoSuite.SharedUI.Web.Contracts.Generator</AssemblyName>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\RevitGeoSuite.SharedUI.Web.Contracts\RevitGeoSuite.SharedUI.Web.Contracts.csproj" SkipGetTargetFrameworkProperties="true" />
-  </ItemGroup>
-
 </Project>
