@@ -1387,27 +1387,31 @@
                   <span class="text-sm text-neutral-700 dark:text-neutral-300 font-mono w-14 text-right">{osmRadiusMeters}</span>
                 </div>
 
-                <label class="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  {$strings['Import.Osm.ModeLabel'] ?? 'Import mode'}
-                </label>
-                <div class="flex gap-2">
-                  <button
-                    class="flex-1 px-3 py-2 text-sm rounded-md border transition-colors {osmMode === 'solids'
-                      ? 'bg-teal-50 border-teal-400 text-teal-700 dark:bg-teal-900/30 dark:border-teal-600 dark:text-teal-300'
-                      : 'bg-white border-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-400 hover:border-neutral-300'}"
-                    onclick={() => osmMode = 'solids'}
-                  >
-                    {$strings['Import.Osm.ModeSolids'] ?? '3D Solids'}
-                  </button>
-                  <button
-                    class="flex-1 px-3 py-2 text-sm rounded-md border transition-colors {osmMode === 'dxf'
-                      ? 'bg-teal-50 border-teal-400 text-teal-700 dark:bg-teal-900/30 dark:border-teal-600 dark:text-teal-300'
-                      : 'bg-white border-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-400 hover:border-neutral-300'}"
-                    onclick={() => osmMode = 'dxf'}
-                  >
-                    {$strings['Import.Osm.ModeDxf'] ?? '2D Basemap'}
-                  </button>
-                </div>
+                <fieldset>
+                  <legend class="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                    {$strings['Import.Osm.ModeLabel'] ?? 'Import mode'}
+                  </legend>
+                  <div class="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      class="flex-1 px-3 py-2 text-sm rounded-md border transition-colors {osmMode === 'solids'
+                        ? 'bg-teal-50 border-teal-400 text-teal-700 dark:bg-teal-900/30 dark:border-teal-600 dark:text-teal-300'
+                        : 'bg-white border-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-400 hover:border-neutral-300'}"
+                      onclick={() => osmMode = 'solids'}
+                    >
+                      {$strings['Import.Osm.ModeSolids'] ?? '3D Solids'}
+                    </button>
+                    <button
+                      type="button"
+                      class="flex-1 px-3 py-2 text-sm rounded-md border transition-colors {osmMode === 'dxf'
+                        ? 'bg-teal-50 border-teal-400 text-teal-700 dark:bg-teal-900/30 dark:border-teal-600 dark:text-teal-300'
+                        : 'bg-white border-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-400 hover:border-neutral-300'}"
+                      onclick={() => osmMode = 'dxf'}
+                    >
+                      {$strings['Import.Osm.ModeDxf'] ?? '2D Basemap'}
+                    </button>
+                  </div>
+                </fieldset>
               </div>
 
               {#if error}

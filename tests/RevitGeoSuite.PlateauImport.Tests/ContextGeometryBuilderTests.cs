@@ -521,7 +521,7 @@ public sealed class ContextGeometryBuilderTests
     }
 
     [Fact]
-    public void BuildPlan_detailed_mode_warns_when_inner_rings_are_ignored()
+    public void BuildPlan_detailed_mode_preserves_inner_rings()
     {
         PlateauCityModel model = new PlateauCityModel
         {
@@ -584,9 +584,17 @@ public sealed class ContextGeometryBuilderTests
 
         ContextImportPlan plan = new ContextGeometryBuilder().BuildPlan(model, referenceContext, PlateauGeometryImportMode.DetailedDirectShape);
 
-        Assert.Single(plan.Shapes);
+        ContextShapePlan shape = Assert.Single(plan.Shapes);
         Assert.True(plan.PreparedTriangleCount > 0);
-        Assert.Contains(plan.WarningMessages, warning => warning.Contains("interior ring", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(plan.WarningMessages, warning => warning.Contains("interior ring", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(84d, shape.Triangles.Sum(ComputeTriangleAreaMeters), precision: 6);
+        Assert.DoesNotContain(shape.Triangles, triangle =>
+        {
+            ContextShapePoint3D centroid = ComputeCentroid(triangle);
+            double xMeters = centroid.XFeet * 0.3048d;
+            double yMeters = centroid.YFeet * 0.3048d;
+            return xMeters > 3d && xMeters < 7d && yMeters > 3d && yMeters < 7d;
+        });
     }
 
     [Fact]
@@ -938,5 +946,24 @@ public sealed class ContextGeometryBuilderTests
         yield return triangle.A;
         yield return triangle.B;
         yield return triangle.C;
+    }
+
+    private static double ComputeTriangleAreaMeters(ContextShapeTriangle triangle)
+    {
+        double ax = triangle.A.XFeet * 0.3048d;
+        double ay = triangle.A.YFeet * 0.3048d;
+        double bx = triangle.B.XFeet * 0.3048d;
+        double by = triangle.B.YFeet * 0.3048d;
+        double cx = triangle.C.XFeet * 0.3048d;
+        double cy = triangle.C.YFeet * 0.3048d;
+        return Math.Abs(((ax * (by - cy)) + (bx * (cy - ay)) + (cx * (ay - by))) * 0.5d);
+    }
+
+    private static ContextShapePoint3D ComputeCentroid(ContextShapeTriangle triangle)
+    {
+        return new ContextShapePoint3D(
+            (triangle.A.XFeet + triangle.B.XFeet + triangle.C.XFeet) / 3d,
+            (triangle.A.YFeet + triangle.B.YFeet + triangle.C.YFeet) / 3d,
+            (triangle.A.ZFeet + triangle.B.ZFeet + triangle.C.ZFeet) / 3d);
     }
 }

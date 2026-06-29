@@ -574,12 +574,33 @@ public sealed class ContextGeometryBuilder
                 continue;
             }
 
-            if (surface.InteriorRings.Count > 0)
+            List<List<ContextShapePoint3D>> interiorPointRings = new List<List<ContextShapePoint3D>>();
+            foreach (IReadOnlyCollection<PlateauCoordinate3D> interiorRing in surface.InteriorRings)
             {
-                warnings.Add($"Detailed geometry ignored {surface.InteriorRings.Count} interior ring(s) for {BuildFeatureLabel(feature, sourcePath, tileId)} on surface '{surface.SurfaceId}'. Only the exterior boundary was imported in this first pass.");
+                PlateauCoordinate3D[] normalizedInteriorRing = NormalizeRing(interiorRing);
+                if (normalizedInteriorRing.Length < 3)
+                {
+                    continue;
+                }
+
+                List<ContextShapePoint3D> localInteriorPoints = new List<ContextShapePoint3D>(normalizedInteriorRing.Length);
+                for (int index = 0; index < normalizedInteriorRing.Length; index++)
+                {
+                    PlateauCoordinate3D transformedPoint = TransformPoint(normalizedInteriorRing[index], transformStrategy);
+                    localInteriorPoints.Add(ToLocalPointFeet(transformedPoint, referenceContext));
+                }
+
+                if (localInteriorPoints.Count >= 3)
+                {
+                    interiorPointRings.Add(localInteriorPoints);
+                }
             }
 
-            if (!PlateauPolygonTriangulator.TryTriangulate(localPoints, out IReadOnlyCollection<ContextShapeTriangle> surfaceTriangles))
+            IReadOnlyCollection<ContextShapeTriangle> surfaceTriangles;
+            bool triangulated = interiorPointRings.Count > 0
+                ? PlateauPolygonTriangulator.TryTriangulate(localPoints, interiorPointRings, out surfaceTriangles)
+                : PlateauPolygonTriangulator.TryTriangulate(localPoints, out surfaceTriangles);
+            if (!triangulated)
             {
                 warnings.Add($"Skipped a detailed surface for {BuildFeatureLabel(feature, sourcePath, tileId)} because the polygon could not be triangulated safely.");
                 continue;

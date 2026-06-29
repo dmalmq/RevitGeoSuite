@@ -21,9 +21,11 @@ public sealed class Tiles3DLevelManifestWriterTests
 
         JObject document = JObject.Parse(new Tiles3DLevelManifestWriter().BuildJson(package));
 
-        Assert.Equal(1, (int?)document["version"]);
+        Assert.Equal(2, (int?)document["version"]);
         Assert.Equal("tileset.json", (string?)document["tileset"]);
         Assert.Equal("content.glb", (string?)document["content"]);
+        JObject linkLevels = Assert.IsType<JObject>(document["linkLevels"]);
+        Assert.True(linkLevels.ContainsKey(string.Empty));
         JArray levels = Assert.IsType<JArray>(document["levels"]);
         Assert.Equal(3, levels.Count);
         Assert.Equal("ground_floor", (string?)levels[0]?["levelKey"]);

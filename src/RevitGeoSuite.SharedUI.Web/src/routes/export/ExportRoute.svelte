@@ -3,13 +3,17 @@
   import { startJob } from '$lib/bridge/jobs'
   import { inferGisLevelIdFromFileName } from '$lib/import/gisLevelInference'
   import type {
+    CityGmlExportPrepareResponse,
     CityGmlExportResponse,
     GisExportOptionsResponse,
     GisLevelOption,
+    PlateauContextExportPreviewResponse,
     PlateauContextExportResponse,
     Tiles3DExportOptionsResponse,
+    Tiles3DExportPrepareResponse,
     Tiles3DExportResponse,
-    Tiles3DLinkOption
+    Tiles3DLinkOption,
+    Tiles3DViewOption
   } from '$lib/bridge/contracts.generated'
   import { onMount } from 'svelte'
   import { strings } from '$lib/i18n'
@@ -17,12 +21,21 @@
   import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
 
   type ExportFormat = 'plateau' | 'tiles3d' | 'citygml' | 'gis' | null
-  type ExportState = 'format' | 'preflight' | 'plateau-source' | 'plateau-scan' | 'plateau-select' | 'scope' | 'options' | 'gis-options' | 'export'
+  type ExportState = 'format' | 'preflight' | 'plateau-source' | 'plateau-scan' | 'plateau-select' | 'scope' | 'options' | 'review' | 'gis-options' | 'export'
   type GisExportCategory = 'opening' | 'unit' | 'level' | 'detail'
   type GisFileAssignmentState = { path: string; levelId: number | null; category: GisExportCategory }
-  type ScopeMode = 'whole' | 'view' | 'selection'
+  type ScopeMode = 'whole' | 'view'
   type PlateauTile = { id: string; featureCount?: number; lod?: number | string; fileSize?: number; geometry?: unknown }
   type ExportJobResult = PlateauContextExportResponse | Tiles3DExportResponse | CityGmlExportResponse
+  type ExportPreview = {
+    format: Exclude<ExportFormat, 'gis' | null>
+    crs: string
+    warnings: string[]
+    elementCount?: number
+    triangleCount?: number
+    featureCount?: number
+    perLayerCounts?: Record<string, number>
+  }
 
   // Fills {0}/{1} placeholders in a localized template so count/number strings can keep
   // language-specific word order (e.g. Japanese "{1} 件中 {0} 件").
@@ -42,7 +55,9 @@
   let scope = $state<ScopeMode>('whole')
   let outputFolder = $state<string>('')
   let exporting = $state(false)
+  let preparingPreview = $state(false)
   let exportProgress = $state<any>(null)
+  let exportPreview = $state<ExportPreview | null>(null)
   let error = $state<string | null>(null)
   let preflightReady = $state(false)
   let preflightNeedsAttention = $state(false)
@@ -70,15 +85,18 @@
   })
 
   let tiles3dOptions = $state({
-    lod: '2',
+    lod: 'fine',
     geometryMode: 'lightweight',
     splitByLevel: false,
     preciseCrs: false,
-    geoidOffset: 0
+    geoidOffset: 0,
+    selectedViewUniqueId: ''
   })
 
   let tiles3dLinks = $state<Tiles3DLinkOption[]>([])
+  let tiles3dViews = $state<Tiles3DViewOption[]>([])
   let selectedTiles3dLinkIds = $state<Set<string>>(new Set())
+  let selectedTiles3dViewUniqueId = $state<string>('')
   let tiles3dLinksLoading = $state(false)
 
   let citygmlOptions = $state({
@@ -179,6 +197,7 @@
     if (f) {
       localStorage.setItem('export.lastFormat', f)
     }
+    exportPreview = null
     preflightReady = false
     preflightNeedsAttention = false
     if (f === 'gis') {
@@ -213,6 +232,11 @@
 
   function setScope(mode: ScopeMode) {
     scope = mode
+    if (mode === 'view' && !selectedTiles3dViewUniqueId) {
+      selectedTiles3dViewUniqueId = tiles3dOptions.selectedViewUniqueId || tiles3dViews[0]?.uniqueId || ''
+      tiles3dOptions.selectedViewUniqueId = selectedTiles3dViewUniqueId
+    }
+    exportPreview = null
   }
 
   async function browseOutputFolder() {
@@ -370,7 +394,11 @@
     }
 
     const options = format === 'tiles3d'
-      ? { ...tiles3dOptions, selectedLinkUniqueIds: [...selectedTiles3dLinkIds] }
+      ? {
+          ...tiles3dOptions,
+          selectedViewUniqueId: scope === 'view' ? selectedTiles3dViewUniqueId : '',
+          selectedLinkUniqueIds: [...selectedTiles3dLinkIds]
+        }
       : citygmlOptions
     return {
       scope,
@@ -379,20 +407,96 @@
     }
   }
 
-  async function startExport() {
+  function validateExportInputs(): boolean {
     if (!outputFolder) {
       error = $strings['Export.Error.SelectOutput'] ?? 'Please select an output folder first'
-      return
+      return false
     }
     if (format === 'plateau') {
       if (!plateauFolderPath || selectedPlateauTiles.size === 0) {
         error = $strings['Export.Error.ScanAndSelect'] ?? 'Please scan a PLATEAU folder and select at least one tile'
-        return
+        return false
       }
       if (!plateauOptions.formats.shapefile && !plateauOptions.formats.dxf) {
         error = $strings['Export.Error.SelectFormat'] ?? 'Please select at least one export format'
-        return
+        return false
       }
+    }
+    if (format === 'tiles3d' && scope === 'view' && !selectedTiles3dViewUniqueId) {
+      error = $strings['Export.Error.Select3dView'] ?? 'Select a 3D view before previewing the export'
+      return false
+    }
+
+    return true
+  }
+
+  async function prepareExport() {
+    if (format === 'gis') {
+      return
+    }
+    if (!validateExportInputs()) {
+      return
+    }
+
+    preparingPreview = true
+    exportPreview = null
+    exportProgress = null
+    error = null
+
+    try {
+      if (format === 'plateau') {
+        const job = startJob<PlateauContextExportPreviewResponse>('plateau.exportContext.prepare', {
+          ...buildExportPayload()
+        }, {
+          onProgress: (p) => { exportProgress = p }
+        })
+        exportCancel = job.cancel
+        const result = await job.result
+        exportPreview = {
+          format: 'plateau',
+          crs: result.crs,
+          warnings: result.warnings || [],
+          featureCount: result.featureCount,
+          perLayerCounts: result.perLayerCounts
+        }
+      } else if (format === 'tiles3d') {
+        const result = await request<Tiles3DExportPrepareResponse>('tiles3d.export.prepare', {
+          scope,
+          options: buildExportPayload().options
+        })
+        exportPreview = {
+          format: 'tiles3d',
+          crs: result.crs,
+          warnings: result.warnings || [],
+          elementCount: result.elementCount,
+          triangleCount: result.triangleCount
+        }
+      } else if (format === 'citygml') {
+        const result = await request<CityGmlExportPrepareResponse>('citygml.export.prepare', {
+          options: buildExportPayload().options
+        })
+        exportPreview = {
+          format: 'citygml',
+          crs: result.crs,
+          warnings: result.warnings || [],
+          featureCount: result.featureCount
+        }
+      }
+
+      if (exportPreview) {
+        step = 'review'
+      }
+    } catch (err: any) {
+      error = err.message || ($strings['Export.Error.Prepare'] ?? 'Failed to prepare export')
+    } finally {
+      preparingPreview = false
+      exportCancel = null
+    }
+  }
+
+  async function startExport() {
+    if (!validateExportInputs()) {
+      return
     }
 
     exporting = true
@@ -427,8 +531,10 @@
   // export or leave the screen. The result view previously had no way out.
   function resetExport() {
     exportProgress = null
+    exportPreview = null
     error = null
     exporting = false
+    preparingPreview = false
     gisFilePaths = []
     gisFileAssignments = []
     gisBasemapName = ''
@@ -488,8 +594,14 @@
     try {
       const result = await request<Tiles3DExportOptionsResponse>('tiles3d.exportOptions', {})
       tiles3dLinks = result.links || []
+      tiles3dViews = result.views || []
+      const defaultViewUniqueId = result.defaultViewUniqueId || tiles3dViews[0]?.uniqueId || ''
+      if (!selectedTiles3dViewUniqueId || !tiles3dViews.some(view => view.uniqueId === selectedTiles3dViewUniqueId)) {
+        selectedTiles3dViewUniqueId = defaultViewUniqueId
+        tiles3dOptions.selectedViewUniqueId = defaultViewUniqueId
+      }
     } catch (err: any) {
-      error = err.message || 'Failed to load linked models'
+      error = err.message || 'Failed to load 3D Tiles export options'
     } finally {
       tiles3dLinksLoading = false
     }
@@ -756,8 +868,10 @@
       step = preflightNeedsAttention ? 'preflight' : 'format'
     } else if (step === 'options') {
       step = format === 'plateau' ? 'plateau-select' : 'scope'
+    } else if (step === 'review') {
+      step = 'options'
     } else if (step === 'export') {
-      step = format === 'gis' ? 'gis-options' : 'options'
+      step = format === 'gis' ? 'gis-options' : 'review'
     }
   }
 
@@ -766,6 +880,7 @@
   }
 
   function continueToOptions() {
+    exportPreview = null
     step = 'options'
   }
 
@@ -787,7 +902,7 @@
 
 <div class="flex h-full">
   <div class="flex-1 relative bg-neutral-100 dark:bg-neutral-900">
-    {#if format === 'plateau' && (step === 'plateau-source' || step === 'plateau-scan' || step === 'plateau-select' || step === 'options' || step === 'export')}
+    {#if format === 'plateau' && (step === 'plateau-source' || step === 'plateau-scan' || step === 'plateau-select' || step === 'options' || step === 'review' || step === 'export')}
       <LeafletMap
         bind:this={mapRef}
         on:overlayClick={handlePlateauTileClick}
@@ -1383,14 +1498,6 @@
         </button>
 
         <button
-          class="w-full p-3 bg-white dark:bg-neutral-900 border rounded-lg transition-colors text-left {scope === 'selection' ? 'border-teal-500' : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'}"
-          onclick={() => setScope('selection')}
-        >
-          <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Scope.Selection'] ?? 'Selection'}</div>
-          <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Scope.SelectionDesc'] ?? 'Export only selected elements'}</div>
-        </button>
-
-        <button
           class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
           onclick={continueToOptions}
         >
@@ -1540,32 +1647,34 @@
                 bind:value={tiles3dOptions.lod}
                 class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
               >
-                <option value="1">{$strings['Export.Tiles3d.Lod1'] ?? 'LOD 1 (Simple)'}</option>
-                <option value="2">{$strings['Export.Tiles3d.Lod2'] ?? 'LOD 2 (Standard)'}</option>
-                <option value="3">{$strings['Export.Tiles3d.Lod3'] ?? 'LOD 3 (Detailed)'}</option>
+                <option value="coarse">{$strings['Export.Tiles3d.LodCoarse'] ?? 'Coarse'}</option>
+                <option value="medium">{$strings['Export.Tiles3d.LodMedium'] ?? 'Medium'}</option>
+                <option value="fine">{$strings['Export.Tiles3d.LodFine'] ?? 'Fine'}</option>
               </select>
             </div>
 
-            <div>
-              <label for="export-tiles3d-geometry-mode" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.Tiles3d.GeometryMode'] ?? 'Geometry Mode'}</label>
-              <select
-                id="export-tiles3d-geometry-mode"
-                bind:value={tiles3dOptions.geometryMode}
-                class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="lightweight">{$strings['Export.Tiles3d.GeometryLightweight'] ?? 'Lightweight (Extrusion)'}</option>
-                <option value="detailed">{$strings['Export.Tiles3d.GeometryDetailed'] ?? 'Detailed (Mesh)'}</option>
-              </select>
-            </div>
-
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                bind:checked={tiles3dOptions.splitByLevel}
-                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-              />
-              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.SplitByLevel'] ?? 'Split by building level'}</span>
-            </label>
+            {#if scope === 'view'}
+              <div>
+                <label for="export-tiles3d-view" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.Tiles3d.View'] ?? '3D View'}</label>
+                <select
+                  id="export-tiles3d-view"
+                  bind:value={selectedTiles3dViewUniqueId}
+                  onchange={(event) => {
+                    selectedTiles3dViewUniqueId = event.currentTarget.value
+                    tiles3dOptions.selectedViewUniqueId = selectedTiles3dViewUniqueId
+                    exportPreview = null
+                  }}
+                  class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  {#each tiles3dViews as view}
+                    <option value={view.uniqueId}>{view.title}</option>
+                  {/each}
+                </select>
+                {#if tiles3dViews.length === 0}
+                  <div class="mt-2 text-xs text-amber-600 dark:text-amber-400">{$strings['Export.Tiles3d.NoViews'] ?? 'No non-template 3D views are available.'}</div>
+                {/if}
+              </div>
+            {/if}
 
             <label class="flex items-center gap-2">
               <input
@@ -1625,25 +1734,104 @@
                 bind:value={citygmlOptions.schemaVersion}
                 class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
               >
-                <option value="2.0">{$strings['Export.CityGml.V2'] ?? 'CityGML 2.0'}</option>
-                <option value="3.0">{$strings['Export.CityGml.V3'] ?? 'CityGML 3.0'}</option>
+                <option value="2.0">{$strings['Export.CityGml.V2'] ?? 'CityGML 2.0 Lightweight'}</option>
               </select>
-            </div>
-
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">
-              {$strings['Export.CityGml.OverridesNote'] ?? 'Category and codelist overrides can be configured in advanced settings.'}
             </div>
           </div>
         {/if}
 
         <button
           class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          onclick={startExport}
-          disabled={!outputFolder || (format === 'plateau' && (!plateauOptions.formats.shapefile && !plateauOptions.formats.dxf))}
+          onclick={prepareExport}
+          disabled={preparingPreview || !outputFolder || (format === 'plateau' && (!plateauOptions.formats.shapefile && !plateauOptions.formats.dxf)) || (format === 'tiles3d' && scope === 'view' && !selectedTiles3dViewUniqueId)}
         >
-          {$strings['Export.Action.Export'] ?? 'Export'}
+          {preparingPreview ? ($strings['Export.Prepare.Preparing'] ?? 'Preparing...') : ($strings['Export.Action.Preview'] ?? 'Preview Export')}
         </button>
       </div>
+
+    {:else if step === 'review'}
+      <div class="flex items-center gap-2 mb-4">
+        <button
+          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
+          onclick={goBack}
+          aria-label={$strings['Common.Back'] ?? 'Back'}
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$strings['Export.Preview.Title'] ?? 'Export Preview'}</h2>
+      </div>
+
+      {#if exportPreview}
+        <div class="space-y-4">
+          <div class="space-y-2 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
+            <div class="flex justify-between gap-3 text-sm">
+              <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Format'] ?? 'Format:'}</span>
+              <span class="text-right text-neutral-800 dark:text-neutral-200">{formatLabel}</span>
+            </div>
+            <div class="flex justify-between gap-3 text-sm">
+              <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Scope'] ?? 'Scope:'}</span>
+              <span class="text-right text-neutral-800 dark:text-neutral-200">{scope === 'view' ? ($strings['Export.Scope.View'] ?? 'Selected 3D View') : ($strings['Export.Scope.Whole'] ?? 'Whole Model')}</span>
+            </div>
+            <div class="flex justify-between gap-3 text-sm">
+              <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Crs'] ?? 'CRS:'}</span>
+              <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.crs}</span>
+            </div>
+            {#if exportPreview.elementCount !== undefined}
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Elements'] ?? 'Elements:'}</span>
+                <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.elementCount}</span>
+              </div>
+            {/if}
+            {#if exportPreview.triangleCount !== undefined}
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Triangles'] ?? 'Triangles:'}</span>
+                <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.triangleCount}</span>
+              </div>
+            {/if}
+            {#if exportPreview.featureCount !== undefined}
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Features'] ?? 'Features:'}</span>
+                <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.featureCount}</span>
+              </div>
+            {/if}
+          </div>
+
+          {#if exportPreview.perLayerCounts && Object.keys(exportPreview.perLayerCounts).length > 0}
+            <div class="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
+              <div class="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">{$strings['Export.Preview.Layers'] ?? 'Layers'}</div>
+              <div class="max-h-32 space-y-1 overflow-y-auto">
+                {#each Object.entries(exportPreview.perLayerCounts) as [layer, count]}
+                  <div class="flex justify-between gap-3 text-xs">
+                    <span class="truncate text-neutral-500 dark:text-neutral-400">{layer}</span>
+                    <span class="text-neutral-800 dark:text-neutral-200">{count}</span>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if exportPreview.warnings.length > 0}
+            <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+              <div class="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">{fmt($strings['Export.Warnings'] ?? '{0} warning(s)', exportPreview.warnings.length)}</div>
+              <ul class="ml-4 max-h-32 list-disc space-y-1 overflow-y-auto text-xs text-amber-700 dark:text-amber-200">
+                {#each exportPreview.warnings.slice(0, 10) as warning}
+                  <li>{warning}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+
+          <button
+            class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onclick={startExport}
+            disabled={exporting}
+          >
+            {$strings['Export.Action.Export'] ?? 'Export'}
+          </button>
+        </div>
+      {/if}
 
     {:else if step === 'export'}
       <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$strings['Export.Progress.Title'] ?? 'Exporting'}</h2>

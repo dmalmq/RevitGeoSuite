@@ -98,9 +98,25 @@ public sealed class Tiles3DLinkOption
 }
 
 [TsExport]
+public sealed class Tiles3DViewOption
+{
+    public long ViewId { get; set; }
+
+    public string UniqueId { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Description { get; set; } = string.Empty;
+}
+
+[TsExport]
 public sealed class Tiles3DExportOptionsResponse
 {
     public Tiles3DLinkOption[] Links { get; set; } = System.Array.Empty<Tiles3DLinkOption>();
+
+    public Tiles3DViewOption[] Views { get; set; } = System.Array.Empty<Tiles3DViewOption>();
+
+    public string DefaultViewUniqueId { get; set; } = string.Empty;
 }
 
 [TsExport]
@@ -124,7 +140,7 @@ public sealed class Tiles3DExportRequest
 [TsExport]
 public sealed class Tiles3DExportOptions
 {
-    public string Lod { get; set; } = "2";
+    public string Lod { get; set; } = "fine";
 
     public string GeometryMode { get; set; } = "lightweight";
 
@@ -135,6 +151,8 @@ public sealed class Tiles3DExportOptions
     public double GeoidOffset { get; set; }
 
     public string[] SelectedLinkUniqueIds { get; set; } = System.Array.Empty<string>();
+
+    public string SelectedViewUniqueId { get; set; } = string.Empty;
 }
 
 [TsExport]

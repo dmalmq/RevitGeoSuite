@@ -39,10 +39,10 @@ public sealed class Tiles3DExportCoordinator
         IDocumentHandle document,
         Tiles3DExportReferenceContext referenceContext,
         Tiles3DExportScopeSelection scope,
+        Tiles3DLevelOfDetail levelOfDetail = Tiles3DLevelOfDetail.Fine,
         bool usePreciseCrsProjection = false,
         double geoidHeightOffsetMeters = 0d)
     {
-        Tiles3DLevelOfDetail levelOfDetail = Tiles3DLevelOfDetail.Fine;
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
         Document revitDocument = handle.Document;

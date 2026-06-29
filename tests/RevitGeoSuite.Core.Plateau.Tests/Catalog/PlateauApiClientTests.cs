@@ -20,16 +20,25 @@ public sealed class PlateauApiClientTests
         FakeHttpClient fake = new FakeHttpClient();
         fake.StringResponses[new Uri("https://example.com/catalog")] = fixture;
 
-        PlateauApiClient client = new PlateauApiClient(
-            fake,
-            new Uri("https://example.com/catalog"),
-            new Uri("https://example.com/reverse"));
+        string cacheRoot = NewTempDir();
+        try
+        {
+            PlateauApiClient client = new PlateauApiClient(
+                fake,
+                new Uri("https://example.com/catalog"),
+                new Uri("https://example.com/reverse"),
+                new ResponseCache(cacheRoot));
 
-        PlateauCatalog catalog = await client.FetchCatalogAsync();
+            PlateauCatalog catalog = await client.FetchCatalogAsync();
 
-        Assert.NotEmpty(catalog.Datasets);
-        Assert.All(catalog.Datasets, d => Assert.Equal("3D Tiles", d.Format));
-        Assert.Single(fake.GetStringCalls, c => c.AbsoluteUri == "https://example.com/catalog");
+            Assert.NotEmpty(catalog.Datasets);
+            Assert.All(catalog.Datasets, d => Assert.Equal("3D Tiles", d.Format));
+            Assert.Single(fake.GetStringCalls, c => c.AbsoluteUri == "https://example.com/catalog");
+        }
+        finally
+        {
+            DeleteDir(cacheRoot);
+        }
     }
 
     [Fact]
@@ -39,17 +48,26 @@ public sealed class PlateauApiClientTests
         Uri reverse = new Uri("https://example.com/reverse");
         fake.AddPrefixResponse(reverse, "{\"results\":{\"muniCd\":\"13101\"}}");
 
-        PlateauApiClient client = new PlateauApiClient(
-            fake,
-            new Uri("https://example.com/catalog"),
-            reverse);
+        string cacheRoot = NewTempDir();
+        try
+        {
+            PlateauApiClient client = new PlateauApiClient(
+                fake,
+                new Uri("https://example.com/catalog"),
+                reverse,
+                new ResponseCache(cacheRoot));
 
-        string? code = await client.ReverseGeocodeMunicipalityCodeAsync(35.6895, 139.6917);
+            string? code = await client.ReverseGeocodeMunicipalityCodeAsync(35.6895, 139.6917);
 
-        Assert.Equal("13101", code);
-        Uri requested = Assert.Single(fake.GetStringCalls);
-        Assert.Contains("lat=35.6895", requested.Query);
-        Assert.Contains("lon=139.6917", requested.Query);
+            Assert.Equal("13101", code);
+            Uri requested = Assert.Single(fake.GetStringCalls);
+            Assert.Contains("lat=35.6895", requested.Query);
+            Assert.Contains("lon=139.6917", requested.Query);
+        }
+        finally
+        {
+            DeleteDir(cacheRoot);
+        }
     }
 
     [Fact]
@@ -59,14 +77,45 @@ public sealed class PlateauApiClientTests
         Uri reverse = new Uri("https://example.com/reverse");
         fake.AddPrefixResponse(reverse, "{\"results\":{}}");
 
-        PlateauApiClient client = new PlateauApiClient(
-            fake,
-            new Uri("https://example.com/catalog"),
-            reverse);
+        string cacheRoot = NewTempDir();
+        try
+        {
+            PlateauApiClient client = new PlateauApiClient(
+                fake,
+                new Uri("https://example.com/catalog"),
+                reverse,
+                new ResponseCache(cacheRoot));
 
-        string? code = await client.ReverseGeocodeMunicipalityCodeAsync(0, 0);
+            string? code = await client.ReverseGeocodeMunicipalityCodeAsync(0, 0);
 
-        Assert.Null(code);
+            Assert.Null(code);
+        }
+        finally
+        {
+            DeleteDir(cacheRoot);
+        }
+    }
+
+    private static string NewTempDir()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "rgs-plateau-api-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static void DeleteDir(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch
+        {
+            // Best effort in tests.
+        }
     }
 
     private sealed class FakeHttpClient : IPlateauHttpClient

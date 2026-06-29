@@ -24,12 +24,12 @@ public sealed class PlateauApiClient
     {
     }
 
-    public PlateauApiClient(IPlateauHttpClient httpClient, Uri catalogUrl, Uri reverseGeocoderUrl)
+    public PlateauApiClient(IPlateauHttpClient httpClient, Uri catalogUrl, Uri reverseGeocoderUrl, ResponseCache? cache = null)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         this.catalogUrl = catalogUrl ?? throw new ArgumentNullException(nameof(catalogUrl));
         this.reverseGeocoderUrl = reverseGeocoderUrl ?? throw new ArgumentNullException(nameof(reverseGeocoderUrl));
-        cache = new ResponseCache();
+        this.cache = cache ?? new ResponseCache();
     }
 
     public async Task<PlateauCatalog> FetchCatalogAsync(CancellationToken cancellationToken = default)

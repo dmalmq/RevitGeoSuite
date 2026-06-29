@@ -52,10 +52,22 @@ internal static class CityGmlExportSupport
     public static (string SchemaVersion, Dictionary<string, string>? CategoryOverrides, Dictionary<string, string>? CodelistOverrides) ReadOptions(JObject? payload)
     {
         var options = payload?["options"] as JObject;
-        string schemaVersion = options?.Value<string>("schemaVersion") ?? "2.0";
+        string schemaVersion = NormalizeSchemaVersion(options?.Value<string>("schemaVersion"));
         var categoryOverrides = (options?["categoryOverrides"] as JObject)?.ToObject<Dictionary<string, string>>();
         var codelistOverrides = (options?["codelistOverrides"] as JObject)?.ToObject<Dictionary<string, string>>();
         return (schemaVersion, categoryOverrides, codelistOverrides);
+    }
+
+    private static string NormalizeSchemaVersion(string? schemaVersion)
+    {
+        string value = (schemaVersion ?? "2.0").Trim();
+        if (string.Equals(value, "2.0", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, CityGmlExportProfile.LightweightCityGml20, StringComparison.OrdinalIgnoreCase))
+        {
+            return CityGmlExportProfile.LightweightCityGml20;
+        }
+
+        throw new InvalidOperationException($"Unsupported CityGML schema version '{value}'. This exporter currently writes CityGML 2.0 Lightweight.");
     }
 
     private static View3D? ResolveExport3DView(Document document)

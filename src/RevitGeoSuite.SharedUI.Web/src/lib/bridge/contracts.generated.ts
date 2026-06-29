@@ -888,19 +888,17 @@ export interface Tiles3DExportOptions {
   lod: string
   preciseCrs: boolean
   selectedLinkUniqueIds: string[]
+  selectedViewUniqueId: string
   splitByLevel: boolean
 }
 
-export interface Tiles3DExportOptionsRequest {}
-
-export interface Tiles3DExportOptionsResponse {
-  links: Tiles3DLinkOption[]
+export interface Tiles3DExportOptionsRequest {
 }
 
-export interface Tiles3DLinkOption {
-  description: string
-  title: string
-  uniqueId: string
+export interface Tiles3DExportOptionsResponse {
+  defaultViewUniqueId: string
+  links: Tiles3DLinkOption[]
+  views: Tiles3DViewOption[]
 }
 
 export interface Tiles3DExportPrepareRequest {
@@ -928,6 +926,19 @@ export interface Tiles3DExportResponse {
   tilesetPath: string
   triangleCount: number
   warnings: string[]
+}
+
+export interface Tiles3DLinkOption {
+  description: string
+  title: string
+  uniqueId: string
+}
+
+export interface Tiles3DViewOption {
+  description: string
+  title: string
+  uniqueId: string
+  viewId: number
 }
 
 export interface RpcMethods {
