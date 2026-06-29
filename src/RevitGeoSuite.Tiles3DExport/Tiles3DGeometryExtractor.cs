@@ -12,7 +12,8 @@ public sealed class Tiles3DGeometryExtractor
     public IReadOnlyCollection<Tiles3DMeshPrimitive> Extract(
         Document document,
         Tiles3DExportReferenceContext referenceContext,
-        Tiles3DExportScopeSelection scope)
+        Tiles3DExportScopeSelection scope,
+        ICollection<string>? warnings = null)
     {
         if (document is null)
         {
@@ -52,11 +53,11 @@ public sealed class Tiles3DGeometryExtractor
         };
 
         List<Tiles3DMeshPrimitive> meshes = new List<Tiles3DMeshPrimitive>();
-        AppendHostMeshes(document, selectedView, hostOptions, frame, scope.ScopeMode, meshes);
+        AppendHostMeshes(document, selectedView, hostOptions, frame, scope.ScopeMode, meshes, warnings);
 
         foreach (Tiles3DExportLinkOption linkOption in scope.SelectedLinkedModels)
         {
-            AppendLinkedMeshes(document, selectedView, linkOption, linkedOptions, frame, scope.ScopeMode, meshes);
+            AppendLinkedMeshes(document, selectedView, linkOption, linkedOptions, frame, scope.ScopeMode, meshes, warnings);
         }
 
         return meshes;
@@ -84,7 +85,8 @@ public sealed class Tiles3DGeometryExtractor
         Options options,
         GeometryExtractionFrame frame,
         Tiles3DExportScopeMode scopeMode,
-        List<Tiles3DMeshPrimitive> meshes)
+        List<Tiles3DMeshPrimitive> meshes,
+        ICollection<string>? warnings)
     {
         FilteredElementCollector collector = scopeMode == Tiles3DExportScopeMode.Selected3DView && selectedView is not null
             ? new FilteredElementCollector(document, selectedView.Id).WhereElementIsNotElementType()
@@ -92,7 +94,14 @@ public sealed class Tiles3DGeometryExtractor
 
         foreach (Element element in collector)
         {
-            AppendElementMesh(element, options, frame, Transform.Identity, meshes, document.Title, string.Empty);
+            try
+            {
+                AppendElementMesh(element, options, frame, Transform.Identity, meshes, document.Title, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                warnings?.Add($"Skipped host element {FormatElementLabel(element)}: {ex.Message}");
+            }
         }
     }
 
@@ -103,49 +112,80 @@ public sealed class Tiles3DGeometryExtractor
         Options options,
         GeometryExtractionFrame frame,
         Tiles3DExportScopeMode scopeMode,
-        List<Tiles3DMeshPrimitive> meshes)
+        List<Tiles3DMeshPrimitive> meshes,
+        ICollection<string>? warnings)
     {
-        if (linkOption.LinkInstanceId <= 0)
+        try
         {
-            return;
-        }
-
-        RevitLinkInstance? linkInstance = hostDocument.GetElement(ToElementId(linkOption.LinkInstanceId)) as RevitLinkInstance;
-        if (linkInstance is null)
-        {
-            return;
-        }
-
-        Document? linkDocument = linkInstance.GetLinkDocument();
-        if (linkDocument is null)
-        {
-            return;
-        }
-
-        Transform linkTransform = linkInstance.GetTotalTransform();
-        if (scopeMode == Tiles3DExportScopeMode.Selected3DView && selectedView is not null)
-        {
-            FilteredElementCollector visibleCollector = new FilteredElementCollector(hostDocument, selectedView.Id, linkInstance.Id).WhereElementIsNotElementType();
-            foreach (Element visibleElement in visibleCollector)
+            if (linkOption.LinkInstanceId <= 0)
             {
-                Element? element = visibleElement.Document.Equals(linkDocument)
-                    ? visibleElement
-                    : linkDocument.GetElement(visibleElement.Id);
-                if (element is null)
-                {
-                    continue;
-                }
-
-                AppendElementMesh(element, options, frame, linkTransform, meshes, linkDocument.Title, linkOption.Title);
+                warnings?.Add($"Skipped linked model '{FormatLinkTitle(linkOption)}' because the link instance id is invalid.");
+                return;
             }
 
-            return;
-        }
+            RevitLinkInstance? linkInstance = hostDocument.GetElement(ToElementId(linkOption.LinkInstanceId)) as RevitLinkInstance;
+            if (linkInstance is null)
+            {
+                warnings?.Add($"Skipped linked model '{FormatLinkTitle(linkOption)}' because the link instance could not be resolved.");
+                return;
+            }
 
-        FilteredElementCollector collector = new FilteredElementCollector(linkDocument).WhereElementIsNotElementType();
-        foreach (Element element in collector)
+            Document? linkDocument = linkInstance.GetLinkDocument();
+            if (linkDocument is null)
+            {
+                warnings?.Add($"Skipped linked model '{FormatLinkTitle(linkOption)}' because the linked document is not loaded.");
+                return;
+            }
+
+            Transform linkTransform = linkInstance.GetTotalTransform();
+            if (scopeMode == Tiles3DExportScopeMode.Selected3DView && selectedView is not null)
+            {
+                FilteredElementCollector visibleCollector = new FilteredElementCollector(hostDocument, selectedView.Id, linkInstance.Id).WhereElementIsNotElementType();
+                foreach (Element visibleElement in visibleCollector)
+                {
+                    Element? element = visibleElement.Document.Equals(linkDocument)
+                        ? visibleElement
+                        : linkDocument.GetElement(visibleElement.Id);
+                    if (element is null)
+                    {
+                        continue;
+                    }
+
+                    AppendLinkedElementMesh(element, options, frame, linkTransform, meshes, linkDocument.Title, linkOption.Title, warnings);
+                }
+
+                return;
+            }
+
+            FilteredElementCollector collector = new FilteredElementCollector(linkDocument).WhereElementIsNotElementType();
+            foreach (Element element in collector)
+            {
+                AppendLinkedElementMesh(element, options, frame, linkTransform, meshes, linkDocument.Title, linkOption.Title, warnings);
+            }
+        }
+        catch (Exception ex)
         {
-            AppendElementMesh(element, options, frame, linkTransform, meshes, linkDocument.Title, linkOption.Title);
+            warnings?.Add($"Skipped linked model '{FormatLinkTitle(linkOption)}': {ex.Message}");
+        }
+    }
+
+    private static void AppendLinkedElementMesh(
+        Element element,
+        Options options,
+        GeometryExtractionFrame frame,
+        Transform linkTransform,
+        List<Tiles3DMeshPrimitive> meshes,
+        string sourceDocument,
+        string sourceLinkName,
+        ICollection<string>? warnings)
+    {
+        try
+        {
+            AppendElementMesh(element, options, frame, linkTransform, meshes, sourceDocument, sourceLinkName);
+        }
+        catch (Exception ex)
+        {
+            warnings?.Add($"Skipped linked element {FormatElementLabel(element)} from '{sourceLinkName}': {ex.Message}");
         }
     }
 
@@ -212,6 +252,27 @@ public sealed class Tiles3DGeometryExtractor
         return string.IsNullOrWhiteSpace(element.Name)
             ? $"{categoryName} #{element.Id.Value}"
             : $"{categoryName}: {element.Name}";
+    }
+
+    private static string FormatElementLabel(Element element)
+    {
+        try
+        {
+            string categoryName = element.Category?.Name ?? "Element";
+            string elementName = string.IsNullOrWhiteSpace(element.Name) ? "Unnamed" : element.Name;
+            return $"{categoryName} #{element.Id.Value} ({elementName})";
+        }
+        catch (Exception)
+        {
+            return "Element";
+        }
+    }
+
+    private static string FormatLinkTitle(Tiles3DExportLinkOption linkOption)
+    {
+        return string.IsNullOrWhiteSpace(linkOption.Title)
+            ? $"Link {linkOption.LinkInstanceId}"
+            : linkOption.Title;
     }
 
     private static Tiles3DObjectMetadata BuildElementMetadata(

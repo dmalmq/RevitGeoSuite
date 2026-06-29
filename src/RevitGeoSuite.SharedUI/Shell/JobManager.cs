@@ -43,8 +43,30 @@ public sealed class JobManager
         SynchronizationContext? sync = SynchronizationContext.Current;
         void Send(string method, object payload)
         {
-            if (sync != null) sync.Post(_ => sendEvent(method, payload), null);
-            else sendEvent(method, payload);
+            void TrySend()
+            {
+                try { sendEvent(method, payload); }
+                catch { }
+            }
+
+            if (sync != null)
+            {
+                // The callback runs on Revit's WPF dispatcher thread. If sendEvent throws
+                // (e.g. PostWebMessageAsJson raises a COMException when WebView2 is in an
+                // error state, or serialization fails), the exception propagates uncaught
+                // through Dispatcher.BeginInvoke and triggers Revit's unhandled-exception
+                // dialog ("A managed exception was thrown by Revit or by one of its external
+                // applications"). Swallow here; the UI tab for this job is already gone or
+                // broken anyway.
+                sync.Post(_ =>
+                {
+                    TrySend();
+                }, null);
+            }
+            else
+            {
+                TrySend();
+            }
         }
 
         var progress = new Progress<JobProgress>(p =>

@@ -59,11 +59,13 @@ public sealed class Tiles3DExportCoordinator
 
         Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(geoidHeightOffsetMeters);
 
-        IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext, scope);
+        List<string> extractionWarnings = new List<string>();
+        IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext, scope, extractionWarnings);
         IReadOnlyCollection<Tiles3DMeshPrimitive> simplified = geometrySimplifier.Simplify(extracted, levelOfDetail);
         if (simplified.Count == 0)
         {
-            throw new InvalidOperationException("No exportable model geometry was found for the selected 3D Tiles scope.");
+            string warningText = extractionWarnings.Count == 0 ? string.Empty : $" Last warning: {extractionWarnings[0]}";
+            throw new InvalidOperationException($"No exportable model geometry was found for the selected 3D Tiles scope.{warningText}");
         }
 
         List<Tiles3DMeshPrimitive> meshList = simplified.ToList();
@@ -80,6 +82,7 @@ public sealed class Tiles3DExportCoordinator
             Package = package,
             PreparedRows = BuildPreparedRows(package, scope, levelGroups),
             FeatureNames = BuildFeatureNames(package),
+            Warnings = extractionWarnings,
             StatusMessage = BuildStatusMessage(package, scope)
         };
     }

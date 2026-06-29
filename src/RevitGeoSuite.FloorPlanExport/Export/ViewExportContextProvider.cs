@@ -244,22 +244,30 @@ public sealed class ViewExportContextProvider
                 continue;
             }
 
-            Transform linkTransform = linkInstance.GetTotalTransform();
+            try
+            {
+                Transform linkTransform = linkInstance.GetTotalTransform();
 
-            linkedSources.Add(
-                new LinkedViewSourceContext(
-                    linkInstance,
-                    linkedDocument,
-                    linkTransform,
-                    DocumentProjectKeyBuilder.Create(linkedDocument),
-                    DocumentProjectKeyBuilder.CreateDisplayName(linkedDocument),
-                    CollectFloorsInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
-                    CollectRoomsInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
-                    CollectStairsInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
-                    CollectFamilyUnitsInLinkView(viewId, linkInstance.Id, zoneCatalog, familyCategoryOverrides, linkTransform, clipRegion),
-                    CollectOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion),
-                    CollectUnsupportedOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion),
-                    CollectDetailCurvesInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion)));
+                linkedSources.Add(
+                    new LinkedViewSourceContext(
+                        linkInstance,
+                        linkedDocument,
+                        linkTransform,
+                        DocumentProjectKeyBuilder.Create(linkedDocument),
+                        DocumentProjectKeyBuilder.CreateDisplayName(linkedDocument),
+                        CollectFloorsInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
+                        CollectRoomsInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
+                        CollectStairsInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
+                        CollectFamilyUnitsInLinkView(viewId, linkInstance.Id, zoneCatalog, familyCategoryOverrides, linkTransform, clipRegion),
+                        CollectOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion),
+                        CollectUnsupportedOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion),
+                        CollectDetailCurvesInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion)));
+            }
+            catch (Exception)
+            {
+                // Some host view/link combinations cannot be queried with Revit's linked-view
+                // collector. Skip that link for this view instead of aborting the whole export.
+            }
         }
 
         return linkedSources;

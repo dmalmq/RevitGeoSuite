@@ -10,5 +10,7 @@ public sealed class Tiles3DExportPreparationResult
 
     public IReadOnlyCollection<string> FeatureNames { get; set; } = new string[0];
 
+    public IReadOnlyCollection<string> Warnings { get; set; } = new string[0];
+
     public string StatusMessage { get; set; } = string.Empty;
 }

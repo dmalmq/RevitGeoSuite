@@ -186,6 +186,8 @@ public sealed class Tiles3DExportPrepareHandler : IRpcHandler
                 TriangleCount = package.TriangleCount,
                 Crs = $"EPSG:{package.ReferenceContext.ProjectCrs.EpsgCode}",
                 Warnings = Tiles3DExportSupport.ScopeWarnings(scope)
+                    .Concat(prep.Warnings)
+                    .ToArray()
             };
         });
     }
@@ -235,6 +237,7 @@ public sealed class Tiles3DExportHandler : IRpcHandler
                     handle, prep.Package, outputFolder!, Tiles3DExportSupport.ReferenceSource, scopeSelection, existingState);
 
                 var warnings = new List<string>(Tiles3DExportSupport.ScopeWarnings(scope));
+                warnings.AddRange(prep.Warnings);
                 if (!exportResult.StatePersisted)
                 {
                     warnings.Add("The project is read-only, so the export state was not saved back into the document.");

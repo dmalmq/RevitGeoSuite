@@ -74,15 +74,23 @@ public sealed class WebRpcBridge
     {
         if (webView == null) return;
 
-        var envelope = new RpcEnvelope
+        try
         {
-            Kind = "evt",
-            Method = method,
-            Payload = payload
-        };
+            var envelope = new RpcEnvelope
+            {
+                Kind = "evt",
+                Method = method,
+                Payload = payload
+            };
 
-        string json = JsonConvert.SerializeObject(envelope, WireSettings);
-        webView.PostWebMessageAsJson(json);
+            string json = JsonConvert.SerializeObject(envelope, WireSettings);
+            TryPostWebMessage(json);
+        }
+        catch
+        {
+            // WebView2 may have been disposed or entered an error state after the null
+            // check above. Drop the event; there is nothing to deliver it to.
+        }
     }
 
     public async Task<string> DispatchRequestAsync(string requestJson)
@@ -151,10 +159,31 @@ public sealed class WebRpcBridge
     {
         if (webView == null) return;
 
-        string responseJson = await DispatchRequestAsync(json);
-        if (!string.IsNullOrEmpty(responseJson))
+        try
         {
-            webView.PostWebMessageAsJson(responseJson);
+            string responseJson = await DispatchRequestAsync(json);
+            if (!string.IsNullOrEmpty(responseJson))
+            {
+                TryPostWebMessage(responseJson);
+            }
+        }
+        catch
+        {
+            // Keep WebView delivery failures from escaping through the WebView2/Revit dispatcher.
+        }
+    }
+
+    private void TryPostWebMessage(string json)
+    {
+        try
+        {
+            webView?.PostWebMessageAsJson(json);
+        }
+        catch
+        {
+            // The WebView may be disposed or temporarily unavailable while a long-running Revit
+            // operation is still posting progress/completion messages. Dropping the message is safer
+            // than letting the exception surface as Revit's generic managed-exception dialog.
         }
     }
 }
