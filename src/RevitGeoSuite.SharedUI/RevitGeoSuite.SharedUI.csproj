@@ -3,6 +3,7 @@
     <RootNamespace>RevitGeoSuite.SharedUI</RootNamespace>
     <AssemblyName>RevitGeoSuite.SharedUI</AssemblyName>
     <UseWPF>true</UseWPF>
+    <DefaultItemExcludes>$(DefaultItemExcludes);web-contracts\**;web-contracts-generator\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

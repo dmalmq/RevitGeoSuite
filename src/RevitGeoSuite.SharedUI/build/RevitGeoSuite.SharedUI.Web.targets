@@ -6,8 +6,8 @@
     <WebBuildCacheFile>$(MSBuildThisFileDirectory)..\Resources\Web\.build.cache</WebBuildCacheFile>
     <ContractsGeneratorProject>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web.Contracts.Generator\RevitGeoSuite.SharedUI.Web.Contracts.Generator.csproj</ContractsGeneratorProject>
     <ContractsProject>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web.Contracts\RevitGeoSuite.SharedUI.Web.Contracts.csproj</ContractsProject>
-    <ContractsBuildDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)web-contracts\</ContractsBuildDir>
-    <ContractsGeneratorBuildDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)web-contracts-generator\</ContractsGeneratorBuildDir>
+    <ContractsBuildDir>$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)$(Configuration)\web-contracts\</ContractsBuildDir>
+    <ContractsGeneratorBuildDir>$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)$(Configuration)\web-contracts-generator\</ContractsGeneratorBuildDir>
     <ContractsOutputFile>$(MSBuildThisFileDirectory)..\..\RevitGeoSuite.SharedUI.Web\src\lib\bridge\contracts.generated.ts</ContractsOutputFile>
     <SkipWebBuild Condition="'$(SkipWebBuild)' == ''">false</SkipWebBuild>
     <NodeMinimumVersion>20</NodeMinimumVersion>
