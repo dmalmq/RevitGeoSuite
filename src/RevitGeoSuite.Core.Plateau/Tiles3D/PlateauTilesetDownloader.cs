@@ -58,6 +58,77 @@ public sealed class PlateauTilesetDownloader
     }
 
     public async Task<PlateauTilesetModel> DownloadAsync(
+        Uri tilesetUrl,
+        string sourceLabel,
+        BoundingBoxDegrees? bbox,
+        IProgress<PlateauTilesetDownloadProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (tilesetUrl is null) throw new ArgumentNullException(nameof(tilesetUrl));
+
+        string datasetFolder = Path.Combine(
+            cache.GetDatasetFolder("ion", sourceLabel.Replace(' ', '-').ToLowerInvariant(), null, null));
+
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(tilesetUrl, cancellationToken).ConfigureAwait(false);
+        if (bbox.HasValue)
+        {
+            BoundingBoxDegrees b = bbox.Value;
+            leaves = leaves
+                .Where(leaf => ShouldDownloadLeafByBbox(leaf, b))
+                .ToArray();
+        }
+
+        Dictionary<string, PlateauTilesetFeatureBuilder> byId = new(StringComparer.Ordinal);
+
+        for (int i = 0; i < leaves.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TilesetLeaf leaf = leaves[i];
+            progress?.Report(new PlateauTilesetDownloadProgress(i, leaves.Count, leaf.B3dmUrl.AbsoluteUri));
+
+            byte[] b3dmBytes;
+            string cachePath = cache.GetFilePath(datasetFolder, leaf.B3dmUrl);
+            if (File.Exists(cachePath))
+            {
+                b3dmBytes = File.ReadAllBytes(cachePath);
+            }
+            else
+            {
+                b3dmBytes = await http.GetBytesAsync(leaf.B3dmUrl, cancellationToken).ConfigureAwait(false);
+                cache.Store(cachePath, b3dmBytes);
+            }
+
+            B3dmContents b3dm;
+            IReadOnlyList<PlateauTilesetFeatureMesh> meshes;
+            try
+            {
+                b3dm = B3dmParser.Parse(b3dmBytes);
+                meshes = meshDecoder.Decode(b3dm);
+            }
+            catch (DracoDecoderUnavailableException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"Skipped {leaf.B3dmUrl.AbsoluteUri}: {ex.Message}");
+                continue;
+            }
+
+            ProjectFeatures(leaf.Transform, meshes, byId);
+        }
+
+        progress?.Report(new PlateauTilesetDownloadProgress(leaves.Count, leaves.Count, "completed"));
+
+        List<PlateauTilesetFeature> features = new(byId.Count);
+        foreach (var pair in byId)
+        {
+            features.Add(new PlateauTilesetFeature(pair.Key, pair.Value.Attributes, pair.Value.Triangles));
+        }
+        return new PlateauTilesetModel(tilesetUrl.AbsoluteUri, sourceLabel, null, null, null, features);
+    }
+
+    public async Task<PlateauTilesetModel> DownloadAsync(
         PlateauDatasetEntry entry,
         string areaCode,
         IReadOnlyCollection<string>? selectedMeshIds,
@@ -162,6 +233,20 @@ public sealed class PlateauTilesetDownloader
         }
 
         return result;
+    }
+
+    private static bool ShouldDownloadLeafByBbox(TilesetLeaf leaf, BoundingBoxDegrees bbox)
+    {
+        if (leaf.BoundingRegion is not TilesetRegion region)
+        {
+            return true;
+        }
+
+        return region.IntersectsDegrees(
+            bbox.WestLongitude,
+            bbox.SouthLatitude,
+            bbox.EastLongitude,
+            bbox.NorthLatitude);
     }
 
     private static bool ShouldDownloadLeaf(TilesetLeaf leaf, IReadOnlyList<SelectedMeshBounds> selectedBounds)

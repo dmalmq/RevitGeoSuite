@@ -53,8 +53,9 @@ public sealed class CoordinateValidator
             return results;
         }
 
+        bool isJapanCrs = definition is not null && IsJapanCrs(definition);
         GeographicCoordinate geographicCoordinate = new GeographicCoordinate(info.Origin.Latitude, info.Origin.Longitude);
-        ValidateGeographicCoordinate(geographicCoordinate, info.Origin.ElevationMeters, results);
+        ValidateGeographicCoordinate(geographicCoordinate, info.Origin.ElevationMeters, isJapanCrs, results);
 
         if (definition is not null && info.ProjectCrs is not null)
         {
@@ -74,11 +75,27 @@ public sealed class CoordinateValidator
         return results;
     }
 
-    private static void ValidateGeographicCoordinate(GeographicCoordinate coordinate, double elevationMeters, ICollection<ValidationResult> results)
+    private static bool IsJapanCrs(CrsDefinition definition)
     {
-        if (coordinate.Latitude < MinJapanLatitude || coordinate.Latitude > MaxJapanLatitude || coordinate.Longitude < MinJapanLongitude || coordinate.Longitude > MaxJapanLongitude)
+        return definition.JapanZoneNumber > 0
+            || string.Equals(definition.RegionGroup, "Japan", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void ValidateGeographicCoordinate(GeographicCoordinate coordinate, double elevationMeters, bool isJapanCrs, ICollection<ValidationResult> results)
+    {
+        if (isJapanCrs)
         {
-            results.Add(new ValidationResult("outside-japan-range", ValidationSeverity.Warning, "Origin latitude/longitude falls outside the expected Japan bounding box."));
+            if (coordinate.Latitude < MinJapanLatitude || coordinate.Latitude > MaxJapanLatitude || coordinate.Longitude < MinJapanLongitude || coordinate.Longitude > MaxJapanLongitude)
+            {
+                results.Add(new ValidationResult("outside-japan-range", ValidationSeverity.Warning, "Origin latitude/longitude falls outside the expected Japan bounding box."));
+            }
+        }
+        else
+        {
+            if (coordinate.Latitude < -90.0 || coordinate.Latitude > 90.0 || coordinate.Longitude < -180.0 || coordinate.Longitude > 180.0)
+            {
+                results.Add(new ValidationResult("outside-global-range", ValidationSeverity.Warning, "Origin latitude/longitude falls outside valid geographic bounds."));
+            }
         }
 
         if (elevationMeters < MinElevationMeters || elevationMeters > MaxElevationMeters)

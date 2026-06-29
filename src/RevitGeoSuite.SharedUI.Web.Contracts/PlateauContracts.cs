@@ -21,9 +21,9 @@ public sealed class PlateauImportRequest
     public string Mode { get; set; } = "solids";
 }
 
-/// <summary>Payload of the <c>gis.import</c> request.</summary>
+/// <summary>Payload of the <c>gis.export</c> request.</summary>
 [TsExport]
-public sealed class GisImportRequest
+public sealed class GisExportRequest
 {
     public string Path { get; set; } = string.Empty;
 
@@ -33,14 +33,14 @@ public sealed class GisImportRequest
 
     public string OutputFolder { get; set; } = string.Empty;
 
-    public GisImportFileAssignment[] FileAssignments { get; set; } = Array.Empty<GisImportFileAssignment>();
+    public GisExportFileAssignment[] FileAssignments { get; set; } = Array.Empty<GisExportFileAssignment>();
 
-    public GisImportCategoryColor[] CategoryColors { get; set; } = Array.Empty<GisImportCategoryColor>();
+    public GisExportCategoryColor[] CategoryColors { get; set; } = Array.Empty<GisExportCategoryColor>();
 }
 
-/// <summary>One selected GIS file and the Revit level it should import onto.</summary>
+/// <summary>One selected GIS file and the Revit level its DXF should be grouped under.</summary>
 [TsExport]
-public sealed class GisImportFileAssignment
+public sealed class GisExportFileAssignment
 {
     public string Path { get; set; } = string.Empty;
 
@@ -49,31 +49,31 @@ public sealed class GisImportFileAssignment
     public string Category { get; set; } = "detail";
 }
 
-/// <summary>Editable DXF layer colour for a GIS import category.</summary>
+/// <summary>Editable DXF layer colour for a GIS export category.</summary>
 [TsExport]
-public sealed class GisImportCategoryColor
+public sealed class GisExportCategoryColor
 {
     public string Category { get; set; } = string.Empty;
 
     public string Color { get; set; } = string.Empty;
 }
 
-/// <summary>Payload of the <c>gis.importOptions</c> request.</summary>
+/// <summary>Payload of the <c>gis.exportOptions</c> request.</summary>
 [TsExport]
-public sealed class GisImportOptionsRequest
+public sealed class GisExportOptionsRequest
 {
 }
 
-/// <summary>Response of the <c>gis.importOptions</c> request.</summary>
+/// <summary>Response of the <c>gis.exportOptions</c> request.</summary>
 [TsExport]
-public sealed class GisImportOptionsResponse
+public sealed class GisExportOptionsResponse
 {
     public GisLevelOption[] Levels { get; set; } = Array.Empty<GisLevelOption>();
 
     public long? DefaultLevelId { get; set; }
 }
 
-/// <summary>One Revit level available for floor-aware GIS basemap import.</summary>
+/// <summary>One Revit level available for floor-aware GIS DXF export.</summary>
 [TsExport]
 public sealed class GisLevelOption
 {

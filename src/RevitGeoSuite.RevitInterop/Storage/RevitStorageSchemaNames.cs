@@ -5,4 +5,6 @@ public static class RevitStorageSchemaNames
     public const string GeoProjectInfo = "RevitGeoSuiteGeoProjectInfo";
 
     public const string PlacementAudit = "RevitGeoSuiteGeoreferenceAudit";
+
+    public const string GeoreferenceUndo = "RevitGeoSuiteGeoreferenceUndo";
 }

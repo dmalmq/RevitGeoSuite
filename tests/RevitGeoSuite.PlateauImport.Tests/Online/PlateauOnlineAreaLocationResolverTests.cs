@@ -149,5 +149,8 @@ public sealed class PlateauOnlineAreaLocationResolverTests
         {
             throw new NotSupportedException();
         }
+
+        public Task DownloadResumableAsync(Uri url, string destinationPath, IProgress<double>? progress, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 }

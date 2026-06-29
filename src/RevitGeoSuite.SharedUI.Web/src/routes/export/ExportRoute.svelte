@@ -1,18 +1,25 @@
 <script lang="ts">
   import { request } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
+  import { inferGisLevelIdFromFileName } from '$lib/import/gisLevelInference'
   import type {
     CityGmlExportResponse,
+    GisExportOptionsResponse,
+    GisLevelOption,
     PlateauContextExportResponse,
-    Tiles3DExportResponse
+    Tiles3DExportOptionsResponse,
+    Tiles3DExportResponse,
+    Tiles3DLinkOption
   } from '$lib/bridge/contracts.generated'
   import { onMount } from 'svelte'
   import { strings } from '$lib/i18n'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
 
-  type ExportFormat = 'plateau' | 'tiles3d' | 'citygml' | null
-  type ExportState = 'format' | 'preflight' | 'plateau-source' | 'plateau-scan' | 'plateau-select' | 'scope' | 'options' | 'export'
+  type ExportFormat = 'plateau' | 'tiles3d' | 'citygml' | 'gis' | null
+  type ExportState = 'format' | 'preflight' | 'plateau-source' | 'plateau-scan' | 'plateau-select' | 'scope' | 'options' | 'gis-options' | 'export'
+  type GisExportCategory = 'opening' | 'unit' | 'level' | 'detail'
+  type GisFileAssignmentState = { path: string; levelId: number | null; category: GisExportCategory }
   type ScopeMode = 'whole' | 'view' | 'selection'
   type PlateauTile = { id: string; featureCount?: number; lod?: number | string; fileSize?: number; geometry?: unknown }
   type ExportJobResult = PlateauContextExportResponse | Tiles3DExportResponse | CityGmlExportResponse
@@ -70,17 +77,100 @@
     geoidOffset: 0
   })
 
+  let tiles3dLinks = $state<Tiles3DLinkOption[]>([])
+  let selectedTiles3dLinkIds = $state<Set<string>>(new Set())
+  let tiles3dLinksLoading = $state(false)
+
   let citygmlOptions = $state({
     schemaVersion: '2.0',
     categoryOverrides: {} as Record<string, string>,
     codelistOverrides: {} as Record<string, string>
   })
 
+  const defaultGisCategoryColors: Record<GisExportCategory, string> = {
+    opening: '#FF0000',
+    unit: '#00B050',
+    level: '#0070C0',
+    detail: '#A6A6A6'
+  }
+
+  const gisCategoryOptions: { id: GisExportCategory; label: string }[] = [
+    { id: 'opening', label: 'Openings' },
+    { id: 'unit', label: 'Units' },
+    { id: 'level', label: 'Levels' },
+    { id: 'detail', label: 'Details' }
+  ]
+
+  const gisCategoryColorsStorageKey = 'export.gis.categoryColors.v1'
+
+  let gisFilePaths = $state<string[]>([])
+  let gisFileAssignments = $state<GisFileAssignmentState[]>([])
+  let gisBasemapName = $state<string>('')
+  let gisOutputFolder = $state<string>('')
+  let gisCategoryColors = $state<Record<GisExportCategory, string>>({ ...defaultGisCategoryColors })
+  let gisLevels = $state<GisLevelOption[]>([])
+  let gisDefaultLevelId = $state<number | null>(null)
+  let gisOptionsLoading = $state(false)
+  let gisAssignmentsModalOpen = $state(false)
+  let gisAssignmentSearch = $state('')
+  let gisSelectedAssignmentPaths = $state<Set<string>>(new Set())
+  let gisBulkCategoryValue = $state<string>('')
+  let gisBulkLevelValue = $state<string>('')
+  let gisExportCancel: (() => void) | null = null
+
+  let gisFileDisplay = $derived.by(() => {
+    if (gisFilePaths.length === 0) return ''
+    if (gisFilePaths.length === 1) return gisFilePaths[0]
+    return `${gisFilePaths.length} files selected`
+  })
+
+  let gisOutputPreview = $derived.by(() => {
+    const groupNames = new Map<number | null, string>()
+    for (const assignment of gisFileAssignments) {
+      if (!groupNames.has(assignment.levelId)) {
+        groupNames.set(assignment.levelId, levelName(assignment.levelId))
+      }
+    }
+    const baseName = gisBasemapName.trim() || 'GIS Basemap'
+    const appendLevelName = groupNames.size > 1
+    return Array.from(groupNames.values()).map(name => appendLevelName ? `${baseName} - ${name}` : baseName)
+  })
+
+  let canExportGis = $derived(
+    gisFileAssignments.length > 0 &&
+    gisBasemapName.trim().length > 0 &&
+    gisOutputFolder.trim().length > 0
+  )
+
+  let gisFilesNeedingLevel = $derived(
+    gisFileAssignments.filter(assignment => assignment.levelId === null).length
+  )
+
+  let gisFilteredAssignments = $derived.by(() => {
+    const tokens = gisAssignmentSearch.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    if (tokens.length === 0) return gisFileAssignments
+    return gisFileAssignments.filter(assignment => {
+      const haystack = [
+        fileNameFromPath(assignment.path),
+        assignment.path,
+        gisCategoryLabel(assignment.category),
+        levelName(assignment.levelId)
+      ].join(' ').toLowerCase()
+      return tokens.every(token => haystack.includes(token))
+    })
+  })
 
   onMount(async () => {
     const lastFormat = localStorage.getItem('export.lastFormat')
-    if (lastFormat === 'plateau' || lastFormat === 'tiles3d' || lastFormat === 'citygml') {
+    if (lastFormat === 'plateau' || lastFormat === 'tiles3d' || lastFormat === 'citygml' || lastFormat === 'gis') {
       format = lastFormat
+    }
+    gisCategoryColors = loadGisCategoryColors()
+    if (format === 'gis') {
+      void loadGisExportOptions()
+    }
+    if (format === 'tiles3d') {
+      void loadTiles3dExportOptions()
     }
   })
 
@@ -91,6 +181,12 @@
     }
     preflightReady = false
     preflightNeedsAttention = false
+    if (f === 'gis') {
+      void loadGisExportOptions()
+    }
+    if (f === 'tiles3d') {
+      void loadTiles3dExportOptions()
+    }
     step = 'preflight'
   }
 
@@ -273,7 +369,9 @@
       }
     }
 
-    const options = format === 'tiles3d' ? tiles3dOptions : citygmlOptions
+    const options = format === 'tiles3d'
+      ? { ...tiles3dOptions, selectedLinkUniqueIds: [...selectedTiles3dLinkIds] }
+      : citygmlOptions
     return {
       scope,
       outputFolder,
@@ -331,7 +429,315 @@
     exportProgress = null
     error = null
     exporting = false
+    gisFilePaths = []
+    gisFileAssignments = []
+    gisBasemapName = ''
+    gisOutputFolder = ''
+    gisCategoryColors = { ...defaultGisCategoryColors }
+    gisAssignmentsModalOpen = false
+    gisAssignmentSearch = ''
+    gisSelectedAssignmentPaths = new Set()
+    gisBulkCategoryValue = ''
+    gisBulkLevelValue = ''
     step = 'format'
+  }
+
+  function normalizeHexColor(value: string | undefined, fallback: string): string {
+    const candidate = (value || '').trim()
+    return /^#[0-9a-fA-F]{6}$/.test(candidate) ? candidate.toUpperCase() : fallback
+  }
+
+  function loadGisCategoryColors(): Record<GisExportCategory, string> {
+    try {
+      const raw = localStorage.getItem(gisCategoryColorsStorageKey)
+      if (!raw) return { ...defaultGisCategoryColors }
+      const parsed = JSON.parse(raw) as Partial<Record<GisExportCategory, string>>
+      return {
+        opening: normalizeHexColor(parsed.opening, defaultGisCategoryColors.opening),
+        unit: normalizeHexColor(parsed.unit, defaultGisCategoryColors.unit),
+        level: normalizeHexColor(parsed.level, defaultGisCategoryColors.level),
+        detail: normalizeHexColor(parsed.detail, defaultGisCategoryColors.detail)
+      }
+    } catch {
+      return { ...defaultGisCategoryColors }
+    }
+  }
+
+  function saveGisCategoryColors(colors: Record<GisExportCategory, string>) {
+    localStorage.setItem(gisCategoryColorsStorageKey, JSON.stringify(colors))
+  }
+
+  async function loadGisExportOptions() {
+    if (gisOptionsLoading) return
+    gisOptionsLoading = true
+    try {
+      const result = await request<GisExportOptionsResponse>('gis.exportOptions', {})
+      gisLevels = result.levels || []
+      gisDefaultLevelId = result.defaultLevelId ?? gisLevels[0]?.id ?? null
+      applyDefaultGisLevels()
+    } catch (err: any) {
+      error = err.message || 'Failed to load Revit levels'
+    } finally {
+      gisOptionsLoading = false
+    }
+  }
+
+  async function loadTiles3dExportOptions() {
+    if (tiles3dLinksLoading) return
+    tiles3dLinksLoading = true
+    try {
+      const result = await request<Tiles3DExportOptionsResponse>('tiles3d.exportOptions', {})
+      tiles3dLinks = result.links || []
+    } catch (err: any) {
+      error = err.message || 'Failed to load linked models'
+    } finally {
+      tiles3dLinksLoading = false
+    }
+  }
+
+  function applyDefaultGisLevels() {
+    const fallbackLevelId = gisDefaultLevelId ?? gisLevels[0]?.id ?? null
+    if (fallbackLevelId === null) return
+    gisFileAssignments = gisFileAssignments.map(assignment => ({
+      ...assignment,
+      levelId: assignment.levelId ?? inferGisLevelIdFromFileName(assignment.path, gisLevels) ?? fallbackLevelId
+    }))
+  }
+
+  function setGisSelection(paths: string[]) {
+    const previousAssignments = new Map(gisFileAssignments.map(assignment => [assignment.path.toLowerCase(), assignment]))
+    const fallbackLevelId = gisDefaultLevelId ?? gisLevels[0]?.id ?? null
+    gisFilePaths = paths
+    gisFileAssignments = paths.map(path => {
+      const previous = previousAssignments.get(path.toLowerCase())
+      return {
+        path,
+        levelId: previous?.levelId ?? inferGisLevelIdFromFileName(path, gisLevels) ?? fallbackLevelId,
+        category: previous?.category ?? inferGisCategory(path)
+      }
+    })
+
+    const validPaths = new Set(paths)
+    gisSelectedAssignmentPaths = new Set(
+      Array.from(gisSelectedAssignmentPaths).filter(path => validPaths.has(path))
+    )
+
+    if (!gisBasemapName.trim() && paths.length > 0) {
+      gisBasemapName = paths.length === 1
+        ? fileStemFromPath(paths[0])
+        : 'GIS Basemap'
+    }
+  }
+
+  async function browseGisFiles() {
+    try {
+      if (gisLevels.length === 0 && !gisOptionsLoading) {
+        await loadGisExportOptions()
+      }
+      const result = await request<{ path?: string; paths?: string[]; error?: string }>('dialog.openFile', {
+        initialPath: gisFilePaths[0] ?? '',
+        title: 'Local GIS files'
+      })
+      if (result?.error) {
+        error = result.error
+      } else {
+        const selected = (result?.paths?.length ? result.paths : result?.path ? [result.path] : [])
+          .filter((p): p is string => !!p)
+        if (selected.length > 0) {
+          setGisSelection(selected)
+        }
+      }
+    } catch (err: any) {
+      error = err.message || 'Failed to open file dialog'
+    }
+  }
+
+  function clearGisSelection() {
+    gisFilePaths = []
+    gisFileAssignments = []
+    gisSelectedAssignmentPaths = new Set()
+    gisAssignmentsModalOpen = false
+    gisBasemapName = ''
+  }
+
+  async function browseGisOutputFolder() {
+    try {
+      const result = await request('dialog.openFolder', {
+        initialPath: gisOutputFolder,
+        title: 'DXF Output Folder'
+      })
+      if (result?.path) gisOutputFolder = result.path
+    } catch (err: any) {
+      error = err.message || 'Failed to open folder dialog'
+    }
+  }
+
+  function setGisCategoryColor(category: GisExportCategory, value: string) {
+    const next = {
+      ...gisCategoryColors,
+      [category]: normalizeHexColor(value, defaultGisCategoryColors[category])
+    }
+    gisCategoryColors = next
+    saveGisCategoryColors(next)
+  }
+
+  function resetGisCategoryColors() {
+    const next = { ...defaultGisCategoryColors }
+    gisCategoryColors = next
+    saveGisCategoryColors(next)
+  }
+
+  function fileNameFromPath(path: string): string {
+    return path.split(/[\\/]/).pop() || path
+  }
+
+  function fileStemFromPath(path: string): string {
+    const fileName = fileNameFromPath(path)
+    const dot = fileName.lastIndexOf('.')
+    return dot > 0 ? fileName.slice(0, dot) : fileName
+  }
+
+  function inferGisCategory(path: string): GisExportCategory {
+    const stem = fileStemFromPath(path).toLowerCase()
+    if (stem.includes('opening')) return 'opening'
+    if (stem.includes('unit')) return 'unit'
+    if (stem.includes('level')) return 'level'
+    if (stem.includes('detail')) return 'detail'
+    return 'detail'
+  }
+
+  function normalizeGisCategory(value: string): GisExportCategory {
+    return value === 'opening' || value === 'unit' || value === 'level' || value === 'detail'
+      ? value
+      : 'detail'
+  }
+
+  function levelName(levelId: number | null): string {
+    if (levelId === null) return 'No level'
+    return gisLevels.find(level => level.id === levelId)?.name ?? String(levelId)
+  }
+
+  function levelLabel(level: GisLevelOption): string {
+    return `${level.name} (${(level.elevationFeet * 0.3048).toFixed(2)} m)`
+  }
+
+  function setGisAssignmentLevel(path: string, value: string) {
+    const levelId = value ? Number(value) : null
+    gisFileAssignments = gisFileAssignments.map(assignment =>
+      assignment.path === path ? { ...assignment, levelId } : assignment
+    )
+  }
+
+  function setGisAssignmentCategory(path: string, value: string) {
+    const category = normalizeGisCategory(value)
+    gisFileAssignments = gisFileAssignments.map(assignment =>
+      assignment.path === path ? { ...assignment, category } : assignment
+    )
+  }
+
+  function gisCategoryLabel(category: GisExportCategory): string {
+    return gisCategoryOptions.find(option => option.id === category)?.label ?? category
+  }
+
+  function openGisAssignmentsModal() {
+    gisAssignmentsModalOpen = true
+  }
+
+  function closeGisAssignmentsModal() {
+    gisAssignmentsModalOpen = false
+  }
+
+  function handleGlobalKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && gisAssignmentsModalOpen) {
+      closeGisAssignmentsModal()
+    }
+  }
+
+  function toggleGisAssignmentSelection(path: string) {
+    const next = new Set(gisSelectedAssignmentPaths)
+    if (next.has(path)) next.delete(path)
+    else next.add(path)
+    gisSelectedAssignmentPaths = next
+  }
+
+  function selectVisibleGisAssignments() {
+    const next = new Set(gisSelectedAssignmentPaths)
+    for (const assignment of gisFilteredAssignments) next.add(assignment.path)
+    gisSelectedAssignmentPaths = next
+  }
+
+  function clearGisAssignmentSelection() {
+    gisSelectedAssignmentPaths = new Set()
+  }
+
+  function bulkSetGisCategory(value: string) {
+    if (value && gisSelectedAssignmentPaths.size > 0) {
+      const category = normalizeGisCategory(value)
+      gisFileAssignments = gisFileAssignments.map(assignment =>
+        gisSelectedAssignmentPaths.has(assignment.path) ? { ...assignment, category } : assignment
+      )
+    }
+    gisBulkCategoryValue = ''
+  }
+
+  function bulkSetGisLevel(value: string) {
+    if (value && gisSelectedAssignmentPaths.size > 0) {
+      const levelId = Number(value)
+      gisFileAssignments = gisFileAssignments.map(assignment =>
+        gisSelectedAssignmentPaths.has(assignment.path) ? { ...assignment, levelId } : assignment
+      )
+    }
+    gisBulkLevelValue = ''
+  }
+
+  async function startGisExport() {
+    if (gisFileAssignments.length === 0) {
+      error = 'Please select at least one GIS file first'
+      return
+    }
+    if (!gisBasemapName.trim()) {
+      error = 'Enter a basemap name'
+      return
+    }
+    if (!gisOutputFolder.trim()) {
+      error = 'Choose an output folder for the DXF files'
+      return
+    }
+    exporting = true
+    error = null
+    exportProgress = null
+    step = 'export'
+
+    const job = startJob<any>('gis.export', {
+      path: gisFilePaths[0],
+      paths: gisFilePaths,
+      basemapName: gisBasemapName.trim(),
+      outputFolder: gisOutputFolder.trim(),
+      fileAssignments: gisFileAssignments.map(assignment => ({
+        path: assignment.path,
+        levelId: assignment.levelId,
+        category: assignment.category
+      })),
+      categoryColors: gisCategoryOptions.map(opt => ({
+        category: opt.id,
+        color: normalizeHexColor(gisCategoryColors[opt.id], defaultGisCategoryColors[opt.id])
+      }))
+    }, {
+      onProgress: (p) => { exportProgress = p }
+    })
+    gisExportCancel = job.cancel
+
+    try {
+      const result = await job.result
+      exportProgress = { ...exportProgress, complete: true, ...result }
+      exporting = false
+    } catch (err: any) {
+      error = err.message || 'GIS export failed'
+      exporting = false
+      step = 'gis-options'
+    } finally {
+      gisExportCancel = null
+    }
   }
 
   function goBack() {
@@ -344,17 +750,19 @@
       step = 'plateau-source'
     } else if (step === 'plateau-select') {
       step = 'plateau-source'
+    } else if (step === 'gis-options') {
+      step = 'preflight'
     } else if (step === 'scope') {
       step = preflightNeedsAttention ? 'preflight' : 'format'
     } else if (step === 'options') {
       step = format === 'plateau' ? 'plateau-select' : 'scope'
     } else if (step === 'export') {
-      step = 'options'
+      step = format === 'gis' ? 'gis-options' : 'options'
     }
   }
 
   function continueToScope() {
-    step = format === 'plateau' ? 'plateau-source' : 'scope'
+    step = format === 'plateau' ? 'plateau-source' : format === 'gis' ? 'gis-options' : 'scope'
   }
 
   function continueToOptions() {
@@ -365,6 +773,7 @@
     format === 'plateau' ? $strings['Export.Format.Plateau'] ?? 'PLATEAU Context' :
     format === 'tiles3d' ? $strings['Export.Format.Tiles3d'] ?? '3D Tiles' :
     format === 'citygml' ? $strings['Export.Format.CityGml'] ?? 'CityGML' :
+    format === 'gis' ? 'Local GIS Files' :
     $strings['Export.Title'] ?? 'Export'
   )
 
@@ -459,6 +868,24 @@
                 </div>
               </div>
             </button>
+
+            <button
+              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+              onclick={() => selectFormat('gis')}
+            >
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-emerald-50 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v15m6-12v15" />
+                  </svg>
+                </div>
+                <div>
+                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">Local GIS Files</div>
+                  <div class="text-xs text-neutral-500 dark:text-neutral-500">Convert Shapefile / GeoPackage to georeferenced DXF</div>
+                </div>
+              </div>
+            </button>
           </div>
         </div>
       </div>
@@ -550,38 +977,74 @@
               {/if}
               <button
                 class="mt-3 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-                onclick={() => exportCancel?.()}
+                onclick={() => format === 'gis' ? gisExportCancel?.() : exportCancel?.()}
               >
                 {$strings['Export.Progress.Cancel'] ?? 'Cancel export'}
               </button>
             {:else if exportProgress?.complete}
-              <div class="py-4 text-center">
-                <div class="text-green-600 dark:text-green-400 text-2xl mb-2">✓</div>
-                <div class="text-sm text-neutral-800 dark:text-neutral-200 mb-1">{$strings['Export.Complete.Title'] ?? 'Export Complete'}</div>
-                <div class="text-xs text-neutral-500 dark:text-neutral-500">
-                  {fmt($strings['Export.Complete.Count'] ?? '{0} {1} exported', exportProgress.exportedElements ?? exportProgress.files ?? 0, $strings[exportProgress.files ? 'Export.Unit.File' : 'Export.Unit.Element'] ?? (exportProgress.files ? 'files' : 'elements'))}
-                </div>
-                {#if exportProgress.summary}
-                  <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{exportProgress.summary}</div>
-                {/if}
-                {#if exportProgress.warnings && exportProgress.warnings.length > 0}
-                  <div class="mt-3 text-left">
-                    <div class="text-xs text-amber-600 dark:text-amber-400 mb-1">{fmt($strings['Export.Warnings'] ?? '{0} warning(s)', exportProgress.warnings.length)}</div>
-                    <ul class="list-disc ml-4 space-y-0.5 max-h-32 overflow-y-auto text-xs text-neutral-500 dark:text-neutral-500">
-                      {#each exportProgress.warnings.slice(0, 10) as w}
-                        <li>{w}</li>
-                      {/each}
-                    </ul>
+              {#if format === 'gis'}
+                <div class="py-4 text-center">
+                  <div class="text-green-600 dark:text-green-400 text-2xl mb-2">✓</div>
+                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-2">DXF export complete</div>
+                  {#each exportProgress.outputs ?? [] as output}
+                    <div class="font-mono text-xs text-neutral-600 dark:text-neutral-400 break-all mt-1 text-left">{output.dxfPath}</div>
+                  {/each}
+                  {#if exportProgress.summary}
+                    <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-2 text-left">{exportProgress.summary}</div>
+                  {/if}
+                  {#if exportProgress.warnings && exportProgress.warnings.length > 0}
+                    <div class="mt-3 text-left">
+                      <div class="text-xs text-amber-600 dark:text-amber-400 mb-1">{fmt($strings['Export.Warnings'] ?? '{0} warning(s)', exportProgress.warnings.length)}</div>
+                      <ul class="list-disc ml-4 space-y-0.5 max-h-24 overflow-y-auto text-xs text-neutral-500 dark:text-neutral-500">
+                        {#each exportProgress.warnings.slice(0, 10) as w}
+                          <li>{w}</li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/if}
+                  <div class="mt-3 p-3 bg-teal-50 border border-teal-200 dark:bg-teal-900/20 dark:border-teal-700 rounded-lg text-left">
+                    <div class="text-xs font-medium text-teal-800 dark:text-teal-200 mb-1">To link in Revit:</div>
+                    <div class="text-xs text-teal-700 dark:text-teal-300 space-y-0.5">
+                      <div>Insert → Link CAD → select the DXF file</div>
+                      <div>• Positioning: <strong>Auto - By Shared Coordinates</strong></div>
+                      <div>• Import units: <strong>meter</strong></div>
+                    </div>
                   </div>
-                {/if}
-
-                <button
-                  class="mt-5 w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
-                  onclick={resetExport}
-                >
-                  {$strings['Common.Done'] ?? 'Done'}
-                </button>
-              </div>
+                  <button
+                    class="mt-5 w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                    onclick={resetExport}
+                  >
+                    {$strings['Common.Done'] ?? 'Done'}
+                  </button>
+                </div>
+              {:else}
+                <div class="py-4 text-center">
+                  <div class="text-green-600 dark:text-green-400 text-2xl mb-2">✓</div>
+                  <div class="text-sm text-neutral-800 dark:text-neutral-200 mb-1">{$strings['Export.Complete.Title'] ?? 'Export Complete'}</div>
+                  <div class="text-xs text-neutral-500 dark:text-neutral-500">
+                    {fmt($strings['Export.Complete.Count'] ?? '{0} {1} exported', exportProgress.exportedElements ?? exportProgress.files ?? 0, $strings[exportProgress.files ? 'Export.Unit.File' : 'Export.Unit.Element'] ?? (exportProgress.files ? 'files' : 'elements'))}
+                  </div>
+                  {#if exportProgress.summary}
+                    <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{exportProgress.summary}</div>
+                  {/if}
+                  {#if exportProgress.warnings && exportProgress.warnings.length > 0}
+                    <div class="mt-3 text-left">
+                      <div class="text-xs text-amber-600 dark:text-amber-400 mb-1">{fmt($strings['Export.Warnings'] ?? '{0} warning(s)', exportProgress.warnings.length)}</div>
+                      <ul class="list-disc ml-4 space-y-0.5 max-h-32 overflow-y-auto text-xs text-neutral-500 dark:text-neutral-500">
+                        {#each exportProgress.warnings.slice(0, 10) as w}
+                          <li>{w}</li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/if}
+                  <button
+                    class="mt-5 w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                    onclick={resetExport}
+                  >
+                    {$strings['Common.Done'] ?? 'Done'}
+                  </button>
+                </div>
+              {/if}
             {/if}
           </div>
         </div>
@@ -719,6 +1182,172 @@
           disabled={selectedPlateauTileCount === 0}
         >
           {$strings['Common.Continue'] ?? 'Continue'}
+        </button>
+      </div>
+
+    {:else if step === 'gis-options'}
+      <div class="flex items-center gap-2 mb-4">
+        <button
+          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
+          onclick={goBack}
+          aria-label={$strings['Common.Back'] ?? 'Back'}
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Local GIS Files</h2>
+      </div>
+
+      <div class="space-y-4">
+        <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4 space-y-3">
+
+          <div>
+            <label for="gis-file-path" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">GIS files</label>
+            <div class="flex gap-2">
+              <input
+                id="gis-file-path"
+                type="text"
+                value={gisFileDisplay}
+                readonly
+                placeholder="Select .shp or .gpkg files..."
+                class="flex-1 min-w-0 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+              {#if gisFilePaths.length > 0}
+                <button
+                  class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
+                  onclick={clearGisSelection}
+                >
+                  {$strings['Common.Clear'] ?? 'Clear'}
+                </button>
+              {/if}
+              <button
+                class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
+                onclick={browseGisFiles}
+              >
+                {$strings['Common.Browse'] ?? 'Browse'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label for="gis-basemap-name" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Basemap name</label>
+            <input
+              id="gis-basemap-name"
+              type="text"
+              bind:value={gisBasemapName}
+              placeholder="e.g. Retail layout"
+              class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-3">
+              <div class="text-xs font-medium text-neutral-600 dark:text-neutral-400">Line colors</div>
+              <button
+                class="text-xs text-neutral-500 transition-colors hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                onclick={resetGisCategoryColors}
+              >
+                {$strings['Common.Reset'] ?? 'Reset'}
+              </button>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              {#each gisCategoryOptions as option}
+                <label class="flex items-center justify-between gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                  <span class="truncate">{option.label}</span>
+                  <input
+                    type="color"
+                    value={gisCategoryColors[option.id]}
+                    aria-label={`${option.label} line color`}
+                    class="h-7 w-9 shrink-0 cursor-pointer rounded border border-neutral-300 bg-transparent p-0 dark:border-neutral-600"
+                    onchange={(event) => setGisCategoryColor(option.id, event.currentTarget.value)}
+                  />
+                </label>
+              {/each}
+            </div>
+          </div>
+
+          {#if gisOptionsLoading}
+            <div class="text-xs text-neutral-500 dark:text-neutral-500">
+              Loading Revit levels...
+            </div>
+          {/if}
+
+          {#if gisFileAssignments.length > 0}
+            <div class="space-y-2">
+              <div class="flex items-center justify-between gap-3">
+                <div class="text-xs font-medium text-neutral-600 dark:text-neutral-400">Assign files</div>
+                <button
+                  class="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
+                  onclick={openGisAssignmentsModal}
+                >
+                  Assign files...
+                </button>
+              </div>
+              {#if gisLevels.length > 0}
+                {#if gisFilesNeedingLevel > 0}
+                  <div class="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400">
+                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400"></span>
+                    <span>{gisFilesNeedingLevel} file(s) without a level — will merge into one DXF</span>
+                  </div>
+                {:else}
+                  <div class="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"></span>
+                    <span>All {gisFileAssignments.length} file(s) assigned to a level</span>
+                  </div>
+                {/if}
+              {/if}
+            </div>
+
+            {#if gisOutputPreview.length > 0}
+              <div class="rounded-md border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-800">
+                <div class="mb-1 text-xs font-medium text-neutral-600 dark:text-neutral-400">DXF files</div>
+                <div class="space-y-1">
+                  {#each gisOutputPreview as name}
+                    <div class="truncate text-xs font-mono text-neutral-700 dark:text-neutral-200" title={name}>{name}</div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          {/if}
+
+          <div>
+            <label for="gis-output-folder" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">DXF output folder</label>
+            <div class="flex gap-2">
+              <input
+                id="gis-output-folder"
+                type="text"
+                value={gisOutputFolder}
+                readonly
+                placeholder="Select folder for DXF output..."
+                class="flex-1 min-w-0 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+              <button
+                class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
+                onclick={browseGisOutputFolder}
+              >
+                {$strings['Common.Browse'] ?? 'Browse'}
+              </button>
+            </div>
+          </div>
+
+          <p class="text-xs text-neutral-500 dark:text-neutral-500">
+            DXF files will be written to the selected folder. After export, link them in Revit using the settings shown on the result page.
+          </p>
+        </div>
+
+        {#if error}
+          <div class="p-3 bg-red-50 border border-red-200 dark:bg-red-900/30 dark:border-red-700 rounded-lg">
+            <div class="text-sm text-red-700 dark:text-red-300">{error}</div>
+          </div>
+        {/if}
+
+        <button
+          class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          onclick={startGisExport}
+          disabled={!canExportGis}
+        >
+          Export to DXF
         </button>
       </div>
 
@@ -961,6 +1590,30 @@
                 />
               </div>
             {/if}
+
+            {#if tiles3dLinks.length > 0}
+              <div>
+                <div class="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.Tiles3d.LinkedModels'] ?? 'Linked Models'}</div>
+                <div class="space-y-2">
+                  {#each tiles3dLinks as link}
+                    <label class="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedTiles3dLinkIds.has(link.uniqueId)}
+                        onchange={() => {
+                          const next = new Set(selectedTiles3dLinkIds)
+                          if (next.has(link.uniqueId)) next.delete(link.uniqueId)
+                          else next.add(link.uniqueId)
+                          selectedTiles3dLinkIds = next
+                        }}
+                        class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
+                      />
+                      <span class="text-sm text-neutral-700 dark:text-neutral-300">{link.title}</span>
+                    </label>
+                  {/each}
+                </div>
+              </div>
+            {/if}
           </div>
 
         {:else if format === 'citygml'}
@@ -1011,3 +1664,170 @@
     {/if}
   </aside>
 </div>
+
+<svelte:window onkeydown={handleGlobalKeydown} />
+
+{#if gisAssignmentsModalOpen}
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-5">
+    <button
+      type="button"
+      class="absolute inset-0 cursor-default bg-neutral-900/50 backdrop-blur-sm"
+      aria-label={$strings['Common.Close'] ?? 'Close'}
+      onclick={closeGisAssignmentsModal}
+    ></button>
+
+    <div
+      class="relative z-10 flex max-h-[88vh] w-[min(1024px,96vw)] flex-col rounded-lg border border-neutral-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="gis-assignments-title"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 p-4 dark:border-neutral-700">
+        <div>
+          <h3 id="gis-assignments-title" class="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+            Assign files
+          </h3>
+          <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+            {gisFileAssignments.length} file(s) - {gisFilesNeedingLevel} need a level
+          </p>
+        </div>
+        <button
+          class="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
+          onclick={closeGisAssignmentsModal}
+        >
+          {$strings['Common.Close'] ?? 'Close'}
+        </button>
+      </div>
+
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <input
+            type="text"
+            bind:value={gisAssignmentSearch}
+            placeholder="Search file, path, category, or level..."
+            class="min-w-[240px] flex-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+          />
+          <div class="text-xs text-neutral-500 dark:text-neutral-400">
+            {gisFilteredAssignments.length} of {gisFileAssignments.length}
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+          <span class="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+            {gisSelectedAssignmentPaths.size} selected
+          </span>
+          <select
+            class="h-9 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+            bind:value={gisBulkCategoryValue}
+            disabled={gisSelectedAssignmentPaths.size === 0}
+            aria-label="Set category for selected"
+            onchange={() => bulkSetGisCategory(gisBulkCategoryValue)}
+          >
+            <option value="">Set category...</option>
+            {#each gisCategoryOptions as option}
+              <option value={option.id}>{option.label}</option>
+            {/each}
+          </select>
+          <select
+            class="h-9 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+            bind:value={gisBulkLevelValue}
+            disabled={gisSelectedAssignmentPaths.size === 0 || gisLevels.length === 0}
+            aria-label="Set level for selected"
+            onchange={() => bulkSetGisLevel(gisBulkLevelValue)}
+          >
+            <option value="">Set level...</option>
+            {#each gisLevels as level}
+              <option value={level.id}>{levelLabel(level)}</option>
+            {/each}
+          </select>
+          <div class="ml-auto flex items-center gap-3">
+            <button
+              class="text-xs text-teal-600 transition-colors hover:text-teal-700 disabled:opacity-50 dark:text-teal-400 dark:hover:text-teal-300"
+              onclick={selectVisibleGisAssignments}
+              disabled={gisFilteredAssignments.length === 0}
+            >
+              Select visible
+            </button>
+            <button
+              class="text-xs text-neutral-500 transition-colors hover:text-neutral-800 disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200"
+              onclick={clearGisAssignmentSelection}
+              disabled={gisSelectedAssignmentPaths.size === 0}
+            >
+              Clear selection
+            </button>
+          </div>
+        </div>
+
+        <div class="min-h-0 flex-1 overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700">
+          <table class="w-full border-collapse text-sm">
+            <thead>
+              <tr class="sticky top-0 z-[1] bg-neutral-50 text-left text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                <th class="w-10 border-b border-neutral-200 p-2 dark:border-neutral-700"><span class="sr-only">Select</span></th>
+                <th class="border-b border-neutral-200 p-2 dark:border-neutral-700">File</th>
+                <th class="w-40 border-b border-neutral-200 p-2 dark:border-neutral-700">Category</th>
+                <th class="w-56 border-b border-neutral-200 p-2 dark:border-neutral-700">Level</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#if gisFilteredAssignments.length === 0}
+                <tr>
+                  <td colspan="4" class="p-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                    No files match the current search.
+                  </td>
+                </tr>
+              {:else}
+                {#each gisFilteredAssignments as assignment (assignment.path)}
+                  <tr class="border-b border-neutral-100 last:border-b-0 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800/50">
+                    <td class="p-2 align-top">
+                      <input
+                        type="checkbox"
+                        class="mt-1 h-4 w-4 rounded border-neutral-300 text-teal-600 focus:ring-teal-500"
+                        checked={gisSelectedAssignmentPaths.has(assignment.path)}
+                        aria-label={fileNameFromPath(assignment.path)}
+                        onchange={() => toggleGisAssignmentSelection(assignment.path)}
+                      />
+                    </td>
+                    <td class="min-w-0 p-2">
+                      <div class="truncate font-mono text-xs text-neutral-800 dark:text-neutral-200" title={assignment.path}>
+                        {fileNameFromPath(assignment.path)}
+                      </div>
+                      <div class="truncate text-[11px] text-neutral-500 dark:text-neutral-500" title={assignment.path}>
+                        {assignment.path}
+                      </div>
+                    </td>
+                    <td class="p-2 align-top">
+                      <select
+                        class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                        value={assignment.category}
+                        aria-label="Category"
+                        onchange={(event) => setGisAssignmentCategory(assignment.path, event.currentTarget.value)}
+                      >
+                        {#each gisCategoryOptions as option}
+                          <option value={option.id}>{option.label}</option>
+                        {/each}
+                      </select>
+                    </td>
+                    <td class="p-2 align-top">
+                      <select
+                        class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                        value={assignment.levelId ?? ''}
+                        disabled={gisLevels.length === 0}
+                        aria-label="Select level"
+                        onchange={(event) => setGisAssignmentLevel(assignment.path, event.currentTarget.value)}
+                      >
+                        <option value="">Select level</option>
+                        {#each gisLevels as level}
+                          <option value={level.id}>{levelLabel(level)}</option>
+                        {/each}
+                      </select>
+                    </td>
+                  </tr>
+                {/each}
+              {/if}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}

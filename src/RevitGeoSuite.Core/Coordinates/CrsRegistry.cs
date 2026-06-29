@@ -13,6 +13,9 @@ public sealed class CrsRegistry : ICrsRegistry
     public CrsRegistry()
     {
         definitions = JapanCrsPresets.CreateDefinitions()
+            .Concat(EuropeCrsPresets.CreateDefinitions())
+            .Concat(NorthAmericaCrsPresets.CreateDefinitions())
+            .Concat(AsiaPacificCrsPresets.CreateDefinitions())
             .OrderBy(definition => definition.EpsgCode)
             .ToArray();
 
@@ -66,6 +69,7 @@ public sealed class CrsRegistry : ICrsRegistry
                 definition.Name,
                 definition.DatumName,
                 definition.UnitName,
+                definition.RegionGroup,
                 definition.AreaSummary,
                 definition.ZoneLabel,
                 $"zone {definition.ZoneLabel}",

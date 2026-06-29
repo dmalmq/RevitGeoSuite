@@ -96,7 +96,8 @@ public sealed class PlateauContextDxfImporter
         IReadOnlyCollection<PlateauContextOutlinesDxfWriter.LineFeature> lines,
         PlateauImportReferenceContext referenceContext,
         string dxfPath,
-        IReadOnlyCollection<string>? initialWarnings = null)
+        IReadOnlyCollection<string>? initialWarnings = null,
+        Vector3d? markerOverride = null)
     {
         if (outlines is null) throw new ArgumentNullException(nameof(outlines));
         if (areas is null) throw new ArgumentNullException(nameof(areas));
@@ -117,9 +118,7 @@ public sealed class PlateauContextDxfImporter
             return new DxfBuildResult(0, 0, 0, warnings);
         }
 
-        // Marker sits at the Project Base Point (the import anchor) in model-internal metres, so the
-        // basemap carries a visible alignment reference on its own (hideable) layer.
-        Vector3d marker = new Vector3d(
+        Vector3d marker = markerOverride ?? new Vector3d(
             referenceContext.AnchorXFeet * FeetToMetres,
             referenceContext.AnchorYFeet * FeetToMetres,
             referenceContext.AnchorZFeet * FeetToMetres);
@@ -185,7 +184,16 @@ public sealed class PlateauContextDxfImporter
         return ImportOrLinkDxf(document, dxfPath, preferredView, link: true);
     }
 
-    private static ElementId ImportOrLinkDxf(Document document, string dxfPath, View? preferredView, bool link)
+    /// <summary>
+    /// Links a DXF with explicit placement control. Use <see cref="ImportPlacement.Shared"/> for
+    /// CRS-aware linking (coordinates in project CRS metres).
+    /// </summary>
+    public ElementId LinkDxf(Document document, string dxfPath, View? preferredView, ImportPlacement placement)
+    {
+        return ImportOrLinkDxf(document, dxfPath, preferredView, link: true, placement);
+    }
+
+    private static ElementId ImportOrLinkDxf(Document document, string dxfPath, View? preferredView, bool link, ImportPlacement placement = ImportPlacement.Origin)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
         if (string.IsNullOrWhiteSpace(dxfPath)) throw new ArgumentException("A DXF path is required.", nameof(dxfPath));
@@ -208,7 +216,7 @@ public sealed class PlateauContextDxfImporter
         DWGImportOptions options = new DWGImportOptions
         {
             Unit = ImportUnit.Meter,
-            Placement = ImportPlacement.Origin,
+            Placement = placement,
             ThisViewOnly = false,
             ColorMode = ImportColorMode.Preserved,
             OrientToView = false,

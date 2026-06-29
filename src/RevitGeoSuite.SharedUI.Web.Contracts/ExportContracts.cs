@@ -85,6 +85,25 @@ public sealed class PlateauContextExportResponse
 }
 
 [TsExport]
+public sealed class Tiles3DExportOptionsRequest { }
+
+[TsExport]
+public sealed class Tiles3DLinkOption
+{
+    public string UniqueId { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Description { get; set; } = string.Empty;
+}
+
+[TsExport]
+public sealed class Tiles3DExportOptionsResponse
+{
+    public Tiles3DLinkOption[] Links { get; set; } = System.Array.Empty<Tiles3DLinkOption>();
+}
+
+[TsExport]
 public sealed class Tiles3DExportPrepareRequest
 {
     public string Scope { get; set; } = "whole";
@@ -114,6 +133,8 @@ public sealed class Tiles3DExportOptions
     public bool PreciseCrs { get; set; }
 
     public double GeoidOffset { get; set; }
+
+    public string[] SelectedLinkUniqueIds { get; set; } = System.Array.Empty<string>();
 }
 
 [TsExport]

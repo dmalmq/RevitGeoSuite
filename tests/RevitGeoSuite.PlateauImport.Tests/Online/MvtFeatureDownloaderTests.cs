@@ -145,6 +145,9 @@ public sealed class MvtFeatureDownloaderTests
 
         public Task DownloadAsync(Uri url, Stream destination, IProgress<double>? progress, CancellationToken cancellationToken)
             => throw new NotSupportedException();
+
+        public Task DownloadResumableAsync(Uri url, string destinationPath, IProgress<double>? progress, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 }
 

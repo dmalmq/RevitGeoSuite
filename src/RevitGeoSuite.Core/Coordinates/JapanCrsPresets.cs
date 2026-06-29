@@ -72,6 +72,7 @@ public static class JapanCrsPresets
             Name = name,
             DatumName = datumName,
             UnitName = "metre",
+            RegionGroup = "Japan",
             JapanZoneNumber = zoneNumber,
             ZoneLabel = zoneLabel,
             LatitudeOfOrigin = latitudeOfOrigin,

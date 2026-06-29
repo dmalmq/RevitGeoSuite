@@ -8,23 +8,27 @@ using System.Threading.Tasks;
 
 namespace RevitGeoSuite.Core.Plateau.Catalog;
 
-public sealed class PlateauHttpClient : IPlateauHttpClient, IDisposable
+/// <summary>
+/// An <see cref="IPlateauHttpClient"/> that attaches a Bearer authorization header to every request.
+/// Used for fetching Cesium Ion-hosted 3D Tiles where the short-lived token returned by the Ion
+/// endpoint API must accompany all tile/tileset requests.
+/// </summary>
+public sealed class AuthenticatedPlateauHttpClient : IPlateauHttpClient, IDisposable
 {
-    private static readonly Lazy<HttpClient> SharedClient = new(CreateSharedClient, LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<HttpClient> SharedClient = new(CreateClient, LazyThreadSafetyMode.ExecutionAndPublication);
 
     private readonly HttpClient httpClient;
-    private readonly bool ownsClient;
+    private readonly string bearerToken;
 
-    public PlateauHttpClient()
+    public AuthenticatedPlateauHttpClient(string bearerToken)
+        : this(bearerToken, SharedClient.Value)
     {
-        httpClient = SharedClient.Value;
-        ownsClient = false;
     }
 
-    public PlateauHttpClient(HttpClient httpClient)
+    public AuthenticatedPlateauHttpClient(string bearerToken, HttpClient httpClient)
     {
+        this.bearerToken = bearerToken ?? throw new ArgumentNullException(nameof(bearerToken));
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        ownsClient = false;
     }
 
     public Task<string> GetStringAsync(Uri url, CancellationToken cancellationToken)
@@ -37,6 +41,7 @@ public sealed class PlateauHttpClient : IPlateauHttpClient, IDisposable
     {
         using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        ApplyBearer(request);
         using HttpResponseMessage response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -51,6 +56,7 @@ public sealed class PlateauHttpClient : IPlateauHttpClient, IDisposable
     private async Task<byte[]> GetBytesAsyncCore(Uri url, CancellationToken cancellationToken)
     {
         using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyBearer(request);
         using HttpResponseMessage response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
@@ -66,6 +72,7 @@ public sealed class PlateauHttpClient : IPlateauHttpClient, IDisposable
     private async Task DownloadAsyncCore(Uri url, Stream destination, IProgress<double>? progress, CancellationToken cancellationToken)
     {
         using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyBearer(request);
         using HttpResponseMessage response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         long? total = response.Content.Headers.ContentLength;
@@ -82,7 +89,7 @@ public sealed class PlateauHttpClient : IPlateauHttpClient, IDisposable
                 progress.Report((double)readTotal / total.Value);
             }
         }
-        if (progress is not null) progress.Report(1.0);
+        progress?.Report(1.0);
     }
 
     public Task DownloadResumableAsync(Uri url, string destinationPath, IProgress<double>? progress, CancellationToken cancellationToken)
@@ -102,6 +109,7 @@ public sealed class PlateauHttpClient : IPlateauHttpClient, IDisposable
         }
 
         using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyBearer(request);
         if (existingBytes > 0)
         {
             request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
@@ -149,10 +157,18 @@ public sealed class PlateauHttpClient : IPlateauHttpClient, IDisposable
 
     public void Dispose()
     {
-        if (ownsClient) httpClient.Dispose();
+        // The shared HttpClient is not owned by this instance.
     }
 
-    private static HttpClient CreateSharedClient()
+    private void ApplyBearer(HttpRequestMessage request)
+    {
+        if (!string.IsNullOrEmpty(bearerToken))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        }
+    }
+
+    private static HttpClient CreateClient()
     {
         ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11;
         HttpClientHandler handler = new HttpClientHandler
@@ -163,7 +179,7 @@ public sealed class PlateauHttpClient : IPlateauHttpClient, IDisposable
         {
             Timeout = TimeSpan.FromMinutes(5)
         };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("RevitGeoSuite-PlateauOnline", "1.0"));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("RevitGeoSuite", "1.0"));
         return client;
     }
 }

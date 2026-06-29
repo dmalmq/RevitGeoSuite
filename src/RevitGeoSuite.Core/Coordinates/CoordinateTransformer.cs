@@ -20,7 +20,7 @@ public sealed class CoordinateTransformer : ICoordinateTransformer
         this.crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         coordinateSystemFactory = new CoordinateSystemFactory();
         transformationFactory = new CoordinateTransformationFactory();
-        geographicCoordinateSystem = CreateJgd2011CoordinateSystem();
+        geographicCoordinateSystem = CreateWgs84CoordinateSystem();
         forwardTransforms = new Dictionary<int, MathTransform>();
         reverseTransforms = new Dictionary<int, MathTransform>();
     }
@@ -75,24 +75,33 @@ public sealed class CoordinateTransformer : ICoordinateTransformer
             throw new ArgumentOutOfRangeException(nameof(epsgCode), epsgCode, "Unknown EPSG code.");
         }
 
-        ProjectedCoordinateSystem projectedCoordinateSystem = CreateProjectedCoordinateSystem(definition);
+        CoordinateSystem projectedCs;
+        if (!string.IsNullOrEmpty(definition.Wkt))
+        {
+            projectedCs = coordinateSystemFactory.CreateFromWkt(definition.Wkt);
+        }
+        else
+        {
+            projectedCs = CreateProjectedCoordinateSystem(definition);
+        }
+
         ICoordinateTransformation transformation = createForward
-            ? transformationFactory.CreateFromCoordinateSystems(geographicCoordinateSystem, projectedCoordinateSystem)
-            : transformationFactory.CreateFromCoordinateSystems(projectedCoordinateSystem, geographicCoordinateSystem);
+            ? transformationFactory.CreateFromCoordinateSystems(geographicCoordinateSystem, projectedCs)
+            : transformationFactory.CreateFromCoordinateSystems(projectedCs, geographicCoordinateSystem);
 
         return transformation.MathTransform;
     }
 
-    private GeographicCoordinateSystem CreateJgd2011CoordinateSystem()
+    private GeographicCoordinateSystem CreateWgs84CoordinateSystem()
     {
         HorizontalDatum datum = coordinateSystemFactory.CreateHorizontalDatum(
-            "JGD2011",
+            "WGS84",
             DatumType.HD_Geocentric,
-            Ellipsoid.GRS80,
+            Ellipsoid.WGS84,
             null);
 
         return coordinateSystemFactory.CreateGeographicCoordinateSystem(
-            "JGD2011",
+            "WGS84",
             AngularUnit.Degrees,
             datum,
             PrimeMeridian.Greenwich,
@@ -102,6 +111,10 @@ public sealed class CoordinateTransformer : ICoordinateTransformer
 
     private ProjectedCoordinateSystem CreateProjectedCoordinateSystem(CrsDefinition definition)
     {
+        string method = string.IsNullOrEmpty(definition.ProjectionMethod)
+            ? "Transverse_Mercator"
+            : definition.ProjectionMethod;
+
         List<ProjectionParameter> parameters = new List<ProjectionParameter>
         {
             new ProjectionParameter("latitude_of_origin", definition.LatitudeOfOrigin),
@@ -111,9 +124,15 @@ public sealed class CoordinateTransformer : ICoordinateTransformer
             new ProjectionParameter("false_northing", definition.FalseNorthing)
         };
 
+        if (string.Equals(method, "Lambert_Conformal_Conic_2SP", StringComparison.OrdinalIgnoreCase))
+        {
+            parameters.Add(new ProjectionParameter("standard_parallel_1", definition.StandardParallel1));
+            parameters.Add(new ProjectionParameter("standard_parallel_2", definition.StandardParallel2));
+        }
+
         IProjection projection = coordinateSystemFactory.CreateProjection(
-            $"Japan Plane Rectangular CS zone {definition.ZoneLabel}",
-            "Transverse_Mercator",
+            definition.Name,
+            method,
             parameters);
 
         return coordinateSystemFactory.CreateProjectedCoordinateSystem(

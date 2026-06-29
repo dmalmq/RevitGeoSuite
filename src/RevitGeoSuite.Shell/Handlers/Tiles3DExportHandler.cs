@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using Autodesk.Revit.DB;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.SharedUI.Shell;
@@ -10,10 +12,8 @@ using RevitGeoSuite.Tiles3DExport;
 namespace RevitGeoSuite.Shell.Handlers;
 
 /// <summary>
-/// Shared wiring for the 3D Tiles export handlers. Resolves the export reference and whole-model
-/// scope from the active document, reusing <see cref="Tiles3DExportCoordinator"/> exactly like the
-/// legacy WPF command. The web shell currently exports the whole host model; per-view/linked-model
-/// scope and the lightweight/split-by-level options are not surfaced yet.
+/// Shared wiring for the 3D Tiles export handlers. Resolves the export reference and scope from
+/// the active document, reusing <see cref="Tiles3DExportCoordinator"/> exactly like the legacy WPF command.
 /// </summary>
 internal static class Tiles3DExportSupport
 {
@@ -35,13 +35,29 @@ internal static class Tiles3DExportSupport
         return (coordinator, reference, scope);
     }
 
-    public static (bool PreciseCrs, double GeoidOffset, string Scope) ReadOptions(JObject? payload)
+    public static (bool PreciseCrs, double GeoidOffset, string Scope, string[] SelectedLinkUniqueIds) ReadOptions(JObject? payload)
     {
         var options = payload?["options"] as JObject;
         bool preciseCrs = options?.Value<bool?>("preciseCrs") ?? false;
         double geoidOffset = options?.Value<double?>("geoidOffset") ?? 0d;
         string scope = payload?.Value<string>("scope") ?? "whole";
-        return (preciseCrs, geoidOffset, scope);
+        string[] selectedLinkUniqueIds = options?["selectedLinkUniqueIds"] is JArray arr
+            ? arr.Values<string>().Where(s => s != null).Cast<string>().ToArray()
+            : Array.Empty<string>();
+        return (preciseCrs, geoidOffset, scope, selectedLinkUniqueIds);
+    }
+
+    public static void ApplySelectedLinks(Tiles3DExportScopeSelection scope, Document document, string[] selectedLinkUniqueIds)
+    {
+        if (selectedLinkUniqueIds.Length == 0)
+        {
+            return;
+        }
+
+        var selectedSet = new HashSet<string>(selectedLinkUniqueIds, StringComparer.Ordinal);
+        scope.SelectedLinkedModels = Tiles3DExportDocumentCatalog.CreateLinkOptions(document)
+            .Where(l => selectedSet.Contains(l.UniqueId))
+            .ToArray();
     }
 
     public static string[] ScopeWarnings(string scope)
@@ -49,6 +65,31 @@ internal static class Tiles3DExportSupport
         return string.Equals(scope, "whole", StringComparison.OrdinalIgnoreCase)
             ? Array.Empty<string>()
             : new[] { "The web shell exports the whole host model; selected-view/selection scope is not supported yet." };
+    }
+}
+
+/// <summary>
+/// <c>tiles3d.exportOptions</c> — returns available linked models for the current document.
+/// </summary>
+public sealed class Tiles3DExportOptionsHandler : IRpcHandler
+{
+    public string Method => "tiles3d.exportOptions";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
+        {
+            Tiles3DLinkOption[] links = Tiles3DExportDocumentCatalog.CreateLinkOptions(document)
+                .Select(l => new Tiles3DLinkOption
+                {
+                    UniqueId = l.UniqueId,
+                    Title = l.Title,
+                    Description = l.Description
+                })
+                .ToArray();
+
+            return new Tiles3DExportOptionsResponse { Links = links };
+        });
     }
 }
 
@@ -61,13 +102,14 @@ public sealed class Tiles3DExportPrepareHandler : IRpcHandler
 
     public Task<object?> HandleAsync(object? payload)
     {
-        (bool preciseCrs, double geoidOffset, string scope) = Tiles3DExportSupport.ReadOptions(payload as JObject);
+        (bool preciseCrs, double geoidOffset, string scope, string[] selectedLinkUniqueIds) = Tiles3DExportSupport.ReadOptions(payload as JObject);
 
         // Geometry extraction touches the Revit API, so the preview runs on the API thread.
         return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
         {
             var (handle, currentState, info) = ExportHandlerSupport.ReadContext(document);
             var (coordinator, reference, scopeSelection) = Tiles3DExportSupport.Resolve(handle, currentState, info);
+            Tiles3DExportSupport.ApplySelectedLinks(scopeSelection, document, selectedLinkUniqueIds);
 
             Tiles3DExportPreparationResult prep = coordinator.Prepare(handle, reference, scopeSelection, preciseCrs, geoidOffset);
             Tiles3DExportPackage package = prep.Package;
@@ -107,7 +149,7 @@ public sealed class Tiles3DExportHandler : IRpcHandler
             return Task.FromResult<object?>(new { error = "Output folder is required" });
         }
 
-        (bool preciseCrs, double geoidOffset, string scope) = Tiles3DExportSupport.ReadOptions(jobj);
+        (bool preciseCrs, double geoidOffset, string scope, string[] selectedLinkUniqueIds) = Tiles3DExportSupport.ReadOptions(jobj);
 
         string jobId = jobs.Start(async (ct, progress) =>
         {
@@ -118,6 +160,7 @@ public sealed class Tiles3DExportHandler : IRpcHandler
             {
                 var (handle, currentState, info) = ExportHandlerSupport.ReadContext(document);
                 var (coordinator, reference, scopeSelection) = Tiles3DExportSupport.Resolve(handle, currentState, info);
+                Tiles3DExportSupport.ApplySelectedLinks(scopeSelection, document, selectedLinkUniqueIds);
 
                 Tiles3DExportPreparationResult prep = coordinator.Prepare(handle, reference, scopeSelection, preciseCrs, geoidOffset);
                 Tiles3DExportState? existingState = new Tiles3DExportStateService().Load(handle);

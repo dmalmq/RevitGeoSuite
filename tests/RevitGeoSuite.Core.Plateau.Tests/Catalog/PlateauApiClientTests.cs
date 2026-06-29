@@ -96,5 +96,8 @@ public sealed class PlateauApiClientTests
 
         public Task DownloadAsync(Uri url, Stream destination, IProgress<double>? progress, CancellationToken cancellationToken) =>
             throw new NotImplementedException();
+
+        public Task DownloadResumableAsync(Uri url, string destinationPath, IProgress<double>? progress, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 }

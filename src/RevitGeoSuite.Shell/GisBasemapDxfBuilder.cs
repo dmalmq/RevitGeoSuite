@@ -11,15 +11,15 @@ namespace RevitGeoSuite.Shell;
 /// <summary>
 /// Turns reprojected GIS layers into the 2D DXF feature lists consumed by
 /// <see cref="PlateauContextDxfImporter.WriteOutlineDxf"/>. Each input coordinate is run through the
-/// supplied projector (file CRS → project CRS metres), then <see cref="PlateauReferenceFrame.ToLocalFeet"/>
-/// and converted to the model-internal metre frame the DXF importer expects, so the basemap lands over
-/// the model on import. Polygons become closed outline polylines (exterior + holes), lines become
+/// supplied projector (file CRS → project CRS metres) and emitted directly in those CRS metres. The DXF
+/// is then linked with <see cref="Autodesk.Revit.DB.ImportPlacement.Shared"/> so DXF (0,0) maps to the
+/// Survey Point (which the georeference workflow places at CRS origin) and geometry lands at the correct
+/// geographic position. Polygons become closed outline polylines (exterior + holes), lines become
 /// polylines, and points become small "+" markers on a companion layer (the DXF writer has no point
 /// entity).
 /// </summary>
 public static class GisBasemapDxfBuilder
 {
-    private const double FeetToMetres = 0.3048d;
     private const double PointMarkerHalfLengthMetres = 0.5d;
     private const int MaxDxfLayerNameLength = 31;
     private const double CoincidentEpsilon = 1e-9d;
@@ -64,11 +64,9 @@ public static class GisBasemapDxfBuilder
         if (projectToProjectCrsMetres is null) throw new ArgumentNullException(nameof(projectToProjectCrsMetres));
         if (referenceContext is null) throw new ArgumentNullException(nameof(referenceContext));
 
-        (double X, double Y) ToModelMetres(double x, double y)
+        (double X, double Y) ToProjectCrsMetres(double x, double y)
         {
-            (double easting, double northing) = projectToProjectCrsMetres(x, y);
-            (double xFeet, double yFeet) = PlateauReferenceFrame.ToLocalFeet(easting, northing, referenceContext);
-            return (xFeet * FeetToMetres, yFeet * FeetToMetres);
+            return projectToProjectCrsMetres(x, y);
         }
 
         List<PlateauContextOutlinesDxfWriter.OutlineFeature> outlines = new();
@@ -82,7 +80,7 @@ public static class GisBasemapDxfBuilder
             string pointLayerName = ReserveUniqueLayerName(SanitizeLayerName(layer.Name + "_PT"), layerNameScope);
             foreach (Geometry geometry in layer.Geometries)
             {
-                AddGeometry(geometry, layerName, pointLayerName, ToModelMetres, layerColor, outlines, lines, counters);
+                AddGeometry(geometry, layerName, pointLayerName, ToProjectCrsMetres, layerColor, outlines, lines, counters);
             }
         }
 

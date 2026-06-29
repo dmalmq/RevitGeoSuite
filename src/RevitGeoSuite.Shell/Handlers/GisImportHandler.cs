@@ -3,11 +3,12 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Threading;
+using System.Text;
 using System.Threading.Tasks;
 using Autodesk.Revit.DB;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.Core.Coordinates;
+using RevitGeoSuite.Core.Plateau.Tiles3D;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Gis;
 using RevitGeoSuite.PlateauImport;
@@ -19,17 +20,17 @@ using RevitGeoSuite.SharedUI.Web.Contracts;
 
 namespace RevitGeoSuite.Shell.Handlers;
 
-/// <summary>Returns Revit levels used by the floor-aware local GIS DXF import UI.</summary>
-public sealed class GisImportOptionsHandler : IRpcHandler
+/// <summary>Returns Revit levels used by the floor-aware local GIS DXF export UI.</summary>
+public sealed class GisExportOptionsHandler : IRpcHandler
 {
-    public string Method => "gis.importOptions";
+    public string Method => "gis.exportOptions";
 
     public async Task<object?> HandleAsync(object? payload)
     {
         return await RevitContext.Instance.InvokeWithDocumentAsync(BuildOptions).ConfigureAwait(false);
     }
 
-    private static GisImportOptionsResponse BuildOptions(Document doc)
+    private static GisExportOptionsResponse BuildOptions(Document doc)
     {
         List<GisLevelOption> levels = new FilteredElementCollector(doc)
             .OfClass(typeof(Level))
@@ -54,7 +55,7 @@ public sealed class GisImportOptionsHandler : IRpcHandler
             ? activeLevelId
             : levels.FirstOrDefault()?.Id;
 
-        return new GisImportOptionsResponse
+        return new GisExportOptionsResponse
         {
             Levels = levels.ToArray(),
             DefaultLevelId = defaultLevelId
@@ -63,10 +64,11 @@ public sealed class GisImportOptionsHandler : IRpcHandler
 }
 
 /// <summary>
-/// Imports a local Shapefile or GeoPackage as a flat 2D CAD basemap by converting source GIS
-/// geometries to the same model-frame DXF feature lists used by the PLATEAU basemap importer.
+/// Exports a local Shapefile or GeoPackage to a georeferenced DXF file in the project CRS.
+/// The generated DXF should be linked into Revit manually using:
+/// Link CAD → Positioning: Auto - By Shared Coordinates → Import units: meter.
 /// </summary>
-public sealed class GisImportHandler : IRpcHandler
+public sealed class GisExportHandler : IRpcHandler
 {
     private const string OpeningCategory = "opening";
     private const string UnitCategory = "unit";
@@ -91,29 +93,24 @@ public sealed class GisImportHandler : IRpcHandler
 
     private readonly JobManager jobs;
 
-    public GisImportHandler(JobManager jobs)
+    public GisExportHandler(JobManager jobs)
     {
         this.jobs = jobs ?? throw new ArgumentNullException(nameof(jobs));
     }
 
-    public string Method => "gis.import";
+    public string Method => "gis.export";
 
     public Task<object?> HandleAsync(object? payload)
     {
         JObject? jobj = payload as JObject;
-        ImportAssignment[] assignments = GetImportAssignments(jobj, out bool hasExplicitAssignments);
+        ExportAssignment[] assignments = GetExportAssignments(jobj, out bool hasExplicitAssignments);
         IReadOnlyDictionary<string, DxfLayerColor> categoryColors = ResolveCategoryColors(jobj);
-        string[] importPaths = assignments.Select(assignment => assignment.Path).ToArray();
+        string[] exportPaths = assignments.Select(assignment => assignment.Path).ToArray();
         string outputFolder = jobj?.Value<string>("outputFolder")?.Trim() ?? string.Empty;
 
-        if (importPaths.Length == 0)
+        if (exportPaths.Length == 0)
         {
             return Task.FromResult<object?>(new { error = "At least one GIS file is required" });
-        }
-
-        if (hasExplicitAssignments && assignments.Any(assignment => !assignment.LevelId.HasValue))
-        {
-            return Task.FromResult<object?>(new { error = "Select a Revit level for each GIS file." });
         }
 
         if (string.IsNullOrWhiteSpace(outputFolder))
@@ -121,7 +118,7 @@ public sealed class GisImportHandler : IRpcHandler
             return Task.FromResult<object?>(new { error = "Choose an output folder for the DXF files." });
         }
 
-        string? unsupportedPath = importPaths.FirstOrDefault(path => !GisFileReader.IsSupported(path));
+        string? unsupportedPath = exportPaths.FirstOrDefault(path => !GisFileReader.IsSupported(path));
         if (!string.IsNullOrWhiteSpace(unsupportedPath))
         {
             return Task.FromResult<object?>(new
@@ -130,7 +127,7 @@ public sealed class GisImportHandler : IRpcHandler
             });
         }
 
-        string basemapName = BuildBasemapName(jobj?.Value<string>("basemapName"), importPaths);
+        string basemapName = BuildBasemapName(jobj?.Value<string>("basemapName"), exportPaths);
         string jobId = jobs.Start(async (ct, progress) =>
         {
             progress.Report(new JobProgress { Phase = "preparing", Percent = 0, Message = "Resolving georeference..." });
@@ -141,18 +138,18 @@ public sealed class GisImportHandler : IRpcHandler
             if (referenceContext is null)
             {
                 throw new InvalidOperationException(
-                    "This project isn't georeferenced yet. Complete Georeference Setup (CRS + Project Base Point) before importing a GIS basemap.");
+                    "This project isn't georeferenced yet. Complete Georeference Setup (CRS + Project Base Point) before exporting a GIS basemap.");
             }
 
             int projectEpsg = referenceContext.ProjectCrs.EpsgCode;
             if (projectEpsg <= 0)
             {
-                throw new InvalidOperationException("The project's CRS is missing an EPSG code; GIS import needs a projected project CRS.");
+                throw new InvalidOperationException("The project's CRS is missing an EPSG code; GIS export needs a projected project CRS.");
             }
 
             ct.ThrowIfCancellationRequested();
 
-            Dictionary<long, GisImportLevel> levelsById = prep.Levels.ToDictionary(level => level.Id);
+            Dictionary<long, GisExportLevel> levelsById = prep.Levels.ToDictionary(level => level.Id);
             if (hasExplicitAssignments)
             {
                 long? missingLevelId = assignments
@@ -166,7 +163,7 @@ public sealed class GisImportHandler : IRpcHandler
             }
 
             List<string> warnings = new();
-            Dictionary<string, PreparedGisDxfGroup> groups = CreateImportGroups(assignments, levelsById, hasExplicitAssignments);
+            Dictionary<string, PreparedGisDxfGroup> groups = CreateExportGroups(assignments, levelsById, hasExplicitAssignments);
             HashSet<int> sourceEpsgCodes = new();
             int totalFeatures = 0;
             int totalPolygons = 0;
@@ -176,7 +173,7 @@ public sealed class GisImportHandler : IRpcHandler
 
             for (int fileIndex = 0; fileIndex < assignments.Length; fileIndex++)
             {
-                ImportAssignment assignment = assignments[fileIndex];
+                ExportAssignment assignment = assignments[fileIndex];
                 string importPath = assignment.Path;
                 string sourceFileName = Path.GetFileName(importPath);
                 PreparedGisDxfGroup group = groups[assignment.GroupKey];
@@ -207,7 +204,7 @@ public sealed class GisImportHandler : IRpcHandler
                     {
                         throw new InvalidOperationException(
                             warnings.FirstOrDefault()
-                            ?? "The selected GIS file did not contain any geometry to import.");
+                            ?? "The selected GIS file did not contain any geometry to export.");
                     }
 
                     warnings.Add(sourceFileName + ": no geometry was found; skipped.");
@@ -243,6 +240,7 @@ public sealed class GisImportHandler : IRpcHandler
                     importPath,
                     group.SourceFileCount == 1,
                     assignment.Category);
+
                 progress.Report(new JobProgress
                 {
                     Phase = "building",
@@ -261,6 +259,7 @@ public sealed class GisImportHandler : IRpcHandler
                     referenceContext,
                     group.UsedDxfLayerNames,
                     categoryColors.TryGetValue(assignment.Category, out DxfLayerColor? categoryColor) ? categoryColor : null);
+
                 if (basemap.IsEmpty)
                 {
                     if (isSingleFile)
@@ -282,7 +281,7 @@ public sealed class GisImportHandler : IRpcHandler
                 totalPolygons += basemap.PolygonCount;
                 totalLines += basemap.LineCount;
                 totalPoints += basemap.PointCount;
-                group.LayerSummaries.AddRange(dxfLayers.Select(layer => new GisLayerImportSummary(
+                group.LayerSummaries.AddRange(dxfLayers.Select(layer => new GisLayerExportSummary(
                     sourceFileName,
                     layer.Name,
                     layer.Geometries.Count,
@@ -313,6 +312,12 @@ public sealed class GisImportHandler : IRpcHandler
             PlateauContextDxfImporter importer = new();
 
             List<string> finalWarnings = new(warnings);
+
+            Vector3d crsMarker = new Vector3d(
+                referenceContext.AnchorProjectedCoordinate.Easting,
+                referenceContext.AnchorProjectedCoordinate.Northing,
+                referenceContext.AnchorElevationMeters);
+
             for (int outputIndex = 0; outputIndex < outputGroups.Count; outputIndex++)
             {
                 PreparedGisDxfGroup group = outputGroups[outputIndex];
@@ -321,7 +326,7 @@ public sealed class GisImportHandler : IRpcHandler
                     Phase = "building",
                     Current = outputIndex + 1,
                     Total = outputGroups.Count,
-                    Percent = 75 + (int)Math.Round(outputIndex / (double)Math.Max(1, outputGroups.Count) * 10d),
+                    Percent = 75 + (int)Math.Round(outputIndex / (double)Math.Max(1, outputGroups.Count) * 20d),
                     Message = string.Format(
                         CultureInfo.InvariantCulture,
                         "Writing DXF basemap {0} of {1}: {2}",
@@ -337,61 +342,49 @@ public sealed class GisImportHandler : IRpcHandler
                     group.Lines,
                     referenceContext,
                     group.DxfPath,
-                    Array.Empty<string>());
+                    Array.Empty<string>(),
+                    markerOverride: crsMarker);
 
                 group.DxfEntityCount = dxfBuild.FeatureCount;
-                finalWarnings.AddRange(dxfBuild.Warnings.Select(warning => group.OutputName + ": " + warning));
+                finalWarnings.AddRange(dxfBuild.Warnings.Select(w => group.OutputName + ": " + w));
+                WritePrjSidecar(group.DxfPath, referenceContext.ProjectCrs);
             }
 
             if (outputGroups.All(group => group.DxfEntityCount == 0))
             {
                 throw new InvalidOperationException(
                     finalWarnings.FirstOrDefault()
-                    ?? "The selected GIS files did not produce any DXF entities to link.");
+                    ?? "The selected GIS files did not produce any DXF entities.");
             }
 
             warnings = finalWarnings;
-            ct.ThrowIfCancellationRequested();
-
-            progress.Report(new JobProgress { Phase = "importing", Percent = 90, Message = "Linking DXF basemap into Revit..." });
-            DxfImportOutcome outcome = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
-                ImportDxfGroups(doc, importer, outputGroups, progress, ct)).ConfigureAwait(false);
-            warnings.AddRange(outcome.Warnings);
-
-            progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "Link complete" });
+            progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "Export complete" });
 
             int? sourceEpsg = sourceEpsgCodes.Count == 1 ? sourceEpsgCodes.First() : null;
-            int linkedDxfCount = outputGroups.Count(group => group.ImportedElementId.HasValue);
             int totalDxfEntities = outputGroups.Sum(group => group.DxfEntityCount);
             int totalLayerCount = outputGroups.Sum(group => group.LayerSummaries.Count);
             string summary = string.Format(
                 CultureInfo.InvariantCulture,
-                "Linked {0} GIS feature(s) from {1} file(s) as {2} 2D DXF CAD link(s) ({3} DXF entities, {4} layer(s)).",
+                "Exported {0} GIS feature(s) from {1} file(s) as {2} DXF file(s) ({3} entities, {4} layer(s)).",
                 totalFeatures,
-                importPaths.Length,
-                linkedDxfCount,
+                exportPaths.Length,
+                outputGroups.Count,
                 totalDxfEntities,
                 totalLayerCount);
 
             return (object?)new
             {
                 mode = "gis-dxf",
-                linked = true,
+                linked = false,
                 outputFolder = resolvedOutputFolder,
                 importedElements = totalFeatures,
                 featuresImported = totalFeatures,
                 dxfEntities = totalDxfEntities,
-                importedElementId = outputGroups.FirstOrDefault(group => group.ImportedElementId.HasValue)?.ImportedElementId,
-                importedElementIds = outputGroups
-                    .Where(group => group.ImportedElementId.HasValue)
-                    .Select(group => group.ImportedElementId!.Value)
-                    .ToArray(),
                 outputs = outputGroups.Select(group => new
                 {
                     name = group.OutputName,
                     levelId = group.Level?.Id,
                     levelName = group.Level?.Name,
-                    importedElementId = group.ImportedElementId,
                     dxfPath = group.DxfPath,
                     features = group.FeatureCount,
                     dxfEntities = group.DxfEntityCount,
@@ -410,8 +403,8 @@ public sealed class GisImportHandler : IRpcHandler
                 lines = totalLines,
                 points = totalPoints,
                 sourceEpsg,
-                sourceFile = importPaths[0],
-                sourceFiles = importPaths,
+                sourceFile = exportPaths[0],
+                sourceFiles = exportPaths,
                 summary,
                 warnings
             };
@@ -420,12 +413,12 @@ public sealed class GisImportHandler : IRpcHandler
         return Task.FromResult<object?>(new JobStarted { JobId = jobId });
     }
 
-    private static ImportAssignment[] GetImportAssignments(JObject? payload, out bool hasExplicitAssignments)
+    private static ExportAssignment[] GetExportAssignments(JObject? payload, out bool hasExplicitAssignments)
     {
         hasExplicitAssignments = payload?["fileAssignments"] is JArray { Count: > 0 };
         if (hasExplicitAssignments && payload?["fileAssignments"] is JArray assignmentArray)
         {
-            List<ImportAssignment> assignments = new();
+            List<ExportAssignment> assignments = new();
             foreach (JToken token in assignmentArray)
             {
                 if (token is not JObject assignmentObject)
@@ -442,7 +435,7 @@ public sealed class GisImportHandler : IRpcHandler
 
                 long? levelId = assignmentObject.Value<long?>("levelId");
                 string category = NormalizeCategory(assignmentObject.Value<string>("category"), trimmedPath!);
-                assignments.Add(new ImportAssignment(trimmedPath!, levelId, category));
+                assignments.Add(new ExportAssignment(trimmedPath!, levelId, category));
             }
 
             return assignments
@@ -451,8 +444,8 @@ public sealed class GisImportHandler : IRpcHandler
                 .ToArray();
         }
 
-        return GetImportPaths(payload)
-            .Select(path => new ImportAssignment(path, levelId: null, category: InferGisCategory(path)))
+        return GetExportPaths(payload)
+            .Select(path => new ExportAssignment(path, levelId: null, category: InferGisCategory(path)))
             .ToArray();
     }
 
@@ -520,7 +513,7 @@ public sealed class GisImportHandler : IRpcHandler
         return DetailCategory;
     }
 
-    private static string[] GetImportPaths(JObject? payload)
+    private static string[] GetExportPaths(JObject? payload)
     {
         if (payload is null)
         {
@@ -543,7 +536,7 @@ public sealed class GisImportHandler : IRpcHandler
             .ToArray();
     }
 
-    private static string BuildBasemapName(string? requestedName, IReadOnlyList<string> importPaths)
+    private static string BuildBasemapName(string? requestedName, IReadOnlyList<string> exportPaths)
     {
         string? trimmed = requestedName?.Trim();
         if (!string.IsNullOrWhiteSpace(trimmed))
@@ -551,18 +544,18 @@ public sealed class GisImportHandler : IRpcHandler
             return trimmed!;
         }
 
-        if (importPaths.Count == 1)
+        if (exportPaths.Count == 1)
         {
-            string stem = Path.GetFileNameWithoutExtension(importPaths[0]);
+            string stem = Path.GetFileNameWithoutExtension(exportPaths[0]);
             return string.IsNullOrWhiteSpace(stem) ? "GIS Basemap" : stem;
         }
 
         return "GIS Basemap";
     }
 
-    private static Dictionary<string, PreparedGisDxfGroup> CreateImportGroups(
-        IReadOnlyList<ImportAssignment> assignments,
-        IReadOnlyDictionary<long, GisImportLevel> levelsById,
+    private static Dictionary<string, PreparedGisDxfGroup> CreateExportGroups(
+        IReadOnlyList<ExportAssignment> assignments,
+        IReadOnlyDictionary<long, GisExportLevel> levelsById,
         bool hasExplicitAssignments)
     {
         Dictionary<string, int> sourceCountByGroup = assignments
@@ -573,14 +566,14 @@ public sealed class GisImportHandler : IRpcHandler
                 StringComparer.Ordinal);
 
         Dictionary<string, PreparedGisDxfGroup> groups = new(StringComparer.Ordinal);
-        foreach (ImportAssignment assignment in assignments)
+        foreach (ExportAssignment assignment in assignments)
         {
             if (groups.ContainsKey(assignment.GroupKey))
             {
                 continue;
             }
 
-            GisImportLevel? level = null;
+            GisExportLevel? level = null;
             if (hasExplicitAssignments && assignment.LevelId.HasValue)
             {
                 levelsById.TryGetValue(assignment.LevelId.Value, out level);
@@ -731,177 +724,15 @@ public sealed class GisImportHandler : IRpcHandler
         PlateauImportReferenceResolver resolver = new(transformer, new RevitPlateauImportLocalBasisProvider(doc));
         PlateauImportReferenceContext? referenceContext = resolver.Resolve(currentState, info, PlateauImportReferenceSource.WorkingProjectBasePoint);
 
-        IReadOnlyList<GisImportLevel> levels = new FilteredElementCollector(doc)
+        IReadOnlyList<GisExportLevel> levels = new FilteredElementCollector(doc)
             .OfClass(typeof(Level))
             .Cast<Level>()
             .OrderBy(level => level.Elevation)
             .ThenBy(level => level.Name, StringComparer.Ordinal)
-            .Select(level => new GisImportLevel(level.Id.Value, level.Name ?? string.Empty, level.Elevation))
+            .Select(level => new GisExportLevel(level.Id.Value, level.Name ?? string.Empty, level.Elevation))
             .ToList();
 
         return new PreparedRevitContext(referenceContext, levels);
-    }
-
-    private static DxfImportOutcome ImportDxfGroups(
-        Document doc,
-        PlateauContextDxfImporter importer,
-        IReadOnlyList<PreparedGisDxfGroup> groups,
-        IProgress<JobProgress> progress,
-        CancellationToken ct)
-    {
-        List<string> warnings = new();
-        List<long> importedIds = new();
-
-        using TransactionGroup transactionGroup = new(doc, "Link GIS Basemap");
-        transactionGroup.Start();
-
-        for (int index = 0; index < groups.Count; index++)
-        {
-            ct.ThrowIfCancellationRequested();
-            PreparedGisDxfGroup group = groups[index];
-            if (group.DxfEntityCount == 0 || string.IsNullOrWhiteSpace(group.DxfPath))
-            {
-                continue;
-            }
-
-            try
-            {
-                View? preferredView = group.Level is null ? null : ResolveFloorPlanView(doc, group.Level.Id);
-                ElementId importId = importer.LinkDxf(doc, group.DxfPath!, preferredView);
-                group.ImportedElementId = importId.Value;
-                importedIds.Add(importId.Value);
-                warnings.AddRange(TryPlaceAndTagImportedElement(doc, importId, group));
-            }
-            catch (Exception ex)
-            {
-                string pathText = string.IsNullOrWhiteSpace(group.DxfPath) ? string.Empty : " (" + group.DxfPath + ")";
-                warnings.Add(group.OutputName + pathText + ": " + ex.Message);
-            }
-
-            progress.Report(new JobProgress
-            {
-                Phase = "importing",
-                Current = index + 1,
-                Total = groups.Count,
-                Percent = 90 + (int)Math.Round((index + 1) / (double)Math.Max(1, groups.Count) * 10d),
-                Message = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "Linking DXF basemap {0} of {1}: {2}",
-                    index + 1,
-                    groups.Count,
-                    group.OutputName)
-            });
-        }
-
-        if (importedIds.Count == 0)
-        {
-            transactionGroup.RollBack();
-            throw new InvalidOperationException(BuildDxfLinkFailureMessage(warnings));
-        }
-
-        transactionGroup.Assimilate();
-        return new DxfImportOutcome(importedIds, warnings);
-    }
-
-    private static string BuildDxfLinkFailureMessage(IReadOnlyList<string> warnings)
-    {
-        if (warnings.Count == 0)
-        {
-            return "None of the GIS DXF basemaps could be linked. Revit did not return a detailed failure reason.";
-        }
-
-        string detail = string.Join(" | ", warnings.Take(8));
-        if (warnings.Count > 8)
-        {
-            detail += string.Format(CultureInfo.InvariantCulture, " | +{0} more", warnings.Count - 8);
-        }
-
-        return "None of the GIS DXF basemaps could be linked. Details: " + detail;
-    }
-
-    private static View? ResolveFloorPlanView(Document doc, long levelId)
-    {
-        return new FilteredElementCollector(doc)
-            .OfClass(typeof(ViewPlan))
-            .Cast<ViewPlan>()
-            .Where(view => !view.IsTemplate && view.ViewType == ViewType.FloorPlan)
-            .Where(view => view.GenLevel is not null && view.GenLevel.Id.Value == levelId)
-            .OrderBy(view => view.Name, StringComparer.Ordinal)
-            .FirstOrDefault();
-    }
-
-    private static IReadOnlyList<string> TryPlaceAndTagImportedElement(
-        Document doc,
-        ElementId importId,
-        PreparedGisDxfGroup group)
-    {
-        List<string> warnings = new();
-        using Transaction transaction = new(doc, "Place GIS Basemap");
-        transaction.Start();
-        try
-        {
-            Element? element = doc.GetElement(importId);
-            if (element is not null && group.Level is not null)
-            {
-                double currentZFeet = 0d;
-                if (element is ImportInstance importInstance)
-                {
-                    currentZFeet = importInstance.GetTransform().Origin.Z;
-                }
-                else if (element.Location is LocationPoint locationPoint)
-                {
-                    currentZFeet = locationPoint.Point.Z;
-                }
-
-                double deltaZFeet = group.Level.ElevationFeet - currentZFeet;
-                if (Math.Abs(deltaZFeet) > 1e-7)
-                {
-                    ElementTransformUtils.MoveElement(doc, importId, new XYZ(0d, 0d, deltaZFeet));
-                }
-            }
-
-            Parameter? comments = element?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
-            if (comments is not null && !comments.IsReadOnly)
-            {
-                comments.Set(BuildImportComment(group));
-            }
-
-            transaction.Commit();
-        }
-        catch (Exception ex)
-        {
-            if (transaction.GetStatus() == TransactionStatus.Started)
-            {
-                transaction.RollBack();
-            }
-
-            warnings.Add(group.OutputName + ": linked but could not set placement/comments: " + ex.Message);
-        }
-
-        return warnings;
-    }
-
-    private static string BuildImportComment(PreparedGisDxfGroup group)
-    {
-        string levelText = group.Level is null ? "Origin" : group.Level.Name;
-        string[] sourceNames = group.SourcePaths
-            .Select(Path.GetFileName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Take(8)
-            .Select(name => name!)
-            .ToArray();
-        string sourceText = string.Join(", ", sourceNames);
-        if (group.SourcePaths.Count > sourceNames.Length)
-        {
-            sourceText += string.Format(CultureInfo.InvariantCulture, " (+{0} more)", group.SourcePaths.Count - sourceNames.Length);
-        }
-
-        return string.Format(
-            CultureInfo.InvariantCulture,
-            "GIS basemap: {0}; Level: {1}; Sources: {2}",
-            group.OutputName,
-            levelText,
-            sourceText);
     }
 
     private static string SanitizeFileName(string value)
@@ -950,11 +781,100 @@ public sealed class GisImportHandler : IRpcHandler
         return usedPaths.Add(path);
     }
 
+    private static void WritePrjSidecar(string dxfPath, CrsReference projectCrs)
+    {
+        CrsRegistry registry = new CrsRegistry();
+        if (!registry.TryGetByEpsgCode(projectCrs.EpsgCode, out CrsDefinition? definition) || definition is null)
+        {
+            return;
+        }
+
+        string? wkt = BuildPrjWkt(definition);
+        if (string.IsNullOrWhiteSpace(wkt))
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(Path.ChangeExtension(dxfPath, ".prj"), wkt, Encoding.ASCII);
+        }
+        catch
+        {
+            // Non-critical — the DXF still works without it.
+        }
+    }
+
+    private static string? BuildPrjWkt(CrsDefinition definition)
+    {
+        if (!string.IsNullOrWhiteSpace(definition.Wkt))
+        {
+            return definition.Wkt;
+        }
+
+        (string spheroidName, double semiMajor, double inverseFlattening) = ResolveSpheroid(definition.DatumName);
+        string datumEsri = definition.DatumName.Replace(" ", "_");
+
+        if (string.Equals(definition.ProjectionMethod, "Transverse_Mercator", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "PROJCS[\"{0}\",GEOGCS[\"GCS_{1}\",DATUM[\"D_{1}\",SPHEROID[\"{2}\",{3},{4}]],PRIMEM[\"Greenwich\",0.0],UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"False_Easting\",{5}],PARAMETER[\"False_Northing\",{6}],PARAMETER[\"Central_Meridian\",{7}],PARAMETER[\"Scale_Factor\",{8}],PARAMETER[\"Latitude_Of_Origin\",{9}],UNIT[\"Meter\",1.0],AUTHORITY[\"EPSG\",\"{10}\"]]",
+                definition.Name,
+                datumEsri,
+                spheroidName,
+                semiMajor,
+                inverseFlattening,
+                definition.FalseEasting,
+                definition.FalseNorthing,
+                definition.CentralMeridian,
+                definition.ScaleFactor,
+                definition.LatitudeOfOrigin,
+                definition.EpsgCode);
+        }
+
+        if (string.Equals(definition.ProjectionMethod, "Lambert_Conformal_Conic_2SP", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "PROJCS[\"{0}\",GEOGCS[\"GCS_{1}\",DATUM[\"D_{1}\",SPHEROID[\"{2}\",{3},{4}]],PRIMEM[\"Greenwich\",0.0],UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Lambert_Conformal_Conic_2SP\"],PARAMETER[\"False_Easting\",{5}],PARAMETER[\"False_Northing\",{6}],PARAMETER[\"Central_Meridian\",{7}],PARAMETER[\"Latitude_Of_Origin\",{8}],PARAMETER[\"Standard_Parallel_1\",{9}],PARAMETER[\"Standard_Parallel_2\",{10}],UNIT[\"Meter\",1.0],AUTHORITY[\"EPSG\",\"{11}\"]]",
+                definition.Name,
+                datumEsri,
+                spheroidName,
+                semiMajor,
+                inverseFlattening,
+                definition.FalseEasting,
+                definition.FalseNorthing,
+                definition.CentralMeridian,
+                definition.LatitudeOfOrigin,
+                definition.StandardParallel1,
+                definition.StandardParallel2,
+                definition.EpsgCode);
+        }
+
+        return null;
+    }
+
+    private static (string Name, double SemiMajor, double InverseFlattening) ResolveSpheroid(string datumName)
+    {
+        if (datumName.StartsWith("WGS", StringComparison.OrdinalIgnoreCase))
+        {
+            return ("WGS_1984", 6378137.0, 298.257223563);
+        }
+
+        if (datumName.StartsWith("OSGB", StringComparison.OrdinalIgnoreCase))
+        {
+            return ("Airy_1830", 6377563.396, 299.3249646);
+        }
+
+        return ("GRS_1980", 6378137.0, 298.257222101);
+    }
+
     private sealed class PreparedRevitContext
     {
         public PreparedRevitContext(
             PlateauImportReferenceContext? referenceContext,
-            IReadOnlyList<GisImportLevel> levels)
+            IReadOnlyList<GisExportLevel> levels)
         {
             ReferenceContext = referenceContext;
             Levels = levels;
@@ -962,12 +882,12 @@ public sealed class GisImportHandler : IRpcHandler
 
         public PlateauImportReferenceContext? ReferenceContext { get; }
 
-        public IReadOnlyList<GisImportLevel> Levels { get; }
+        public IReadOnlyList<GisExportLevel> Levels { get; }
     }
 
-    private sealed class GisImportLevel
+    private sealed class GisExportLevel
     {
-        public GisImportLevel(long id, string name, double elevationFeet)
+        public GisExportLevel(long id, string name, double elevationFeet)
         {
             Id = id;
             Name = string.IsNullOrWhiteSpace(name) ? id.ToString(CultureInfo.InvariantCulture) : name;
@@ -981,9 +901,9 @@ public sealed class GisImportHandler : IRpcHandler
         public double ElevationFeet { get; }
     }
 
-    private sealed class ImportAssignment
+    private sealed class ExportAssignment
     {
-        public ImportAssignment(string path, long? levelId, string category)
+        public ExportAssignment(string path, long? levelId, string category)
         {
             Path = path;
             LevelId = levelId;
@@ -1006,7 +926,7 @@ public sealed class GisImportHandler : IRpcHandler
     {
         private readonly HashSet<string> sourcePathSet = new(StringComparer.OrdinalIgnoreCase);
 
-        public PreparedGisDxfGroup(string key, GisImportLevel? level, int sourceFileCount)
+        public PreparedGisDxfGroup(string key, GisExportLevel? level, int sourceFileCount)
         {
             Key = key;
             Level = level;
@@ -1015,7 +935,7 @@ public sealed class GisImportHandler : IRpcHandler
 
         public string Key { get; }
 
-        public GisImportLevel? Level { get; }
+        public GisExportLevel? Level { get; }
 
         public int SourceFileCount { get; }
 
@@ -1029,7 +949,7 @@ public sealed class GisImportHandler : IRpcHandler
 
         public List<PlateauContextOutlinesDxfWriter.LineFeature> Lines { get; } = new();
 
-        public List<GisLayerImportSummary> LayerSummaries { get; } = new();
+        public List<GisLayerExportSummary> LayerSummaries { get; } = new();
 
         public HashSet<string> UsedDxfLayerNames { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -1040,8 +960,6 @@ public sealed class GisImportHandler : IRpcHandler
         public int PointCount { get; set; }
 
         public int DxfEntityCount { get; set; }
-
-        public long? ImportedElementId { get; set; }
 
         public int FeatureCount => LayerSummaries.Sum(layer => layer.FeatureCount);
 
@@ -1056,22 +974,9 @@ public sealed class GisImportHandler : IRpcHandler
         }
     }
 
-    private sealed class DxfImportOutcome
+    private sealed class GisLayerExportSummary
     {
-        public DxfImportOutcome(IReadOnlyList<long> importedIds, IReadOnlyList<string> warnings)
-        {
-            ImportedIds = importedIds;
-            Warnings = warnings;
-        }
-
-        public IReadOnlyList<long> ImportedIds { get; }
-
-        public IReadOnlyList<string> Warnings { get; }
-    }
-
-    private sealed class GisLayerImportSummary
-    {
-        public GisLayerImportSummary(string sourceFile, string name, int featureCount, string category)
+        public GisLayerExportSummary(string sourceFile, string name, int featureCount, string category)
         {
             SourceFile = sourceFile;
             Name = name;

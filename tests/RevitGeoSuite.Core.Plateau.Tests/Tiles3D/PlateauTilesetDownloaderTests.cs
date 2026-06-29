@@ -283,6 +283,9 @@ public sealed class PlateauTilesetDownloaderTests
         {
             throw new NotSupportedException();
         }
+
+        public Task DownloadResumableAsync(Uri url, string destinationPath, IProgress<double>? progress, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 
     private sealed class IdentityCoordinateTransformer : ICoordinateTransformer

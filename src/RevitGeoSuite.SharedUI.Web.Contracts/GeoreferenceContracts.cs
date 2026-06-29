@@ -191,3 +191,55 @@ public sealed class GeoreferenceCurrentStateResponse
 
     public GeoreferenceBasePointSnapshot ProjectBasePoint { get; set; } = new GeoreferenceBasePointSnapshot { Name = "Project Base Point" };
 }
+
+/// <summary>Payload of the <c>georeference.getAvailableCrs</c> request.</summary>
+[TsExport]
+public sealed class AvailableCrsRequest
+{
+}
+
+/// <summary>One CRS entry in a region group.</summary>
+[TsExport]
+public sealed class CrsOptionEntry
+{
+    public int EpsgCode { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string AreaSummary { get; set; } = string.Empty;
+}
+
+/// <summary>A group of CRS entries for a geographic region.</summary>
+[TsExport]
+public sealed class CrsOptionGroup
+{
+    public string Region { get; set; } = string.Empty;
+    public CrsOptionEntry[] Entries { get; set; } = Array.Empty<CrsOptionEntry>();
+}
+
+/// <summary>Response of the <c>georeference.getAvailableCrs</c> request.</summary>
+[TsExport]
+public sealed class AvailableCrsResponse
+{
+    public CrsOptionGroup[] Groups { get; set; } = Array.Empty<CrsOptionGroup>();
+}
+
+/// <summary>Payload of the <c>georeference.revert</c> request.</summary>
+[TsExport]
+public sealed class GeoreferenceRevertRequest
+{
+}
+
+/// <summary>Result of the <c>georeference.revert</c> request.</summary>
+[TsExport]
+public sealed class GeoreferenceRevertResponse
+{
+    public bool Success { get; set; }
+    public string Summary { get; set; } = string.Empty;
+}
+
+/// <summary>Result of the <c>georeference.hasUndoSnapshot</c> request.</summary>
+[TsExport]
+public sealed class GeoreferenceHasUndoResponse
+{
+    public bool HasSnapshot { get; set; }
+    public string Summary { get; set; } = string.Empty;
+}

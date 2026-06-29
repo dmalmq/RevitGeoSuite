@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using Autodesk.Revit.DB;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.Mesh;
@@ -257,6 +258,8 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
         return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
         {
             var handle = new RevitDocumentHandle(document);
+            CaptureUndoSnapshot(handle, $"Before applying {definition.Name}");
+
             var service = new SplitSurveyProjectBasePointService();
             PlacementApplyResult result = service.ApplyPlacement(handle, intent);
 
@@ -327,6 +330,8 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
             };
 
             var handle = new RevitDocumentHandle(document);
+            CaptureUndoSnapshot(handle, $"Before confirming {definition.Name}");
+
             var service = new RevitGeoPlacementService();
             PlacementApplyResult result = service.ApplyPlacement(handle, intent);
 
@@ -345,6 +350,120 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
             }
 
             return new { success = true, message = result.AuditSummary };
+        });
+    }
+
+    private static void CaptureUndoSnapshot(RevitDocumentHandle handle, string summary)
+    {
+        try
+        {
+            var reader = new ProjectLocationReader(new GeoProjectInfoStorage());
+            CurrentProjectStateSummary state = reader.Read(handle.Document);
+            GeoProjectInfo? previousInfo = new GeoProjectInfoStorage().Load(handle);
+
+            var snapshot = new GeoreferenceUndoSnapshot
+            {
+                CapturedAtUtc = DateTime.UtcNow,
+                EastWestFeet = state.ProjectPosition.EastWestFeet,
+                NorthSouthFeet = state.ProjectPosition.NorthSouthFeet,
+                ElevationFeet = state.ProjectPosition.ElevationFeet,
+                AngleRadians = state.ProjectPosition.AngleRadians,
+                SiteLatitudeRadians = (state.SiteLatitudeDegrees ?? 0d) * (Math.PI / 180.0d),
+                SiteLongitudeRadians = (state.SiteLongitudeDegrees ?? 0d) * (Math.PI / 180.0d),
+                PreviousGeoInfo = previousInfo,
+                Summary = summary
+            };
+
+            new GeoreferenceUndoStorage().Save(handle, snapshot);
+        }
+        catch
+        {
+            // Best-effort — don't fail the apply if snapshot capture fails.
+        }
+    }
+}
+
+public sealed class GeoreferenceRevertHandler : IRpcHandler
+{
+    public string Method => "georeference.revert";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
+        {
+            var handle = new RevitDocumentHandle(document);
+            var undoStorage = new GeoreferenceUndoStorage();
+
+            GeoreferenceUndoSnapshot? snapshot = undoStorage.Load(handle);
+            if (snapshot is null)
+            {
+                throw new InvalidOperationException("No undo snapshot is available. Nothing to revert.");
+            }
+
+            using Transaction tx = new Transaction(document, "Revert Georeference");
+            tx.Start();
+            try
+            {
+                SiteLocation siteLocation = document.SiteLocation;
+                if (siteLocation is not null)
+                {
+                    siteLocation.Latitude = snapshot.SiteLatitudeRadians;
+                    siteLocation.Longitude = snapshot.SiteLongitudeRadians;
+                }
+
+                XYZ anchor = BasePoint.GetSurveyPoint(document).Position;
+                ProjectPosition position = new ProjectPosition(
+                    snapshot.EastWestFeet,
+                    snapshot.NorthSouthFeet,
+                    snapshot.ElevationFeet,
+                    snapshot.AngleRadians);
+                document.ActiveProjectLocation.SetProjectPosition(anchor, position);
+
+                var geoStore = new GeoProjectInfoStorage();
+                if (snapshot.PreviousGeoInfo is not null)
+                {
+                    geoStore.Save(handle, snapshot.PreviousGeoInfo);
+                }
+
+                undoStorage.Clear(handle);
+                tx.Commit();
+
+                return new GeoreferenceRevertResponse
+                {
+                    Success = true,
+                    Summary = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Reverted to state from {0:yyyy-MM-dd HH:mm} UTC. {1}",
+                        snapshot.CapturedAtUtc,
+                        snapshot.Summary)
+                };
+            }
+            catch
+            {
+                tx.RollBack();
+                throw;
+            }
+        });
+    }
+}
+
+public sealed class GeoreferenceHasUndoSnapshotHandler : IRpcHandler
+{
+    public string Method => "georeference.hasUndoSnapshot";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
+        {
+            var handle = new RevitDocumentHandle(document);
+            var undoStorage = new GeoreferenceUndoStorage();
+            GeoreferenceUndoSnapshot? snapshot = undoStorage.Load(handle);
+
+            return new GeoreferenceHasUndoResponse
+            {
+                HasSnapshot = snapshot is not null,
+                Summary = snapshot?.Summary ?? string.Empty
+            };
         });
     }
 }
@@ -414,4 +533,43 @@ public sealed class GeoreferenceGetCurrentStateHandler : IRpcHandler
             EstimatedLongitudeDegrees = snapshot.EstimatedLongitudeDegrees
         };
     }
+}
+
+public sealed class GeoreferenceGetAvailableCrsHandler : IRpcHandler
+{
+    public string Method => "georeference.getAvailableCrs";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        var registry = new CrsRegistry();
+        var definitions = registry.GetAvailableDefinitions();
+
+        var groups = definitions
+            .GroupBy(d => string.IsNullOrEmpty(d.RegionGroup) ? "Other" : d.RegionGroup)
+            .OrderBy(g => RegionSortOrder(g.Key))
+            .Select(g => new CrsOptionGroup
+            {
+                Region = g.Key,
+                Entries = g.OrderBy(d => d.EpsgCode)
+                    .Select(d => new CrsOptionEntry
+                    {
+                        EpsgCode = d.EpsgCode,
+                        Name = d.Name,
+                        AreaSummary = d.AreaSummary
+                    })
+                    .ToArray()
+            })
+            .ToArray();
+
+        return Task.FromResult<object?>(new AvailableCrsResponse { Groups = groups });
+    }
+
+    private static int RegionSortOrder(string region) => region switch
+    {
+        "Japan" => 0,
+        "Europe" => 1,
+        "North America" => 2,
+        "Asia-Pacific" => 3,
+        _ => 99
+    };
 }

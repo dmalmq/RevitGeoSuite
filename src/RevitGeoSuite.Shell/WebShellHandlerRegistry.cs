@@ -16,6 +16,7 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new EchoHandler());
 
         // Georeference route
+        bridge.RegisterHandler(new GeoreferenceGetAvailableCrsHandler());
         bridge.RegisterHandler(new MeshGetOverlayHandler());
         bridge.RegisterHandler(new ReadinessGetStatusHandler());
         bridge.RegisterHandler(new GeoreferenceGetCurrentStateHandler());
@@ -23,27 +24,31 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new GeoreferenceGetGridCandidatesHandler());
         bridge.RegisterHandler(new GeoreferenceResolveGridBasePointHandler());
         bridge.RegisterHandler(new GeoreferenceApplyHandler());
+        bridge.RegisterHandler(new GeoreferenceRevertHandler());
+        bridge.RegisterHandler(new GeoreferenceHasUndoSnapshotHandler());
 
         // Import route
         bridge.RegisterHandler(new DialogOpenFolderHandler());
         bridge.RegisterHandler(new DialogOpenFileHandler());
         bridge.RegisterHandler(new PlateauScanFolderHandler(jobs));
         bridge.RegisterHandler(new PlateauImportTilesHandler(jobs));
-        bridge.RegisterHandler(new GisImportOptionsHandler());
-        bridge.RegisterHandler(new GisImportHandler(jobs));
         bridge.RegisterHandler(new PlateauGroundImportHandler(jobs));
         bridge.RegisterHandler(new PlateauOnlineCatalogHandler(jobs));
         bridge.RegisterHandler(new PlateauAreaLocationHandler());
         bridge.RegisterHandler(new PlateauOnlineGridsHandler(jobs));
         bridge.RegisterHandler(new PlateauOnlineImportHandler(jobs));
+        bridge.RegisterHandler(new OsmBuildingsImportHandler(jobs));
         bridge.RegisterHandler(new PlateauCkanCatalogHandler(jobs));
         bridge.RegisterHandler(new PlateauCkanResourcesHandler());
         bridge.RegisterHandler(new PlateauCkanDownloadCheckHandler());
         bridge.RegisterHandler(new PlateauCkanDownloadHandler(jobs));
 
         // Export route
+        bridge.RegisterHandler(new GisExportOptionsHandler());
+        bridge.RegisterHandler(new GisExportHandler(jobs));
         bridge.RegisterHandler(new PlateauExportContextPrepareHandler(jobs));
         bridge.RegisterHandler(new PlateauExportContextHandler(jobs));
+        bridge.RegisterHandler(new Tiles3DExportOptionsHandler());
         bridge.RegisterHandler(new Tiles3DExportPrepareHandler());
         bridge.RegisterHandler(new Tiles3DExportHandler(jobs));
         bridge.RegisterHandler(new CityGmlExportPrepareHandler());

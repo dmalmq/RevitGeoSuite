@@ -3,7 +3,6 @@
   import { startJob } from '$lib/bridge/jobs'
   import { onMount, tick } from 'svelte'
   import { strings } from '$lib/i18n'
-  import { inferGisLevelIdFromFileName } from '$lib/import/gisLevelInference'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
   import type {
@@ -19,30 +18,11 @@
     PlateauCkanResourcesResponse,
     PlateauCkanDownloadResponse,
     PlateauCkanDownloadCheckResponse,
-    GisImportOptionsResponse,
-    GisLevelOption
   } from '$lib/bridge/contracts.generated'
 
-  type SourceType = 'local' | 'online' | 'gis' | null
+  type SourceType = 'local' | 'online' | 'osm' | null
   type ImportState = 'source' | 'preflight' | 'scan' | 'select' | 'import'
   type OnlineBasemapCategory = 'buildings' | 'roads' | 'landuse'
-  type GisImportCategory = 'opening' | 'unit' | 'level' | 'detail'
-  type GisFileAssignmentState = { path: string; levelId: number | null; category: GisImportCategory }
-
-  const gisCategoryColorsStorageKey = 'import.gis.categoryColors.v1'
-  const defaultGisCategoryColors: Record<GisImportCategory, string> = {
-    opening: '#FF0000',
-    unit: '#00B050',
-    level: '#0070C0',
-    detail: '#A6A6A6'
-  }
-
-  const gisCategoryOptions: { id: GisImportCategory; label: string }[] = [
-    { id: 'opening', label: 'Openings' },
-    { id: 'unit', label: 'Units' },
-    { id: 'level', label: 'Levels' },
-    { id: 'detail', label: 'Details' }
-  ]
 
   const onlineBasemapCategoryOptions: { id: OnlineBasemapCategory; label: string; description: string }[] = [
     { id: 'buildings', label: 'Buildings', description: 'Footprints from online 3D Tiles' },
@@ -58,21 +38,6 @@
   let step = $state<ImportState>('source')
   let source = $state<SourceType>(null)
   let folderPath = $state<string>('')
-  let gisFilePaths = $state<string[]>([])
-  let gisFileAssignments = $state<GisFileAssignmentState[]>([])
-  let gisBasemapName = $state<string>('')
-  let gisOutputFolder = $state<string>('')
-  let gisCategoryColors = $state<Record<GisImportCategory, string>>({ ...defaultGisCategoryColors })
-  let gisLevels = $state<GisLevelOption[]>([])
-  let gisDefaultLevelId = $state<number | null>(null)
-  let gisOptionsLoading = $state(false)
-  // Assignment modal: edits are live (no Apply/Cancel) and write straight back to
-  // gisFileAssignments. The selection set drives the bulk category/level controls.
-  let gisAssignmentsModalOpen = $state(false)
-  let gisAssignmentSearch = $state('')
-  let gisSelectedAssignmentPaths = $state<Set<string>>(new Set())
-  let gisBulkCategoryValue = $state<string>('')
-  let gisBulkLevelValue = $state<string>('')
   let scanning = $state(false)
   let scanProgress = $state<any>(null)
   let tiles = $state<any[]>([])
@@ -123,6 +88,14 @@
   let ckanConfirmVisible = $state(false)
   let ckanExistingUrls = $state<Set<string>>(new Set())
 
+  // OSM Buildings import state.
+  let osmIonToken = $state<string>(localStorage.getItem('import.osm.ionToken') ?? '')
+  let osmRadiusMeters = $state(500)
+  let osmMode = $state<'solids' | 'dxf'>('solids')
+  let osmImporting = $state(false)
+  let osmImportProgress = $state<any>(null)
+  let osmImportCancel: (() => void) | null = null
+
   let scanCancel: (() => void) | null = null
   let importCancel: (() => void) | null = null
   let onlineCatalogCancel: (() => void) | null = null
@@ -134,15 +107,10 @@
 
   onMount(async () => {
     const lastSource = localStorage.getItem('import.lastSource')
-    if (lastSource === 'local' || lastSource === 'online' || lastSource === 'gis') {
+    if (lastSource === 'local' || lastSource === 'online' || lastSource === 'osm') {
       source = lastSource
     }
-    gisCategoryColors = loadGisCategoryColors()
     ckanDownloadFolder = localStorage.getItem('import.ckanDownloadFolder') ?? ''
-    if (source === 'gis') {
-      geometryMode = 'dxf'
-      void loadGisImportOptions()
-    }
   })
 
   function selectSource(type: SourceType) {
@@ -153,10 +121,6 @@
     if (type === 'online' && onlineAreas.length === 0) {
       onlineCatalogAutoStarted = false
     }
-    if (type === 'gis') {
-      geometryMode = 'dxf'
-      void loadGisImportOptions()
-    }
     error = null
     preflightReady = false
     step = 'preflight'
@@ -164,7 +128,7 @@
 
   function sourceTitle(): string {
     if (source === 'local') return $strings['Import.Step.Preflight'] ?? 'Local Folder'
-    if (source === 'gis') return $strings['Import.Source.Gis.Title'] ?? 'Local GIS files'
+    if (source === 'osm') return $strings['Import.Source.OsmBuildings.Title'] ?? 'OSM Buildings'
     return $strings['Import.Source.OnlineApi.Title'] ?? 'PLATEAU Online / API'
   }
 
@@ -191,100 +155,6 @@
       }
     } catch (err: any) {
       error = err.message || ($strings['Import.Error.FolderDialog'] ?? 'Failed to open folder dialog')
-    }
-  }
-
-  async function loadGisImportOptions() {
-    if (gisOptionsLoading) return
-    gisOptionsLoading = true
-    try {
-      const result = await request<GisImportOptionsResponse>('gis.importOptions', {})
-      gisLevels = result.levels || []
-      gisDefaultLevelId = result.defaultLevelId ?? gisLevels[0]?.id ?? null
-      applyDefaultGisLevels()
-    } catch (err: any) {
-      error = err.message || ($strings['Import.Gis.Error.Options'] ?? 'Failed to load Revit levels')
-    } finally {
-      gisOptionsLoading = false
-    }
-  }
-
-  function applyDefaultGisLevels() {
-    const fallbackLevelId = gisDefaultLevelId ?? gisLevels[0]?.id ?? null
-    if (fallbackLevelId === null) return
-    gisFileAssignments = gisFileAssignments.map(assignment => ({
-      ...assignment,
-      levelId: assignment.levelId ?? inferGisLevelIdFromFileName(assignment.path, gisLevels) ?? fallbackLevelId
-    }))
-  }
-
-  function setGisSelection(paths: string[]) {
-    const previousAssignments = new Map(gisFileAssignments.map(assignment => [assignment.path.toLowerCase(), assignment]))
-    const fallbackLevelId = gisDefaultLevelId ?? gisLevels[0]?.id ?? null
-    gisFilePaths = paths
-    gisFileAssignments = paths.map(path => {
-      const previous = previousAssignments.get(path.toLowerCase())
-      return {
-        path,
-        levelId: previous?.levelId ?? inferGisLevelIdFromFileName(path, gisLevels) ?? fallbackLevelId,
-        category: previous?.category ?? inferGisCategory(path)
-      }
-    })
-
-    // Drop any modal selection that no longer points at a selected file.
-    const validPaths = new Set(paths)
-    gisSelectedAssignmentPaths = new Set(
-      Array.from(gisSelectedAssignmentPaths).filter(path => validPaths.has(path))
-    )
-
-    if (!gisBasemapName.trim() && paths.length > 0) {
-      gisBasemapName = paths.length === 1
-        ? fileStemFromPath(paths[0])
-        : ($strings['Import.Gis.DefaultBasemapName'] ?? 'GIS Basemap')
-    }
-  }
-
-  function clearGisSelection() {
-    gisFilePaths = []
-    gisFileAssignments = []
-    gisSelectedAssignmentPaths = new Set()
-    gisAssignmentsModalOpen = false
-  }
-
-  async function browseGisFile() {
-    try {
-      if (gisLevels.length === 0 && !gisOptionsLoading) {
-        await loadGisImportOptions()
-      }
-      const result = await request<{ path?: string; paths?: string[]; error?: string }>('dialog.openFile', {
-        initialPath: gisFilePaths[0] ?? '',
-        title: $strings['Import.Gis.FileLabel'] ?? 'Local GIS files'
-      })
-      if (result?.error) {
-        error = result.error
-      } else {
-        const selectedPaths = (result?.paths?.length ? result.paths : result?.path ? [result.path] : [])
-          .filter((path): path is string => !!path)
-        if (selectedPaths.length > 0) {
-          setGisSelection(selectedPaths)
-        }
-      }
-    } catch (err: any) {
-      error = err.message || ($strings['Import.Error.FileDialog'] ?? 'Failed to open file dialog')
-    }
-  }
-
-  async function browseGisOutputFolder() {
-    try {
-      const result = await request('dialog.openFolder', {
-        initialPath: gisOutputFolder,
-        title: $strings['Import.Gis.OutputFolder'] ?? 'DXF Output Folder'
-      })
-      if (result?.path) {
-        gisOutputFolder = result.path
-      }
-    } catch (err: any) {
-      error = err.message || ($strings['Export.Error.FolderDialog'] ?? 'Failed to open folder dialog')
     }
   }
 
@@ -406,66 +276,41 @@
     }
   }
 
-  async function startGisImport() {
-    if (gisFilePaths.length === 0) {
-      error = $strings['Import.Gis.Error.NoFile'] ?? 'Please select at least one GIS file first'
-      return
-    }
-    if (!gisBasemapName.trim()) {
-      error = $strings['Import.Gis.Error.NoName'] ?? 'Enter a basemap name'
-      return
-    }
-    if (!gisOutputFolder.trim()) {
-      error = $strings['Import.Gis.Error.NoOutputFolder'] ?? 'Choose an output folder for the DXF files'
-      return
-    }
-    if (gisFileAssignments.some(assignment => assignment.levelId === null)) {
-      error = $strings['Import.Gis.Error.NoLevel'] ?? 'Select a level for each GIS file'
+  async function startOsmImport() {
+    if (!osmIonToken.trim()) {
+      error = $strings['Import.Osm.Error.NoToken'] ?? 'Enter a Cesium Ion access token'
       return
     }
 
-    importing = true
+    osmImporting = true
     error = null
-    importProgress = null
-    step = 'import'
+    osmImportProgress = null
+    localStorage.setItem('import.osm.ionToken', osmIonToken.trim())
 
-    const job = startJob<{ featuresImported?: number; importedElements?: number; dxfEntities?: number; mode?: string; summary?: string; warnings?: string[] }>('gis.import', {
-      path: gisFilePaths[0],
-      paths: gisFilePaths,
-      basemapName: gisBasemapName.trim(),
-      outputFolder: gisOutputFolder.trim(),
-      fileAssignments: gisFileAssignments.map(assignment => ({
-        path: assignment.path,
-        levelId: assignment.levelId,
-        category: assignment.category
-      })),
-      categoryColors: gisCategoryOptions.map(option => ({
-        category: option.id,
-        color: normalizeHexColor(gisCategoryColors[option.id], defaultGisCategoryColors[option.id])
-      }))
+    const job = startJob<{ importedElements?: number; groups?: number; summary?: string; warnings?: string[] }>('osm.importBuildings', {
+      ionToken: osmIonToken.trim(),
+      radiusMeters: osmRadiusMeters,
+      mode: osmMode
     }, {
-      onProgress: (p) => { importProgress = p }
+      onProgress: (p) => { osmImportProgress = p }
     })
-    importCancel = job.cancel
+    osmImportCancel = job.cancel
 
     try {
       const result = await job.result
-      importProgress = { ...importProgress, complete: true, ...result }
-      importing = false
+      osmImportProgress = { ...osmImportProgress, complete: true, ...result }
+      osmImporting = false
     } catch (err: any) {
-      error = err.message || ($strings['Import.Gis.Error.Failed'] ?? 'GIS import failed')
-      importing = false
-      step = 'preflight'
+      error = err.message || ($strings['Import.Osm.Error.Failed'] ?? 'OSM Buildings import failed')
+      osmImporting = false
     } finally {
-      importCancel = null
+      osmImportCancel = null
     }
   }
 
   // Dispatches the "select" step's primary button to the right import based on source + mode.
   function runImport() {
-    if (source === 'gis') {
-      startGisImport()
-    } else if (geometryMode === 'ground') {
+    if (geometryMode === 'ground') {
       startGroundImport()
     } else if (source === 'online') {
       startOnlineImport()
@@ -720,7 +565,7 @@
       selectedTiles = new Set()
       selectedOnlineAreaCodes = new Set()
     } else if (step === 'import') {
-      step = source === 'online' || source === 'gis' ? 'preflight' : 'select'
+      step = source === 'online' ? 'preflight' : 'select'
     }
   }
 
@@ -821,153 +666,6 @@
     if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
     if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`
     return `${bytes} B`
-  }
-
-  function fileNameFromPath(path: string): string {
-    return path.split(/[\\/]/).pop() || path
-  }
-
-  function fileStemFromPath(path: string): string {
-    const fileName = fileNameFromPath(path)
-    const dot = fileName.lastIndexOf('.')
-    return dot > 0 ? fileName.slice(0, dot) : fileName
-  }
-
-  function inferGisCategory(path: string): GisImportCategory {
-    const stem = fileStemFromPath(path).toLowerCase()
-    if (stem.includes('opening')) return 'opening'
-    if (stem.includes('unit')) return 'unit'
-    if (stem.includes('level')) return 'level'
-    if (stem.includes('detail')) return 'detail'
-    return 'detail'
-  }
-
-  function normalizeGisCategory(value: string): GisImportCategory {
-    return value === 'opening' || value === 'unit' || value === 'level' || value === 'detail'
-      ? value
-      : 'detail'
-  }
-
-  function normalizeHexColor(value: string | undefined, fallback: string): string {
-    const candidate = (value || '').trim()
-    return /^#[0-9a-fA-F]{6}$/.test(candidate)
-      ? candidate.toUpperCase()
-      : fallback
-  }
-
-  function loadGisCategoryColors(): Record<GisImportCategory, string> {
-    try {
-      const raw = localStorage.getItem(gisCategoryColorsStorageKey)
-      if (!raw) return { ...defaultGisCategoryColors }
-      const parsed = JSON.parse(raw) as Partial<Record<GisImportCategory, string>>
-      return {
-        opening: normalizeHexColor(parsed.opening, defaultGisCategoryColors.opening),
-        unit: normalizeHexColor(parsed.unit, defaultGisCategoryColors.unit),
-        level: normalizeHexColor(parsed.level, defaultGisCategoryColors.level),
-        detail: normalizeHexColor(parsed.detail, defaultGisCategoryColors.detail)
-      }
-    } catch {
-      return { ...defaultGisCategoryColors }
-    }
-  }
-
-  function saveGisCategoryColors(colors: Record<GisImportCategory, string>) {
-    localStorage.setItem(gisCategoryColorsStorageKey, JSON.stringify(colors))
-  }
-
-  function levelName(levelId: number | null): string {
-    if (levelId === null) return $strings['Import.Gis.NoLevel'] ?? 'No level'
-    return gisLevels.find(level => level.id === levelId)?.name ?? String(levelId)
-  }
-
-  function levelLabel(level: GisLevelOption): string {
-    return `${level.name} (${(level.elevationFeet * 0.3048).toFixed(2)} m)`
-  }
-
-  function setGisAssignmentLevel(path: string, value: string) {
-    const levelId = value ? Number(value) : null
-    gisFileAssignments = gisFileAssignments.map(assignment =>
-      assignment.path === path ? { ...assignment, levelId } : assignment
-    )
-  }
-
-  function setGisAssignmentCategory(path: string, value: string) {
-    const category = normalizeGisCategory(value)
-    gisFileAssignments = gisFileAssignments.map(assignment =>
-      assignment.path === path ? { ...assignment, category } : assignment
-    )
-  }
-
-  function gisCategoryLabel(category: GisImportCategory): string {
-    return gisCategoryOptions.find(option => option.id === category)?.label ?? category
-  }
-
-  function openGisAssignmentsModal() {
-    gisAssignmentsModalOpen = true
-  }
-
-  function closeGisAssignmentsModal() {
-    gisAssignmentsModalOpen = false
-  }
-
-  function handleGlobalKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && gisAssignmentsModalOpen) {
-      closeGisAssignmentsModal()
-    }
-  }
-
-  function toggleGisAssignmentSelection(path: string) {
-    const next = new Set(gisSelectedAssignmentPaths)
-    if (next.has(path)) next.delete(path)
-    else next.add(path)
-    gisSelectedAssignmentPaths = next
-  }
-
-  function selectVisibleGisAssignments() {
-    const next = new Set(gisSelectedAssignmentPaths)
-    for (const assignment of gisFilteredAssignments) next.add(assignment.path)
-    gisSelectedAssignmentPaths = next
-  }
-
-  function clearGisAssignmentSelection() {
-    gisSelectedAssignmentPaths = new Set()
-  }
-
-  // Bulk controls apply the picked value to every selected row, then reset to the
-  // placeholder so the dropdown reads as an action rather than a sticky value.
-  function bulkSetGisCategory(value: string) {
-    if (value && gisSelectedAssignmentPaths.size > 0) {
-      const category = normalizeGisCategory(value)
-      gisFileAssignments = gisFileAssignments.map(assignment =>
-        gisSelectedAssignmentPaths.has(assignment.path) ? { ...assignment, category } : assignment
-      )
-    }
-    gisBulkCategoryValue = ''
-  }
-
-  function bulkSetGisLevel(value: string) {
-    if (value && gisSelectedAssignmentPaths.size > 0) {
-      const levelId = Number(value)
-      gisFileAssignments = gisFileAssignments.map(assignment =>
-        gisSelectedAssignmentPaths.has(assignment.path) ? { ...assignment, levelId } : assignment
-      )
-    }
-    gisBulkLevelValue = ''
-  }
-
-  function setGisCategoryColor(category: GisImportCategory, value: string) {
-    const next = {
-      ...gisCategoryColors,
-      [category]: normalizeHexColor(value, defaultGisCategoryColors[category])
-    }
-    gisCategoryColors = next
-    saveGisCategoryColors(next)
-  }
-
-  function resetGisCategoryColors() {
-    const next = { ...defaultGisCategoryColors }
-    gisCategoryColors = next
-    saveGisCategoryColors(next)
   }
 
   function titleizeRomaji(romaji: string): string {
@@ -1128,52 +826,6 @@
   )
   let estimatedTime = $derived(Math.ceil(selectedSize / (1024 * 1024 * 50)))
   let importedCount = $derived(importProgress?.featuresImported ?? importProgress?.importedElements ?? importProgress?.tilesImported ?? selectedCount)
-  let gisLinkedDxfPaths = $derived.by(() => {
-    const outputs = importProgress?.outputs
-    if (!Array.isArray(outputs)) return []
-    return outputs
-      .map((output: any) => output?.dxfPath)
-      .filter((path: any): path is string => typeof path === 'string' && path.trim().length > 0)
-  })
-  let gisFileDisplay = $derived.by(() => {
-    if (gisFilePaths.length === 0) return ''
-    if (gisFilePaths.length === 1) return gisFilePaths[0]
-    return fmt($strings['Import.Gis.SelectedFiles'] ?? '{0} GIS files selected', gisFilePaths.length)
-  })
-  let gisOutputPreview = $derived.by(() => {
-    const groupNames = new Map<number | null, string>()
-    for (const assignment of gisFileAssignments) {
-      if (!groupNames.has(assignment.levelId)) {
-        groupNames.set(assignment.levelId, levelName(assignment.levelId))
-      }
-    }
-    const baseName = gisBasemapName.trim() || ($strings['Import.Gis.DefaultBasemapName'] ?? 'GIS Basemap')
-    const appendLevelName = groupNames.size > 1
-    return Array.from(groupNames.values()).map(name => appendLevelName ? `${baseName} - ${name}` : baseName)
-  })
-  let canImportGis = $derived(
-    gisFileAssignments.length > 0 &&
-    gisBasemapName.trim().length > 0 &&
-    gisOutputFolder.trim().length > 0 &&
-    gisFileAssignments.every(assignment => assignment.levelId !== null)
-  )
-  let gisFilesNeedingLevel = $derived(
-    gisFileAssignments.filter(assignment => assignment.levelId === null).length
-  )
-  // Modal search matches filename, full path, category label, and level name.
-  let gisFilteredAssignments = $derived.by(() => {
-    const tokens = gisAssignmentSearch.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    if (tokens.length === 0) return gisFileAssignments
-    return gisFileAssignments.filter(assignment => {
-      const haystack = [
-        fileNameFromPath(assignment.path),
-        assignment.path,
-        gisCategoryLabel(assignment.category),
-        levelName(assignment.levelId)
-      ].join(' ').toLowerCase()
-      return tokens.every(token => haystack.includes(token))
-    })
-  })
   let activeOnlineAreas = $derived(
     onlineAreas.filter(area => selectedOnlineAreaCodes.has(area.code))
   )
@@ -1336,24 +988,6 @@
 
             <button
               class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
-              onclick={() => selectSource('gis')}
-            >
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-emerald-50 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700 rounded-lg flex items-center justify-center">
-                  <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v15m6-12v15" />
-                  </svg>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Import.Source.Gis.Title'] ?? 'Local GIS files'}</div>
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Import.Source.Gis.Description'] ?? 'Import Shapefiles or GeoPackages as DXF'}</div>
-                </div>
-              </div>
-            </button>
-
-            <button
-              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
               onclick={() => selectSource('online')}
             >
               <div class="flex items-center gap-3">
@@ -1365,6 +999,23 @@
                 <div>
                   <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Import.Source.OnlineApi.Title'] ?? 'PLATEAU Online / API'}</div>
                   <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Import.Source.OnlineApi.Description'] ?? 'Browse and download from the PLATEAU API'}</div>
+                </div>
+              </div>
+            </button>
+
+            <button
+              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+              onclick={() => selectSource('osm')}
+            >
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-orange-50 border border-orange-200 dark:bg-orange-900/30 dark:border-orange-700 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <div>
+                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Import.Source.OsmBuildings.Title'] ?? 'OSM Buildings'}</div>
+                  <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Import.Source.OsmBuildings.Description'] ?? 'Import OpenStreetMap buildings worldwide via Cesium Ion'}</div>
                 </div>
               </div>
             </button>
@@ -1699,155 +1350,124 @@
                 {$strings['Common.ScanFolder'] ?? 'Scan Folder'}
               </button>
             </div>
-          {:else if source === 'gis'}
+          {:else if source === 'osm'}
             <div class="space-y-4">
               <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4 space-y-3">
-                <label for="import-gis-basemap-name" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  {$strings['Import.Gis.NameLabel'] ?? 'Basemap name'}
+                <p class="text-sm text-neutral-500 dark:text-neutral-400">
+                  {$strings['Import.Osm.Description'] ?? 'Import OpenStreetMap building footprints from anywhere in the world via Cesium Ion.'}
+                </p>
+
+                <label for="osm-ion-token" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  {$strings['Import.Osm.TokenLabel'] ?? 'Cesium Ion Access Token'}
                 </label>
                 <input
-                  id="import-gis-basemap-name"
-                  type="text"
-                  bind:value={gisBasemapName}
-                  placeholder={$strings['Import.Gis.NamePlaceholder'] ?? 'e.g. Retail layout'}
-                  class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  id="osm-ion-token"
+                  type="password"
+                  bind:value={osmIonToken}
+                  placeholder={$strings['Import.Osm.TokenPlaceholder'] ?? 'Paste your Cesium Ion token...'}
+                  class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
+                <p class="text-xs text-neutral-400 dark:text-neutral-500">
+                  {$strings['Import.Osm.TokenHelp'] ?? 'Get a free token at ion.cesium.com'}
+                </p>
 
-                <label for="import-gis-file-path" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  {$strings['Import.Gis.FileLabel'] ?? 'GIS files'}
+                <label for="osm-radius" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  {$strings['Import.Osm.RadiusLabel'] ?? 'Radius (m)'}
+                </label>
+                <div class="flex items-center gap-3">
+                  <input
+                    id="osm-radius"
+                    type="range"
+                    min="100"
+                    max="2000"
+                    step="50"
+                    bind:value={osmRadiusMeters}
+                    class="flex-1"
+                  />
+                  <span class="text-sm text-neutral-700 dark:text-neutral-300 font-mono w-14 text-right">{osmRadiusMeters}</span>
+                </div>
+
+                <label class="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  {$strings['Import.Osm.ModeLabel'] ?? 'Import mode'}
                 </label>
                 <div class="flex gap-2">
-                  <input
-                    id="import-gis-file-path"
-                    type="text"
-                    value={gisFileDisplay}
-                    readonly
-                    placeholder={$strings['Import.Gis.SelectFilePlaceholder'] ?? 'Select .shp or .gpkg files...'}
-                    class="flex-1 min-w-0 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                  {#if gisFilePaths.length > 0}
-                    <button
-                      class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
-                      onclick={clearGisSelection}
-                    >
-                      {$strings['Common.Clear'] ?? 'Clear'}
-                    </button>
-                  {/if}
                   <button
-                    class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
-                    onclick={browseGisFile}
+                    class="flex-1 px-3 py-2 text-sm rounded-md border transition-colors {osmMode === 'solids'
+                      ? 'bg-teal-50 border-teal-400 text-teal-700 dark:bg-teal-900/30 dark:border-teal-600 dark:text-teal-300'
+                      : 'bg-white border-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-400 hover:border-neutral-300'}"
+                    onclick={() => osmMode = 'solids'}
                   >
-                    {$strings['Common.Browse'] ?? 'Browse'}
+                    {$strings['Import.Osm.ModeSolids'] ?? '3D Solids'}
+                  </button>
+                  <button
+                    class="flex-1 px-3 py-2 text-sm rounded-md border transition-colors {osmMode === 'dxf'
+                      ? 'bg-teal-50 border-teal-400 text-teal-700 dark:bg-teal-900/30 dark:border-teal-600 dark:text-teal-300'
+                      : 'bg-white border-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-400 hover:border-neutral-300'}"
+                    onclick={() => osmMode = 'dxf'}
+                  >
+                    {$strings['Import.Osm.ModeDxf'] ?? '2D Basemap'}
                   </button>
                 </div>
+              </div>
 
-                {#if gisOptionsLoading}
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">
-                    {$strings['Import.Gis.LoadingLevels'] ?? 'Loading Revit levels...'}
+              {#if error}
+                <div class="p-3 bg-red-50 border border-red-200 dark:bg-red-900/30 dark:border-red-700 rounded-lg">
+                  <div class="text-sm text-red-600 dark:text-red-400">{error}</div>
+                </div>
+              {/if}
+
+              {#if osmImporting}
+                <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4">
+                  <div class="flex items-center gap-2 mb-3">
+                    <div class="w-4 h-4 border-2 border-neutral-600 border-t-teal-500 rounded-full animate-spin"></div>
+                    <span class="text-sm text-neutral-700 dark:text-neutral-300">
+                      {$strings['Import.Osm.Importing'] ?? 'Importing OSM Buildings...'}
+                    </span>
                   </div>
-                {/if}
-
-                {#if gisFileAssignments.length > 0}
-                  <div class="space-y-2">
-                    <div class="flex items-center justify-between gap-3">
-                      <div class="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                        {$strings['Import.Gis.LineColors'] ?? 'Line colors'}
+                  {#if osmImportProgress}
+                    <div class="space-y-2">
+                      <div class="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                        {osmImportProgress.message || ''}
                       </div>
-                      <button
-                        class="text-xs text-neutral-500 transition-colors hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        onclick={resetGisCategoryColors}
-                      >
-                        {$strings['Common.Reset'] ?? 'Reset'}
-                      </button>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                      {#each gisCategoryOptions as option}
-                        <label class="flex items-center justify-between gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                          <span class="truncate">{option.label}</span>
-                          <input
-                            type="color"
-                            value={gisCategoryColors[option.id]}
-                            aria-label={`${option.label} line color`}
-                            class="h-7 w-9 shrink-0 cursor-pointer rounded border border-neutral-300 bg-transparent p-0 dark:border-neutral-600"
-                            onchange={(event) => setGisCategoryColor(option.id, event.currentTarget.value)}
-                          />
-                        </label>
-                      {/each}
-                    </div>
-                  </div>
-
-                  <div class="space-y-2">
-                    <div class="flex items-center justify-between gap-3">
-                      <div class="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                        {$strings['Import.Gis.AssignFiles'] ?? 'Assign files'}
-                      </div>
-                      <button
-                        class="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
-                        onclick={openGisAssignmentsModal}
-                      >
-                        {$strings['Import.Gis.AssignFilesButton'] ?? 'Assign files…'}
-                      </button>
-                    </div>
-                    {#if gisFilesNeedingLevel > 0}
-                      <div class="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"></span>
-                        <span>{fmt($strings['Import.Gis.LevelsNeeded'] ?? '{0} of {1} file(s) need a level', gisFilesNeedingLevel, gisFileAssignments.length)}</span>
-                      </div>
-                    {:else}
-                      <div class="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
-                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"></span>
-                        <span>{fmt($strings['Import.Gis.LevelsAssigned'] ?? 'All {0} file(s) have a level', gisFileAssignments.length)}</span>
-                      </div>
-                    {/if}
-                  </div>
-
-                  {#if gisOutputPreview.length > 0}
-                    <div class="rounded-md border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-800">
-                      <div class="mb-1 text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                        {$strings['Import.Gis.OutputPreview.Files'] ?? 'DXF files'}
-                      </div>
-                      <div class="space-y-1">
-                        {#each gisOutputPreview as name}
-                          <div class="truncate text-xs font-mono text-neutral-700 dark:text-neutral-200" title={name}>{name}</div>
-                        {/each}
-                      </div>
+                      {#if osmImportProgress.percent !== undefined}
+                        <div class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-full h-2">
+                          <div class="bg-teal-500 h-2 rounded-full transition-all" style="width: {osmImportProgress.percent}%"></div>
+                        </div>
+                        <div class="text-xs text-neutral-500 dark:text-neutral-500">
+                          {osmImportProgress.percent}% {$strings['Common.PercentComplete'] ?? 'complete'}
+                        </div>
+                      {/if}
                     </div>
                   {/if}
-                {/if}
-
-                <div>
-                  <label for="import-gis-output-folder" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    {$strings['Import.Gis.OutputFolder'] ?? 'DXF output folder'}
-                  </label>
-                  <div class="flex gap-2">
-                    <input
-                      id="import-gis-output-folder"
-                      type="text"
-                      value={gisOutputFolder}
-                      readonly
-                      placeholder={$strings['Import.Gis.SelectOutputFolder'] ?? 'Select folder for linked DXF files...'}
-                      class="flex-1 min-w-0 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                    />
-                    <button
-                      class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
-                      onclick={browseGisOutputFolder}
-                    >
-                      {$strings['Common.Browse'] ?? 'Browse'}
-                    </button>
-                  </div>
+                  <button
+                    class="mt-3 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+                    onclick={() => osmImportCancel?.()}
+                  >
+                    {$strings['Import.CancelImport'] ?? 'Cancel import'}
+                  </button>
                 </div>
-
-                <p class="text-xs text-neutral-500 dark:text-neutral-500">
-                  {$strings['Import.Gis.Hint'] ?? 'Shapefile and GeoPackage geometry is written as persistent DXF files and linked into Revit as CAD links.'}
-                </p>
-              </div>
+              {:else if osmImportProgress?.complete}
+                <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4">
+                  <div class="text-sm font-medium text-teal-600 dark:text-teal-400 mb-2">
+                    {$strings['Import.Osm.Complete'] ?? 'Import Complete'}
+                  </div>
+                  <div class="text-sm text-neutral-700 dark:text-neutral-300">
+                    {osmImportProgress.summary || fmt($strings['Import.Osm.ResultSummary'] ?? 'Imported {0} building(s)', osmImportProgress.importedElements ?? 0)}
+                  </div>
+                  {#if osmImportProgress.warnings?.length}
+                    <div class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                      {osmImportProgress.warnings.length} warning(s)
+                    </div>
+                  {/if}
+                </div>
+              {/if}
 
               <button
                 class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                onclick={startGisImport}
-                disabled={!canImportGis}
+                onclick={startOsmImport}
+                disabled={!osmIonToken.trim() || osmImporting}
               >
-                {$strings['Import.Gis.LinkButton'] ?? 'Link GIS Basemap'}
+                {$strings['Import.Osm.ImportButton'] ?? 'Import OSM Buildings'}
               </button>
             </div>
           {:else}
@@ -2284,9 +1904,7 @@
           <div class="flex items-center gap-2 mb-3">
             <div class="w-4 h-4 border-2 border-neutral-600 border-t-teal-500 rounded-full animate-spin"></div>
             <span class="text-sm text-neutral-700 dark:text-neutral-300">
-              {source === 'gis'
-                ? $strings['Import.Gis.Linking'] ?? 'Linking GIS basemap...'
-                : $strings['Import.ImportingTiles'] ?? 'Importing tiles...'}
+              {$strings['Import.ImportingTiles'] ?? 'Importing tiles...'}
             </span>
           </div>
           {#if importProgress}
@@ -2320,29 +1938,12 @@
             <div class="text-xs text-neutral-500 dark:text-neutral-500">
               {#if importProgress.mode === 'ground'}
                 {fmt($strings['Import.Complete.Ground'] ?? '{0} DEM points imported as a topography surface', importProgress.pointCount ?? 0)}
-              {:else if importProgress.mode === 'gis-dxf'}
-                {fmt($strings['Import.Gis.Complete.Linked'] ?? '{0} GIS features linked as CAD DXF reference(s)', importedCount)}
               {:else if importProgress.mode === 'dxf'}
                 {fmt($strings['Import.Complete.DxfBasemap'] ?? '{0} outlines imported as a 2D DXF basemap', importedCount)}
               {:else}
                 {importedCount} {importedCount === 1 ? $strings['Import.Complete.ElementsOne'] ?? 'element imported' : $strings['Import.Complete.ElementsOther'] ?? 'elements imported'}{importProgress.groups ? fmt($strings['Import.Complete.InGroups'] ?? ' in {0} group(s)', importProgress.groups) : ''}
               {/if}
             </div>
-            {#if importProgress.mode === 'gis-dxf' && gisLinkedDxfPaths.length > 0}
-              <div class="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-2 text-left dark:border-neutral-700 dark:bg-neutral-800">
-                <div class="mb-1 text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                  {$strings['Import.Gis.LinkedFiles'] ?? 'Saved and linked DXF files'}
-                </div>
-                <div class="space-y-1">
-                  {#each gisLinkedDxfPaths as path}
-                    <div class="truncate text-xs font-mono text-neutral-700 dark:text-neutral-200" title={path}>{path}</div>
-                  {/each}
-                </div>
-                <div class="mt-1 text-[11px] text-neutral-500 dark:text-neutral-500">
-                  {$strings['Import.Gis.LinkedFiles.Note'] ?? 'These files remain on disk and are referenced through Revit Link CAD.'}
-                </div>
-              </div>
-            {/if}
             {#if importProgress.warnings && importProgress.warnings.length > 0}
               <div class="mt-3 text-left">
                 <div class="text-xs text-amber-600 dark:text-amber-400 mb-1">{fmt($strings['Import.Warnings'] ?? '{0} warning(s)', importProgress.warnings.length)}</div>
@@ -2372,170 +1973,3 @@
     {/if}
   </aside>
 </div>
-
-<svelte:window onkeydown={handleGlobalKeydown} />
-
-{#if gisAssignmentsModalOpen}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-5">
-    <button
-      type="button"
-      class="absolute inset-0 cursor-default bg-neutral-900/50 backdrop-blur-sm"
-      aria-label={$strings['Common.Close'] ?? 'Close'}
-      onclick={closeGisAssignmentsModal}
-    ></button>
-
-    <div
-      class="relative z-10 flex max-h-[88vh] w-[min(1024px,96vw)] flex-col rounded-lg border border-neutral-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="gis-assignments-title"
-    >
-      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 p-4 dark:border-neutral-700">
-        <div>
-          <h3 id="gis-assignments-title" class="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-            {$strings['Import.Gis.AssignFiles'] ?? 'Assign files'}
-          </h3>
-          <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            {fmt($strings['Import.Gis.AssignSubtitle'] ?? '{0} file(s) · {1} need a level', gisFileAssignments.length, gisFilesNeedingLevel)}
-          </p>
-        </div>
-        <button
-          class="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
-          onclick={closeGisAssignmentsModal}
-        >
-          {$strings['Common.Close'] ?? 'Close'}
-        </button>
-      </div>
-
-      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <input
-            type="text"
-            bind:value={gisAssignmentSearch}
-            placeholder={$strings['Import.Gis.SearchPlaceholder'] ?? 'Search file, path, category, or level…'}
-            class="min-w-[240px] flex-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-          />
-          <div class="text-xs text-neutral-500 dark:text-neutral-400">
-            {fmt($strings['Import.Gis.FilteredCount'] ?? '{0} of {1}', gisFilteredAssignments.length, gisFileAssignments.length)}
-          </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-          <span class="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-            {fmt($strings['Import.Gis.SelectedCount'] ?? '{0} selected', gisSelectedAssignmentPaths.size)}
-          </span>
-          <select
-            class="h-9 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-            bind:value={gisBulkCategoryValue}
-            disabled={gisSelectedAssignmentPaths.size === 0}
-            aria-label={$strings['Import.Gis.BulkCategory'] ?? 'Set category for selected'}
-            onchange={() => bulkSetGisCategory(gisBulkCategoryValue)}
-          >
-            <option value="">{$strings['Import.Gis.BulkCategory'] ?? 'Set category…'}</option>
-            {#each gisCategoryOptions as option}
-              <option value={option.id}>{option.label}</option>
-            {/each}
-          </select>
-          <select
-            class="h-9 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-            bind:value={gisBulkLevelValue}
-            disabled={gisSelectedAssignmentPaths.size === 0 || gisLevels.length === 0}
-            aria-label={$strings['Import.Gis.BulkLevel'] ?? 'Set level for selected'}
-            onchange={() => bulkSetGisLevel(gisBulkLevelValue)}
-          >
-            <option value="">{$strings['Import.Gis.BulkLevel'] ?? 'Set level…'}</option>
-            {#each gisLevels as level}
-              <option value={level.id}>{levelLabel(level)}</option>
-            {/each}
-          </select>
-          <div class="ml-auto flex items-center gap-3">
-            <button
-              class="text-xs text-teal-600 transition-colors hover:text-teal-700 disabled:opacity-50 dark:text-teal-400 dark:hover:text-teal-300"
-              onclick={selectVisibleGisAssignments}
-              disabled={gisFilteredAssignments.length === 0}
-            >
-              {$strings['Import.Gis.SelectVisible'] ?? 'Select visible'}
-            </button>
-            <button
-              class="text-xs text-neutral-500 transition-colors hover:text-neutral-800 disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200"
-              onclick={clearGisAssignmentSelection}
-              disabled={gisSelectedAssignmentPaths.size === 0}
-            >
-              {$strings['Import.Gis.ClearSelection'] ?? 'Clear selection'}
-            </button>
-          </div>
-        </div>
-
-        <div class="min-h-0 flex-1 overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700">
-          <table class="w-full border-collapse text-sm">
-            <thead>
-              <tr class="sticky top-0 z-[1] bg-neutral-50 text-left text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                <th class="w-10 border-b border-neutral-200 p-2 dark:border-neutral-700"><span class="sr-only">{$strings['Import.Gis.SelectColumn'] ?? 'Select'}</span></th>
-                <th class="border-b border-neutral-200 p-2 dark:border-neutral-700">{$strings['Import.Gis.FileColumn'] ?? 'File'}</th>
-                <th class="w-40 border-b border-neutral-200 p-2 dark:border-neutral-700">{$strings['Import.Gis.Category'] ?? 'Category'}</th>
-                <th class="w-56 border-b border-neutral-200 p-2 dark:border-neutral-700">{$strings['Import.Gis.Level'] ?? 'Level'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#if gisFilteredAssignments.length === 0}
-                <tr>
-                  <td colspan="4" class="p-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                    {$strings['Import.Gis.NoMatches'] ?? 'No files match the current search.'}
-                  </td>
-                </tr>
-              {:else}
-                {#each gisFilteredAssignments as assignment (assignment.path)}
-                  <tr class="border-b border-neutral-100 last:border-b-0 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800/50">
-                    <td class="p-2 align-top">
-                      <input
-                        type="checkbox"
-                        class="mt-1 h-4 w-4 rounded border-neutral-300 text-teal-600 focus:ring-teal-500"
-                        checked={gisSelectedAssignmentPaths.has(assignment.path)}
-                        aria-label={fileNameFromPath(assignment.path)}
-                        onchange={() => toggleGisAssignmentSelection(assignment.path)}
-                      />
-                    </td>
-                    <td class="min-w-0 p-2">
-                      <div class="truncate font-mono text-xs text-neutral-800 dark:text-neutral-200" title={assignment.path}>
-                        {fileNameFromPath(assignment.path)}
-                      </div>
-                      <div class="truncate text-[11px] text-neutral-500 dark:text-neutral-500" title={assignment.path}>
-                        {assignment.path}
-                      </div>
-                    </td>
-                    <td class="p-2 align-top">
-                      <select
-                        class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                        value={assignment.category}
-                        aria-label={$strings['Import.Gis.Category'] ?? 'Category'}
-                        onchange={(event) => setGisAssignmentCategory(assignment.path, event.currentTarget.value)}
-                      >
-                        {#each gisCategoryOptions as option}
-                          <option value={option.id}>{option.label}</option>
-                        {/each}
-                      </select>
-                    </td>
-                    <td class="p-2 align-top">
-                      <select
-                        class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                        value={assignment.levelId ?? ''}
-                        disabled={gisLevels.length === 0}
-                        aria-label={$strings['Import.Gis.SelectLevel'] ?? 'Select level'}
-                        onchange={(event) => setGisAssignmentLevel(assignment.path, event.currentTarget.value)}
-                      >
-                        <option value="">{$strings['Import.Gis.SelectLevel'] ?? 'Select level'}</option>
-                        {#each gisLevels as level}
-                          <option value={level.id}>{levelLabel(level)}</option>
-                        {/each}
-                      </select>
-                    </td>
-                  </tr>
-                {/each}
-              {/if}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}

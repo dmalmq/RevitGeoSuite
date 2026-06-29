@@ -12,4 +12,6 @@ public interface IPlateauHttpClient
     Task<byte[]> GetBytesAsync(Uri url, CancellationToken cancellationToken);
 
     Task DownloadAsync(Uri url, Stream destination, IProgress<double>? progress, CancellationToken cancellationToken);
+
+    Task DownloadResumableAsync(Uri url, string destinationPath, IProgress<double>? progress, CancellationToken cancellationToken);
 }

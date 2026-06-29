@@ -5,6 +5,7 @@
   import type {
     GeoreferenceGridCandidate,
     GeoreferenceBasePointResponse,
+    GeoreferenceBasePointSnapshot,
     GeoreferenceCurrentStateResponse,
     PlateauAreaLocationResponse,
     PlateauOnlineArea,
@@ -102,35 +103,63 @@
   let applying = $state(false)
   let error = $state<string | null>(null)
 
+  let hasUndoSnapshot = $state(false)
+  let undoSummary = $state('')
+  let reverting = $state(false)
+
   let mapRef = $state<LeafletMap | null>(null)
 
-  // All 19 JGD2011 Japan Plane Rectangular zones (EPSG 6669–6687, zone 1→19). The backend
-  // resolves any of these via CrsRegistry (JapanCrsPresets), so every entry is selectable.
-  const crsOptions = [
-    { code: 'EPSG:6669', name: 'JGD2011 / Japan Plane Zone 1' },
-    { code: 'EPSG:6670', name: 'JGD2011 / Japan Plane Zone 2' },
-    { code: 'EPSG:6671', name: 'JGD2011 / Japan Plane Zone 3' },
-    { code: 'EPSG:6672', name: 'JGD2011 / Japan Plane Zone 4' },
-    { code: 'EPSG:6673', name: 'JGD2011 / Japan Plane Zone 5' },
-    { code: 'EPSG:6674', name: 'JGD2011 / Japan Plane Zone 6' },
-    { code: 'EPSG:6675', name: 'JGD2011 / Japan Plane Zone 7' },
-    { code: 'EPSG:6676', name: 'JGD2011 / Japan Plane Zone 8' },
-    { code: 'EPSG:6677', name: 'JGD2011 / Japan Plane Zone 9' },
-    { code: 'EPSG:6678', name: 'JGD2011 / Japan Plane Zone 10' },
-    { code: 'EPSG:6679', name: 'JGD2011 / Japan Plane Zone 11' },
-    { code: 'EPSG:6680', name: 'JGD2011 / Japan Plane Zone 12' },
-    { code: 'EPSG:6681', name: 'JGD2011 / Japan Plane Zone 13' },
-    { code: 'EPSG:6682', name: 'JGD2011 / Japan Plane Zone 14' },
-    { code: 'EPSG:6683', name: 'JGD2011 / Japan Plane Zone 15' },
-    { code: 'EPSG:6684', name: 'JGD2011 / Japan Plane Zone 16' },
-    { code: 'EPSG:6685', name: 'JGD2011 / Japan Plane Zone 17' },
-    { code: 'EPSG:6686', name: 'JGD2011 / Japan Plane Zone 18' },
-    { code: 'EPSG:6687', name: 'JGD2011 / Japan Plane Zone 19' }
-  ]
+  type CrsGroup = { region: string; entries: { epsgCode: number; name: string; areaSummary: string }[] }
+  let crsGroups = $state<CrsGroup[]>([])
+  let crsLoading = $state(false)
+
+  const allCrsOptions = $derived(
+    crsGroups.flatMap(g => g.entries.map(e => ({ code: `EPSG:${e.epsgCode}`, name: e.name })))
+  )
 
   onMount(async () => {
-    await Promise.all([loadReadinessStatus(), loadCurrentState()])
+    await Promise.all([loadReadinessStatus(), loadCurrentState(), loadAvailableCrs(), loadUndoState()])
   })
+
+  async function loadAvailableCrs() {
+    crsLoading = true
+    try {
+      const result = await request<{ groups: CrsGroup[] }>('georeference.getAvailableCrs', {})
+      crsGroups = result.groups ?? []
+    } catch {
+      crsGroups = []
+    } finally {
+      crsLoading = false
+    }
+  }
+
+  async function loadUndoState() {
+    try {
+      const result = await request<{ hasSnapshot: boolean; summary: string }>('georeference.hasUndoSnapshot', {})
+      hasUndoSnapshot = result.hasSnapshot
+      undoSummary = result.summary ?? ''
+    } catch {
+      hasUndoSnapshot = false
+    }
+  }
+
+  async function revertGeoreference() {
+    if (reverting) return
+    reverting = true
+    error = null
+    try {
+      const result = await request<{ success: boolean; summary: string }>('georeference.revert', {})
+      if (result.success) {
+        hasUndoSnapshot = false
+        undoSummary = ''
+        await Promise.all([loadReadinessStatus(), loadCurrentState()])
+      }
+    } catch (err: any) {
+      error = err.message || ($strings['Georef.Revert.Error'] ?? 'Failed to revert georeference')
+    } finally {
+      reverting = false
+    }
+  }
 
   async function loadReadinessStatus() {
     try {
@@ -160,8 +189,30 @@
     currentState?.hasDetectedExistingPointSetup ?? false
   )
 
+  // Feet tolerance for "at the internal origin", matching the backend ExistingSetupDetector.
+  const ORIGIN_TOLERANCE_FEET = 0.0001
+
+  function isAtInternalOrigin(point: GeoreferenceBasePointSnapshot | undefined): boolean {
+    if (!point) return false
+    return Math.abs(point.xFeet) < ORIGIN_TOLERANCE_FEET
+      && Math.abs(point.yFeet) < ORIGIN_TOLERANCE_FEET
+      && Math.abs(point.zFeet) < ORIGIN_TOLERANCE_FEET
+  }
+
+  // Pristine new project: both points coincide at the internal origin (0,0) with no
+  // project-position offset/angle and no stored GeoSuite metadata. Such a project has
+  // nothing real to "confirm", so route it to the new-setup flow instead.
+  const isPristineNewProject = $derived.by(() => {
+    const s = currentState
+    if (!s || s.existingSetupDetected) return false
+    return isAtInternalOrigin(s.projectBasePoint) && isAtInternalOrigin(s.surveyPoint)
+  })
+
+  // Only treat the model as having an existing setup to confirm when it is NOT pristine.
+  const treatAsExistingSetup = $derived(hasDetectedExistingPointSetup && !isPristineNewProject)
+
   const isConfirmExistingSetupMode = $derived(
-    hasDetectedExistingPointSetup && !overrideExistingSetup
+    treatAsExistingSetup && !overrideExistingSetup
   )
   const steps = $derived(isConfirmExistingSetupMode ? confirmSteps : fullSteps)
 
@@ -171,7 +222,7 @@
     const stored = currentState?.storedCrsEpsgCode
     if (stored == null) return
     const candidate = `EPSG:${stored}`
-    if (!crsOptions.some(o => o.code === candidate)) return
+    if (!allCrsOptions.some(o => o.code === candidate)) return
     if (selectedCrs !== candidate) {
       selectedCrs = candidate
     }
@@ -490,7 +541,7 @@
     }
   })
 
-  const selectedCrsName = $derived(crsOptions.find(o => o.code === selectedCrs)?.name ?? selectedCrs)
+  const selectedCrsName = $derived(allCrsOptions.find(o => o.code === selectedCrs)?.name ?? selectedCrs)
   const selectedMeshCodes = $derived(Array.from(selectedGrids).sort())
   const areaSearchResults = $derived(
     filterPlateauAreas(areaSearchCatalog, areaSearchText, {
@@ -549,7 +600,7 @@
             {/if}
           </div>
 
-          {#if hasDetectedExistingPointSetup}
+          {#if treatAsExistingSetup}
             <ReadinessBanner
               type="info"
               title={$strings['Georef.Wizard.ExistingDetected.Title'] ?? 'Existing coordinate setup detected'}
@@ -580,6 +631,26 @@
                 </div>
               {/if}
             </div>
+
+            {#if hasUndoSnapshot}
+              <div class="bg-amber-50 border border-amber-200 dark:bg-amber-900/30 dark:border-amber-700 rounded-lg p-4">
+                <div class="text-sm font-medium text-amber-700 dark:text-amber-300 mb-1">
+                  {$strings['Georef.Revert.Available'] ?? 'Previous state available'}
+                </div>
+                <p class="text-xs text-amber-600 dark:text-amber-400 mb-3">
+                  {undoSummary || ($strings['Georef.Revert.Hint'] ?? 'You can revert to the georeference state before the last apply.')}
+                </p>
+                <button
+                  class="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  onclick={revertGeoreference}
+                  disabled={reverting}
+                >
+                  {reverting
+                    ? $strings['Georef.Revert.Reverting'] ?? 'Reverting…'
+                    : $strings['Georef.Revert.Button'] ?? 'Revert to previous'}
+                </button>
+              </div>
+            {/if}
 
             <div class="space-y-2">
               {#if !overrideExistingSetup}
@@ -660,10 +731,15 @@
           <select
             id="crs-select"
             bind:value={selectedCrs}
+            disabled={crsLoading}
             class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
           >
-            {#each crsOptions as option}
-              <option value={option.code}>{option.name}</option>
+            {#each crsGroups as group}
+              <optgroup label={group.region}>
+                {#each group.entries as entry}
+                  <option value="EPSG:{entry.epsgCode}">{entry.name}</option>
+                {/each}
+              </optgroup>
             {/each}
           </select>
           <p class="text-xs text-neutral-500 dark:text-neutral-500 mt-1">
@@ -717,10 +793,15 @@
           <select
             id="confirm-crs-select"
             bind:value={selectedCrs}
+            disabled={crsLoading}
             class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
           >
-            {#each crsOptions as option}
-              <option value={option.code}>{option.name}</option>
+            {#each crsGroups as group}
+              <optgroup label={group.region}>
+                {#each group.entries as entry}
+                  <option value="EPSG:{entry.epsgCode}">{entry.name}</option>
+                {/each}
+              </optgroup>
             {/each}
           </select>
           <p class="text-xs text-neutral-500 dark:text-neutral-500 mt-1">

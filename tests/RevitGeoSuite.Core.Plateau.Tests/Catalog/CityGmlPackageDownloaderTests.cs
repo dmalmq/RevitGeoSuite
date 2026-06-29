@@ -235,5 +235,8 @@ public sealed class CityGmlPackageDownloaderTests
             await destination.WriteAsync(data, 0, data.Length, cancellationToken).ConfigureAwait(false);
             progress?.Report(1.0);
         }
+
+        public Task DownloadResumableAsync(Uri url, string destinationPath, IProgress<double>? progress, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 }

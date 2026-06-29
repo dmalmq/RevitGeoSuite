@@ -117,19 +117,16 @@ public sealed class CityGmlPackageDownloader
                 continue;
             }
 
-            string tempZip = Path.Combine(Path.GetTempPath(), "rgs-" + Guid.NewGuid().ToString("N") + "-" + SanitizeName(fileName));
+            string tempZip = Path.Combine(Path.GetTempPath(), "rgs-" + SanitizeName(code + "-" + fileName));
             try
             {
                 int index = i;
-                using (FileStream destination = File.Create(tempZip))
-                {
-                    await http.DownloadAsync(
-                        url,
-                        destination,
-                        new Progress<double>(fraction => progress?.Report(
-                            new CityGmlPackageDownloadProgress(index, total, fileName, fraction))),
-                        cancellationToken).ConfigureAwait(false);
-                }
+                await http.DownloadResumableAsync(
+                    url,
+                    tempZip,
+                    new Progress<double>(fraction => progress?.Report(
+                        new CityGmlPackageDownloadProgress(index, total, fileName, fraction))),
+                    cancellationToken).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 ExtractPackage(tempZip, root, warnings, cancellationToken);
@@ -137,7 +134,7 @@ public sealed class CityGmlPackageDownloader
             }
             catch (OperationCanceledException)
             {
-                SafeDelete(tempZip);
+                // Leave the .partial file for resume on next attempt.
                 throw;
             }
             catch (Exception ex)

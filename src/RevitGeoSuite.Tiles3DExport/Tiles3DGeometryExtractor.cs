@@ -182,7 +182,7 @@ public sealed class Tiles3DGeometryExtractor
             return;
         }
 
-        Tiles3DObjectMetadata metadata = BuildElementMetadata(element, sourceDocument, sourceLinkName, triangles);
+        Tiles3DObjectMetadata metadata = BuildElementMetadata(element, sourceDocument, sourceLinkName, triangles, transform, frame);
         if (!string.IsNullOrWhiteSpace(sourceLinkName))
         {
             metadata.Name = $"{sourceLinkName}: {metadata.Name}";
@@ -218,7 +218,9 @@ public sealed class Tiles3DGeometryExtractor
         Element element,
         string sourceDocument,
         string sourceLinkName,
-        IReadOnlyCollection<Tiles3DTriangle> triangles)
+        IReadOnlyCollection<Tiles3DTriangle> triangles,
+        Transform transform,
+        GeometryExtractionFrame frame)
     {
         string typeName = string.Empty;
         string familyName = string.Empty;
@@ -250,12 +252,12 @@ public sealed class Tiles3DGeometryExtractor
             SourceLinkName = sourceLinkName ?? string.Empty
         };
 
-        ResolveElementLevel(element, metadata);
+        ResolveElementLevel(element, metadata, transform, frame);
         ResolveVerticalExtents(triangles, metadata);
         return metadata;
     }
 
-    private static void ResolveElementLevel(Element element, Tiles3DObjectMetadata metadata)
+    private static void ResolveElementLevel(Element element, Tiles3DObjectMetadata metadata, Transform transform, GeometryExtractionFrame frame)
     {
         ElementId levelId = ResolveLevelIdFromElement(element);
 
@@ -286,7 +288,12 @@ public sealed class Tiles3DGeometryExtractor
         {
             metadata.LevelName = level.Name;
             metadata.LevelKey = Tiles3DLevelMetadata.BuildLevelKey(level.Name);
-            metadata.LevelElevationMeters = level.Elevation * FeetToMeters;
+            // Apply the link instance transform and tileset frame so the elevation lands
+            // in the same coordinate space as triangle vertex Z values. Without this,
+            // linked model levels would be in local linked-doc space and miss the link's
+            // placement offset (transform = Transform.Identity for the host model).
+            XYZ levelInHost = transform.OfPoint(new XYZ(0, 0, level.Elevation));
+            metadata.LevelElevationMeters = frame.ToLocalMeters(levelInHost).Z;
         }
     }
 
