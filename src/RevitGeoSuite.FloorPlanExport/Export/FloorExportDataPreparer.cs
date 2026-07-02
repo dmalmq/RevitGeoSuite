@@ -242,6 +242,10 @@ public sealed class FloorExportDataPreparer
                         fixtureLayer,
                         viewWarnings,
                         precomputedHostVerticalIds);
+                    if (fixtureLayer != null)
+                    {
+                        AddColumns(levelId, context.View, context.Columns, unitExtractor, fixtureLayer, viewWarnings);
+                    }
                 }
 
                 AddLinkedUnitFeatures(
@@ -492,6 +496,24 @@ public sealed class FloorExportDataPreparer
                 {
                     unitLayer.AddFeature(feature);
                 }
+            }
+        }
+    }
+
+    private static void AddColumns(
+        string levelId,
+        ViewPlan view,
+        IReadOnlyList<FamilyInstance> columns,
+        UnitExtractor extractor,
+        ExportLayer fixtureLayer,
+        ICollection<string> warnings)
+    {
+        foreach (FamilyInstance column in columns)
+        {
+            if (extractor.TryCreateColumnUnit(column, view, levelId, warnings, out ExportPolygon? feature) &&
+                feature != null)
+            {
+                fixtureLayer.AddFeature(RemapToFixtureAttributes(feature));
             }
         }
     }
@@ -1345,6 +1367,10 @@ public sealed class FloorExportDataPreparer
                 fixtureLayer,
                 warnings,
                 precomputedLinkedEscalatorIds);
+            if (fixtureLayer != null)
+            {
+                AddColumns(levelId, context.View, linkedSource.Columns, linkedUnitExtractor, fixtureLayer, warnings);
+            }
         }
     }
 

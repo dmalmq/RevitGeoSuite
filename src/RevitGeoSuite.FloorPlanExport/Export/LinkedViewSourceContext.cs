@@ -19,7 +19,8 @@ public sealed class LinkedViewSourceContext
         IReadOnlyList<FamilyInstance> familyUnits,
         IReadOnlyList<FamilyInstance> openings,
         IReadOnlyList<FamilyInstance> unsupportedOpenings,
-        IReadOnlyList<CurveElement> detailCurves)
+        IReadOnlyList<CurveElement> detailCurves,
+        IReadOnlyList<FamilyInstance>? columns = null)
     {
         LinkInstance = linkInstance ?? throw new ArgumentNullException(nameof(linkInstance));
         LinkedDocument = linkedDocument ?? throw new ArgumentNullException(nameof(linkedDocument));
@@ -37,6 +38,7 @@ public sealed class LinkedViewSourceContext
         Openings = openings ?? throw new ArgumentNullException(nameof(openings));
         UnsupportedOpenings = unsupportedOpenings ?? throw new ArgumentNullException(nameof(unsupportedOpenings));
         DetailCurves = detailCurves ?? throw new ArgumentNullException(nameof(detailCurves));
+        Columns = columns ?? Array.Empty<FamilyInstance>();
     }
 
     public RevitLinkInstance LinkInstance { get; }
@@ -62,4 +64,6 @@ public sealed class LinkedViewSourceContext
     public IReadOnlyList<FamilyInstance> UnsupportedOpenings { get; }
 
     public IReadOnlyList<CurveElement> DetailCurves { get; }
+
+    public IReadOnlyList<FamilyInstance> Columns { get; }
 }

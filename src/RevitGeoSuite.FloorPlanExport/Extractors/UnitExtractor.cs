@@ -681,6 +681,48 @@ public sealed class UnitExtractor
         return true;
     }
 
+    public bool TryCreateColumnUnit(
+        FamilyInstance column,
+        ViewPlan? view,
+        string levelId,
+        ICollection<string> warnings,
+        out ExportPolygon? feature)
+    {
+        feature = null;
+        if (column is null)
+        {
+            return false;
+        }
+
+        long elementId = column.Id.Value;
+        if (!TryExtractFamilyUnitPolygons(column, view, out List<Polygon2D> polygons))
+        {
+            warnings.Add($"Column {elementId} geometry could not be extracted.");
+            return false;
+        }
+
+        polygons = ClipPolygonsToSectionBox(polygons, $"Column {elementId}", warnings);
+        if (polygons.Count == 0)
+        {
+            return false;
+        }
+
+        if (!_zoneCatalog.TryGetCategoryInfo("column", out ZoneInfo zoneInfo))
+        {
+            zoneInfo = new ZoneInfo("column", "BDBDBD", null);
+        }
+
+        feature = CreateFeature(
+            sourceElement: column,
+            polygons: polygons,
+            levelId: levelId,
+            zoneInfo: zoneInfo,
+            sourceLabel: "column",
+            viewName: view?.Name,
+            warnings: warnings);
+        return true;
+    }
+
     internal bool TryResolveFamilyUnitZoneInfo(
         FamilyInstance familyInstance,
         out string familyName,

@@ -75,4 +75,16 @@ public sealed class ZoneCatalogTests
         Assert.Equal("stairs", catalog.StairsDefault.Category);
         Assert.Equal("C0C0C0", catalog.StairsDefault.FillColor);
     }
+
+    [Fact]
+    public void CategoryLookup_ResolvesColumn()
+    {
+        ZoneCatalog catalog = ZoneCatalog.CreateDefault();
+
+        bool found = catalog.TryGetCategoryInfo("column", out ZoneInfo info);
+
+        Assert.True(found);
+        Assert.Equal("column", info.Category);
+        Assert.Equal("BDBDBD", info.FillColor);
+    }
 }

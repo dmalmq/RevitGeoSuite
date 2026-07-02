@@ -24,6 +24,8 @@ public sealed class SharedParameterManager
         BuiltInCategory.OST_GenericModel,
         BuiltInCategory.OST_Doors,
         BuiltInCategory.OST_Windows,
+        BuiltInCategory.OST_Columns,
+        BuiltInCategory.OST_StructuralColumns,
     };
 
     private static readonly BuiltInCategory[] UnitNameCategories =

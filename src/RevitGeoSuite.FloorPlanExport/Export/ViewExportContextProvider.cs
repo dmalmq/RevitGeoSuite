@@ -90,7 +90,8 @@ public sealed class ViewExportContextProvider
                         loadedLinkInstances,
                         selectedLinkIds,
                         clipRegion),
-                    geometryView));
+                    geometryView,
+                    CollectColumnsInView(view.Id, zoneCatalog, familyCategoryOverrides, clipRegion)));
         }
 
         return contexts;
@@ -171,6 +172,34 @@ public sealed class ViewExportContextProvider
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
     }
+
+    private List<FamilyInstance> CollectColumnsInView(
+        ElementId viewId,
+        ZoneCatalog zoneCatalog,
+        IReadOnlyDictionary<string, string>? familyCategoryOverrides,
+        ClipRegion2D? clipRegion)
+    {
+        IReadOnlyDictionary<string, string> overrides = familyCategoryOverrides ??
+            new Dictionary<string, string>(StringComparer.Ordinal);
+        return new FilteredElementCollector(_document, viewId)
+            .OfClass(typeof(FamilyInstance))
+            .WherePasses(ColumnCategoryFilter)
+            .WhereElementIsNotElementType()
+            .Cast<FamilyInstance>()
+            .Where(instance =>
+            {
+                // A column family already mapped as a family unit is collected by
+                // CollectFamilyUnitsInView; the existing mapping wins to avoid double export.
+                string familyName = UnitExtractor.GetFamilyName(instance);
+                return !zoneCatalog.TryGetFamilyInfo(familyName, out _) &&
+                       !overrides.ContainsKey(familyName);
+            })
+            .Where(element => IsElementInClipRegion(element, clipRegion))
+            .ToList();
+    }
+
+    private static ElementMulticategoryFilter ColumnCategoryFilter { get; } = new(
+        new List<BuiltInCategory> { BuiltInCategory.OST_Columns, BuiltInCategory.OST_StructuralColumns });
 
     private List<FamilyInstance> CollectOpeningInstancesInView(
         ElementId viewId,
@@ -261,7 +290,8 @@ public sealed class ViewExportContextProvider
                         CollectFamilyUnitsInLinkView(viewId, linkInstance.Id, zoneCatalog, familyCategoryOverrides, linkTransform, clipRegion),
                         CollectOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion),
                         CollectUnsupportedOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion),
-                        CollectDetailCurvesInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion)));
+                        CollectDetailCurvesInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
+                        CollectColumnsInLinkView(viewId, linkInstance.Id, zoneCatalog, familyCategoryOverrides, linkTransform, clipRegion)));
             }
             catch (Exception)
             {
@@ -326,6 +356,31 @@ public sealed class ViewExportContextProvider
                 string familyName = UnitExtractor.GetFamilyName(instance);
                 return zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
                        overrides.ContainsKey(familyName);
+            })
+            .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
+            .ToList();
+    }
+
+    private List<FamilyInstance> CollectColumnsInLinkView(
+        ElementId viewId,
+        ElementId linkInstanceId,
+        ZoneCatalog zoneCatalog,
+        IReadOnlyDictionary<string, string>? familyCategoryOverrides,
+        Transform linkTransform,
+        ClipRegion2D? clipRegion)
+    {
+        IReadOnlyDictionary<string, string> overrides = familyCategoryOverrides ??
+            new Dictionary<string, string>(StringComparer.Ordinal);
+        return new FilteredElementCollector(_document, viewId, linkInstanceId)
+            .OfClass(typeof(FamilyInstance))
+            .WherePasses(ColumnCategoryFilter)
+            .WhereElementIsNotElementType()
+            .Cast<FamilyInstance>()
+            .Where(instance =>
+            {
+                string familyName = UnitExtractor.GetFamilyName(instance);
+                return !zoneCatalog.TryGetFamilyInfo(familyName, out _) &&
+                       !overrides.ContainsKey(familyName);
             })
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();

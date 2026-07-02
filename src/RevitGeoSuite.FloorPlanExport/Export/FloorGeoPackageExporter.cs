@@ -930,6 +930,7 @@ public sealed class FloorGeoPackageExporter
             AddUniqueElements(uniqueElements, context.Stairs);
             AddUniqueElements(uniqueElements, context.FamilyUnits);
             AddUniqueElements(uniqueElements, context.Openings);
+            AddUniqueElements(uniqueElements, context.Columns);
         }
 
         manager.EnsureElementIds(uniqueElements.Values.ToList(), warnings);
