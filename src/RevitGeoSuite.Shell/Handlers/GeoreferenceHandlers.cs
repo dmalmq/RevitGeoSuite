@@ -22,7 +22,8 @@ namespace RevitGeoSuite.Shell.Handlers;
 /// services (<see cref="PlateauGridCandidateIndex"/>, <see cref="PlateauGridProjectBasePointResolver"/>,
 /// <see cref="SplitSurveyProjectBasePointService"/>) so the web shell drives the exact same Survey
 /// Point / Project Base Point workflow as the original WPF window. The Survey Point is always the CRS
-/// origin (projected 0,0); the Project Base Point is the south-west corner of the selected grid extent.
+/// origin (projected 0,0); the Project Base Point is either exact user-entered CRS coordinates or the
+/// south-west corner of the selected grid extent.
 /// </summary>
 internal static class GeoreferenceHandlerSupport
 {
@@ -57,6 +58,32 @@ internal static class GeoreferenceHandlerSupport
         }
 
         return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out epsgCode);
+    }
+
+    public static ManualProjectBasePointSelection ResolveManualProjectBasePoint(
+        CrsDefinition definition,
+        CoordinateTransformer transformer,
+        GeoreferenceManualProjectBasePoint? manualProjectBasePoint)
+    {
+        if (definition is null)
+        {
+            throw new ArgumentNullException(nameof(definition));
+        }
+
+        if (transformer is null)
+        {
+            throw new ArgumentNullException(nameof(transformer));
+        }
+
+        if (manualProjectBasePoint is null)
+        {
+            throw new InvalidOperationException("Enter Project Base Point Easting and Northing before continuing.");
+        }
+
+        return new ManualProjectBasePointResolver(transformer).Resolve(
+            manualProjectBasePoint.Easting,
+            manualProjectBasePoint.Northing,
+            definition.ToReference());
     }
 }
 
@@ -175,9 +202,45 @@ public sealed class GeoreferenceResolveGridBasePointHandler : IRpcHandler
 }
 
 /// <summary>
+/// <c>georeference.resolveManualBasePoint</c> — resolves exact Project Base Point coordinates
+/// entered as easting/northing in the selected CRS into a geographic point for preview/map display.
+/// </summary>
+public sealed class GeoreferenceResolveManualBasePointHandler : IRpcHandler
+{
+    public string Method => "georeference.resolveManualBasePoint";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        var obj = payload as JObject;
+        string? crsCode = obj?.Value<string>("crsCode");
+        GeoreferenceManualProjectBasePoint? manualProjectBasePoint =
+            obj?["projectBasePoint"]?.ToObject<GeoreferenceManualProjectBasePoint>();
+
+        var registry = new CrsRegistry();
+        CrsDefinition definition = GeoreferenceHandlerSupport.ResolveCrs(registry, crsCode);
+        var transformer = new CoordinateTransformer(registry);
+
+        ManualProjectBasePointSelection resolved = GeoreferenceHandlerSupport.ResolveManualProjectBasePoint(
+            definition,
+            transformer,
+            manualProjectBasePoint);
+
+        return Task.FromResult<object?>(new
+        {
+            selectedMeshCodes = Array.Empty<string>(),
+            lat = resolved.AnchorLatitude,
+            lon = resolved.AnchorLongitude,
+            easting = resolved.ProjectedCoordinate.Easting,
+            northing = resolved.ProjectedCoordinate.Northing
+        });
+    }
+}
+
+/// <summary>
 /// <c>georeference.apply</c> — commits the split Survey Point / Project Base Point workflow to the active
 /// Revit document. The Survey Point lands on the CRS origin; the Project Base Point keeps its local
-/// position while its shared coordinates resolve to the selected grids' south-west corner.
+/// position while its shared coordinates resolve to exact CRS coordinates or the selected grids'
+/// south-west corner.
 ///
 /// When <c>confirmExistingSetup</c> is true the handler instead adopts the model&apos;s current Revit
 /// shared coordinates (metadata-only): the <c>ProjectPosition</c> and base points are not modified,
@@ -196,41 +259,58 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
         var obj = payload as JObject;
         string? crsCode = obj?.Value<string>("crsCode");
         string[] meshCodes = obj?["selectedMeshCodes"]?.ToObject<string[]>() ?? Array.Empty<string>();
+        GeoreferenceManualProjectBasePoint? manualProjectBasePoint =
+            obj?["manualProjectBasePoint"]?.ToObject<GeoreferenceManualProjectBasePoint>();
         bool confirmExistingSetup = obj?.Value<bool?>("confirmExistingSetup") ?? false;
 
         var registry = new CrsRegistry();
         CrsDefinition definition = GeoreferenceHandlerSupport.ResolveCrs(registry, crsCode);
         var transformer = new CoordinateTransformer(registry);
-        var resolver = new PlateauGridProjectBasePointResolver(new JapanMeshCalculator(), transformer);
 
         if (confirmExistingSetup)
         {
             return ApplyConfirmExistingSetupAsync(definition, registry);
         }
 
-        PlateauGridProjectBasePointSelection? selection = resolver.Resolve(meshCodes, definition.ToReference());
-        if (selection is null || !selection.ProjectedCoordinate.HasValue)
-        {
-            throw new InvalidOperationException("Select at least one valid project grid before applying the georeference.");
-        }
-
         GeographicCoordinate surveyOrigin = transformer.Unproject(new ProjectedCoordinate(0d, 0d), definition.ToReference());
-        string setupSource = string.Format(
-            CultureInfo.InvariantCulture,
-            "Web georeference — {0} PLATEAU grid(s)",
-            selection.SelectedMeshCodes.Count);
+        WorkingProjectBasePointReference localProjectBasePoint;
+        string setupSource;
 
-        var intent = new SplitSurveyProjectBasePointIntent
+        if (manualProjectBasePoint is not null)
         {
-            SelectedCrs = definition.ToReference(),
-            SharedSurveyOrigin = new ProjectOrigin
+            ManualProjectBasePointSelection resolved = GeoreferenceHandlerSupport.ResolveManualProjectBasePoint(
+                definition,
+                transformer,
+                manualProjectBasePoint);
+            setupSource = "Web georeference — exact Project Base Point coordinates";
+            localProjectBasePoint = new WorkingProjectBasePointReference
             {
-                Latitude = surveyOrigin.Latitude,
-                Longitude = surveyOrigin.Longitude,
-                ElevationMeters = 0d
-            },
-            SharedSurveyProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
-            LocalProjectBasePoint = new WorkingProjectBasePointReference
+                ProjectCrs = definition.ToReference(),
+                Origin = new ProjectOrigin
+                {
+                    Latitude = resolved.AnchorLatitude,
+                    Longitude = resolved.AnchorLongitude,
+                    ElevationMeters = 0d
+                },
+                ProjectedCoordinate = resolved.ProjectedCoordinate,
+                Confidence = GeoConfidenceLevel.Verified,
+                SetupSource = setupSource
+            };
+        }
+        else
+        {
+            var resolver = new PlateauGridProjectBasePointResolver(new JapanMeshCalculator(), transformer);
+            PlateauGridProjectBasePointSelection? selection = resolver.Resolve(meshCodes, definition.ToReference());
+            if (selection is null || !selection.ProjectedCoordinate.HasValue)
+            {
+                throw new InvalidOperationException("Select at least one valid project grid before applying the georeference.");
+            }
+
+            setupSource = string.Format(
+                CultureInfo.InvariantCulture,
+                "Web georeference — {0} PLATEAU grid(s)",
+                selection.SelectedMeshCodes.Count);
+            localProjectBasePoint = new WorkingProjectBasePointReference
             {
                 ProjectCrs = definition.ToReference(),
                 Origin = new ProjectOrigin
@@ -242,7 +322,20 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
                 ProjectedCoordinate = selection.ProjectedCoordinate,
                 Confidence = GeoConfidenceLevel.Verified,
                 SetupSource = setupSource
+            };
+        }
+
+        var intent = new SplitSurveyProjectBasePointIntent
+        {
+            SelectedCrs = definition.ToReference(),
+            SharedSurveyOrigin = new ProjectOrigin
+            {
+                Latitude = surveyOrigin.Latitude,
+                Longitude = surveyOrigin.Longitude,
+                ElevationMeters = 0d
             },
+            SharedSurveyProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
+            LocalProjectBasePoint = localProjectBasePoint,
             Confidence = GeoConfidenceLevel.Verified,
             SetupSource = setupSource,
             ApplyMode = PlacementApplyMode.ProjectLocation

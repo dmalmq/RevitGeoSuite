@@ -53,7 +53,8 @@ public sealed class FloorGeoPackageExporter
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
     {
         PreparedExportSession session = PrepareExport(
             outputDirectory,
@@ -80,7 +81,8 @@ public sealed class FloorGeoPackageExporter
             use3DSectionBoxExport: use3DSectionBoxExport,
             sectionBoxAboveFloorMeters: sectionBoxAboveFloorMeters,
             sectionBoxBelowFloorMeters: sectionBoxBelowFloorMeters,
-            keep3DTempViewsForDebug: keep3DTempViewsForDebug);
+            keep3DTempViewsForDebug: keep3DTempViewsForDebug,
+            unitCategories: unitCategories);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -110,7 +112,8 @@ public sealed class FloorGeoPackageExporter
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -202,6 +205,7 @@ public sealed class FloorGeoPackageExporter
                 ActiveValidationPolicyProfile = effectiveValidationPolicyProfile,
                 SimplifyStairUnits = simplifyStairUnits,
                 SimplifyEscalatorUnits = simplifyEscalatorUnits,
+                UnitCategories = unitCategories,
                 ViewContexts = contexts,
             });
 

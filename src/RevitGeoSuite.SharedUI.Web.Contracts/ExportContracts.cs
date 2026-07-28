@@ -148,7 +148,10 @@ public sealed class Tiles3DExportOptions
 
     public bool PreciseCrs { get; set; }
 
-    public double GeoidOffset { get; set; }
+    /// <summary>
+    /// Null means auto-detect from EGM2008 at the export anchor when precise CRS projection is enabled.
+    /// </summary>
+    public double? GeoidOffset { get; set; }
 
     public string[] SelectedLinkUniqueIds { get; set; } = System.Array.Empty<string>();
 
@@ -163,6 +166,8 @@ public sealed class Tiles3DExportPrepareResponse
     public int TriangleCount { get; set; }
 
     public string Crs { get; set; } = string.Empty;
+
+    public double GeoidOffsetMeters { get; set; }
 
     public string[] Warnings { get; set; } = System.Array.Empty<string>();
 }

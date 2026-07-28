@@ -23,6 +23,7 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new GeoreferenceGetCrsOriginHandler());
         bridge.RegisterHandler(new GeoreferenceGetGridCandidatesHandler());
         bridge.RegisterHandler(new GeoreferenceResolveGridBasePointHandler());
+        bridge.RegisterHandler(new GeoreferenceResolveManualBasePointHandler());
         bridge.RegisterHandler(new GeoreferenceApplyHandler());
         bridge.RegisterHandler(new GeoreferenceRevertHandler());
         bridge.RegisterHandler(new GeoreferenceHasUndoSnapshotHandler());
@@ -53,6 +54,11 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new Tiles3DExportHandler(jobs));
         bridge.RegisterHandler(new CityGmlExportPrepareHandler());
         bridge.RegisterHandler(new CityGmlExportHandler(jobs));
+        bridge.RegisterHandler(new CesiumExportStateHandler());
+        bridge.RegisterHandler(new CesiumExportRunHandler(jobs));
+        bridge.RegisterHandler(new CesiumPushHandler(jobs));
+        bridge.RegisterHandler(new CesiumViewerSettingsGetHandler());
+        bridge.RegisterHandler(new CesiumViewerSettingsSaveHandler());
 
         FloorPlanExportSessionManager floorPlanExport = new(bridge);
         floorPlanExport.RegisterHandlers(bridge);

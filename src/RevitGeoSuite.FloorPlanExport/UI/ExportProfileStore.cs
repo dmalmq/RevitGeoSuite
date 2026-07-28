@@ -187,6 +187,11 @@ public sealed class ExportProfileStore
             UnitAttributeSource = profile.UnitAttributeSource,
             RoomCategoryParameterName = string.IsNullOrWhiteSpace(profile.RoomCategoryParameterName) ? "Name" : profile.RoomCategoryParameterName.Trim(),
             LinkExportOptions = profile.LinkExportOptions?.Clone() ?? new RevitGeoSuite.FloorPlanExport.Export.LinkExportOptions(),
+            UnitCategories = (profile.UnitCategories ?? new List<string>())
+                .Where(category => !string.IsNullOrWhiteSpace(category))
+                .Select(category => category.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
             SchemaProfiles = SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(profile.SchemaProfiles, profile.ActiveSchemaProfileName),
             ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(profile.ValidationPolicyProfiles).Select(policy => policy.Clone()).ToList(),

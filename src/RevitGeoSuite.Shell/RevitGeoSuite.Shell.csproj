@@ -28,6 +28,7 @@
       <HintPath>$(RevitInstallDir)\RevitAPIUI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,5 +42,6 @@
     <ProjectReference Include="..\RevitGeoSuite.CityGmlExport\RevitGeoSuite.CityGmlExport.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.FloorPlanExport\RevitGeoSuite.FloorPlanExport.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.FloorPlanExport.Core\RevitGeoSuite.FloorPlanExport.Core.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.CesiumHandoff\RevitGeoSuite.CesiumHandoff.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 </Project>

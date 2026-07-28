@@ -310,7 +310,25 @@ public sealed class ZoneCatalog
 
     public IReadOnlyList<string> GetKnownCategories(bool includeUnspecified = false)
     {
-        return ImdfUnitCategoryCatalog.GetCategories(includeLegacy: true, includeUnspecified: includeUnspecified);
+        HashSet<string> categories = new(
+            ImdfUnitCategoryCatalog.GetCategories(includeLegacy: true, includeUnspecified: includeUnspecified),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (ZoneInfo info in _categoryLookup.Values)
+        {
+            string category = info.Category.Trim();
+            if (category.Length == 0 ||
+                (!includeUnspecified && string.Equals(category, "unspecified", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            categories.Add(category);
+        }
+
+        return categories
+            .OrderBy(category => category, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static IReadOnlyDictionary<string, ZoneInfo> ParseZoneLookup(JToken? token)

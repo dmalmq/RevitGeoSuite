@@ -41,7 +41,7 @@ public sealed class Tiles3DExportCoordinator
         Tiles3DExportScopeSelection scope,
         Tiles3DLevelOfDetail levelOfDetail = Tiles3DLevelOfDetail.Fine,
         bool usePreciseCrsProjection = false,
-        double geoidHeightOffsetMeters = 0d)
+        double? geoidHeightOffsetMeters = null)
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
@@ -57,7 +57,12 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("Select a non-template 3D view before preparing 3D Tiles export from a selected view.");
         }
 
-        Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(geoidHeightOffsetMeters);
+        double resolvedGeoidHeightOffsetMeters = ResolveGeoidOffset(
+            geoidHeightOffsetMeters,
+            usePreciseCrsProjection,
+            referenceContext.AnchorLatitude,
+            referenceContext.AnchorLongitude);
+        Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(resolvedGeoidHeightOffsetMeters);
 
         List<string> extractionWarnings = new List<string>();
         IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext, scope, extractionWarnings);
@@ -70,7 +75,7 @@ public sealed class Tiles3DExportCoordinator
 
         List<Tiles3DMeshPrimitive> meshList = simplified.ToList();
         IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(meshList);
-        Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, geoidHeightOffsetMeters);
+        Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, resolvedGeoidHeightOffsetMeters);
 
         if (usePreciseCrsProjection && preciseCrsRebaser is not null)
         {
@@ -85,6 +90,14 @@ public sealed class Tiles3DExportCoordinator
             Warnings = extractionWarnings,
             StatusMessage = BuildStatusMessage(package, scope)
         };
+    }
+
+    internal static double ResolveGeoidOffset(double? requestedGeoidOffsetMeters, bool usePreciseCrsProjection, double anchorLatitudeDegrees, double anchorLongitudeDegrees)
+    {
+        return requestedGeoidOffsetMeters
+            ?? (usePreciseCrsProjection
+                ? Egm2008Geoid.GetUndulationMeters(anchorLatitudeDegrees, anchorLongitudeDegrees)
+                : 0d);
     }
 
     internal static Tiles3DExportPackage BuildPackage(

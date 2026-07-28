@@ -38,6 +38,12 @@ public sealed class FloorExportPreparationOptions
 
     public bool SimplifyEscalatorUnits { get; set; }
 
+    /// <summary>
+    /// Include list of unit categories to export. Empty or null exports every category.
+    /// Applied to the final unit layer only; openings and level boundaries still see all units.
+    /// </summary>
+    public IReadOnlyList<string>? UnitCategories { get; set; }
+
     public SchemaProfile ActiveSchemaProfile { get; set; } = SchemaProfile.CreateCoreProfile();
 
     public ValidationPolicyProfile ActiveValidationPolicyProfile { get; set; } = ValidationPolicyProfile.CreateRecommendedProfile();

@@ -71,7 +71,8 @@ public sealed class ExportWorkflowCoordinator
             previewRequest.Use3DSectionBoxExport,
             previewRequest.SectionBoxAboveFloorMeters,
             previewRequest.SectionBoxBelowFloorMeters,
-            previewRequest.Keep3DTempViewsForDebug);
+            previewRequest.Keep3DTempViewsForDebug,
+            previewRequest.UnitCategories);
 
         using WebExportPreviewDialog previewDialog = new(previewRequest, previewService, owner);
         _ = previewDialog.ShowDialog();
@@ -162,7 +163,8 @@ public sealed class ExportWorkflowCoordinator
             request.Use3DSectionBoxExport,
             request.SectionBoxAboveFloorMeters,
             request.SectionBoxBelowFloorMeters,
-            request.Keep3DTempViewsForDebug);
+            request.Keep3DTempViewsForDebug,
+            request.UnitCategories);
         session.OutputFormat = request.OutputFormat;
 
         // Validation feeds diagnostics only. The wizard surfaces readiness inline at Preview,

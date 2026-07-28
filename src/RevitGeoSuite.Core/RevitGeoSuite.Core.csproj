@@ -9,6 +9,10 @@
     <PackageReference Include="ProjNET" Version="2.1.0" GeneratePathProperty="true" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Coordinates\egm2008-5.pgm" />
+  </ItemGroup>
+
   <Target Name="CopyReferenceAssembliesToCommonOutput" AfterTargets="Build">
     <Copy
       SourceFiles="@(ReferenceCopyLocalPaths)"

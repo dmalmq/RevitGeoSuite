@@ -38,11 +38,11 @@ internal static class Tiles3DExportSupport
         return (coordinator, reference, scope);
     }
 
-    public static (bool PreciseCrs, double GeoidOffset, string Scope, string[] SelectedLinkUniqueIds, string? SelectedViewUniqueId, Tiles3DLevelOfDetail LevelOfDetail) ReadOptions(JObject? payload)
+    public static (bool PreciseCrs, double? GeoidOffset, string Scope, string[] SelectedLinkUniqueIds, string? SelectedViewUniqueId, Tiles3DLevelOfDetail LevelOfDetail) ReadOptions(JObject? payload)
     {
         var options = payload?["options"] as JObject;
         bool preciseCrs = options?.Value<bool?>("preciseCrs") ?? false;
-        double geoidOffset = options?.Value<double?>("geoidOffset") ?? 0d;
+        double? geoidOffset = options?.Value<double?>("geoidOffset");
         string scope = payload?.Value<string>("scope") ?? "whole";
         string? selectedViewUniqueId = options?.Value<string>("selectedViewUniqueId");
         Tiles3DLevelOfDetail levelOfDetail = ParseLevelOfDetail(options?.Value<string>("lod"));
@@ -167,7 +167,7 @@ public sealed class Tiles3DExportPrepareHandler : IRpcHandler
 
     public Task<object?> HandleAsync(object? payload)
     {
-        (bool preciseCrs, double geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail) =
+        (bool preciseCrs, double? geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail) =
             Tiles3DExportSupport.ReadOptions(payload as JObject);
 
         // Geometry extraction touches the Revit API, so the preview runs on the API thread.
@@ -185,6 +185,7 @@ public sealed class Tiles3DExportPrepareHandler : IRpcHandler
                 ElementCount = package.ElementCount,
                 TriangleCount = package.TriangleCount,
                 Crs = $"EPSG:{package.ReferenceContext.ProjectCrs.EpsgCode}",
+                GeoidOffsetMeters = package.GeoidHeightOffsetMeters,
                 Warnings = Tiles3DExportSupport.ScopeWarnings(scope)
                     .Concat(prep.Warnings)
                     .ToArray()
@@ -217,7 +218,7 @@ public sealed class Tiles3DExportHandler : IRpcHandler
             return Task.FromResult<object?>(new { error = "Output folder is required" });
         }
 
-        (bool preciseCrs, double geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail) =
+        (bool preciseCrs, double? geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail) =
             Tiles3DExportSupport.ReadOptions(jobj);
 
         string jobId = jobs.Start(async (ct, progress) =>
