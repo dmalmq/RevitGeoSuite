@@ -87,6 +87,52 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
     }
 
     [Fact]
+    public void CreateStagingLayout_DoesNotChangeExistingPackage()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "tiles"));
+        Directory.CreateDirectory(Path.Combine(_root, "gis"));
+        File.WriteAllText(Path.Combine(_root, "tiles", "tileset.json"), "old-tiles");
+        File.WriteAllText(Path.Combine(_root, "gis", "old.gpkg"), "old-gis");
+        File.WriteAllText(Path.Combine(_root, "cesium-package.json"), "old-manifest");
+
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout staging = builder.CreateStagingLayout(_root);
+        File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "new-tiles");
+        builder.DeleteStagingLayout(staging);
+
+        Assert.Equal("old-tiles", File.ReadAllText(Path.Combine(_root, "tiles", "tileset.json")));
+        Assert.Equal("old-gis", File.ReadAllText(Path.Combine(_root, "gis", "old.gpkg")));
+        Assert.Equal("old-manifest", File.ReadAllText(Path.Combine(_root, "cesium-package.json")));
+    }
+
+    [Fact]
+    public void PublishLayout_ReplacesManagedPackageAndPreservesOtherFiles()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "tiles"));
+        Directory.CreateDirectory(Path.Combine(_root, "gis"));
+        File.WriteAllText(Path.Combine(_root, "tiles", "old.glb"), "old");
+        File.WriteAllText(Path.Combine(_root, "gis", "old.gpkg"), "old");
+        File.WriteAllText(Path.Combine(_root, "cesium-package.json"), "old");
+        File.WriteAllText(Path.Combine(_root, "keep.txt"), "keep");
+
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout staging = builder.CreateStagingLayout(_root);
+        File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "{}");
+        File.WriteAllText(Path.Combine(staging.GisDirectory, "new.gpkg"), "new");
+        builder.WriteManifest(staging, CreateInputs());
+
+        CesiumPackageLayout published = builder.PublishLayout(staging, _root);
+
+        Assert.True(File.Exists(Path.Combine(published.TilesDirectory, "tileset.json")));
+        Assert.True(File.Exists(Path.Combine(published.GisDirectory, "new.gpkg")));
+        Assert.False(File.Exists(Path.Combine(published.TilesDirectory, "old.glb")));
+        Assert.False(File.Exists(Path.Combine(published.GisDirectory, "old.gpkg")));
+        Assert.True(File.Exists(published.ManifestPath));
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(_root, "keep.txt")));
+        Assert.False(Directory.Exists(staging.RootDirectory));
+    }
+
+    [Fact]
     public void WriteManifest_ScansArtifactsAndWritesManifest()
     {
         var builder = new CesiumPackageLayoutBuilder();

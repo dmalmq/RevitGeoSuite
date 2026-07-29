@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { startJob } from '$lib/bridge/jobs'
   import { request } from '$lib/bridge/rpc'
+  import { parseManualCoordinate } from '$lib/georeference/manualCoordinate'
   import type {
     GeoreferenceGridCandidate,
     GeoreferenceBasePointResponse,
@@ -270,9 +271,9 @@
   }
 
   function manualProjectBasePointPayload(): GeoreferenceManualProjectBasePoint | null {
-    const easting = Number.parseFloat(manualEasting)
-    const northing = Number.parseFloat(manualNorthing)
-    if (!Number.isFinite(easting) || !Number.isFinite(northing)) {
+    const easting = parseManualCoordinate(manualEasting)
+    const northing = parseManualCoordinate(manualNorthing)
+    if (easting === null || northing === null) {
       error = $strings['Georef.Wizard.Error.InvalidEastingNorthing'] ?? 'Enter valid Easting and Northing values.'
       return null
     }

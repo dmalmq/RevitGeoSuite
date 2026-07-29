@@ -134,10 +134,13 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         string jobId = jobs.Start(async (ct, progress) =>
         {
             var builder = new CesiumPackageLayoutBuilder();
-            CesiumPackageLayout layout = builder.CreateLayout(request.OutputFolder);
-            var warnings = new List<string>();
+            CesiumPackageLayout stagingLayout = builder.CreateStagingLayout(request.OutputFolder);
+            CesiumPackageLayout layout = stagingLayout;
+            try
+            {
+                var warnings = new List<string>();
 
-            progress.Report(new JobProgress { Phase = "tiles", Percent = 5, Message = "Exporting 3D Tiles…" });
+                progress.Report(new JobProgress { Phase = "tiles", Percent = 5, Message = "Exporting 3D Tiles…" });
             ct.ThrowIfCancellationRequested();
 
             Tiles3DStepResult tiles = await RevitContext.Instance
@@ -153,8 +156,8 @@ public sealed class CesiumExportRunHandler : IRpcHandler
 
             progress.Report(new JobProgress { Phase = "manifest", Percent = 85, Message = "Writing package manifest…" });
 
-            CesiumPackageManifest manifest = builder.WriteManifest(layout, new CesiumPackageBuildInputs
-            {
+                builder.WriteManifest(layout, new CesiumPackageBuildInputs
+                {
                 BuildingId = CesiumBuildingIdentity.CreateId(gis.ProjectKey, gis.BuildingName),
                 BuildingName = gis.BuildingName,
                 SourceModel = gis.SourceModel,
@@ -169,7 +172,14 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 GeoidOffsetMeters = tiles.GeoidOffsetMeters,
                 LevelMap = gis.LevelMap,
                 GisLayers = new List<string> { "unit", "detail", "opening", "fixture", "level" },
-            });
+                });
+
+                string stagedRoot = layout.RootDirectory;
+                layout = builder.PublishLayout(layout, request.OutputFolder);
+                tiles.TilesetPath = RebasePackagePath(tiles.TilesetPath, stagedRoot, layout.RootDirectory);
+                gis.ArtifactPaths = gis.ArtifactPaths
+                    .Select(path => RebasePackagePath(path, stagedRoot, layout.RootDirectory))
+                    .ToList();
 
             bool pushed = false;
             string pushMessage = string.Empty;
@@ -196,20 +206,33 @@ public sealed class CesiumExportRunHandler : IRpcHandler
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "Export complete" });
 
-            return (object?)new CesiumExportRunResponse
+                return (object?)new CesiumExportRunResponse
+                {
+                    PackageRoot = layout.RootDirectory,
+                    ManifestPath = layout.ManifestPath,
+                    TilesetPath = tiles.TilesetPath,
+                    GisArtifacts = gis.ArtifactPaths.ToArray(),
+                    Pushed = pushed,
+                    PushMessage = pushMessage,
+                    Summary = $"Package written to {layout.RootDirectory}",
+                    Warnings = warnings.ToArray(),
+                };
+            }
+            finally
             {
-                PackageRoot = layout.RootDirectory,
-                ManifestPath = layout.ManifestPath,
-                TilesetPath = tiles.TilesetPath,
-                GisArtifacts = gis.ArtifactPaths.ToArray(),
-                Pushed = pushed,
-                PushMessage = pushMessage,
-                Summary = $"Package written to {layout.RootDirectory}",
-                Warnings = warnings.ToArray(),
-            };
+                builder.DeleteStagingLayout(stagingLayout);
+            }
         });
 
         return Task.FromResult<object?>(new JobStarted { JobId = jobId });
+    }
+
+    private static string RebasePackagePath(string path, string sourceRoot, string destinationRoot)
+    {
+        string relative = Path.GetFullPath(path).Substring(
+            Path.GetFullPath(sourceRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Length)
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return Path.Combine(destinationRoot, relative);
     }
 
     private sealed class Tiles3DStepResult

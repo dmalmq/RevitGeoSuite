@@ -91,6 +91,120 @@ public sealed class CesiumPackageLayoutBuilder
         return layout;
     }
 
+    public CesiumPackageLayout CreateStagingLayout(string destinationRootDirectory)
+    {
+        string destination = Path.GetFullPath(new CesiumPackageLayout(destinationRootDirectory).RootDirectory);
+        string parent = Path.GetDirectoryName(destination)
+            ?? throw new InvalidOperationException($"Cannot determine the parent of package directory '{destination}'.");
+        Directory.CreateDirectory(parent);
+        string name = Path.GetFileName(destination.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string stagingRoot = Path.Combine(parent, $".{name}.staging-{Guid.NewGuid():N}");
+        return CreateLayout(stagingRoot);
+    }
+
+    public CesiumPackageLayout PublishLayout(CesiumPackageLayout stagingLayout, string destinationRootDirectory)
+    {
+        if (stagingLayout is null)
+        {
+            throw new ArgumentNullException(nameof(stagingLayout));
+        }
+
+        if (!File.Exists(stagingLayout.ManifestPath))
+        {
+            throw new InvalidOperationException("The staged package has no manifest.");
+        }
+
+        var destination = new CesiumPackageLayout(Path.GetFullPath(destinationRootDirectory));
+        string parent = Path.GetDirectoryName(destination.RootDirectory)
+            ?? throw new InvalidOperationException($"Cannot determine the parent of package directory '{destination.RootDirectory}'.");
+        Directory.CreateDirectory(destination.RootDirectory);
+        string backupRoot = Path.Combine(parent, $".{Path.GetFileName(destination.RootDirectory)}.backup-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(backupRoot);
+
+        var replacements = new[]
+        {
+            (Staged: stagingLayout.TilesDirectory, Destination: destination.TilesDirectory, Backup: Path.Combine(backupRoot, "tiles"), IsDirectory: true),
+            (Staged: stagingLayout.GisDirectory, Destination: destination.GisDirectory, Backup: Path.Combine(backupRoot, "gis"), IsDirectory: true),
+            (Staged: stagingLayout.ManifestPath, Destination: destination.ManifestPath, Backup: Path.Combine(backupRoot, "cesium-package.json"), IsDirectory: false),
+        };
+
+        var installedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var replacement in replacements)
+            {
+                if (replacement.IsDirectory && Directory.Exists(replacement.Destination))
+                {
+                    Directory.Move(replacement.Destination, replacement.Backup);
+                }
+                else if (!replacement.IsDirectory && File.Exists(replacement.Destination))
+                {
+                    File.Move(replacement.Destination, replacement.Backup);
+                }
+
+                if (replacement.IsDirectory)
+                {
+                    Directory.Move(replacement.Staged, replacement.Destination);
+                }
+                else
+                {
+                    File.Move(replacement.Staged, replacement.Destination);
+                }
+                installedDestinations.Add(replacement.Destination);
+            }
+        }
+        catch
+        {
+            foreach (var replacement in replacements.Reverse())
+            {
+                if (replacement.IsDirectory)
+                {
+                    if (installedDestinations.Contains(replacement.Destination) && Directory.Exists(replacement.Destination))
+                    {
+                        Directory.Delete(replacement.Destination, recursive: true);
+                    }
+                    if (Directory.Exists(replacement.Backup))
+                    {
+                        Directory.Move(replacement.Backup, replacement.Destination);
+                    }
+                }
+                else
+                {
+                    if (installedDestinations.Contains(replacement.Destination) && File.Exists(replacement.Destination))
+                    {
+                        File.Delete(replacement.Destination);
+                    }
+                    if (File.Exists(replacement.Backup))
+                    {
+                        File.Move(replacement.Backup, replacement.Destination);
+                    }
+                }
+            }
+            throw;
+        }
+        finally
+        {
+            if (Directory.Exists(backupRoot))
+            {
+                Directory.Delete(backupRoot, recursive: true);
+            }
+            if (Directory.Exists(stagingLayout.RootDirectory))
+            {
+                Directory.Delete(stagingLayout.RootDirectory, recursive: true);
+            }
+        }
+
+        return destination;
+    }
+
+    public void DeleteStagingLayout(CesiumPackageLayout stagingLayout)
+    {
+        if (stagingLayout is not null && Directory.Exists(stagingLayout.RootDirectory))
+        {
+            Directory.Delete(stagingLayout.RootDirectory, recursive: true);
+        }
+    }
+
     public CesiumPackageManifest WriteManifest(CesiumPackageLayout layout, CesiumPackageBuildInputs inputs)
     {
         if (layout is null)
