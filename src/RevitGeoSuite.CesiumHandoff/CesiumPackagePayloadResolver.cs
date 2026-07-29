@@ -97,9 +97,11 @@ internal static class CesiumPackagePayloadResolver
 
         JObject document = JObject.Parse(File.ReadAllText(fullManifestPath));
         string manifestDirectory = Path.GetDirectoryName(normalizedManifest)?.Replace('\\', '/') ?? string.Empty;
-        foreach (JToken file in document["files"] ?? new JArray())
+        foreach (JToken file in document.GetValue("files", StringComparison.OrdinalIgnoreCase) ?? new JArray())
         {
-            string? relativePath = (string?)file["relativePath"];
+            string? relativePath = file is JObject fileObject
+                ? (string?)fileObject.GetValue("relativePath", StringComparison.OrdinalIgnoreCase)
+                : null;
             if (!string.IsNullOrWhiteSpace(relativePath))
             {
                 AddPath(root, paths, Path.Combine(manifestDirectory, relativePath).Replace(Path.DirectorySeparatorChar, '/'));

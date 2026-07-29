@@ -80,6 +80,26 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
         Assert.NotEqual(before, after);
     }
 
+    [Theory]
+    [InlineData("Files", "RelativePath")]
+    [InlineData("files", "relativePath")]
+    public void ComposeFromFolder_HashIncludesPackageManifestReferences(
+        string filesProperty,
+        string relativePathProperty)
+    {
+        File.WriteAllText(Path.Combine(_root, "unit.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(_root, "preview.png"), "before");
+        File.WriteAllText(
+            Path.Combine(_root, "package-manifest.json"),
+            $"{{\"{filesProperty}\":[{{\"{relativePathProperty}\":\"preview.png\"}}]}}");
+
+        string? before = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+        File.WriteAllText(Path.Combine(_root, "preview.png"), "after");
+        string? after = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+
+        Assert.NotEqual(before, after);
+    }
+
     [Fact]
     public void ComposeFromFolder_PrefersPackageLayoutSubdirsWhenPresent()
     {

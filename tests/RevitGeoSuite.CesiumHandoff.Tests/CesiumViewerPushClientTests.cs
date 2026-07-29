@@ -153,6 +153,41 @@ public sealed class CesiumViewerPushClientTests : IDisposable
         Assert.DoesNotContain("PRIVATE", server.RequestBody);
     }
 
+    [Theory]
+    [InlineData("Files", "RelativePath")]
+    [InlineData("files", "relativePath")]
+    public async Task PushAsync_SendsPackageManifestReferences(
+        string filesProperty,
+        string relativePathProperty)
+    {
+        string gisDirectory = Path.Combine(_packageRoot, "gis");
+        File.WriteAllText(Path.Combine(gisDirectory, "preview.png"), "PREVIEW");
+        File.WriteAllText(
+            Path.Combine(gisDirectory, "package-manifest.json"),
+            $"{{\"{filesProperty}\":[{{\"{relativePathProperty}\":\"preview.png\"}}]}}");
+        CesiumPackageFolderComposer.ComposeFromFolder(_packageRoot, new CesiumPackageBuildInputs
+        {
+            BuildingId = "tower",
+            BuildingName = "Tower",
+            GeneratorVersion = "1.0.0",
+        });
+        using var server = new StubServer(200, "{\"ok\":true}");
+        var client = new CesiumViewerPushClient();
+
+        CesiumViewerPushResult result = await client.PushAsync(
+            new CesiumViewerPushRequest
+            {
+                ViewerUrl = $"http://localhost:{server.Port}",
+                PackageRoot = _packageRoot,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(CesiumViewerPushStatus.Success, result.Status);
+        Assert.Contains("gis/package-manifest.json", server.RequestBody);
+        Assert.Contains("gis/preview.png", server.RequestBody);
+        Assert.Contains("PREVIEW", server.RequestBody);
+    }
+
     [Fact]
     public async Task PushAsync_SendsBearerTokenWhenConfigured()
     {
