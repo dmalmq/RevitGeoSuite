@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using Xunit;
@@ -86,5 +87,21 @@ public sealed class ZoneCatalogTests
         Assert.True(found);
         Assert.Equal("column", info.Category);
         Assert.Equal("BDBDBD", info.FillColor);
+    }
+
+    [Fact]
+    public void GetKnownCategories_IncludesImdfAndCatalogCustomCategories()
+    {
+        ZoneCatalog catalog = new(
+            new Dictionary<string, ZoneInfo>
+            {
+                ["custom zone"] = new ZoneInfo("amenity.custom", "ABCDEF", null),
+            });
+
+        IReadOnlyList<string> categories = catalog.GetKnownCategories();
+
+        Assert.Contains("column", categories);
+        Assert.Contains("amenity.custom", categories);
+        Assert.DoesNotContain("unspecified", categories);
     }
 }

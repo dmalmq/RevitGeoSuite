@@ -26,6 +26,20 @@ jobs:
         cache: 'npm'
         cache-dependency-path: src/RevitGeoSuite.SharedUI.Web/package-lock.json
 
+    - name: Provision Revit 2024 API
+      shell: pwsh
+      run: |
+        $package = Join-Path $env:RUNNER_TEMP 'revit-api.zip'
+        $apiDir = Join-Path $env:RUNNER_TEMP 'revit-api'
+        Invoke-WebRequest -Uri 'https://api.nuget.org/v3-flatcontainer/revit_api_x64/2024.0.2/revit_api_x64.2024.0.2.nupkg' -OutFile $package
+        if ((Get-FileHash $package -Algorithm SHA256).Hash -ne '0065A7C8AD8B51011FDA19ECDBE299AAB9CAC0E1F2AAB62F91C4D45FADD5D65B') {
+          throw 'Revit API package checksum mismatch.'
+        }
+        Expand-Archive -Path $package -DestinationPath $apiDir
+        $revitApiDir = Join-Path $apiDir 'lib\NET480'
+        "RevitInstallDir=$revitApiDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "RevitApiDir=$revitApiDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
     - name: Restore .NET dependencies
       run: dotnet restore
 

@@ -143,6 +143,7 @@ public sealed class FloorPlanExportSession : IDisposable
                 .ToList(),
             SchemaProfiles = _schemaProfiles.Select(profile => new ExporterNamedOption { Name = profile.Name }).ToList(),
             ValidationPolicies = _validationPolicyProfiles.Select(profile => new ExporterNamedOption { Name = profile.Name }).ToList(),
+            UnitCategoryOptions = ZoneCatalog.CreateDefault().GetKnownCategories(includeUnspecified: true).ToList(),
             CrsPresetGroups = CrsPresetCatalog.GetAllGroups()
                 .Select(group => new ExporterCrsPresetGroup
                 {
@@ -219,6 +220,7 @@ public sealed class FloorPlanExportSession : IDisposable
             ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(settings.ValidationPolicyProfiles, settings.ActiveValidationPolicyProfileName),
             SimplifyStairUnits = settings.SimplifyStairUnits,
             SimplifyEscalatorUnits = settings.SimplifyEscalatorUnits,
+            UnitCategories = settings.UnitCategories?.ToList() ?? new List<string>(),
             Use3DSectionBoxExport = settings.Use3DSectionBoxExport,
             SectionBoxAboveFloorMeters = settings.SectionBoxAboveFloorMeters > 0d
                 ? settings.SectionBoxAboveFloorMeters
@@ -302,6 +304,7 @@ public sealed class FloorPlanExportSession : IDisposable
             },
             SimplifyStairUnits = payload.SimplifyStairUnits,
             SimplifyEscalatorUnits = payload.SimplifyEscalatorUnits,
+            UnitCategories = payload.UnitCategories?.ToList() ?? new List<string>(),
             Use3DSectionBoxExport = payload.Use3DSectionBoxExport,
             SectionBoxAboveFloorMeters = payload.SectionBoxAboveFloorMeters > 0d
                 ? payload.SectionBoxAboveFloorMeters
@@ -376,7 +379,8 @@ public sealed class FloorPlanExportSession : IDisposable
             settings.Use3DSectionBoxExport,
             settings.SectionBoxAboveFloorMeters,
             settings.SectionBoxBelowFloorMeters,
-            settings.Keep3DTempViewsForDebug)
+            settings.Keep3DTempViewsForDebug,
+            settings.UnitCategories)
         {
             OutputFormat = settings.OutputFormat,
         };
@@ -409,7 +413,8 @@ public sealed class FloorPlanExportSession : IDisposable
             settings.Use3DSectionBoxExport,
             settings.SectionBoxAboveFloorMeters,
             settings.SectionBoxBelowFloorMeters,
-            settings.Keep3DTempViewsForDebug);
+            settings.Keep3DTempViewsForDebug,
+            settings.UnitCategories);
     }
 
     public PreviewInitialStateResponse PreparePreview(ExporterSettingsPayload payload)
@@ -442,7 +447,8 @@ public sealed class FloorPlanExportSession : IDisposable
             request.Use3DSectionBoxExport,
             request.SectionBoxAboveFloorMeters,
             request.SectionBoxBelowFloorMeters,
-            request.Keep3DTempViewsForDebug);
+            request.Keep3DTempViewsForDebug,
+            request.UnitCategories);
 
         _previewController = new ExportPreviewController(request, previewService);
 
@@ -886,6 +892,7 @@ public sealed class FloorPlanExportSession : IDisposable
             ActiveValidationPolicyProfileName = payload.ActiveValidationPolicyProfileName,
             SimplifyStairUnits = payload.SimplifyStairUnits,
             SimplifyEscalatorUnits = payload.SimplifyEscalatorUnits,
+            UnitCategories = payload.UnitCategories?.ToList() ?? new List<string>(),
             Use3DSectionBoxExport = payload.Use3DSectionBoxExport,
             SectionBoxAboveFloorMeters = payload.SectionBoxAboveFloorMeters,
             SectionBoxBelowFloorMeters = payload.SectionBoxBelowFloorMeters,

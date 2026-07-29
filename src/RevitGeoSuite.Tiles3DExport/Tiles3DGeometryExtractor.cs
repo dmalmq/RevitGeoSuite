@@ -353,7 +353,10 @@ public sealed class Tiles3DGeometryExtractor
             // in the same coordinate space as triangle vertex Z values. Without this,
             // linked model levels would be in local linked-doc space and miss the link's
             // placement offset (transform = Transform.Identity for the host model).
-            XYZ levelInHost = transform.OfPoint(new XYZ(0, 0, level.Elevation));
+            // ProjectElevation, not Elevation: vertices are in internal coordinates, and
+            // Elevation is relative to the level's Elevation Base setting (Survey Point in
+            // TP-based projects), which puts level planes in a different frame than the mesh.
+            XYZ levelInHost = transform.OfPoint(new XYZ(0, 0, level.ProjectElevation));
             metadata.LevelElevationMeters = frame.ToLocalMeters(levelInHost).Z;
         }
     }

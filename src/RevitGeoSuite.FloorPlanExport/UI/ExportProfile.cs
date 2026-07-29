@@ -59,6 +59,8 @@ public sealed class ExportProfile
 
     public bool SimplifyEscalatorUnits { get; set; }
 
+    public List<string> UnitCategories { get; set; } = new();
+
     public bool Use3DSectionBoxExport { get; set; }
 
     public double SectionBoxAboveFloorMeters { get; set; } = 1.2;
@@ -107,6 +109,7 @@ public sealed class ExportProfile
             LinkExportOptions = LinkExportOptions?.Clone() ?? new LinkExportOptions(),
             SimplifyStairUnits = SimplifyStairUnits,
             SimplifyEscalatorUnits = SimplifyEscalatorUnits,
+            UnitCategories = UnitCategories?.ToList() ?? new List<string>(),
             Use3DSectionBoxExport = Use3DSectionBoxExport,
             SectionBoxAboveFloorMeters = SectionBoxAboveFloorMeters,
             SectionBoxBelowFloorMeters = SectionBoxBelowFloorMeters,
@@ -157,6 +160,7 @@ public sealed class ExportProfile
             LinkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions(),
             SimplifyStairUnits = settings.SimplifyStairUnits,
             SimplifyEscalatorUnits = settings.SimplifyEscalatorUnits,
+            UnitCategories = settings.UnitCategories?.ToList() ?? new List<string>(),
             Use3DSectionBoxExport = settings.Use3DSectionBoxExport,
             SectionBoxAboveFloorMeters = settings.SectionBoxAboveFloorMeters,
             SectionBoxBelowFloorMeters = settings.SectionBoxBelowFloorMeters,

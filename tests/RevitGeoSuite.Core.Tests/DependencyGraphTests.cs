@@ -49,7 +49,10 @@ public sealed class DependencyGraphTests
             "RevitGeoSuite.Core.Plateau.csproj",
             "RevitGeoSuite.RevitInterop.csproj");
         AssertProjectReferences(
+            "src/RevitGeoSuite.CesiumHandoff/RevitGeoSuite.CesiumHandoff.csproj");
+        AssertProjectReferences(
             "src/RevitGeoSuite.Shell/RevitGeoSuite.Shell.csproj",
+            "RevitGeoSuite.CesiumHandoff.csproj",
             "RevitGeoSuite.Core.csproj",
             "RevitGeoSuite.CityGmlExport.csproj",
             "RevitGeoSuite.FloorPlanExport.csproj",

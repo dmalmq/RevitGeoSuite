@@ -43,6 +43,7 @@ public sealed class ExportPreviewService
     private readonly SchemaProfile _activeSchemaProfile;
     private readonly bool _simplifyStairUnits;
     private readonly bool _simplifyEscalatorUnits;
+    private readonly IReadOnlyList<string> _unitCategories;
     private readonly bool _use3DSectionBoxExport;
     private readonly double _sectionBoxAboveFloorMeters;
     private readonly double _sectionBoxBelowFloorMeters;
@@ -62,7 +63,8 @@ public sealed class ExportPreviewService
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
 
     {
         if (document is null)
@@ -119,6 +121,7 @@ public sealed class ExportPreviewService
                 ? sectionBoxBelowFloorMeters
                 : Temp3DViewScope.DefaultBelowFloorMeters;
         _keep3DTempViewsForDebug = keep3DTempViewsForDebug;
+        _unitCategories = unitCategories ?? Array.Empty<string>();
     }
 
     public IReadOnlyList<string> GetSupportedFloorCategories()
@@ -232,6 +235,7 @@ public sealed class ExportPreviewService
                     ActiveSchemaProfile = _activeSchemaProfile,
                     SimplifyStairUnits = _simplifyStairUnits,
                     SimplifyEscalatorUnits = _simplifyEscalatorUnits,
+                    UnitCategories = _unitCategories,
                     ViewContexts = prebuiltContexts,
                 });
             return BuildPreviewViewData(prepared, threeDViewScope, threeDScopeError);

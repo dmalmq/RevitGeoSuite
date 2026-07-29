@@ -2,11 +2,13 @@
   import { onMount } from 'svelte'
   import { startJob } from '$lib/bridge/jobs'
   import { request } from '$lib/bridge/rpc'
+  import { parseManualCoordinate } from '$lib/georeference/manualCoordinate'
   import type {
     GeoreferenceGridCandidate,
     GeoreferenceBasePointResponse,
     GeoreferenceBasePointSnapshot,
     GeoreferenceCurrentStateResponse,
+    GeoreferenceManualProjectBasePoint,
     PlateauAreaLocationResponse,
     PlateauOnlineArea,
     PlateauOnlineCatalogResponse,
@@ -39,19 +41,21 @@
   // Corrected workflow restored from the original WPF window:
   //   1. Review current setup
   //   2. Select CRS            -> Survey Point resolves automatically to the CRS origin (projected 0,0)
-  //   3. Select Area           -> click the map or type coordinates to seed the grid candidates
-  //   4. Select Project Grids  -> toggle grids; Project Base Point = south-west corner of the extent
+  //   3. Select Area           -> map/search seeds grid candidates, exact coordinates skip grids
+  //   4. Select Project Grids  -> map/search only; Project Base Point = south-west corner of the extent
   //   5. Preview               -> review the change before applying
   //   6. Apply
   //
   // When an existing coordinate setup is detected the user can take a shortcut ("Confirm existing
   // setup") that skips the area/grids/preview steps and only asks for the CRS before saving the
   // shared metadata. The stepper reflects that with a 3-step list.
+  let inputMode = $state<AreaInputMode>('map')
+
   const fullSteps = $derived([
     { id: 'review', label: $strings['Georef.Wizard.Step.Review'] ?? 'Review Current Setup', description: $strings['Georef.Wizard.Step.ReviewDesc'] ?? 'Check existing georeference state' },
     { id: 'crs', label: $strings['Georef.Wizard.Step.Crs'] ?? 'Select CRS', description: $strings['Georef.Wizard.Step.CrsDesc'] ?? 'Survey Point resolves to the CRS origin' },
     { id: 'area', label: $strings['Georef.Wizard.Step.Area'] ?? 'Select Area', description: $strings['Georef.Wizard.Step.AreaDesc'] ?? 'Click the map or enter coordinates' },
-    { id: 'grids', label: $strings['Georef.Wizard.Step.Grids'] ?? 'Select Project Grids', description: $strings['Georef.Wizard.Step.GridsDesc'] ?? 'Project Base Point = south-west corner' },
+    ...(inputMode === 'manual' ? [] : [{ id: 'grids', label: $strings['Georef.Wizard.Step.Grids'] ?? 'Select Project Grids', description: $strings['Georef.Wizard.Step.GridsDesc'] ?? 'Project Base Point = south-west corner' }]),
     { id: 'preview', label: $strings['Georef.Wizard.Step.Preview'] ?? 'Preview Changes', description: $strings['Georef.Wizard.Step.PreviewDesc'] ?? 'Review before applying' },
     { id: 'apply', label: $strings['Georef.Wizard.Step.Apply'] ?? 'Apply', description: $strings['Georef.Wizard.Step.ApplyDesc'] ?? 'Commit georeference to Revit' }
   ])
@@ -68,9 +72,8 @@
   let surveyOrigin = $state<{ lat: number; lon: number } | null>(null)
   let confirmingCrs = $state(false)
 
-  let inputMode = $state<AreaInputMode>('map')
-  let manualLat = $state('')
-  let manualLon = $state('')
+  let manualEasting = $state('')
+  let manualNorthing = $state('')
   let areaSearchText = $state('')
   let areaSearchCatalog = $state<PlateauOnlineArea[]>([])
   let areaSearchCatalogLoading = $state(false)
@@ -86,6 +89,7 @@
   let candidates = $state<GeoreferenceGridCandidate[]>([])
   let selectedGrids = $state<Set<string>>(new Set())
   let basePoint = $state<GeoreferenceBasePointResponse | null>(null)
+  let basePointSource = $state<'grid' | 'manual' | null>(null)
 
   let readinessStatus = $state<ReadinessStatusResponse | null>(null)
   let readinessError = $state<string | null>(null)
@@ -261,19 +265,50 @@
   }
 
   function handleMapClick(event: CustomEvent<{ lat: number; lon: number }>) {
-    if (currentStep === 'area') {
+    if (currentStep === 'area' && inputMode === 'map') {
       loadGrids(event.detail.lat, event.detail.lon)
     }
   }
 
-  function loadGridsFromManual() {
-    const lat = Number.parseFloat(manualLat)
-    const lon = Number.parseFloat(manualLon)
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      error = $strings['Georef.Wizard.Error.InvalidLatLon'] ?? 'Enter a valid latitude and longitude.'
+  function manualProjectBasePointPayload(): GeoreferenceManualProjectBasePoint | null {
+    const easting = parseManualCoordinate(manualEasting)
+    const northing = parseManualCoordinate(manualNorthing)
+    if (easting === null || northing === null) {
+      error = $strings['Georef.Wizard.Error.InvalidEastingNorthing'] ?? 'Enter valid Easting and Northing values.'
+      return null
+    }
+
+    return { easting, northing }
+  }
+
+  async function resolveManualBasePoint() {
+    const projectBasePoint = manualProjectBasePointPayload()
+    if (!projectBasePoint) {
       return
     }
-    loadGrids(lat, lon)
+
+    error = null
+    try {
+      basePoint = await request('georeference.resolveManualBasePoint', {
+        crsCode: selectedCrs,
+        projectBasePoint
+      })
+      basePointSource = 'manual'
+      selectedGrids = new Set()
+      candidates = []
+      gridGeoJson = null
+      mapRef?.clearFeatureSelectionOverlay()
+      if (basePoint) {
+        mapRef?.setView(basePoint.lat, basePoint.lon, 13)
+      }
+      markComplete('area')
+      markComplete('preview')
+      currentStep = 'preview'
+    } catch (err: any) {
+      basePoint = null
+      basePointSource = null
+      error = err.message || ($strings['Georef.Wizard.Error.BasePoint'] ?? 'Failed to resolve the Project Base Point')
+    }
   }
 
   function setInputMode(mode: AreaInputMode) {
@@ -353,8 +388,6 @@
 
   function applyAreaSearchLocation(area: PlateauOnlineArea, lat: number, lon: number, zoom: number) {
     selectedAreaSearchLocation = { lat, lon, zoom }
-    manualLat = lat.toFixed(6)
-    manualLon = lon.toFixed(6)
     mapRef?.clearFeatureSelectionOverlay()
     mapRef?.setView(lat, lon, zoom)
     mapRef?.setMarker(lat, lon, area.displayLabel || area.label || area.code)
@@ -372,12 +405,13 @@
 
   async function loadGrids(lat: number, lon: number) {
     error = null
+    basePoint = null
+    basePointSource = null
     try {
       const result = await request('georeference.getGridCandidates', { lat, lon, crsCode: selectedCrs })
       candidates = result.candidates ?? []
       gridGeoJson = JSON.parse(result.overlayGeoJson)
       selectedGrids = new Set()
-      basePoint = null
       markComplete('area')
       currentStep = 'grids'
       mapRef?.setView(lat, lon, 13)
@@ -432,12 +466,14 @@
   function clearGrids() {
     selectedGrids = new Set()
     basePoint = null
+    basePointSource = null
     renderGrids()
   }
 
   async function resolveBasePoint() {
     if (selectedGrids.size === 0) {
       basePoint = null
+      basePointSource = null
       return
     }
     try {
@@ -445,10 +481,12 @@
         selectedMeshCodes: Array.from(selectedGrids),
         crsCode: selectedCrs
       })
+      basePointSource = 'grid'
       markComplete('grids')
       error = null
     } catch (err: any) {
       basePoint = null
+      basePointSource = null
       error = err.message || ($strings['Georef.Wizard.Error.BasePoint'] ?? 'Failed to resolve the Project Base Point')
     }
   }
@@ -464,9 +502,13 @@
     applying = true
     error = null
     try {
+      const manualProjectBasePoint = !isConfirmExistingSetupMode && basePointSource === 'manual' && basePoint
+        ? { easting: basePoint.easting, northing: basePoint.northing }
+        : null
       applyResult = await request('georeference.apply', {
         crsCode: selectedCrs,
-        selectedMeshCodes: isConfirmExistingSetupMode ? [] : Array.from(selectedGrids),
+        selectedMeshCodes: isConfirmExistingSetupMode || basePointSource === 'manual' ? [] : Array.from(selectedGrids),
+        ...(manualProjectBasePoint ? { manualProjectBasePoint } : {}),
         confirmExistingSetup: isConfirmExistingSetupMode
       })
       markComplete('apply')
@@ -485,8 +527,11 @@
     candidates = []
     selectedGrids = new Set()
     basePoint = null
+    basePointSource = null
     applyResult = null
     error = null
+    manualEasting = ''
+    manualNorthing = ''
     areaSearchCatalogRun += 1
     areaSearchLocationRun += 1
     areaSearchCatalogCancel?.()
@@ -855,31 +900,43 @@
         </p>
       {:else if inputMode === 'manual'}
         <div class="space-y-3">
+          <p class="text-sm text-neutral-500 dark:text-neutral-400">
+            {fmt($strings['Georef.Wizard.ManualExactHint'] ?? 'Enter exact Project Base Point coordinates as Easting / Northing meters in {0}. Grid selection is skipped.', selectedCrsName)}
+          </p>
           <div>
-            <label for="manual-lat" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">{$strings['Georef.Wizard.Latitude'] ?? 'Latitude'}</label>
+            <label for="manual-easting" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">{$strings['Georef.Wizard.EastingMeters'] ?? 'Easting (m)'}</label>
             <input
-              id="manual-lat"
+              id="manual-easting"
               type="text"
-              bind:value={manualLat}
-              placeholder="35.6895"
+              inputmode="decimal"
+              bind:value={manualEasting}
+              placeholder="0.000"
               class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
           </div>
           <div>
-            <label for="manual-lon" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">{$strings['Georef.Wizard.Longitude'] ?? 'Longitude'}</label>
+            <label for="manual-northing" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">{$strings['Georef.Wizard.NorthingMeters'] ?? 'Northing (m)'}</label>
             <input
-              id="manual-lon"
+              id="manual-northing"
               type="text"
-              bind:value={manualLon}
-              placeholder="139.6917"
+              inputmode="decimal"
+              bind:value={manualNorthing}
+              placeholder="0.000"
               class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
           </div>
+          {#if basePointSource === 'manual' && basePoint}
+            <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-3">
+              <div class="text-xs text-neutral-500 dark:text-neutral-500 uppercase tracking-wide mb-1">{$strings['Georef.Wizard.PbpExact'] ?? 'Exact Project Base Point'}</div>
+              <div class="text-xs font-mono text-blue-600 dark:text-blue-400">E {basePoint.easting.toFixed(3)} m · N {basePoint.northing.toFixed(3)} m</div>
+              <div class="text-xs font-mono text-blue-600 dark:text-blue-400">Lat {basePoint.lat.toFixed(6)} · Lon {basePoint.lon.toFixed(6)}</div>
+            </div>
+          {/if}
           <button
             class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
-            onclick={loadGridsFromManual}
+            onclick={resolveManualBasePoint}
           >
-            {$strings['Georef.Wizard.LoadGrids'] ?? 'Load Grids'}
+            {$strings['Georef.Wizard.UseExactCoordinates'] ?? 'Use Exact Coordinates'}
           </button>
         </div>
       {:else}
@@ -1047,6 +1104,14 @@
         </div>
       {/if}
 
+      {#if basePointSource === 'manual' && basePoint}
+        <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-3 mt-4">
+          <div class="text-xs text-neutral-500 dark:text-neutral-500 uppercase tracking-wide mb-1">{$strings['Georef.Wizard.PbpExact'] ?? 'Exact Project Base Point'}</div>
+          <div class="text-xs font-mono text-blue-600 dark:text-blue-400">E {basePoint.easting.toFixed(3)} m · N {basePoint.northing.toFixed(3)} m</div>
+          <div class="text-xs font-mono text-blue-600 dark:text-blue-400">Lat {basePoint.lat.toFixed(6)} · Lon {basePoint.lon.toFixed(6)}</div>
+        </div>
+      {/if}
+
       <div class="mt-4 space-y-2">
         <button
           class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
@@ -1056,9 +1121,9 @@
         </button>
         <button
           class="w-full bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-white font-medium py-2 px-4 rounded-md transition-colors"
-          onclick={() => currentStep = 'grids'}
+          onclick={() => currentStep = basePointSource === 'manual' ? 'area' : 'grids'}
         >
-          {$strings['Georef.Wizard.BackToGrids'] ?? 'Back to Grids'}
+          {basePointSource === 'manual' ? $strings['Georef.Wizard.BackToCoordinates'] ?? 'Back to Coordinates' : $strings['Georef.Wizard.BackToGrids'] ?? 'Back to Grids'}
         </button>
       </div>
 
@@ -1125,10 +1190,14 @@
             {#if surveyOrigin}
               <li>{fmt($strings['Georef.Wizard.SurveyAtOrigin'] ?? 'Survey Point at CRS origin ({0}, {1})', surveyOrigin.lat.toFixed(6), surveyOrigin.lon.toFixed(6))}</li>
             {/if}
-            {#if basePoint}
+            {#if basePointSource === 'manual' && basePoint}
+              <li>{fmt($strings['Georef.Wizard.PbpAtExact'] ?? 'Project Base Point at exact coordinates E {0} m, N {1} m', basePoint.easting.toFixed(3), basePoint.northing.toFixed(3))}</li>
+            {:else if basePoint}
               <li>{fmt($strings['Georef.Wizard.PbpAtSw'] ?? 'Project Base Point at SW corner ({0}, {1})', basePoint.lat.toFixed(6), basePoint.lon.toFixed(6))}</li>
             {/if}
-            <li>{fmt($strings['Georef.Wizard.GridsSelectedCount'] ?? '{0} PLATEAU grid(s) selected', selectedMeshCodes.length)}</li>
+            {#if basePointSource !== 'manual'}
+              <li>{fmt($strings['Georef.Wizard.GridsSelectedCount'] ?? '{0} PLATEAU grid(s) selected', selectedMeshCodes.length)}</li>
+            {/if}
           </ul>
         </div>
 

@@ -54,6 +54,8 @@ public sealed class ExportDialogSettings
 
     public bool SimplifyEscalatorUnits { get; set; }
 
+    public List<string> UnitCategories { get; set; } = new();
+
     public bool Use3DSectionBoxExport { get; set; }
 
     public double SectionBoxAboveFloorMeters { get; set; } = 1.2;

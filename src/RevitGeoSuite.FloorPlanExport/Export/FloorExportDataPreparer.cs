@@ -242,10 +242,7 @@ public sealed class FloorExportDataPreparer
                         fixtureLayer,
                         viewWarnings,
                         precomputedHostVerticalIds);
-                    if (fixtureLayer != null)
-                    {
-                        AddColumns(levelId, context.View, context.Columns, unitExtractor, fixtureLayer, viewWarnings);
-                    }
+                    AddColumns(levelId, context.View, context.Columns, unitExtractor, supplementalUnitLayer, viewWarnings);
                 }
 
                 AddLinkedUnitFeatures(
@@ -279,7 +276,10 @@ public sealed class FloorExportDataPreparer
                 unitLayer = LayerDefinition.CreateUnitLayer(activeSchemaProfile, viewWarnings);
                 foreach (ExportPolygon feature in unitFeatures)
                 {
-                    unitLayer.AddFeature(feature);
+                    if (UnitCategoryFilter.ShouldInclude(GetCategory(feature), options?.UnitCategories))
+                    {
+                        unitLayer.AddFeature(feature);
+                    }
                 }
             }
 
@@ -505,7 +505,7 @@ public sealed class FloorExportDataPreparer
         ViewPlan view,
         IReadOnlyList<FamilyInstance> columns,
         UnitExtractor extractor,
-        ExportLayer fixtureLayer,
+        ExportLayer unitLayer,
         ICollection<string> warnings)
     {
         foreach (FamilyInstance column in columns)
@@ -513,7 +513,7 @@ public sealed class FloorExportDataPreparer
             if (extractor.TryCreateColumnUnit(column, view, levelId, warnings, out ExportPolygon? feature) &&
                 feature != null)
             {
-                fixtureLayer.AddFeature(RemapToFixtureAttributes(feature));
+                unitLayer.AddFeature(feature);
             }
         }
     }
@@ -1367,10 +1367,7 @@ public sealed class FloorExportDataPreparer
                 fixtureLayer,
                 warnings,
                 precomputedLinkedEscalatorIds);
-            if (fixtureLayer != null)
-            {
-                AddColumns(levelId, context.View, linkedSource.Columns, linkedUnitExtractor, fixtureLayer, warnings);
-            }
+            AddColumns(levelId, context.View, linkedSource.Columns, linkedUnitExtractor, supplementalUnitLayer, warnings);
         }
     }
 
@@ -2070,7 +2067,8 @@ public sealed class FloorExportDataPreparer
     {
         return string.Equals(category, "stairs", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(category, "escalator", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase);
+               string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(category, "column", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Dictionary<long, int> BuildLevelOrdinalMap(IReadOnlyList<Level> levels)

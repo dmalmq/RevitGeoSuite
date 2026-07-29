@@ -41,7 +41,7 @@ public sealed class Tiles3DExportCoordinator
         Tiles3DExportScopeSelection scope,
         Tiles3DLevelOfDetail levelOfDetail = Tiles3DLevelOfDetail.Fine,
         bool usePreciseCrsProjection = false,
-        double geoidHeightOffsetMeters = 0d)
+        double? geoidHeightOffsetMeters = null)
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
@@ -57,7 +57,12 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("Select a non-template 3D view before preparing 3D Tiles export from a selected view.");
         }
 
-        Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(geoidHeightOffsetMeters);
+        double resolvedGeoidHeightOffsetMeters = ResolveGeoidOffset(
+            geoidHeightOffsetMeters,
+            usePreciseCrsProjection,
+            referenceContext.AnchorLatitude,
+            referenceContext.AnchorLongitude);
+        Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(resolvedGeoidHeightOffsetMeters);
 
         List<string> extractionWarnings = new List<string>();
         IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext, scope, extractionWarnings);
@@ -70,7 +75,7 @@ public sealed class Tiles3DExportCoordinator
 
         List<Tiles3DMeshPrimitive> meshList = simplified.ToList();
         IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(meshList);
-        Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, geoidHeightOffsetMeters);
+        Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, resolvedGeoidHeightOffsetMeters);
 
         if (usePreciseCrsProjection && preciseCrsRebaser is not null)
         {
@@ -85,6 +90,14 @@ public sealed class Tiles3DExportCoordinator
             Warnings = extractionWarnings,
             StatusMessage = BuildStatusMessage(package, scope)
         };
+    }
+
+    internal static double ResolveGeoidOffset(double? requestedGeoidOffsetMeters, bool usePreciseCrsProjection, double anchorLatitudeDegrees, double anchorLongitudeDegrees)
+    {
+        return requestedGeoidOffsetMeters
+            ?? (usePreciseCrsProjection
+                ? Egm2008Geoid.GetUndulationMeters(anchorLatitudeDegrees, anchorLongitudeDegrees)
+                : 0d);
     }
 
     internal static Tiles3DExportPackage BuildPackage(
@@ -133,7 +146,8 @@ public sealed class Tiles3DExportCoordinator
         string outputDirectory,
         Tiles3DExportReferenceSource referenceSource,
         Tiles3DExportScopeSelection scope,
-        Tiles3DExportState? existingState)
+        Tiles3DExportState? existingState,
+        bool persistState = true)
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
@@ -151,21 +165,7 @@ public sealed class Tiles3DExportCoordinator
 
         (string tilesetPath, string contentPath) = packageWriter.Write(outputDirectory, package);
         Tiles3DExportState updatedState = BuildUpdatedState(existingState, outputDirectory, package, referenceSource, scope);
-        bool statePersisted = false;
-
-        if (!revitDocument.IsReadOnly)
-        {
-            using Transaction transaction = new Transaction(revitDocument, "Save 3D Tiles Export State");
-            transaction.Start();
-            stateService.Save(handle, updatedState);
-            TransactionStatus status = transaction.Commit();
-            if (status != TransactionStatus.Committed)
-            {
-                throw new InvalidOperationException("3D Tiles export completed, but Revit did not commit the export state transaction.");
-            }
-
-            statePersisted = true;
-        }
+        bool statePersisted = persistState && PersistState(handle, updatedState);
 
         return new Tiles3DExportResult
         {
@@ -175,6 +175,33 @@ public sealed class Tiles3DExportCoordinator
             StatePersisted = statePersisted,
             SummaryMessage = BuildSummaryMessage(updatedState, package, statePersisted)
         };
+    }
+
+    public bool PersistState(IDocumentHandle document, Tiles3DExportState state)
+    {
+        RevitDocumentHandle handle = document as RevitDocumentHandle
+            ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
+        if (state is null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        Document revitDocument = handle.Document;
+        if (revitDocument.IsReadOnly)
+        {
+            return false;
+        }
+
+        using Transaction transaction = new Transaction(revitDocument, "Save 3D Tiles Export State");
+        transaction.Start();
+        stateService.Save(handle, state);
+        TransactionStatus status = transaction.Commit();
+        if (status != TransactionStatus.Committed)
+        {
+            throw new InvalidOperationException("3D Tiles export completed, but Revit did not commit the export state transaction.");
+        }
+
+        return true;
     }
 
     internal static Tiles3DExportState BuildUpdatedState(

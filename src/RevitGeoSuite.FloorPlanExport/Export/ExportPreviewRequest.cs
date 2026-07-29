@@ -35,7 +35,8 @@ public sealed class ExportPreviewRequest
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
     {
         string normalizedSourceCoordinateSystemId = sourceCoordinateSystemId?.Trim() ?? string.Empty;
         string normalizedSourceCoordinateSystemDefinition = sourceCoordinateSystemDefinition?.Trim() ?? string.Empty;
@@ -88,6 +89,7 @@ public sealed class ExportPreviewRequest
                 ? sectionBoxBelowFloorMeters
                 : Temp3DViewScope.DefaultBelowFloorMeters;
         Keep3DTempViewsForDebug = keep3DTempViewsForDebug;
+        UnitCategories = unitCategories ?? Array.Empty<string>();
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -137,4 +139,6 @@ public sealed class ExportPreviewRequest
     public double SectionBoxBelowFloorMeters { get; }
 
     public bool Keep3DTempViewsForDebug { get; }
+
+    public IReadOnlyList<string> UnitCategories { get; }
 }

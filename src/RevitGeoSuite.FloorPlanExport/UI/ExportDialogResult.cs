@@ -39,7 +39,8 @@ public sealed class ExportDialogResult
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = 1.2,
         double sectionBoxBelowFloorMeters = 0.0,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
         : this(
             selectedViews,
             outputDirectory,
@@ -69,7 +70,8 @@ public sealed class ExportDialogResult
             use3DSectionBoxExport,
             sectionBoxAboveFloorMeters,
             sectionBoxBelowFloorMeters,
-            keep3DTempViewsForDebug)
+            keep3DTempViewsForDebug,
+            unitCategories)
     {
     }
 
@@ -102,7 +104,8 @@ public sealed class ExportDialogResult
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = 1.2,
         double sectionBoxBelowFloorMeters = 0.0,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
     {
         string? normalizedSelectedProfileName = selectedProfileName?.Trim();
         string normalizedRoomCategoryParameterName = roomCategoryParameterName?.Trim() ?? string.Empty;
@@ -153,6 +156,7 @@ public sealed class ExportDialogResult
                 ? sectionBoxBelowFloorMeters
                 : 0.0;
         Keep3DTempViewsForDebug = keep3DTempViewsForDebug;
+        UnitCategories = unitCategories ?? Array.Empty<string>();
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -208,6 +212,8 @@ public sealed class ExportDialogResult
     public double SectionBoxBelowFloorMeters { get; }
 
     public bool Keep3DTempViewsForDebug { get; }
+
+    public IReadOnlyList<string> UnitCategories { get; }
 
     public SchemaProfile ActiveSchemaProfile { get; }
 
