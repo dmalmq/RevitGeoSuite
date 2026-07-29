@@ -69,6 +69,24 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
     }
 
     [Fact]
+    public void CreateLayout_RemovesManagedArtifactsFromPreviousRun()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "tiles"));
+        Directory.CreateDirectory(Path.Combine(_root, "gis"));
+        File.WriteAllText(Path.Combine(_root, "tiles", "stale.glb"), "stale");
+        File.WriteAllText(Path.Combine(_root, "gis", "stale.gpkg"), "stale");
+        File.WriteAllText(Path.Combine(_root, "cesium-package.json"), "stale");
+        File.WriteAllText(Path.Combine(_root, "keep.txt"), "keep");
+
+        CesiumPackageLayout layout = new CesiumPackageLayoutBuilder().CreateLayout(_root);
+
+        Assert.Empty(Directory.EnumerateFiles(layout.TilesDirectory));
+        Assert.Empty(Directory.EnumerateFiles(layout.GisDirectory));
+        Assert.False(File.Exists(layout.ManifestPath));
+        Assert.True(File.Exists(Path.Combine(_root, "keep.txt")));
+    }
+
+    [Fact]
     public void WriteManifest_ScansArtifactsAndWritesManifest()
     {
         var builder = new CesiumPackageLayoutBuilder();

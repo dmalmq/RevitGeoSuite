@@ -44,17 +44,17 @@ public sealed class CesiumPackageBuildInputs
 
     public string GeneratorVersion { get; set; } = string.Empty;
 
-    public int ProjectEpsg { get; set; }
+    public int? ProjectEpsg { get; set; }
 
     public string CoordinateMode { get; set; } = string.Empty;
 
-    public int GisEpsg { get; set; }
+    public int? GisEpsg { get; set; }
 
-    public double AnchorLat { get; set; }
+    public double? AnchorLat { get; set; }
 
-    public double AnchorLon { get; set; }
+    public double? AnchorLon { get; set; }
 
-    public double AnchorElevationMeters { get; set; }
+    public double? AnchorElevationMeters { get; set; }
 
     public double? GeoidOffsetMeters { get; set; }
 
@@ -74,8 +74,20 @@ public sealed class CesiumPackageLayoutBuilder
     {
         var layout = new CesiumPackageLayout(rootDirectory);
         Directory.CreateDirectory(layout.RootDirectory);
-        Directory.CreateDirectory(layout.TilesDirectory);
-        Directory.CreateDirectory(layout.GisDirectory);
+        foreach (string directory in new[] { layout.TilesDirectory, layout.GisDirectory })
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+
+            Directory.CreateDirectory(directory);
+        }
+
+        if (File.Exists(layout.ManifestPath))
+        {
+            File.Delete(layout.ManifestPath);
+        }
         return layout;
     }
 
@@ -99,7 +111,8 @@ public sealed class CesiumPackageLayoutBuilder
                 $"The package at '{layout.RootDirectory}' contains neither a tileset nor GIS artifacts; nothing to describe.");
         }
 
-        List<string> payloadPaths = EnumeratePayloadPaths(layout);
+        var payloadManifest = new CesiumPackageManifest { Tiles = tiles, Gis = gis };
+        List<string> payloadPaths = CesiumPackagePayloadResolver.Resolve(layout.RootDirectory, payloadManifest);
 
         var manifest = new CesiumPackageManifest
         {
@@ -113,19 +126,8 @@ public sealed class CesiumPackageLayoutBuilder
                 Name = inputs.BuildingName,
                 Aliases = inputs.BuildingAliases is { Count: > 0 } ? inputs.BuildingAliases : null,
             },
-            Crs = new CesiumPackageCrs
-            {
-                ProjectEpsg = inputs.ProjectEpsg,
-                CoordinateMode = inputs.CoordinateMode,
-                GisEpsg = inputs.GisEpsg,
-            },
-            Anchor = new CesiumPackageAnchor
-            {
-                Lat = inputs.AnchorLat,
-                Lon = inputs.AnchorLon,
-                ElevationMeters = inputs.AnchorElevationMeters,
-                GeoidOffsetMeters = inputs.GeoidOffsetMeters,
-            },
+            Crs = CreateCrs(inputs),
+            Anchor = CreateAnchor(inputs),
             Tiles = tiles,
             Gis = gis,
             LevelMap = inputs.LevelMap is { Count: > 0 } ? inputs.LevelMap : null,
@@ -136,22 +138,29 @@ public sealed class CesiumPackageLayoutBuilder
         return manifest;
     }
 
-    private static List<string> EnumeratePayloadPaths(CesiumPackageLayout layout)
+    internal static CesiumPackageCrs? CreateCrs(CesiumPackageBuildInputs inputs)
     {
-        var paths = new List<string>();
-        foreach (string directory in new[] { layout.TilesDirectory, layout.GisDirectory })
-        {
-            if (!Directory.Exists(directory))
+        return inputs.ProjectEpsg.HasValue && inputs.GisEpsg.HasValue && !string.IsNullOrWhiteSpace(inputs.CoordinateMode)
+            ? new CesiumPackageCrs
             {
-                continue;
+                ProjectEpsg = inputs.ProjectEpsg.Value,
+                CoordinateMode = inputs.CoordinateMode,
+                GisEpsg = inputs.GisEpsg.Value,
             }
+            : null;
+    }
 
-            paths.AddRange(Directory
-                .EnumerateFiles(directory, "*", SearchOption.AllDirectories)
-                .Select(path => ToRelativePackagePath(layout.RootDirectory, path)));
-        }
-
-        return paths;
+    internal static CesiumPackageAnchor? CreateAnchor(CesiumPackageBuildInputs inputs)
+    {
+        return inputs.AnchorLat.HasValue && inputs.AnchorLon.HasValue && inputs.AnchorElevationMeters.HasValue
+            ? new CesiumPackageAnchor
+            {
+                Lat = inputs.AnchorLat.Value,
+                Lon = inputs.AnchorLon.Value,
+                ElevationMeters = inputs.AnchorElevationMeters.Value,
+                GeoidOffsetMeters = inputs.GeoidOffsetMeters,
+            }
+            : null;
     }
 
     private static CesiumPackageTiles? ScanTiles(CesiumPackageLayout layout)

@@ -39,7 +39,7 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
     [Fact]
     public void ComposeFromFolder_TilesOnlyExportAtRoot()
     {
-        File.WriteAllText(Path.Combine(_root, "tileset.json"), "{}");
+        File.WriteAllText(Path.Combine(_root, "tileset.json"), "{\"root\":{\"content\":{\"uri\":\"content.glb\"}}}");
         File.WriteAllText(Path.Combine(_root, "content.glb"), "glb");
         File.WriteAllText(Path.Combine(_root, "levels.json"), "{}");
 
@@ -48,6 +48,8 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
         Assert.Equal("tileset.json", manifest.Tiles!.Tileset);
         Assert.Equal("levels.json", manifest.Tiles!.Levels);
         Assert.Null(manifest.Gis);
+        Assert.Null(manifest.Crs);
+        Assert.Null(manifest.Anchor);
         Assert.True(File.Exists(Path.Combine(_root, "cesium-package.json")));
     }
 
@@ -62,6 +64,20 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
         Assert.Null(manifest.Tiles);
         Assert.Equal("geopackage", manifest.Gis!.Format);
         Assert.Equal("sub/tower.gpkg", Assert.Single(manifest.Gis!.Artifacts!).Path);
+    }
+
+    [Fact]
+    public void ComposeFromFolder_HashIncludesShapefileSidecars()
+    {
+        File.WriteAllText(Path.Combine(_root, "unit.shp"), "shp");
+        File.WriteAllText(Path.Combine(_root, "unit.dbf"), "before");
+        File.WriteAllText(Path.Combine(_root, "unit.shx"), "shx");
+
+        string? before = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+        File.WriteAllText(Path.Combine(_root, "unit.dbf"), "after");
+        string? after = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+
+        Assert.NotEqual(before, after);
     }
 
     [Fact]

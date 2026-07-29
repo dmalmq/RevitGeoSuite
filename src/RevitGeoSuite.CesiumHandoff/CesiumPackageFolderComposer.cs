@@ -46,58 +46,20 @@ public static class CesiumPackageFolderComposer
                 Name = inputs.BuildingName,
                 Aliases = inputs.BuildingAliases is { Count: > 0 } ? inputs.BuildingAliases : null,
             },
-            Crs = new CesiumPackageCrs
-            {
-                ProjectEpsg = inputs.ProjectEpsg,
-                CoordinateMode = inputs.CoordinateMode,
-                GisEpsg = inputs.GisEpsg,
-            },
-            Anchor = new CesiumPackageAnchor
-            {
-                Lat = inputs.AnchorLat,
-                Lon = inputs.AnchorLon,
-                ElevationMeters = inputs.AnchorElevationMeters,
-                GeoidOffsetMeters = inputs.GeoidOffsetMeters,
-            },
+            Crs = CesiumPackageLayoutBuilder.CreateCrs(inputs),
+            Anchor = CesiumPackageLayoutBuilder.CreateAnchor(inputs),
             Tiles = tiles,
             Gis = gis,
             LevelMap = inputs.LevelMap is { Count: > 0 } ? inputs.LevelMap : null,
-            ContentHash = CesiumPackageContentHasher.Compute(root, EnumeratePayloadPaths(root, tiles, gis)),
+            ContentHash = CesiumPackageContentHasher.Compute(
+                root,
+                CesiumPackagePayloadResolver.Resolve(root, new CesiumPackageManifest { Tiles = tiles, Gis = gis })),
         };
 
         File.WriteAllText(
             Path.Combine(root, "cesium-package.json"),
             CesiumPackageManifestSerializer.Serialize(manifest));
         return manifest;
-    }
-
-    private static List<string> EnumeratePayloadPaths(string root, CesiumPackageTiles? tiles, CesiumPackageGis? gis)
-    {
-        var paths = new List<string>();
-        if (tiles is not null)
-        {
-            paths.Add(tiles.Tileset);
-            if (tiles.Levels is not null)
-            {
-                paths.Add(tiles.Levels);
-            }
-
-            // Tile content (glb/b3dm) lives beside tileset.json but isn't named in the manifest.
-            string tilesetDir = Path.GetDirectoryName(Path.Combine(root, tiles.Tileset.Replace('/', Path.DirectorySeparatorChar)))!;
-            foreach (string pattern in new[] { "*.glb", "*.b3dm" })
-            {
-                paths.AddRange(Directory
-                    .EnumerateFiles(tilesetDir, pattern, SearchOption.AllDirectories)
-                    .Select(path => ToRelative(root, path)));
-            }
-        }
-
-        foreach (CesiumPackageGisArtifact artifact in gis?.Artifacts ?? new List<CesiumPackageGisArtifact>())
-        {
-            paths.Add(artifact.Path);
-        }
-
-        return paths;
     }
 
     private static CesiumPackageTiles? FindTiles(string root)

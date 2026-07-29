@@ -19,9 +19,12 @@ public sealed class CesiumViewerPushClientTests : IDisposable
         _packageRoot = Path.Combine(Path.GetTempPath(), "cesium-push-tests", Guid.NewGuid().ToString("N"));
         var builder = new CesiumPackageLayoutBuilder();
         CesiumPackageLayout layout = builder.CreateLayout(_packageRoot);
-        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{\"asset\":{}}");
+        File.WriteAllText(
+            Path.Combine(layout.TilesDirectory, "tileset.json"),
+            "{\"asset\":{},\"root\":{\"content\":{\"uri\":\"content.glb\"}}}");
         File.WriteAllText(Path.Combine(layout.TilesDirectory, "content.glb"), "GLBBYTES");
         File.WriteAllText(Path.Combine(layout.GisDirectory, "tower.gpkg"), "GPKG");
+        File.WriteAllText(Path.Combine(_packageRoot, "unrelated-secret.txt"), "PRIVATE");
         builder.WriteManifest(layout, new CesiumPackageBuildInputs
         {
             BuildingId = "tower",
@@ -146,6 +149,8 @@ public sealed class CesiumViewerPushClientTests : IDisposable
         Assert.Contains("tiles/tileset.json", server.RequestBody);
         Assert.Contains("tiles/content.glb", server.RequestBody);
         Assert.Contains("gis/tower.gpkg", server.RequestBody);
+        Assert.DoesNotContain("unrelated-secret.txt", server.RequestBody);
+        Assert.DoesNotContain("PRIVATE", server.RequestBody);
     }
 
     [Fact]

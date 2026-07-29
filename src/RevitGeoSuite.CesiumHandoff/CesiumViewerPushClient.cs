@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
@@ -87,9 +86,9 @@ public sealed class CesiumViewerPushClient : IDisposable
         try
         {
             using var content = new MultipartFormDataContent();
-            foreach (string filePath in EnumeratePackageFiles(request.PackageRoot))
+            foreach (string relativePath in EnumeratePackageFiles(request.PackageRoot, manifestPath))
             {
-                string relativePath = ToRelativePath(request.PackageRoot, filePath);
+                string filePath = Path.Combine(request.PackageRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
                 var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 openStreams.Add(stream);
                 var filePart = new StreamContent(stream);
@@ -146,26 +145,20 @@ public sealed class CesiumViewerPushClient : IDisposable
         }
     }
 
-    private static IEnumerable<string> EnumeratePackageFiles(string packageRoot)
+    private static IEnumerable<string> EnumeratePackageFiles(string packageRoot, string manifestPath)
     {
-        // Manifest first so the server can validate before large file parts arrive.
-        string manifestPath = Path.Combine(packageRoot, "cesium-package.json");
-        yield return manifestPath;
-        foreach (string path in Directory.EnumerateFiles(packageRoot, "*", SearchOption.AllDirectories)
-                     .Where(path => !string.Equals(path, manifestPath, StringComparison.OrdinalIgnoreCase))
-                     .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        yield return "cesium-package.json";
+        CesiumPackageManifest manifest = CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath));
+        foreach (string relativePath in CesiumPackagePayloadResolver.Resolve(packageRoot, manifest))
         {
-            yield return path;
-        }
-    }
+            string fullPath = Path.Combine(packageRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(fullPath))
+            {
+                throw new FileNotFoundException($"Manifest payload '{relativePath}' was not found.", fullPath);
+            }
 
-    private static string ToRelativePath(string root, string fullPath)
-    {
-        string trimmedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        string relative = fullPath.StartsWith(trimmedRoot, StringComparison.OrdinalIgnoreCase)
-            ? fullPath.Substring(trimmedRoot.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            : fullPath;
-        return relative.Replace(Path.DirectorySeparatorChar, '/');
+            yield return relativePath;
+        }
     }
 
     private static string RootMessage(Exception exception)
