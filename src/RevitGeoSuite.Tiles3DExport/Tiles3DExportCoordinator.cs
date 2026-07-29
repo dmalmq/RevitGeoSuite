@@ -146,7 +146,8 @@ public sealed class Tiles3DExportCoordinator
         string outputDirectory,
         Tiles3DExportReferenceSource referenceSource,
         Tiles3DExportScopeSelection scope,
-        Tiles3DExportState? existingState)
+        Tiles3DExportState? existingState,
+        bool persistState = true)
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
@@ -164,21 +165,7 @@ public sealed class Tiles3DExportCoordinator
 
         (string tilesetPath, string contentPath) = packageWriter.Write(outputDirectory, package);
         Tiles3DExportState updatedState = BuildUpdatedState(existingState, outputDirectory, package, referenceSource, scope);
-        bool statePersisted = false;
-
-        if (!revitDocument.IsReadOnly)
-        {
-            using Transaction transaction = new Transaction(revitDocument, "Save 3D Tiles Export State");
-            transaction.Start();
-            stateService.Save(handle, updatedState);
-            TransactionStatus status = transaction.Commit();
-            if (status != TransactionStatus.Committed)
-            {
-                throw new InvalidOperationException("3D Tiles export completed, but Revit did not commit the export state transaction.");
-            }
-
-            statePersisted = true;
-        }
+        bool statePersisted = persistState && PersistState(handle, updatedState);
 
         return new Tiles3DExportResult
         {
@@ -188,6 +175,33 @@ public sealed class Tiles3DExportCoordinator
             StatePersisted = statePersisted,
             SummaryMessage = BuildSummaryMessage(updatedState, package, statePersisted)
         };
+    }
+
+    public bool PersistState(IDocumentHandle document, Tiles3DExportState state)
+    {
+        RevitDocumentHandle handle = document as RevitDocumentHandle
+            ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
+        if (state is null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        Document revitDocument = handle.Document;
+        if (revitDocument.IsReadOnly)
+        {
+            return false;
+        }
+
+        using Transaction transaction = new Transaction(revitDocument, "Save 3D Tiles Export State");
+        transaction.Start();
+        stateService.Save(handle, state);
+        TransactionStatus status = transaction.Commit();
+        if (status != TransactionStatus.Committed)
+        {
+            throw new InvalidOperationException("3D Tiles export completed, but Revit did not commit the export state transaction.");
+        }
+
+        return true;
     }
 
     internal static Tiles3DExportState BuildUpdatedState(

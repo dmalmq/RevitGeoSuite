@@ -42,7 +42,9 @@ public sealed class FloorPlanHeadlessExporter
         PackagingMode? packagingModeOverride = null,
         ExportFormat? outputFormatOverride = null,
         Action<ExportProgressUpdate>? progressCallback = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? baselineKeyOverride = null,
+        bool persistBaseline = true)
     {
         if (profile is null)
         {
@@ -128,7 +130,13 @@ public sealed class FloorPlanHeadlessExporter
             GetAvailableFloorTypeNames(),
             new ExportProfileStore());
 
-        return workflow.RunExportCore(request, coordinateInfo, progressCallback, cancellationToken);
+        return workflow.RunExportCore(
+            request,
+            coordinateInfo,
+            progressCallback,
+            cancellationToken,
+            baselineKeyOverride,
+            persistBaseline);
     }
 
     private IReadOnlyList<ViewPlan> ResolveSelectedViews(IReadOnlyList<long>? selectedViewIds)

@@ -123,7 +123,9 @@ public sealed class ExportWorkflowCoordinator
         ExportDialogResult request,
         ModelCoordinateInfo coordinateInfo,
         Action<ExportProgressUpdate>? progressCallback = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? baselineKeyOverride = null,
+        bool persistBaseline = true)
     {
         FloorGeoPackageExporter exporter = new(_document);
         ExportValidationSnapshotBuilder snapshotBuilder = new();
@@ -145,7 +147,9 @@ public sealed class ExportWorkflowCoordinator
                 PostExportActions = request.PostExportActions.Clone(),
             },
             request.SelectedProfileName,
-            BuildBaselineKey(_projectKey, request.SelectedProfileName),
+            string.IsNullOrWhiteSpace(baselineKeyOverride)
+                ? BuildBaselineKey(_projectKey, request.SelectedProfileName)
+                : baselineKeyOverride!.Trim(),
             request.IncrementalExportMode,
             request.CoordinateMode,
             coordinateInfo.ResolvedSourceEpsg,
@@ -254,7 +258,14 @@ public sealed class ExportWorkflowCoordinator
                                   (packageResult.ValidationResult == null || !packageResult.ValidationResult.HasErrors);
         if (canReplaceBaseline)
         {
-            baselineStore.Save(session.BaselineKey, diagnosticsReport, packageResult.Manifest, result.PendingBaselineSnapshot!);
+            if (persistBaseline)
+            {
+                baselineStore.Save(session.BaselineKey, diagnosticsReport, packageResult.Manifest, result.PendingBaselineSnapshot!);
+            }
+            else
+            {
+                result.SetPendingBaselineUpdate(diagnosticsReport, packageResult.Manifest);
+            }
         }
         else if (packageResult.ValidationResult?.HasErrors == true)
         {

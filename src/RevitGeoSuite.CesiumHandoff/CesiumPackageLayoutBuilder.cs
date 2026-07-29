@@ -129,6 +129,7 @@ public sealed class CesiumPackageLayoutBuilder
         };
 
         var installedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool backupCanBeDeleted = false;
         try
         {
             foreach (var replacement in replacements)
@@ -152,39 +153,48 @@ public sealed class CesiumPackageLayoutBuilder
                 }
                 installedDestinations.Add(replacement.Destination);
             }
+            backupCanBeDeleted = true;
         }
-        catch
+        catch (Exception publicationException)
         {
-            foreach (var replacement in replacements.Reverse())
+            try
             {
-                if (replacement.IsDirectory)
+                foreach (var replacement in replacements.Reverse())
                 {
-                    if (installedDestinations.Contains(replacement.Destination) && Directory.Exists(replacement.Destination))
+                    if (replacement.IsDirectory)
                     {
-                        Directory.Delete(replacement.Destination, recursive: true);
+                        if (installedDestinations.Contains(replacement.Destination) && Directory.Exists(replacement.Destination))
+                        {
+                            Directory.Delete(replacement.Destination, recursive: true);
+                        }
+                        if (Directory.Exists(replacement.Backup))
+                        {
+                            Directory.Move(replacement.Backup, replacement.Destination);
+                        }
                     }
-                    if (Directory.Exists(replacement.Backup))
+                    else
                     {
-                        Directory.Move(replacement.Backup, replacement.Destination);
+                        if (installedDestinations.Contains(replacement.Destination) && File.Exists(replacement.Destination))
+                        {
+                            File.Delete(replacement.Destination);
+                        }
+                        if (File.Exists(replacement.Backup))
+                        {
+                            File.Move(replacement.Backup, replacement.Destination);
+                        }
                     }
                 }
-                else
-                {
-                    if (installedDestinations.Contains(replacement.Destination) && File.Exists(replacement.Destination))
-                    {
-                        File.Delete(replacement.Destination);
-                    }
-                    if (File.Exists(replacement.Backup))
-                    {
-                        File.Move(replacement.Backup, replacement.Destination);
-                    }
-                }
+                backupCanBeDeleted = true;
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException("Package publication failed and the previous package could not be fully restored.", publicationException, rollbackException);
             }
             throw;
         }
         finally
         {
-            if (Directory.Exists(backupRoot))
+            if (backupCanBeDeleted && Directory.Exists(backupRoot))
             {
                 Directory.Delete(backupRoot, recursive: true);
             }

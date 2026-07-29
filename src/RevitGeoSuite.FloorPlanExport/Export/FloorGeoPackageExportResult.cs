@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Diagnostics;
 
@@ -39,6 +40,10 @@ public sealed class FloorGeoPackageExportResult
     public PackageValidationResult? PackageValidationResult { get; private set; }
 
     public ExportBaselineSnapshot? PendingBaselineSnapshot { get; private set; }
+
+    public ExportDiagnosticsReport? PendingBaselineReport { get; private set; }
+
+    public ExportPackageManifest? PendingBaselineManifest { get; private set; }
 
     public void AddArtifactResult(ExportArtifactResult result)
     {
@@ -100,6 +105,66 @@ public sealed class FloorGeoPackageExportResult
     public void SetPendingBaselineSnapshot(ExportBaselineSnapshot? snapshot)
     {
         PendingBaselineSnapshot = snapshot;
+    }
+
+    public void SetPendingBaselineUpdate(ExportDiagnosticsReport report, ExportPackageManifest manifest)
+    {
+        PendingBaselineReport = report ?? throw new ArgumentNullException(nameof(report));
+        PendingBaselineManifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
+    }
+
+    public void CommitPendingBaseline(
+        string sourceRoot,
+        string destinationRoot,
+        ExportBaselineStore? baselineStore = null)
+    {
+        if (PendingBaselineSnapshot is null || PendingBaselineReport is null || PendingBaselineManifest is null)
+        {
+            return;
+        }
+
+        foreach (ExportBaselineArtifactSnapshot artifact in PendingBaselineSnapshot.Artifacts)
+        {
+            artifact.OutputFilePath = RebasePath(artifact.OutputFilePath, sourceRoot, destinationRoot);
+        }
+        foreach (ExportDiagnosticsOutputFile outputFile in PendingBaselineReport.OutputFiles)
+        {
+            outputFile.Path = RebasePath(outputFile.Path, sourceRoot, destinationRoot);
+        }
+        PendingBaselineManifest.PackageDirectory = RebasePath(
+            PendingBaselineManifest.PackageDirectory, sourceRoot, destinationRoot);
+        foreach (ExportPackageManifestFile file in PendingBaselineManifest.Files)
+        {
+            file.OutputFilePath = RebasePath(file.OutputFilePath, sourceRoot, destinationRoot);
+        }
+
+        (baselineStore ?? new ExportBaselineStore()).Save(
+            PendingBaselineSnapshot.BaselineKey,
+            PendingBaselineReport,
+            PendingBaselineManifest,
+            PendingBaselineSnapshot);
+    }
+
+    private static string RebasePath(string path, string sourceRoot, string destinationRoot)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        string source = Path.GetFullPath(sourceRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string fullPath = Path.GetFullPath(path);
+        if (!fullPath.Equals(source, StringComparison.OrdinalIgnoreCase) &&
+            !fullPath.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+            !fullPath.StartsWith(source + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return path;
+        }
+
+        string relative = fullPath.Substring(source.Length)
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return Path.Combine(destinationRoot, relative);
     }
 
     public void AddPhaseTiming(string phaseName, TimeSpan duration)

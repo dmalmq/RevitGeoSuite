@@ -133,6 +133,29 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
     }
 
     [Fact]
+    public void PublishLayout_RestoresPreviousPackageWhenInstallationFails()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "tiles"));
+        Directory.CreateDirectory(Path.Combine(_root, "gis"));
+        File.WriteAllText(Path.Combine(_root, "tiles", "tileset.json"), "old-tiles");
+        File.WriteAllText(Path.Combine(_root, "gis", "old.gpkg"), "old-gis");
+        File.WriteAllText(Path.Combine(_root, "cesium-package.json"), "old-manifest");
+
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout staging = builder.CreateStagingLayout(_root);
+        File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "new-tiles");
+        File.WriteAllText(Path.Combine(staging.GisDirectory, "new.gpkg"), "new-gis");
+        builder.WriteManifest(staging, CreateInputs());
+        Directory.Delete(staging.GisDirectory, recursive: true);
+
+        Assert.ThrowsAny<Exception>(() => builder.PublishLayout(staging, _root));
+
+        Assert.Equal("old-tiles", File.ReadAllText(Path.Combine(_root, "tiles", "tileset.json")));
+        Assert.Equal("old-gis", File.ReadAllText(Path.Combine(_root, "gis", "old.gpkg")));
+        Assert.Equal("old-manifest", File.ReadAllText(Path.Combine(_root, "cesium-package.json")));
+    }
+
+    [Fact]
     public void WriteManifest_ScansArtifactsAndWritesManifest()
     {
         var builder = new CesiumPackageLayoutBuilder();

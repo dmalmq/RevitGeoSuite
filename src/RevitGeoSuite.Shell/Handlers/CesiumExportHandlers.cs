@@ -180,6 +180,11 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 gis.ArtifactPaths = gis.ArtifactPaths
                     .Select(path => RebasePackagePath(path, stagedRoot, layout.RootDirectory))
                     .ToList();
+                tiles.State.LastExportPath = layout.TilesDirectory;
+                await RevitContext.Instance
+                    .InvokeWithDocumentAsync(document => PersistTilesState(document, tiles.State))
+                    .ConfigureAwait(false);
+                gis.ExportResult.CommitPendingBaseline(stagedRoot, layout.RootDirectory);
 
             bool pushed = false;
             string pushMessage = string.Empty;
@@ -243,6 +248,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         public double AnchorLon;
         public double AnchorElevationMeters;
         public double? GeoidOffsetMeters;
+        public Tiles3DExportState State = new();
     }
 
     private sealed class GisStepResult
@@ -254,6 +260,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         public int GisEpsg;
         public List<string> ArtifactPaths = new();
         public List<CesiumPackageLevelMapEntry> LevelMap = new();
+        public FloorGeoPackageExportResult ExportResult = new();
     }
 
     private static Tiles3DStepResult RunTilesExport(
@@ -278,7 +285,13 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             handle, reference, scopeSelection, lod, request.PreciseCrs, request.GeoidOffset);
         Tiles3DExportState? existingState = new Tiles3DExportStateService().Load(handle);
         Tiles3DExportResult exportResult = coordinator.Export(
-            handle, prep.Package, layout.TilesDirectory, Tiles3DExportSupport.ReferenceSource, scopeSelection, existingState);
+            handle,
+            prep.Package,
+            layout.TilesDirectory,
+            Tiles3DExportSupport.ReferenceSource,
+            scopeSelection,
+            existingState,
+            persistState: false);
 
         warnings.AddRange(Tiles3DExportSupport.ScopeWarnings(request.Scope));
         warnings.AddRange(prep.Warnings);
@@ -292,7 +305,15 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             AnchorLon = context.AnchorLongitude,
             AnchorElevationMeters = context.AnchorElevationMeters,
             GeoidOffsetMeters = prep.Package.GeoidHeightOffsetMeters,
+            State = exportResult.UpdatedState,
         };
+    }
+
+    private static object? PersistTilesState(Document document, Tiles3DExportState state)
+    {
+        var (handle, _, _) = ExportHandlerSupport.ReadContext(document);
+        new Tiles3DExportCoordinator().PersistState(handle, state);
+        return null;
     }
 
     private static GisStepResult RunGisExport(
@@ -318,7 +339,9 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             packagingModeOverride: PackagingMode.PerBuildingGeoPackage,
             outputFormatOverride: ExportFormat.GeoPackage,
             progressCallback: null,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            baselineKeyOverride: $"{projectKey}__{profile.Name}__cesium",
+            persistBaseline: false);
         warnings.AddRange(result.Warnings);
 
         ExportDialogSettings settings = profile.ToSettings();
@@ -333,6 +356,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             GisEpsg = settings.TargetEpsg,
             ArtifactPaths = result.ArtifactResults.Select(artifact => artifact.OutputFilePath).ToList(),
             LevelMap = CesiumExportSupport.BuildLevelMap(document),
+            ExportResult = result,
         };
     }
 }
