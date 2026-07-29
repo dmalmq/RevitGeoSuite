@@ -94,6 +94,15 @@ public sealed class DeferredBaselinePublicationTests : IDisposable
     }
 
     [Fact]
+    public void ConfigurationFingerprint_ChangesAcrossOutputFormatTransitions()
+    {
+        string shapefileInput = FloorGeoPackageExporter.BuildOutputFormatFingerprintInput(ExportFormat.Shapefile);
+        string geoPackageInput = FloorGeoPackageExporter.BuildOutputFormatFingerprintInput(ExportFormat.GeoPackage);
+
+        Assert.NotEqual(shapefileInput, geoPackageInput);
+    }
+
+    [Fact]
     public void CopyReusableArtifact_CopiesShapefileComponents()
     {
         string publishedPath = Path.Combine(_root, "package", "gis", "unit.shp");

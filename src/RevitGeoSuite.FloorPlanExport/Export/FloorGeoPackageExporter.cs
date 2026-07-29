@@ -523,6 +523,7 @@ public sealed class FloorGeoPackageExporter
         List<string> inputs = new()
         {
             $"featureTypes:{session.FeatureTypes}",
+            BuildOutputFormatFingerprintInput(session.OutputFormat),
             $"coordinateMode:{session.CoordinateMode}",
             $"targetEpsg:{session.TargetEpsg}",
             $"outputEpsg:{session.OutputEpsg}",
@@ -541,6 +542,11 @@ public sealed class FloorGeoPackageExporter
         inputs.AddRange(session.AcceptedOpeningFamilies.OrderBy(value => value, StringComparer.Ordinal).Select(value => $"opening:{value}"));
 
         return fingerprintBuilder.ComputeConfigurationFingerprint(inputs);
+    }
+
+    internal static string BuildOutputFormatFingerprintInput(ExportFormat outputFormat)
+    {
+        return $"outputFormat:{outputFormat}";
     }
 
     private static string SerializeSchemaProfile(SchemaProfile profile)

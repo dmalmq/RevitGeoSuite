@@ -174,7 +174,7 @@ public sealed class ExportWorkflowCoordinator
         // Validation feeds diagnostics only. The wizard surfaces readiness inline at Preview,
         // so there are no blocking readiness/validation dialogs in this core path.
         ExportValidationResult validationResult = validationService.Validate(snapshotBuilder.Build(session));
-        return CompleteExport(session, validationResult, request, progressCallback, cancellationToken);
+        return CompleteExport(session, validationResult, request, progressCallback, cancellationToken, persistBaseline);
     }
 
     private FloorGeoPackageExportResult CompleteExport(
@@ -182,7 +182,8 @@ public sealed class ExportWorkflowCoordinator
         ExportValidationResult validationResult,
         ExportDialogResult request,
         Action<ExportProgressUpdate>? progressCallback,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool persistBaseline)
     {
         FloorGeoPackageExporter exporter = new(_document);
         FloorGeoPackageExportResult result;
