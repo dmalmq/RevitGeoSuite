@@ -101,6 +101,24 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
     }
 
     [Fact]
+    public void ComposeFromFolder_HashIncludesManifestReferencedShapefileSidecars()
+    {
+        File.WriteAllText(Path.Combine(_root, "unit.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(_root, "legacy.shp"), "shp");
+        File.WriteAllText(Path.Combine(_root, "legacy.dbf"), "before");
+        File.WriteAllText(Path.Combine(_root, "legacy.shx"), "shx");
+        File.WriteAllText(
+            Path.Combine(_root, "package-manifest.json"),
+            "{\"Files\":[{\"RelativePath\":\"legacy.shp\"}]}");
+
+        string? before = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+        File.WriteAllText(Path.Combine(_root, "legacy.dbf"), "after");
+        string? after = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+
+        Assert.NotEqual(before, after);
+    }
+
+    [Fact]
     public void ComposeFromFolder_PrefersPackageLayoutSubdirsWhenPresent()
     {
         Directory.CreateDirectory(Path.Combine(_root, "tiles"));

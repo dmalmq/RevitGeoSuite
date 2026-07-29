@@ -189,6 +189,40 @@ public sealed class CesiumViewerPushClientTests : IDisposable
     }
 
     [Fact]
+    public async Task PushAsync_SendsManifestReferencedShapefileSidecars()
+    {
+        string gisDirectory = Path.Combine(_packageRoot, "gis");
+        File.WriteAllText(Path.Combine(gisDirectory, "legacy.shp"), "SHPDATA");
+        File.WriteAllText(Path.Combine(gisDirectory, "legacy.dbf"), "DBFDATA");
+        File.WriteAllText(Path.Combine(gisDirectory, "legacy.shx"), "SHXDATA");
+        File.WriteAllText(
+            Path.Combine(gisDirectory, "package-manifest.json"),
+            "{\"Files\":[{\"RelativePath\":\"legacy.shp\"}]}");
+        CesiumPackageFolderComposer.ComposeFromFolder(_packageRoot, new CesiumPackageBuildInputs
+        {
+            BuildingId = "tower",
+            BuildingName = "Tower",
+            GeneratorVersion = "1.0.0",
+        });
+        using var server = new StubServer(200, "{\"ok\":true}");
+        var client = new CesiumViewerPushClient();
+
+        CesiumViewerPushResult result = await client.PushAsync(
+            new CesiumViewerPushRequest
+            {
+                ViewerUrl = $"http://localhost:{server.Port}",
+                PackageRoot = _packageRoot,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(CesiumViewerPushStatus.Success, result.Status);
+        Assert.Contains("gis/legacy.shp", server.RequestBody);
+        Assert.Contains("gis/legacy.dbf", server.RequestBody);
+        Assert.Contains("gis/legacy.shx", server.RequestBody);
+        Assert.Contains("DBFDATA", server.RequestBody);
+    }
+
+    [Fact]
     public async Task PushAsync_SendsBearerTokenWhenConfigured()
     {
         using var server = new StubServer(200, "{\"ok\":true}");

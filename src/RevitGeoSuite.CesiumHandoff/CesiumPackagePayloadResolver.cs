@@ -104,7 +104,12 @@ internal static class CesiumPackagePayloadResolver
                 : null;
             if (!string.IsNullOrWhiteSpace(relativePath))
             {
-                AddPath(root, paths, Path.Combine(manifestDirectory, relativePath).Replace(Path.DirectorySeparatorChar, '/'));
+                string referencedPath = Path.Combine(manifestDirectory, relativePath).Replace(Path.DirectorySeparatorChar, '/');
+                AddPath(root, paths, referencedPath);
+                if (string.Equals(Path.GetExtension(relativePath), ".shp", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddShapefileComponents(root, paths, referencedPath);
+                }
             }
         }
     }
