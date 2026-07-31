@@ -71,7 +71,8 @@ public sealed class ExportWorkflowCoordinator
             previewRequest.Use3DSectionBoxExport,
             previewRequest.SectionBoxAboveFloorMeters,
             previewRequest.SectionBoxBelowFloorMeters,
-            previewRequest.Keep3DTempViewsForDebug);
+            previewRequest.Keep3DTempViewsForDebug,
+            previewRequest.UnitCategories);
 
         using WebExportPreviewDialog previewDialog = new(previewRequest, previewService, owner);
         _ = previewDialog.ShowDialog();
@@ -122,7 +123,9 @@ public sealed class ExportWorkflowCoordinator
         ExportDialogResult request,
         ModelCoordinateInfo coordinateInfo,
         Action<ExportProgressUpdate>? progressCallback = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? baselineKeyOverride = null,
+        bool persistBaseline = true)
     {
         FloorGeoPackageExporter exporter = new(_document);
         ExportValidationSnapshotBuilder snapshotBuilder = new();
@@ -144,7 +147,9 @@ public sealed class ExportWorkflowCoordinator
                 PostExportActions = request.PostExportActions.Clone(),
             },
             request.SelectedProfileName,
-            BuildBaselineKey(_projectKey, request.SelectedProfileName),
+            string.IsNullOrWhiteSpace(baselineKeyOverride)
+                ? BuildBaselineKey(_projectKey, request.SelectedProfileName)
+                : baselineKeyOverride!.Trim(),
             request.IncrementalExportMode,
             request.CoordinateMode,
             coordinateInfo.ResolvedSourceEpsg,
@@ -162,13 +167,14 @@ public sealed class ExportWorkflowCoordinator
             request.Use3DSectionBoxExport,
             request.SectionBoxAboveFloorMeters,
             request.SectionBoxBelowFloorMeters,
-            request.Keep3DTempViewsForDebug);
+            request.Keep3DTempViewsForDebug,
+            request.UnitCategories);
         session.OutputFormat = request.OutputFormat;
 
         // Validation feeds diagnostics only. The wizard surfaces readiness inline at Preview,
         // so there are no blocking readiness/validation dialogs in this core path.
         ExportValidationResult validationResult = validationService.Validate(snapshotBuilder.Build(session));
-        return CompleteExport(session, validationResult, request, progressCallback, cancellationToken);
+        return CompleteExport(session, validationResult, request, progressCallback, cancellationToken, persistBaseline);
     }
 
     private FloorGeoPackageExportResult CompleteExport(
@@ -176,7 +182,8 @@ public sealed class ExportWorkflowCoordinator
         ExportValidationResult validationResult,
         ExportDialogResult request,
         Action<ExportProgressUpdate>? progressCallback,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool persistBaseline)
     {
         FloorGeoPackageExporter exporter = new(_document);
         FloorGeoPackageExportResult result;
@@ -252,7 +259,14 @@ public sealed class ExportWorkflowCoordinator
                                   (packageResult.ValidationResult == null || !packageResult.ValidationResult.HasErrors);
         if (canReplaceBaseline)
         {
-            baselineStore.Save(session.BaselineKey, diagnosticsReport, packageResult.Manifest, result.PendingBaselineSnapshot!);
+            if (persistBaseline)
+            {
+                baselineStore.Save(session.BaselineKey, diagnosticsReport, packageResult.Manifest, result.PendingBaselineSnapshot!);
+            }
+            else
+            {
+                result.SetPendingBaselineUpdate(diagnosticsReport, packageResult.Manifest);
+            }
         }
         else if (packageResult.ValidationResult?.HasErrors == true)
         {

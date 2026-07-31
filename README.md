@@ -43,14 +43,15 @@ All functionality is reached through three web-shell entry points on a single **
 
 | Module | Entry | Description |
 |--------|-------|-------------|
-| **Georeference** | Georef | CRS selection with Japanese presets, OSM map-based point picking, PLATEAU grid-tile snapping, and a split survey / project base point apply path with placement preview |
+| **Georeference** | Georef | CRS selection with Japanese presets, OSM map-based point picking, PLATEAU grid-tile snapping or direct projected easting/northing entry, and a split survey / project base point apply path with placement preview |
 | **Mesh Inspector** | Georef | Japanese JIS X 0410 mesh code lookup, boundary calculation, and 8-neighbor display as a GeoJSON map overlay |
 | **Validation** | shell-wide | Live, read-only project health checks for coordinate setup and export readiness, surfaced in the shell status footer against the shared `GeoProjectInfo` |
 | **PLATEAU Import** | Import | Folder scan with codelist parsing and tile indexing, grid-tile selection, building/feature filtering, a shape-based context geometry pipeline (lightweight extrusion, detailed DirectShape, or mass-on-Relief), road/sidewalk outlines, and DXF basemap export |
 | **Ground / Terrain Import** | Import | Native Revit topography surface built from a local DEM (Kiban GML) or online Cesium Ion quantized-mesh terrain, with configurable radius/spacing and geoid-undulation offset to ellipsoidal height |
-| **3D Tiles Export** | Export | Scoped export (whole model or selected 3D view) with per-object metadata, RGBA material colors, level grouping with a manifest, optional precise CRS anchor rebasing, and geoid undulation offset to convert orthometric anchors to WGS84 ellipsoidal height |
+| **3D Tiles Export** | Export | Scoped export (whole model or selected 3D view) with per-object metadata, RGBA material colors, level grouping with a manifest, optional precise CRS anchor rebasing, and automatic EGM2008 or manual geoid offset to convert orthometric anchors to WGS84 ellipsoidal height |
+| **Cesium Viewer Handoff** | Export | Combined 3D Tiles and per-building floor-plan GeoPackage packaging from a saved floor-plan profile, with a `cesium-package.json` manifest and optional push to a configured viewer; standalone exports can also be sent to the viewer |
 | **CityGML Export** | Export | Lightweight CityGML export with semantic and attribute mapping, codelist assignment, and a separate module export state |
-| **Floor Plan Export** | Export | Indoor floor-plan GIS export to GeoPackage / Shapefile using an IMDF-style schema (units, zones, openings, levels, vertical circulation), with an interactive map preview, category/floor assignment, validation policies, reusable export profiles, and an export diagnostics manifest |
+| **Floor Plan Export** | Export | Indoor floor-plan GIS export to GeoPackage / Shapefile using an IMDF-style schema (units, zones, openings, levels, vertical circulation), with an interactive map preview, category/floor assignment, optional unit-category filtering, validation policies, reusable export profiles, and an export diagnostics manifest |
 
 ---
 
@@ -67,7 +68,7 @@ Modules are independent over a shared foundation — no module depends on anothe
  Workflows
    Georeference · Mesh Inspector · Validation
    PLATEAU Import · Ground / Terrain Import
-   3D Tiles Export · CityGML Export · Floor Plan Export
+   3D Tiles Export · Cesium Viewer Handoff · CityGML Export · Floor Plan Export
    │
    ▼
  Foundation
@@ -84,6 +85,7 @@ RevitGeoSuite/
 ├── src/
 │   ├── RevitGeoSuite.Core/                  # Generic geo foundation (no Revit dependency)
 │   ├── RevitGeoSuite.Core.Plateau/          # PLATEAU + terrain logic (DEM, Cesium Ion, tiling)
+│   ├── RevitGeoSuite.CesiumHandoff/         # Cesium package composition, manifests, and viewer push
 │   ├── RevitGeoSuite.RevitInterop/          # Revit API wrappers (no UI)
 │   ├── RevitGeoSuite.SharedUI/              # WPF shell window hosting WebView2
 │   ├── RevitGeoSuite.SharedUI.Web/          # Svelte + TypeScript single-page UI (Vite)

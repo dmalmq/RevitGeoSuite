@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import { request, on } from '$lib/bridge/rpc'
+  import { startJob } from '$lib/bridge/jobs'
   import { i18n, t } from '$lib/i18n'
   import type {
     DialogOpenFolderResponse,
@@ -60,6 +61,7 @@
     activeValidationPolicyProfileName: 'Recommended',
     simplifyStairUnits: false,
     simplifyEscalatorUnits: false,
+    unitCategories: [],
     use3DSectionBoxExport: false,
     sectionBoxAboveFloorMeters: 1.2,
     sectionBoxBelowFloorMeters: 0,
@@ -177,6 +179,13 @@
     if (checked) ids.add(id)
     else ids.delete(id)
     settings = { ...settings, selectedLinkIds: [...ids], includeLinkedModels: ids.size > 0 || settings.includeLinkedModels }
+  }
+
+  function toggleUnitCategory(category: string, checked: boolean) {
+    const categories = new Set(settings.unitCategories ?? [])
+    if (checked) categories.add(category)
+    else categories.delete(category)
+    settings = { ...settings, unitCategories: [...categories] }
   }
 
   function selectVisibleViews(checked: boolean) {
@@ -574,6 +583,9 @@
       showExportWarnings = false
       exportStatus = 'done'
       await i18n.setLanguage(response.result.language)
+      if (sendToCesiumViewer && settings.outputDirectory) {
+        await pushToCesiumViewer(settings.outputDirectory)
+      }
     } catch (err) {
       exportStatus = 'failed'
       exportError = err instanceof Error ? err.message : String(err)
@@ -587,6 +599,24 @@
       totalSteps: Math.max(1, next.totalSteps),
       completedSteps: Math.max(0, Math.min(next.completedSteps, Math.max(1, next.totalSteps))),
       startedAtUtc: next.startedAtUtc || progress.startedAtUtc || new Date().toISOString()
+    }
+  }
+
+  // Post-export action: wrap the finished GIS output in a cesium-package.json and
+  // push it to the configured Cesium viewer (GIS-only package; the viewer attaches
+  // it to the matching building by id). Only available in the shared shell —
+  // failures degrade to a status message, never block the export result.
+  let sendToCesiumViewer = false
+  let cesiumPushStatus = ''
+
+  async function pushToCesiumViewer(folder: string) {
+    cesiumPushStatus = $t('Exporter.CesiumPushing', 'Sending to Cesium viewer…')
+    try {
+      const job = startJob<{ pushed: boolean; message: string }>('cesium.push', { folder }, {})
+      const result = await job.result
+      cesiumPushStatus = result.message
+    } catch (err) {
+      cesiumPushStatus = err instanceof Error ? err.message : String(err)
     }
   }
 
@@ -634,6 +664,7 @@
 
   $: selectedViewIds = new Set(settings.selectedViewIds)
   $: selectedLinkIds = new Set(settings.selectedLinkIds)
+  $: selectedUnitCategories = new Set(settings.unitCategories ?? [])
   $: selectedFeatureCount = [
     settings.unit,
     settings.detail,
@@ -966,6 +997,31 @@
                   </div>
                 </details>
 
+                {#if state.unitCategoryOptions.length > 0}
+                  <details class="sub-disclosure">
+                    <summary>
+                      {$t('Exporter.UnitFilter', 'Unit filter')}
+                      {#if selectedUnitCategories.size > 0}
+                        <span class="badge">({selectedUnitCategories.size} {$t('Exporter.UnitFilterSelected', 'selected')})</span>
+                      {/if}
+                    </summary>
+                    <div class="mt-3 unit-filter-body" class:disabled={!settings.unit}>
+                      <p class="mb-2 text-xs text-neutral-500 dark:text-neutral-400">{$t('Exporter.UnitFilterHint', 'Export only units with the selected categories. Leave all unchecked to export every unit.')}</p>
+                      <div class="chip-group">
+                        {#each state.unitCategoryOptions as category}
+                          <label class="chip" class:active={selectedUnitCategories.has(category)} class:disabled={!settings.unit} aria-disabled={!settings.unit}>
+                            <input type="checkbox" checked={selectedUnitCategories.has(category)} disabled={!settings.unit} on:change={(event) => toggleUnitCategory(category, event.currentTarget.checked)} />
+                            {category}
+                          </label>
+                        {/each}
+                      </div>
+                      {#if !settings.unit}
+                        <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{$t('Exporter.UnitFilterDisabled', 'Enable the unit feature type to use this filter.')}</p>
+                      {/if}
+                    </div>
+                  </details>
+                {/if}
+
                 {#if state.links.length > 0}
                   <details class="sub-disclosure">
                     <summary>{$t('Exporter.LinkedModels', 'Linked models')} <span class="badge">({state.links.length} {$t('Exporter.Available', 'available')})</span></summary>
@@ -992,6 +1048,7 @@
                     <label class="check-row"><input type="checkbox" bind:checked={settings.simplifyEscalatorUnits} />{$t('Exporter.SimplifyEscalators', 'Simplify escalator units')}</label>
                     <label class="check-row"><input type="checkbox" bind:checked={settings.openOutputFolder} />{$t('Exporter.OpenOutput', 'Open output folder')}</label>
                     <label class="check-row"><input type="checkbox" bind:checked={settings.launchQgis} />{$t('Exporter.LaunchQgis', 'Launch QGIS')}</label>
+                    <label class="check-row"><input type="checkbox" bind:checked={sendToCesiumViewer} />{$t('Exporter.SendToCesium', 'Send to Cesium viewer')}</label>
                     <label class="check-row md:col-span-2"><input type="checkbox" bind:checked={settings.use3DSectionBoxExport} />{$t('Exporter.SectionBox', 'Use 3D section box export')}</label>
                     <label>
                       <span class="field-label">{$t('Exporter.BelowFloor', 'Below floor (m)')}</span>
@@ -1327,6 +1384,12 @@
               {#if exportError}
                 <div class="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
                   {exportError}
+                </div>
+              {/if}
+
+              {#if cesiumPushStatus}
+                <div class="border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
+                  {cesiumPushStatus}
                 </div>
               {/if}
 
@@ -1774,6 +1837,11 @@
     color: rgb(15 118 110);
   }
 
+  .chip.disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
   :global(.dark) .chip {
     border-color: rgb(64 64 64);
     background: rgb(38 38 38);
@@ -1784,6 +1852,10 @@
     border-color: rgb(20 184 166);
     background: rgba(19, 78, 74, 0.45);
     color: rgb(153 246 228);
+  }
+
+  .unit-filter-body.disabled {
+    opacity: 0.62;
   }
 
   .map-overlay-pill {

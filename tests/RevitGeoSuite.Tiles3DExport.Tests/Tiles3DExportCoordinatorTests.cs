@@ -165,6 +165,43 @@ public sealed class Tiles3DExportCoordinatorTests
             geoidHeightOffsetMeters));
     }
 
+    [Fact]
+    public void Resolve_geoid_offset_prefers_manual_value()
+    {
+        double result = Tiles3DExportCoordinator.ResolveGeoidOffset(
+            12.3d,
+            usePreciseCrsProjection: true,
+            anchorLatitudeDegrees: 35.6895d,
+            anchorLongitudeDegrees: 139.6917d);
+
+        Assert.Equal(12.3d, result, precision: 6);
+    }
+
+    [Fact]
+    public void Resolve_geoid_offset_uses_egm2008_when_precise_crs_has_no_manual_value()
+    {
+        double result = Tiles3DExportCoordinator.ResolveGeoidOffset(
+            null,
+            usePreciseCrsProjection: true,
+            anchorLatitudeDegrees: 35.6895d,
+            anchorLongitudeDegrees: 139.6917d);
+
+        double expected = Egm2008Geoid.GetUndulationMeters(35.6895d, 139.6917d);
+        Assert.Equal(expected, result, precision: 9);
+    }
+
+    [Fact]
+    public void Resolve_geoid_offset_defaults_to_zero_when_precise_crs_is_disabled()
+    {
+        double result = Tiles3DExportCoordinator.ResolveGeoidOffset(
+            null,
+            usePreciseCrsProjection: false,
+            anchorLatitudeDegrees: 35.6895d,
+            anchorLongitudeDegrees: 139.6917d);
+
+        Assert.Equal(0d, result, precision: 6);
+    }
+
     private static Tiles3DExportReferenceContext CreateReferenceContext(double anchorElevationMeters)
     {
         return new Tiles3DExportReferenceContext

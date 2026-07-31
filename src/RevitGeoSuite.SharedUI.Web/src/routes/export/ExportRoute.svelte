@@ -3,6 +3,10 @@
   import { startJob } from '$lib/bridge/jobs'
   import { inferGisLevelIdFromFileName } from '$lib/import/gisLevelInference'
   import type {
+    CesiumExportRunResponse,
+    CesiumExportStateResponse,
+    CesiumPushResponse,
+    CesiumViewerSettingsPayload,
     CityGmlExportPrepareResponse,
     CityGmlExportResponse,
     GisExportOptionsResponse,
@@ -35,12 +39,18 @@
     triangleCount?: number
     featureCount?: number
     perLayerCounts?: Record<string, number>
+    geoidOffsetMeters?: number
   }
 
   // Fills {0}/{1} placeholders in a localized template so count/number strings can keep
   // language-specific word order (e.g. Japanese "{1} 件中 {0} 件").
   function fmt(template: string, ...args: (string | number)[]): string {
     return template.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)] ?? ''))
+  }
+
+  function formatSignedMeters(value: number): string {
+    const sign = value > 0 ? '+' : ''
+    return `${sign}${value.toFixed(2)} m`
   }
 
   const plateauKibanLayerOptions = [
@@ -89,6 +99,7 @@
     geometryMode: 'lightweight',
     splitByLevel: false,
     preciseCrs: false,
+    geoidAuto: true,
     geoidOffset: 0,
     selectedViewUniqueId: ''
   })
@@ -98,6 +109,100 @@
   let selectedTiles3dLinkIds = $state<Set<string>>(new Set())
   let selectedTiles3dViewUniqueId = $state<string>('')
   let tiles3dLinksLoading = $state(false)
+
+  // Combined "Export to Cesium" panel (3D Tiles + floor-plan GeoPackage in one package).
+  let cesiumOpen = $state(false)
+  let cesiumState = $state<CesiumExportStateResponse | null>(null)
+  let cesiumProfile = $state('')
+  let cesiumOutputFolder = $state('')
+  let cesiumViewerUrl = $state('')
+  let cesiumPush = $state(true)
+  let cesiumLod = $state('fine')
+  let cesiumPreciseCrs = $state(false)
+  let cesiumRunning = $state(false)
+  let cesiumProgress = $state<any>(null)
+  let cesiumResult = $state<CesiumExportRunResponse | null>(null)
+  let cesiumError = $state<string | null>(null)
+
+  async function openCesiumExport() {
+    cesiumOpen = true
+    cesiumError = null
+    cesiumResult = null
+    try {
+      const state = await request<CesiumExportStateResponse>('cesium.export.getState', {})
+      cesiumState = state
+      if (!cesiumProfile) cesiumProfile = state.floorPlanProfiles[0] ?? ''
+      if (!cesiumOutputFolder) cesiumOutputFolder = state.lastOutputFolder
+      cesiumViewerUrl = state.viewerUrl
+    } catch (err: any) {
+      cesiumError = err?.message ?? 'Failed to load Cesium export state'
+    }
+  }
+
+  function closeCesiumExport() {
+    if (cesiumRunning) return
+    cesiumOpen = false
+  }
+
+  async function pickCesiumOutputFolder() {
+    try {
+      const result = await request('dialog.openFolder', {
+        title: $strings['Export.Cesium.PickFolder'] ?? 'Choose the Cesium package folder'
+      }) as { path?: string }
+      if (result?.path) cesiumOutputFolder = result.path
+    } catch {
+      // User cancelled the picker.
+    }
+  }
+
+  async function saveCesiumViewerUrl() {
+    try {
+      const saved = await request<CesiumViewerSettingsPayload>('cesium.settings.save', {
+        viewerUrl: cesiumViewerUrl.trim(),
+        token: null
+      })
+      cesiumViewerUrl = saved.viewerUrl
+    } catch (err: any) {
+      cesiumError = err?.message ?? 'Failed to save viewer settings'
+    }
+  }
+
+  async function runCesiumExport() {
+    if (!cesiumOutputFolder.trim()) {
+      cesiumError = $strings['Export.Cesium.FolderRequired'] ?? 'Choose an output folder for the package'
+      return
+    }
+    if (!cesiumProfile) {
+      cesiumError = $strings['Export.Cesium.ProfileRequired'] ?? 'Choose a floor-plan export profile'
+      return
+    }
+
+    cesiumRunning = true
+    cesiumError = null
+    cesiumResult = null
+    cesiumProgress = null
+    await saveCesiumViewerUrl()
+
+    const job = startJob<CesiumExportRunResponse>('cesium.export.run', {
+      outputFolder: cesiumOutputFolder.trim(),
+      floorPlanProfileName: cesiumProfile,
+      push: cesiumPush,
+      scope: 'whole',
+      lod: cesiumLod,
+      preciseCrs: cesiumPreciseCrs,
+      selectedLinkUniqueIds: []
+    }, {
+      onProgress: (p) => { cesiumProgress = p }
+    })
+
+    try {
+      cesiumResult = await job.result
+    } catch (err: any) {
+      cesiumError = err?.message ?? 'Export to Cesium failed'
+    } finally {
+      cesiumRunning = false
+    }
+  }
 
   let citygmlOptions = $state({
     schemaVersion: '2.0',
@@ -393,13 +498,19 @@
       }
     }
 
-    const options = format === 'tiles3d'
-      ? {
-          ...tiles3dOptions,
-          selectedViewUniqueId: scope === 'view' ? selectedTiles3dViewUniqueId : '',
-          selectedLinkUniqueIds: [...selectedTiles3dLinkIds]
-        }
-      : citygmlOptions
+    let options
+    if (format === 'tiles3d') {
+      const { geoidAuto, geoidOffset, ...baseTiles3dOptions } = tiles3dOptions
+      options = {
+        ...baseTiles3dOptions,
+        selectedViewUniqueId: scope === 'view' ? selectedTiles3dViewUniqueId : '',
+        selectedLinkUniqueIds: [...selectedTiles3dLinkIds],
+        ...(tiles3dOptions.preciseCrs && !geoidAuto ? { geoidOffset } : {})
+      }
+    } else {
+      options = citygmlOptions
+    }
+
     return {
       scope,
       outputFolder,
@@ -424,6 +535,17 @@
     }
     if (format === 'tiles3d' && scope === 'view' && !selectedTiles3dViewUniqueId) {
       error = $strings['Export.Error.Select3dView'] ?? 'Select a 3D view before previewing the export'
+      return false
+    }
+    if (
+      format === 'tiles3d' &&
+      tiles3dOptions.preciseCrs &&
+      !tiles3dOptions.geoidAuto &&
+      typeof tiles3dOptions.geoidOffset !== 'number'
+    ) {
+      error =
+        $strings['Export.Error.GeoidOffsetRequired'] ??
+        'Enter a geoid height offset or enable auto-detect'
       return false
     }
 
@@ -469,7 +591,8 @@
           crs: result.crs,
           warnings: result.warnings || [],
           elementCount: result.elementCount,
-          triangleCount: result.triangleCount
+          triangleCount: result.triangleCount,
+          geoidOffsetMeters: result.geoidOffsetMeters
         }
       } else if (format === 'citygml') {
         const result = await request<CityGmlExportPrepareResponse>('citygml.export.prepare', {
@@ -519,11 +642,30 @@
       const result = await job.result
       exportProgress = { ...exportProgress, complete: true, ...result }
       exporting = false
+      if (format === 'tiles3d' && sendToCesiumViewer && outputFolder) {
+        await pushFolderToCesiumViewer(outputFolder)
+      }
     } catch (err: any) {
       error = err.message || ($strings['Export.Error.Failed'] ?? 'Export failed')
       exporting = false
     } finally {
       exportCancel = null
+    }
+  }
+
+  // Post-export action shared by the 3D Tiles panel: wraps the finished export
+  // folder in a cesium-package.json and pushes it to the configured viewer.
+  let sendToCesiumViewer = $state(false)
+  let cesiumPushStatus = $state<string | null>(null)
+
+  async function pushFolderToCesiumViewer(folder: string) {
+    cesiumPushStatus = $strings['Export.Cesium.Pushing'] ?? 'Sending to Cesium viewer…'
+    try {
+      const job = startJob<CesiumPushResponse>('cesium.push', { folder }, {})
+      const result = await job.result
+      cesiumPushStatus = result.message
+    } catch (err: any) {
+      cesiumPushStatus = err?.message ?? 'Push to Cesium viewer failed'
     }
   }
 
@@ -963,6 +1105,23 @@
                 <div>
                   <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Format.CityGml'] ?? 'CityGML'}</div>
                   <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Format.CityGmlDesc'] ?? 'Export as CityGML for semantic 3D city models'}</div>
+                </div>
+              </div>
+            </button>
+
+            <button
+              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+              onclick={openCesiumExport}
+            >
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-sky-50 border border-sky-200 dark:bg-sky-900/30 dark:border-sky-700 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-sky-600 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Format.Cesium'] ?? 'Export to Cesium'}</div>
+                  <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Format.CesiumDesc'] ?? 'One-click 3D Tiles + GeoPackage package for the Cesium viewer'}</div>
                 </div>
               </div>
             </button>
@@ -1679,25 +1838,56 @@
             <label class="flex items-center gap-2">
               <input
                 type="checkbox"
-                bind:checked={tiles3dOptions.preciseCrs}
+                checked={tiles3dOptions.preciseCrs}
+                onchange={(event) => {
+                  tiles3dOptions.preciseCrs = event.currentTarget.checked
+                  exportPreview = null
+                }}
                 class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
               />
               <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.PreciseCrs'] ?? 'Use precise CRS projection'}</span>
             </label>
 
+            <label class="flex items-center gap-2">
+              <input
+                type="checkbox"
+                bind:checked={sendToCesiumViewer}
+                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
+              />
+              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.SendToCesium'] ?? 'Send to Cesium viewer after export'}</span>
+            </label>
+
             {#if tiles3dOptions.preciseCrs}
-              <div>
-                <label for="export-tiles3d-geoid-offset" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                  {$strings['Export.Tiles3d.GeoidOffset'] ?? 'Geoid Height Offset (meters)'}
-                </label>
+              <label class="flex items-center gap-2">
                 <input
-                  id="export-tiles3d-geoid-offset"
-                  type="number"
-                  bind:value={tiles3dOptions.geoidOffset}
-                  step="0.1"
-                  class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  type="checkbox"
+                  checked={tiles3dOptions.geoidAuto}
+                  onchange={(event) => {
+                    tiles3dOptions.geoidAuto = event.currentTarget.checked
+                    exportPreview = null
+                  }}
+                  class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
                 />
-              </div>
+                <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.GeoidAuto'] ?? 'Auto-detect from location (EGM2008)'}</span>
+              </label>
+
+              {#if !tiles3dOptions.geoidAuto}
+                <div>
+                  <label for="export-tiles3d-geoid-offset" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    {$strings['Export.Tiles3d.GeoidOffset'] ?? 'Geoid Height Offset (meters)'}
+                  </label>
+                  <input
+                    id="export-tiles3d-geoid-offset"
+                    type="number"
+                    bind:value={tiles3dOptions.geoidOffset}
+                    oninput={() => {
+                      exportPreview = null
+                    }}
+                    step="0.1"
+                    class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              {/if}
             {/if}
 
             {#if tiles3dLinks.length > 0}
@@ -1790,6 +1980,12 @@
                 <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.triangleCount}</span>
               </div>
             {/if}
+            {#if format === 'tiles3d' && tiles3dOptions.preciseCrs && exportPreview.geoidOffsetMeters !== undefined}
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.GeoidOffset'] ?? 'Geoid offset:'}</span>
+                <span class="text-right text-neutral-800 dark:text-neutral-200">{formatSignedMeters(exportPreview.geoidOffsetMeters)}</span>
+              </div>
+            {/if}
             {#if exportPreview.featureCount !== undefined}
               <div class="flex justify-between gap-3 text-sm">
                 <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Features'] ?? 'Features:'}</span>
@@ -1842,6 +2038,9 @@
         </div>
       {:else if exportProgress?.complete}
         <p class="text-sm text-neutral-500 dark:text-neutral-400">{$strings['Export.Complete.Title'] ?? 'Export Complete'}</p>
+      {/if}
+      {#if cesiumPushStatus}
+        <p class="mt-2 text-xs text-sky-600 dark:text-sky-400">{cesiumPushStatus}</p>
       {/if}
     {/if}
 
@@ -2014,6 +2213,145 @@
               {/if}
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if cesiumOpen}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+    <div class="w-full max-w-lg rounded-lg border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900 max-h-[90vh] overflow-y-auto">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$strings['Export.Cesium.Title'] ?? 'Export to Cesium'}</h2>
+        <button
+          class="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 disabled:opacity-40"
+          onclick={closeCesiumExport}
+          disabled={cesiumRunning}
+          aria-label="Close"
+        >
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+
+      {#if cesiumState?.firstRun}
+        <div class="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+          {$strings['Export.Cesium.FirstRun'] ?? 'No floor-plan export profile exists yet. Open "GeoPackage / Shapefile", configure an export once, and save it as a profile — then it becomes the one-click source here.'}
+        </div>
+      {/if}
+
+      <div class="space-y-4">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumProfileSelect">{$strings['Export.Cesium.Profile'] ?? 'Floor-plan profile'}</label>
+          <select
+            id="cesiumProfileSelect"
+            class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+            bind:value={cesiumProfile}
+            disabled={cesiumRunning || (cesiumState?.floorPlanProfiles.length ?? 0) === 0}
+          >
+            {#each cesiumState?.floorPlanProfiles ?? [] as profileName}
+              <option value={profileName}>{profileName}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div>
+          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumFolderInput">{$strings['Export.Cesium.Folder'] ?? 'Package folder'}</label>
+          <div class="flex gap-2">
+            <input
+              id="cesiumFolderInput"
+              class="h-9 flex-1 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              bind:value={cesiumOutputFolder}
+              disabled={cesiumRunning}
+              placeholder="C:\Exports\Tower-cesium"
+            />
+            <button
+              class="h-9 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 hover:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 disabled:opacity-40"
+              onclick={pickCesiumOutputFolder}
+              disabled={cesiumRunning}
+            >…</button>
+          </div>
+        </div>
+
+        <div class="flex gap-4">
+          <div class="flex-1">
+            <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumLodSelect">{$strings['Export.Cesium.Lod'] ?? 'Level of detail'}</label>
+            <select
+              id="cesiumLodSelect"
+              class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              bind:value={cesiumLod}
+              disabled={cesiumRunning}
+            >
+              <option value="fine">{$strings['Export.Lod.Fine'] ?? 'Fine'}</option>
+              <option value="medium">{$strings['Export.Lod.Medium'] ?? 'Medium'}</option>
+              <option value="coarse">{$strings['Export.Lod.Coarse'] ?? 'Coarse'}</option>
+            </select>
+          </div>
+          <label class="flex flex-1 cursor-pointer items-end gap-2 pb-2 text-sm text-neutral-700 dark:text-neutral-300">
+            <input type="checkbox" bind:checked={cesiumPreciseCrs} disabled={cesiumRunning} class="h-4 w-4" />
+            {$strings['Export.Cesium.PreciseCrs'] ?? 'Precise CRS'}
+          </label>
+        </div>
+
+        <div>
+          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumViewerUrlInput">{$strings['Export.Cesium.ViewerUrl'] ?? 'Cesium viewer URL'}</label>
+          <input
+            id="cesiumViewerUrlInput"
+            class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+            bind:value={cesiumViewerUrl}
+            disabled={cesiumRunning}
+            placeholder="http://localhost:3001"
+          />
+        </div>
+
+        <label class="flex cursor-pointer items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+          <input type="checkbox" bind:checked={cesiumPush} disabled={cesiumRunning} class="h-4 w-4" />
+          {$strings['Export.Cesium.Push'] ?? 'Push to viewer after export (falls back to the folder when the viewer is offline)'}
+        </label>
+
+        {#if cesiumRunning}
+          <div class="rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+            <div class="mb-2 flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+              <div class="h-4 w-4 animate-spin rounded-full border-2 border-neutral-500 border-t-teal-500"></div>
+              {cesiumProgress?.message ?? ($strings['Export.Cesium.Running'] ?? 'Exporting…')}
+            </div>
+            {#if cesiumProgress?.percent != null}
+              <div class="h-1.5 overflow-hidden rounded bg-neutral-200 dark:bg-neutral-700">
+                <div class="h-full bg-teal-500 transition-all" style="width: {cesiumProgress.percent}%"></div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        {#if cesiumResult}
+          <div class="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
+            <div class="font-medium">{cesiumResult.summary}</div>
+            {#if cesiumResult.pushed}
+              <div>{$strings['Export.Cesium.Pushed'] ?? 'Pushed to the Cesium viewer.'}</div>
+            {:else if cesiumPush}
+              <div>{cesiumResult.pushMessage}</div>
+            {/if}
+            {#each cesiumResult.warnings as warning}
+              <div class="mt-1 text-amber-700 dark:text-amber-300">{warning}</div>
+            {/each}
+          </div>
+        {/if}
+
+        {#if cesiumError}
+          <div class="rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-700 dark:border-red-700 dark:bg-red-900/30 dark:text-red-300">{cesiumError}</div>
+        {/if}
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button
+            class="h-9 rounded-md border border-neutral-300 bg-white px-4 text-sm text-neutral-700 hover:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 disabled:opacity-40"
+            onclick={closeCesiumExport}
+            disabled={cesiumRunning}
+          >{$strings['Common.Close'] ?? 'Close'}</button>
+          <button
+            class="h-9 rounded-md bg-teal-600 px-4 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-40"
+            onclick={runCesiumExport}
+            disabled={cesiumRunning || cesiumState?.firstRun}
+          >{$strings['Export.Cesium.Run'] ?? 'Export'}</button>
         </div>
       </div>
     </div>

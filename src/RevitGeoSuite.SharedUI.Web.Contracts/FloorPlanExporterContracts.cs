@@ -36,6 +36,8 @@ public sealed class ExporterInitialStateResponse
     public List<ExporterNamedOption> ValidationPolicies { get; set; } = new();
 
     public List<ExporterCrsPresetGroup> CrsPresetGroups { get; set; } = new();
+
+    public List<string> UnitCategoryOptions { get; set; } = new();
 }
 
 [TsExport]
@@ -152,6 +154,8 @@ public sealed class ExporterSettingsPayload
     public bool SimplifyStairUnits { get; set; }
 
     public bool SimplifyEscalatorUnits { get; set; }
+
+    public List<string> UnitCategories { get; set; } = new();
 
     public bool Use3DSectionBoxExport { get; set; }
 

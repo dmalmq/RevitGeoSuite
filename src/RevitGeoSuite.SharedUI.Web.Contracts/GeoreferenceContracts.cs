@@ -63,7 +63,25 @@ public sealed class GeoreferenceResolveBasePointRequest
     public string CrsCode { get; set; } = string.Empty;
 }
 
-/// <summary>Response describing the Project Base Point resolved from the selected grids (south-west corner).</summary>
+/// <summary>Exact Project Base Point coordinates entered in the selected projected CRS.</summary>
+[TsExport]
+public sealed class GeoreferenceManualProjectBasePoint
+{
+    public double Easting { get; set; }
+
+    public double Northing { get; set; }
+}
+
+/// <summary>Payload of the <c>georeference.resolveManualBasePoint</c> request.</summary>
+[TsExport]
+public sealed class GeoreferenceResolveManualBasePointRequest
+{
+    public string CrsCode { get; set; } = string.Empty;
+
+    public GeoreferenceManualProjectBasePoint ProjectBasePoint { get; set; } = new GeoreferenceManualProjectBasePoint();
+}
+
+/// <summary>Response describing the Project Base Point resolved from grid selection or exact CRS coordinates.</summary>
 [TsExport]
 public sealed class GeoreferenceBasePointResponse
 {
@@ -91,6 +109,8 @@ public sealed class GeoreferenceApplyRequest
     public string CrsCode { get; set; } = string.Empty;
 
     public string[] SelectedMeshCodes { get; set; } = Array.Empty<string>();
+
+    public GeoreferenceManualProjectBasePoint? ManualProjectBasePoint { get; set; }
 
     /// <summary>
     /// When true, apply uses <see cref="Workflow.PlacementApplyMode.MetadataOnly"/>: the existing

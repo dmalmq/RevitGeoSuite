@@ -76,6 +76,44 @@ public sealed class FloorExportDataPreparerNormalizationTests
         Assert.True(GetArea(normalizedRight) > GetArea(right));
     }
 
+    [Fact]
+    public void NormalizeUnitFeatures_WhenRepairEnabled_KeepsColumnBoundsUnchanged()
+    {
+        ExportPolygon room = CreateFeature("room", "room", 0d, 0d, 4d, 4d);
+        ExportPolygon column = CreateFeature("column", "column", 4.10d, 0d, 4.60d, 0.50d);
+
+        IReadOnlyList<ExportPolygon> normalized = Normalize(
+            new[] { room, column },
+            new GeometryRepairOptions
+            {
+                Enabled = true,
+                MergeNearbyBoundaryThresholdMeters = 0.15d,
+            }.GetEffectiveOptions());
+
+        AssertBoundsEqual(GetBounds(column), GetBounds(FindById(normalized, "column")));
+    }
+
+    [Fact]
+    public void NormalizeUnitFeatures_TrimsOverlappingColumnFromRoomUnit()
+    {
+        ExportPolygon room = CreateFeature("room", "room", 0d, 0d, 4d, 4d);
+        ExportPolygon column = CreateFeature("column", "column", 1d, 1d, 1.50d, 1.50d);
+
+        IReadOnlyList<ExportPolygon> normalized = Normalize(
+            new[] { room, column },
+            new GeometryRepairOptions
+            {
+                Enabled = false,
+                MergeNearbyBoundaryThresholdMeters = 0.15d,
+            }.GetEffectiveOptions());
+
+        ExportPolygon normalizedRoom = FindById(normalized, "room");
+        ExportPolygon normalizedColumn = FindById(normalized, "column");
+
+        AssertBoundsEqual(GetBounds(column), GetBounds(normalizedColumn));
+        AssertApproximatelyEqual(GetArea(room) - GetArea(column), GetArea(normalizedRoom));
+    }
+
     private static IReadOnlyList<ExportPolygon> Normalize(
         IReadOnlyList<ExportPolygon> features,
         GeometryRepairOptions options)
@@ -145,8 +183,12 @@ public sealed class FloorExportDataPreparerNormalizationTests
 
     private static double GetArea(Polygon2D polygon)
     {
+        return GetRingArea(polygon.ExteriorRing) - polygon.InteriorRings.Sum(GetRingArea);
+    }
+
+    private static double GetRingArea(IReadOnlyList<Point2D> ring)
+    {
         double area = 0d;
-        IReadOnlyList<Point2D> ring = polygon.ExteriorRing;
         for (int i = 0; i < ring.Count - 1; i++)
         {
             area += (ring[i].X * ring[i + 1].Y) - (ring[i + 1].X * ring[i].Y);

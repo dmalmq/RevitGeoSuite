@@ -53,7 +53,8 @@ public sealed class FloorGeoPackageExporter
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
     {
         PreparedExportSession session = PrepareExport(
             outputDirectory,
@@ -80,7 +81,8 @@ public sealed class FloorGeoPackageExporter
             use3DSectionBoxExport: use3DSectionBoxExport,
             sectionBoxAboveFloorMeters: sectionBoxAboveFloorMeters,
             sectionBoxBelowFloorMeters: sectionBoxBelowFloorMeters,
-            keep3DTempViewsForDebug: keep3DTempViewsForDebug);
+            keep3DTempViewsForDebug: keep3DTempViewsForDebug,
+            unitCategories: unitCategories);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -110,7 +112,8 @@ public sealed class FloorGeoPackageExporter
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -202,6 +205,7 @@ public sealed class FloorGeoPackageExporter
                 ActiveValidationPolicyProfile = effectiveValidationPolicyProfile,
                 SimplifyStairUnits = simplifyStairUnits,
                 SimplifyEscalatorUnits = simplifyEscalatorUnits,
+                UnitCategories = unitCategories,
                 ViewContexts = contexts,
             });
 
@@ -292,10 +296,11 @@ public sealed class FloorGeoPackageExporter
         foreach (ArtifactPlan plan in artifactPlans)
         {
             bool hasChangedView = plan.ContributingViewIds.Any(viewId => viewDecisions.TryGetValue(viewId, out ViewChangeDecision? decision) && decision.HasChanges);
+            string? reusableArtifactPath = FindReusableArtifactPath(baseline.Snapshot, plan);
             bool canReuse = session.IncrementalExportMode == IncrementalExportMode.ChangedViewsOnly &&
                             executionSummary.FullRewriteReason == null &&
                             !hasChangedView &&
-                            CanReuseArtifact(baseline.Snapshot, plan);
+                            reusableArtifactPath != null;
             if (!canReuse &&
                 session.IncrementalExportMode == IncrementalExportMode.ChangedViewsOnly &&
                 executionSummary.FullRewriteReason == null &&
@@ -305,6 +310,7 @@ public sealed class FloorGeoPackageExporter
             }
 
             plan.ShouldWrite = !canReuse;
+            plan.ReuseSourcePath = canReuse ? reusableArtifactPath : null;
         }
 
         executionSummary.MissingBaselineArtifactCount = missingBaselineArtifactCount;
@@ -323,6 +329,7 @@ public sealed class FloorGeoPackageExporter
 
             if (!plan.ShouldWrite)
             {
+                CopyReusableArtifact(plan.ReuseSourcePath!, plan.OutputFilePath);
                 result.AddArtifactResult(plan.ToResult(ArtifactDisposition.ReusedFromBaseline));
                 continue;
             }
@@ -516,6 +523,7 @@ public sealed class FloorGeoPackageExporter
         List<string> inputs = new()
         {
             $"featureTypes:{session.FeatureTypes}",
+            BuildOutputFormatFingerprintInput(session.OutputFormat),
             $"coordinateMode:{session.CoordinateMode}",
             $"targetEpsg:{session.TargetEpsg}",
             $"outputEpsg:{session.OutputEpsg}",
@@ -534,6 +542,11 @@ public sealed class FloorGeoPackageExporter
         inputs.AddRange(session.AcceptedOpeningFamilies.OrderBy(value => value, StringComparer.Ordinal).Select(value => $"opening:{value}"));
 
         return fingerprintBuilder.ComputeConfigurationFingerprint(inputs);
+    }
+
+    internal static string BuildOutputFormatFingerprintInput(ExportFormat outputFormat)
+    {
+        return $"outputFormat:{outputFormat}";
     }
 
     private static string SerializeSchemaProfile(SchemaProfile profile)
@@ -838,16 +851,51 @@ public sealed class FloorGeoPackageExporter
 
     private static bool CanReuseArtifact(ExportBaselineSnapshot? baselineSnapshot, ArtifactPlan plan)
     {
-        if (baselineSnapshot == null)
+        return FindReusableArtifactPath(baselineSnapshot, plan) != null;
+    }
+
+    private static string? FindReusableArtifactPath(ExportBaselineSnapshot? baselineSnapshot, ArtifactPlan plan)
+    {
+        return FindReusableArtifactPath(baselineSnapshot, plan.ArtifactKey, plan.PackagingMode);
+    }
+
+    internal static string? FindReusableArtifactPath(
+        ExportBaselineSnapshot? baselineSnapshot,
+        string artifactKey,
+        PackagingMode packagingMode)
+    {
+        ExportBaselineArtifactSnapshot? baselineArtifact = baselineSnapshot?.Artifacts.FirstOrDefault(artifact =>
+            string.Equals(artifact.ArtifactKey, artifactKey, StringComparison.Ordinal) &&
+            string.Equals(artifact.PackagingMode, packagingMode.ToString(), StringComparison.Ordinal));
+        return baselineArtifact != null && File.Exists(baselineArtifact.OutputFilePath)
+            ? baselineArtifact.OutputFilePath
+            : null;
+    }
+
+    internal static void CopyReusableArtifact(string sourcePath, string destinationPath)
+    {
+        string source = Path.GetFullPath(sourcePath);
+        string destination = Path.GetFullPath(destinationPath);
+        if (string.Equals(source, destination, StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return;
         }
 
-        ExportBaselineArtifactSnapshot? baselineArtifact = baselineSnapshot.Artifacts.FirstOrDefault(artifact =>
-            string.Equals(artifact.ArtifactKey, plan.ArtifactKey, StringComparison.Ordinal) &&
-            string.Equals(artifact.PackagingMode, plan.PackagingMode.ToString(), StringComparison.Ordinal) &&
-            string.Equals(artifact.OutputFilePath, plan.OutputFilePath, StringComparison.Ordinal));
-        return baselineArtifact != null && File.Exists(baselineArtifact.OutputFilePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        if (!source.EndsWith(".shp", StringComparison.OrdinalIgnoreCase))
+        {
+            File.Copy(source, destination, overwrite: true);
+            return;
+        }
+
+        foreach (string extension in new[] { ".shp", ".shx", ".dbf", ".prj", ".cpg" })
+        {
+            string componentSource = Path.ChangeExtension(source, extension);
+            if (File.Exists(componentSource))
+            {
+                File.Copy(componentSource, Path.ChangeExtension(destination, extension), overwrite: true);
+            }
+        }
     }
 
     private static ExportBaselineSnapshot BuildBaselineSnapshot(
@@ -1202,6 +1250,8 @@ public sealed class FloorGeoPackageExporter
         public IReadOnlyList<ArtifactLayerPlan> Layers { get; }
 
         public bool ShouldWrite { get; set; }
+
+        public string? ReuseSourcePath { get; set; }
 
         public IReadOnlyList<long> ContributingViewIds => Views.Select(view => view.View.Id.Value).Distinct().OrderBy(id => id).ToList();
 

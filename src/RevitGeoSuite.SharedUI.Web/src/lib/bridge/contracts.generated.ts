@@ -8,6 +8,58 @@ export interface AvailableCrsResponse {
   groups: CrsOptionGroup[]
 }
 
+export interface CesiumExportRunRequest {
+  floorPlanProfileName: string
+  geoidOffset?: number
+  lod: string
+  outputFolder: string
+  preciseCrs: boolean
+  push: boolean
+  scope: string
+  selectedLinkUniqueIds: string[]
+  selectedViewUniqueId?: string
+}
+
+export interface CesiumExportRunResponse {
+  gisArtifacts: string[]
+  manifestPath: string
+  packageRoot: string
+  pushed: boolean
+  pushMessage: string
+  summary: string
+  tilesetPath: string
+  warnings: string[]
+}
+
+export interface CesiumExportStateRequest {
+}
+
+export interface CesiumExportStateResponse {
+  firstRun: boolean
+  floorPlanProfiles: string[]
+  hasToken: boolean
+  lastOutputFolder: string
+  viewerUrl: string
+}
+
+export interface CesiumPushRequest {
+  folder: string
+}
+
+export interface CesiumPushResponse {
+  message: string
+  pushed: boolean
+}
+
+export interface CesiumViewerSettingsGetRequest {
+}
+
+export interface CesiumViewerSettingsPayload {
+  hasToken: boolean
+  token?: string
+  viewerUrl: string
+}
+
 export interface CityGmlExportOptions {
   categoryOverrides: Record<string, string>
   codelistOverrides: Record<string, string>
@@ -121,6 +173,7 @@ export interface ExporterInitialStateResponse {
   profiles: ExporterProfileOption[]
   schemaProfiles: ExporterNamedOption[]
   settings: ExporterSettingsPayload
+  unitCategoryOptions: string[]
   validationPolicies: ExporterNamedOption[]
   version: string
   views: ExporterViewOption[]
@@ -186,6 +239,7 @@ export interface ExporterSettingsPayload {
   targetEpsg: number
   unit: boolean
   unitAttributeSource: string
+  unitCategories: string[]
   unitGeometrySource: string
   use3DSectionBoxExport: boolean
   validateAfterWrite: boolean
@@ -248,6 +302,7 @@ export interface ExportResultTimingPayload {
 export interface GeoreferenceApplyRequest {
   confirmExistingSetup: boolean
   crsCode: string
+  manualProjectBasePoint?: GeoreferenceManualProjectBasePoint
   selectedMeshCodes: string[]
 }
 
@@ -327,6 +382,11 @@ export interface GeoreferenceHasUndoResponse {
   summary: string
 }
 
+export interface GeoreferenceManualProjectBasePoint {
+  easting: number
+  northing: number
+}
+
 export interface GeoreferencePoint {
   lat: number
   lon: number
@@ -342,6 +402,11 @@ export interface GeoreferenceProjectPositionSnapshot {
 export interface GeoreferenceResolveBasePointRequest {
   crsCode: string
   selectedMeshCodes: string[]
+}
+
+export interface GeoreferenceResolveManualBasePointRequest {
+  crsCode: string
+  projectBasePoint: GeoreferenceManualProjectBasePoint
 }
 
 export interface GeoreferenceRevertRequest {
@@ -883,7 +948,7 @@ export interface ReadinessStatusResponse {
 }
 
 export interface Tiles3DExportOptions {
-  geoidOffset: number
+  geoidOffset?: number
   geometryMode: string
   lod: string
   preciseCrs: boolean
@@ -909,6 +974,7 @@ export interface Tiles3DExportPrepareRequest {
 export interface Tiles3DExportPrepareResponse {
   crs: string
   elementCount: number
+  geoidOffsetMeters: number
   triangleCount: number
   warnings: string[]
 }
@@ -942,6 +1008,11 @@ export interface Tiles3DViewOption {
 }
 
 export interface RpcMethods {
+  'cesium.export.getState': { request: CesiumExportStateRequest; response: CesiumExportStateResponse }
+  'cesium.export.run': { request: CesiumExportRunRequest; response: JobStarted }
+  'cesium.push': { request: CesiumPushRequest; response: JobStarted }
+  'cesium.settings.get': { request: CesiumViewerSettingsGetRequest; response: CesiumViewerSettingsPayload }
+  'cesium.settings.save': { request: CesiumViewerSettingsPayload; response: CesiumViewerSettingsPayload }
   'citygml.export': { request: CityGmlExportRequest; response: JobStarted }
   'citygml.export.prepare': { request: CityGmlExportPrepareRequest; response: CityGmlExportPrepareResponse }
   'dialog.openFile': { request: DialogOpenFileRequest; response: DialogOpenFileResponse }
@@ -968,6 +1039,7 @@ export interface RpcMethods {
   'georeference.getGridCandidates': { request: GeoreferenceGridCandidatesRequest; response: GeoreferenceGridCandidatesResponse }
   'georeference.hasUndoSnapshot': { request: GeoreferenceRevertRequest; response: GeoreferenceHasUndoResponse }
   'georeference.resolveGridBasePoint': { request: GeoreferenceResolveBasePointRequest; response: GeoreferenceBasePointResponse }
+  'georeference.resolveManualBasePoint': { request: GeoreferenceResolveManualBasePointRequest; response: GeoreferenceBasePointResponse }
   'georeference.revert': { request: GeoreferenceRevertRequest; response: GeoreferenceRevertResponse }
   'gis.export': { request: GisExportRequest; response: JobStarted }
   'gis.exportOptions': { request: GisExportOptionsRequest; response: GisExportOptionsResponse }
