@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using RevitGeoSuite.FloorPlanExport.Core.Diagnostics;
 using RevitGeoSuite.FloorPlanExport.Export;
@@ -79,15 +79,15 @@ public sealed class DeferredBaselinePublicationTests : IDisposable
                 new ExportBaselineArtifactSnapshot
                 {
                     ArtifactKey = "building",
-                    PackagingMode = PackagingMode.PerBuildingGeoPackage.ToString(),
+                    PackagingMode = "PerBuildingGeoPackage",
                     OutputFilePath = publishedPath,
                 },
             },
         };
 
-        string? reuseSource = FloorGeoPackageExporter.FindReusableArtifactPath(
-            snapshot, "building", PackagingMode.PerBuildingGeoPackage);
-        FloorGeoPackageExporter.CopyReusableArtifact(reuseSource!, stagedPath);
+        string? reuseSource = ExportArtifactReuse.FindReusableArtifactPath(
+            snapshot, "building", "PerBuildingGeoPackage");
+        ExportArtifactReuse.CopyReusableArtifact(reuseSource!, stagedPath);
 
         Assert.Equal(publishedPath, reuseSource);
         Assert.Equal("gpkg", File.ReadAllText(stagedPath));
@@ -96,8 +96,8 @@ public sealed class DeferredBaselinePublicationTests : IDisposable
     [Fact]
     public void ConfigurationFingerprint_ChangesAcrossOutputFormatTransitions()
     {
-        string shapefileInput = FloorGeoPackageExporter.BuildOutputFormatFingerprintInput(ExportFormat.Shapefile);
-        string geoPackageInput = FloorGeoPackageExporter.BuildOutputFormatFingerprintInput(ExportFormat.GeoPackage);
+        string shapefileInput = ExportArtifactReuse.BuildOutputFormatFingerprintInput(ExportFormat.Shapefile);
+        string geoPackageInput = ExportArtifactReuse.BuildOutputFormatFingerprintInput(ExportFormat.GeoPackage);
 
         Assert.NotEqual(shapefileInput, geoPackageInput);
     }
@@ -113,7 +113,7 @@ public sealed class DeferredBaselinePublicationTests : IDisposable
             File.WriteAllText(Path.ChangeExtension(publishedPath, extension), extension);
         }
 
-        FloorGeoPackageExporter.CopyReusableArtifact(publishedPath, stagedPath);
+        ExportArtifactReuse.CopyReusableArtifact(publishedPath, stagedPath);
 
         foreach (string extension in new[] { ".shp", ".shx", ".dbf", ".prj", ".cpg" })
         {

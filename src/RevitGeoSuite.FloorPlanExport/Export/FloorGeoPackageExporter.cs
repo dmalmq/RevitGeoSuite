@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -329,7 +329,7 @@ public sealed class FloorGeoPackageExporter
 
             if (!plan.ShouldWrite)
             {
-                CopyReusableArtifact(plan.ReuseSourcePath!, plan.OutputFilePath);
+                ExportArtifactReuse.CopyReusableArtifact(plan.ReuseSourcePath!, plan.OutputFilePath);
                 result.AddArtifactResult(plan.ToResult(ArtifactDisposition.ReusedFromBaseline));
                 continue;
             }
@@ -523,7 +523,7 @@ public sealed class FloorGeoPackageExporter
         List<string> inputs = new()
         {
             $"featureTypes:{session.FeatureTypes}",
-            BuildOutputFormatFingerprintInput(session.OutputFormat),
+            ExportArtifactReuse.BuildOutputFormatFingerprintInput(session.OutputFormat),
             $"coordinateMode:{session.CoordinateMode}",
             $"targetEpsg:{session.TargetEpsg}",
             $"outputEpsg:{session.OutputEpsg}",
@@ -542,11 +542,6 @@ public sealed class FloorGeoPackageExporter
         inputs.AddRange(session.AcceptedOpeningFamilies.OrderBy(value => value, StringComparer.Ordinal).Select(value => $"opening:{value}"));
 
         return fingerprintBuilder.ComputeConfigurationFingerprint(inputs);
-    }
-
-    internal static string BuildOutputFormatFingerprintInput(ExportFormat outputFormat)
-    {
-        return $"outputFormat:{outputFormat}";
     }
 
     private static string SerializeSchemaProfile(SchemaProfile profile)
@@ -856,46 +851,10 @@ public sealed class FloorGeoPackageExporter
 
     private static string? FindReusableArtifactPath(ExportBaselineSnapshot? baselineSnapshot, ArtifactPlan plan)
     {
-        return FindReusableArtifactPath(baselineSnapshot, plan.ArtifactKey, plan.PackagingMode);
-    }
-
-    internal static string? FindReusableArtifactPath(
-        ExportBaselineSnapshot? baselineSnapshot,
-        string artifactKey,
-        PackagingMode packagingMode)
-    {
-        ExportBaselineArtifactSnapshot? baselineArtifact = baselineSnapshot?.Artifacts.FirstOrDefault(artifact =>
-            string.Equals(artifact.ArtifactKey, artifactKey, StringComparison.Ordinal) &&
-            string.Equals(artifact.PackagingMode, packagingMode.ToString(), StringComparison.Ordinal));
-        return baselineArtifact != null && File.Exists(baselineArtifact.OutputFilePath)
-            ? baselineArtifact.OutputFilePath
-            : null;
-    }
-
-    internal static void CopyReusableArtifact(string sourcePath, string destinationPath)
-    {
-        string source = Path.GetFullPath(sourcePath);
-        string destination = Path.GetFullPath(destinationPath);
-        if (string.Equals(source, destination, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        if (!source.EndsWith(".shp", StringComparison.OrdinalIgnoreCase))
-        {
-            File.Copy(source, destination, overwrite: true);
-            return;
-        }
-
-        foreach (string extension in new[] { ".shp", ".shx", ".dbf", ".prj", ".cpg" })
-        {
-            string componentSource = Path.ChangeExtension(source, extension);
-            if (File.Exists(componentSource))
-            {
-                File.Copy(componentSource, Path.ChangeExtension(destination, extension), overwrite: true);
-            }
-        }
+        return ExportArtifactReuse.FindReusableArtifactPath(
+            baselineSnapshot,
+            plan.ArtifactKey,
+            plan.PackagingMode.ToString());
     }
 
     private static ExportBaselineSnapshot BuildBaselineSnapshot(
