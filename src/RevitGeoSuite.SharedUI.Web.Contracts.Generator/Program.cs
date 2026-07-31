@@ -61,7 +61,11 @@ public static class Program
                 Directory.CreateDirectory(outputDir);
             }
 
-            File.WriteAllText(outputPath, sb.ToString());
+            // AppendLine uses Environment.NewLine, which is CRLF on Windows. The output lands in
+            // the Vite project, which .gitattributes pins to LF, so emit LF explicitly - otherwise
+            // a Windows regeneration differs from the committed file by line endings alone and
+            // tools/VerifyContracts.ps1 reports drift that isn't there.
+            File.WriteAllText(outputPath, sb.ToString().Replace("\r\n", "\n"));
             Console.WriteLine($"Generated {types.Count} TypeScript definitions to {outputPath}");
             return 0;
         }
