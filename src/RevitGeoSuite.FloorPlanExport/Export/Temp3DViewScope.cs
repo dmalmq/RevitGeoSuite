@@ -64,6 +64,47 @@ public sealed class Temp3DViewScope : IDisposable
         public string ZSource { get; }
     }
 
+    /// <summary>
+    /// The document-wide section-box fallback candidates, computed once and shared by
+    /// every scope that targets the same document.
+    /// </summary>
+    /// <remarks>
+    /// Computing these walks large portions of the model - <see cref="TryComputeModelXyBounds"/>
+    /// visits every view-independent element - so a caller that creates one scope per view
+    /// must reuse a single instance, or it pays a full document scan per view.
+    /// </remarks>
+    public sealed class ProjectBounds
+    {
+        internal ProjectBounds(
+            BoundingBoxXYZ? scopeBoxUnion,
+            BoundingBoxXYZ? buildingBounds,
+            BoundingBoxXYZ? modelBounds)
+        {
+            ScopeBoxUnion = scopeBoxUnion;
+            BuildingBounds = buildingBounds;
+            ModelBounds = modelBounds;
+        }
+
+        internal BoundingBoxXYZ? ScopeBoxUnion { get; }
+
+        internal BoundingBoxXYZ? BuildingBounds { get; }
+
+        internal BoundingBoxXYZ? ModelBounds { get; }
+
+        public static ProjectBounds Compute(Document document)
+        {
+            if (document is null)
+            {
+                throw new ArgumentNullException(nameof(document));
+            }
+
+            return new ProjectBounds(
+                TryComputeScopeBoxUnion(document),
+                TryComputeBuildingCategoryBounds(document),
+                TryComputeModelXyBounds(document));
+        }
+    }
+
     private readonly Document _document;
     private readonly Dictionary<ElementId, View3D> _viewsByPlanId = new();
     private readonly List<SectionBoxDiagnostic> _diagnostics = new();
@@ -75,7 +116,8 @@ public sealed class Temp3DViewScope : IDisposable
         IReadOnlyList<ViewPlan> planViews,
         double aboveFloorMeters = DefaultAboveFloorMeters,
         double belowFloorMeters = DefaultBelowFloorMeters,
-        bool keepViewsForInspection = false)
+        bool keepViewsForInspection = false,
+        ProjectBounds? projectBounds = null)
     {
         _keepViewsForInspection = keepViewsForInspection;
         _document = document ?? throw new ArgumentNullException(nameof(document));
@@ -105,10 +147,13 @@ public sealed class Temp3DViewScope : IDisposable
         double belowFloorFeet = UnitUtils.ConvertToInternalUnits(
             belowFloorMeters, UnitTypeId.Meters);
 
-        // Cache project-wide bounds candidates ONCE so all temp views share them.
-        BoundingBoxXYZ? scopeBoxUnion = TryComputeScopeBoxUnion(_document);
-        BoundingBoxXYZ? buildingBounds = TryComputeBuildingCategoryBounds(_document);
-        BoundingBoxXYZ? modelBounds = TryComputeModelXyBounds(_document);
+        // Cache project-wide bounds candidates ONCE so all temp views share them. A caller
+        // that creates a scope per view should hand in a shared instance so this document
+        // scan happens once for the whole session rather than once per view.
+        ProjectBounds bounds = projectBounds ?? ProjectBounds.Compute(_document);
+        BoundingBoxXYZ? scopeBoxUnion = bounds.ScopeBoxUnion;
+        BoundingBoxXYZ? buildingBounds = bounds.BuildingBounds;
+        BoundingBoxXYZ? modelBounds = bounds.ModelBounds;
 
         using Transaction transaction = new(_document, "RevitGeoSuite FloorPlanExport - create temp 3D export views");
         transaction.Start();

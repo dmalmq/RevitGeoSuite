@@ -11,6 +11,35 @@ namespace RevitGeoSuite.FloorPlanExport.UI;
 
 internal static class PreviewDisplayViewStateBuilder
 {
+    /// <summary>
+    /// Rebuilds a display state with freshly resolved categories, reusing the geometry and
+    /// the already-computed coordinate reprojection. Category changes never move geometry,
+    /// so bounds, map context and survey points carry over as-is.
+    /// </summary>
+    public static PreviewDisplayViewState ReprojectCategories(
+        PreviewDisplayViewState state,
+        ExportPreviewService previewService,
+        PreviewCategoryReprojector reprojector)
+    {
+        if (state is null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        if (previewService is null)
+        {
+            throw new ArgumentNullException(nameof(previewService));
+        }
+
+        return new PreviewDisplayViewState(
+            previewService.ReprojectCategories(state.SourceViewData, reprojector),
+            previewService.ReprojectCategories(state.DisplayFeatures, reprojector),
+            state.DisplayBounds,
+            state.MapContext,
+            state.OutputSurveyPoint,
+            state.DisplaySurveyPoint);
+    }
+
     public static PreviewDisplayViewState Build(PreviewViewData viewData, ExportPreviewRequest request)
     {
         if (viewData is null)

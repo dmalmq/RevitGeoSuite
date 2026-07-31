@@ -43,10 +43,18 @@ public sealed class ExportPreviewService
     private readonly SchemaProfile _activeSchemaProfile;
     private readonly bool _simplifyStairUnits;
     private readonly bool _simplifyEscalatorUnits;
+    private readonly IReadOnlyList<string> _unitCategories;
     private readonly bool _use3DSectionBoxExport;
     private readonly double _sectionBoxAboveFloorMeters;
     private readonly double _sectionBoxBelowFloorMeters;
     private readonly bool _keep3DTempViewsForDebug;
+
+    /// <summary>
+    /// Shared across every view in the preview session. The preview builds one temp 3D
+    /// scope per view (unlike the exporter, which batches all views into a single scope),
+    /// so without this the document-wide bounds scan would run once per view.
+    /// </summary>
+    private Temp3DViewScope.ProjectBounds? _projectBounds;
 
     public ExportPreviewService(
         Document document,
@@ -62,7 +70,8 @@ public sealed class ExportPreviewService
         bool use3DSectionBoxExport = false,
         double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
-        bool keep3DTempViewsForDebug = false)
+        bool keep3DTempViewsForDebug = false,
+        IReadOnlyList<string>? unitCategories = null)
 
     {
         if (document is null)
@@ -119,6 +128,7 @@ public sealed class ExportPreviewService
                 ? sectionBoxBelowFloorMeters
                 : Temp3DViewScope.DefaultBelowFloorMeters;
         _keep3DTempViewsForDebug = keep3DTempViewsForDebug;
+        _unitCategories = unitCategories ?? Array.Empty<string>();
     }
 
     public IReadOnlyList<string> GetSupportedFloorCategories()
@@ -192,7 +202,8 @@ public sealed class ExportPreviewService
         {
             try
             {
-                threeDViewScope = new Temp3DViewScope(_document, new[] { view }, _sectionBoxAboveFloorMeters, _sectionBoxBelowFloorMeters, _keep3DTempViewsForDebug);
+                _projectBounds ??= Temp3DViewScope.ProjectBounds.Compute(_document);
+                threeDViewScope = new Temp3DViewScope(_document, new[] { view }, _sectionBoxAboveFloorMeters, _sectionBoxBelowFloorMeters, _keep3DTempViewsForDebug, _projectBounds);
             }
             catch (Exception ex)
             {
@@ -232,6 +243,7 @@ public sealed class ExportPreviewService
                     ActiveSchemaProfile = _activeSchemaProfile,
                     SimplifyStairUnits = _simplifyStairUnits,
                     SimplifyEscalatorUnits = _simplifyEscalatorUnits,
+                    UnitCategories = _unitCategories,
                     ViewContexts = prebuiltContexts,
                 });
             return BuildPreviewViewData(prepared, threeDViewScope, threeDScopeError);
@@ -368,24 +380,7 @@ public sealed class ExportPreviewService
         }
 
         Bounds2D bounds = FeatureBoundsCalculator.FromFeatures(features.Select(x => x.Feature));
-        List<PreviewUnassignedFloorGroup> unassignedFloors = features
-            .Where(feature => feature.FeatureType == ExportFeatureType.Unit &&
-                              feature.IsUnassigned &&
-                              !string.IsNullOrWhiteSpace(feature.AssignmentMappingKey))
-            .GroupBy(feature => $"{feature.AssignmentSourceKind}|{feature.AssignmentParameterName}|{feature.AssignmentMappingKey}", StringComparer.Ordinal)
-            .OrderBy(group => group.First().AssignmentMappingKey, StringComparer.OrdinalIgnoreCase)
-            .Select(group =>
-            {
-                PreviewFeatureData first = group.First();
-                return new PreviewUnassignedFloorGroup(
-                    first.AssignmentMappingKey!,
-                    group.Select(feature => feature.AssignmentParsedCandidate)
-                        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
-                    group.Count(),
-                    first.AssignmentSourceKind ?? (UnitExportSettingsResolver.UsesRoomCategoryAssignments(_unitAttributeSource) ? "room" : "floor"),
-                    first.AssignmentParameterName);
-            })
-            .ToList();
+        List<PreviewUnassignedFloorGroup> unassignedFloors = BuildUnassignedFloorGroups(features);
         List<string> sourceLabels = features
             .Select(feature => feature.SourceLabel)
             .Where(value => !string.IsNullOrWhiteSpace(value))
@@ -442,6 +437,116 @@ public sealed class ExportPreviewService
             bounds,
             _unitSource,
             _roomCategoryParameterName);
+    }
+
+    /// <summary>
+    /// Builds a reprojector bound to the assignment overrides currently in effect
+    /// (staged changes included). Cheap to construct; reuse it across the views of
+    /// a single refresh so the override dictionaries are only built once.
+    /// </summary>
+    public PreviewCategoryReprojector CreateCategoryReprojector()
+    {
+        return new PreviewCategoryReprojector(
+            _zoneCatalog,
+            _floorAssignmentSession.GetEffectiveOverrides(),
+            _roomAssignmentSession.GetEffectiveOverrides(),
+            _paletteResolver);
+    }
+
+    /// <summary>
+    /// Re-resolves category fields on an already-extracted view. Geometry, bounds and
+    /// warnings carry over untouched, because an assignment change cannot affect them.
+    /// This is what makes a remap cost no Revit work at all.
+    /// </summary>
+    public PreviewViewData ReprojectCategories(
+        PreviewViewData viewData,
+        PreviewCategoryReprojector reprojector)
+    {
+        if (viewData is null)
+        {
+            throw new ArgumentNullException(nameof(viewData));
+        }
+
+        IReadOnlyList<PreviewFeatureData> features = ReprojectCategories(viewData.Features, reprojector);
+        return new PreviewViewData(
+            viewData.ViewId,
+            viewData.ViewName,
+            viewData.LevelName,
+            features,
+            BuildUnassignedFloorGroups(features),
+            viewData.Warnings,
+            viewData.AvailableSourceLabels,
+            viewData.Bounds,
+            viewData.UnitSource,
+            viewData.RoomCategoryParameterName);
+    }
+
+    /// <summary>
+    /// Re-resolves category fields on a feature list, preserving each feature's geometry.
+    /// Non-unit features and units without an assignment key pass through unchanged.
+    /// </summary>
+    public IReadOnlyList<PreviewFeatureData> ReprojectCategories(
+        IReadOnlyList<PreviewFeatureData> features,
+        PreviewCategoryReprojector reprojector)
+    {
+        if (features is null)
+        {
+            throw new ArgumentNullException(nameof(features));
+        }
+
+        if (reprojector is null)
+        {
+            throw new ArgumentNullException(nameof(reprojector));
+        }
+
+        List<PreviewFeatureData> reprojected = new(features.Count);
+        foreach (PreviewFeatureData feature in features)
+        {
+            if (feature.FeatureType != ExportFeatureType.Unit ||
+                string.IsNullOrWhiteSpace(feature.AssignmentMappingKey))
+            {
+                reprojected.Add(feature);
+                continue;
+            }
+
+            ReprojectedPreviewCategory resolved = reprojector.Reproject(
+                feature.AssignmentSourceKind,
+                feature.AssignmentMappingKey,
+                feature.AssignmentParsedCandidate,
+                feature.AssignmentParameterName);
+
+            reprojected.Add(feature.WithResolvedCategory(
+                resolved.Category,
+                resolved.Restriction,
+                resolved.FillColorHex,
+                resolved.IsUnassigned,
+                resolved.ResolutionSource));
+        }
+
+        return reprojected;
+    }
+
+    private List<PreviewUnassignedFloorGroup> BuildUnassignedFloorGroups(
+        IReadOnlyList<PreviewFeatureData> features)
+    {
+        return features
+            .Where(feature => feature.FeatureType == ExportFeatureType.Unit &&
+                              feature.IsUnassigned &&
+                              !string.IsNullOrWhiteSpace(feature.AssignmentMappingKey))
+            .GroupBy(feature => $"{feature.AssignmentSourceKind}|{feature.AssignmentParameterName}|{feature.AssignmentMappingKey}", StringComparer.Ordinal)
+            .OrderBy(group => group.First().AssignmentMappingKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                PreviewFeatureData first = group.First();
+                return new PreviewUnassignedFloorGroup(
+                    first.AssignmentMappingKey!,
+                    group.Select(feature => feature.AssignmentParsedCandidate)
+                        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
+                    group.Count(),
+                    first.AssignmentSourceKind ?? (UnitExportSettingsResolver.UsesRoomCategoryAssignments(_unitAttributeSource) ? "room" : "floor"),
+                    first.AssignmentParameterName);
+            })
+            .ToList();
     }
 
     private PreviewCategoryAssignmentSession GetPrimaryAssignmentSession()

@@ -443,7 +443,7 @@ internal sealed class ExportPreviewController
         }
 
         _pendingAssignmentFloorTypeName = floorTypeNames[0];
-        _cache.Clear();
+        ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
         SetStatusMessage(T(
             $"Pending floor override for {floorTypeNames.Count} floor type(s) -> {category}. Save assignments to persist it.",
@@ -464,7 +464,7 @@ internal sealed class ExportPreviewController
         }
 
         _pendingAssignmentFloorTypeName = floorTypeNames[0];
-        _cache.Clear();
+        ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
         SetStatusMessage(T(
             $"Pending override removal for {floorTypeNames.Count} floor type(s). Save assignments to persist it.",
@@ -480,7 +480,7 @@ internal sealed class ExportPreviewController
         }
 
         _previewService.ApplyPendingFloorCategoryOverrides();
-        _cache.Clear();
+        ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
         SetStatusMessage(T(
             "Saved preview floor assignments.",
@@ -496,7 +496,7 @@ internal sealed class ExportPreviewController
         }
 
         _previewService.DiscardPendingFloorCategoryOverrides();
-        _cache.Clear();
+        ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
         SetStatusMessage(T(
             "Discarded pending preview floor assignments.",
@@ -509,6 +509,41 @@ internal sealed class ExportPreviewController
         if (_previewService.HasPendingFloorCategoryChanges)
         {
             _previewService.DiscardPendingFloorCategoryOverrides();
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the category fields of every cached view in place after an assignment
+    /// change.
+    /// </summary>
+    /// <remarks>
+    /// This deliberately does not clear the cache. An assignment only changes how a
+    /// floor type maps to a category - it cannot change geometry - so dropping the cache
+    /// would force every selected view to be re-extracted from Revit, rebuilding a
+    /// temporary 3D view per view on every single remap. Reprojecting in place keeps the
+    /// aggregate warning and unassigned-floor counts exact while touching no Revit state.
+    /// </remarks>
+    private void ReprojectCachedViews()
+    {
+        if (_cache.Count == 0)
+        {
+            return;
+        }
+
+        PreviewCategoryReprojector reprojector = _previewService.CreateCategoryReprojector();
+        foreach (long viewId in _cache.Keys.ToList())
+        {
+            _cache[viewId] = PreviewDisplayViewStateBuilder.ReprojectCategories(
+                _cache[viewId],
+                _previewService,
+                reprojector);
+        }
+
+        if (_currentView != null &&
+            _cache.TryGetValue(_currentView.Id.Value, out PreviewDisplayViewState? currentState))
+        {
+            _currentDisplayState = currentState;
+            _currentViewData = currentState.SourceViewData;
         }
     }
 

@@ -146,6 +146,43 @@ public sealed class PreviewFeatureData
             StairVisibilityWarning);
     }
 
+    /// <summary>
+    /// Returns a copy carrying freshly resolved category fields and the original geometry.
+    /// Used when an assignment change makes the category stale but leaves geometry untouched,
+    /// so the preview never has to be re-extracted from Revit.
+    /// </summary>
+    public PreviewFeatureData WithResolvedCategory(
+        string category,
+        string? restriction,
+        string fillColorHex,
+        bool isUnassigned,
+        FloorCategoryResolutionSource resolutionSource)
+    {
+        return new PreviewFeatureData(
+            FeatureType,
+            Feature,
+            SourceElementId,
+            ExportId,
+            category,
+            restriction,
+            Name,
+            SourceLabel,
+            fillColorHex,
+            StrokeColorHex,
+            AssignmentSourceKind,
+            AssignmentMappingKey,
+            AssignmentParsedCandidate,
+            AssignmentParameterName,
+            isUnassigned,
+            resolutionSource,
+            isUnassigned || !string.IsNullOrWhiteSpace(StairVisibilityWarning),
+            StairVisibilitySource,
+            StairVisibilityEvidenceCount,
+            StairVisibilityCandidateCount,
+            StairVisibilityMaskApplied,
+            StairVisibilityWarning);
+    }
+
     public string SearchText =>
         string.Join(
             " ",
