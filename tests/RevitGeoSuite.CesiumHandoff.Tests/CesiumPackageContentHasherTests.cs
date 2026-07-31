@@ -12,9 +12,23 @@ public sealed class CesiumPackageContentHasherTests : IDisposable
     public CesiumPackageContentHasherTests()
     {
         _root = Path.Combine(Path.GetTempPath(), "cesium-hash-tests", Guid.NewGuid().ToString("N"));
+        SeedPackageContent();
+    }
+
+    /// <summary>
+    /// Writes the payload a package manifest can describe. Call this again after
+    /// <see cref="CesiumPackageLayoutBuilder.CreateLayout"/>, which clears tiles/ and gis/.
+    /// </summary>
+    private void SeedPackageContent()
+    {
         Directory.CreateDirectory(Path.Combine(_root, "tiles"));
         Directory.CreateDirectory(Path.Combine(_root, "gis"));
-        File.WriteAllText(Path.Combine(_root, "tiles", "tileset.json"), "{\"asset\":{}}");
+        // The tileset must reference content.glb: the payload resolver walks $..content to
+        // decide which files the content hash covers, so an empty tileset would leave the
+        // glb out of the hash entirely.
+        File.WriteAllText(
+            Path.Combine(_root, "tiles", "tileset.json"),
+            "{\"asset\":{\"version\":\"1.1\"},\"root\":{\"content\":{\"uri\":\"content.glb\"}}}");
         File.WriteAllText(Path.Combine(_root, "tiles", "content.glb"), "GLB-BYTES");
         File.WriteAllText(Path.Combine(_root, "gis", "tower.gpkg"), "GPKG-BYTES");
     }
@@ -76,6 +90,7 @@ public sealed class CesiumPackageContentHasherTests : IDisposable
     {
         var builder = new CesiumPackageLayoutBuilder();
         CesiumPackageLayout layout = builder.CreateLayout(_root);
+        SeedPackageContent();
         CesiumPackageManifest manifest = builder.WriteManifest(layout, new CesiumPackageBuildInputs
         {
             BuildingId = "tower",

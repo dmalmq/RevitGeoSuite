@@ -143,7 +143,10 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
 
         var builder = new CesiumPackageLayoutBuilder();
         CesiumPackageLayout staging = builder.CreateStagingLayout(_root);
-        File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "new-tiles");
+        // Must be a parseable tileset: WriteManifest walks it to resolve content references.
+        File.WriteAllText(
+            Path.Combine(staging.TilesDirectory, "tileset.json"),
+            "{\"asset\":{\"version\":\"1.1\"}}");
         File.WriteAllText(Path.Combine(staging.GisDirectory, "new.gpkg"), "new-gis");
         builder.WriteManifest(staging, CreateInputs());
         Directory.Delete(staging.GisDirectory, recursive: true);
