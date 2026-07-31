@@ -1,1 +1,37 @@
-*.pgm -text -diff binary
+# Normalize line endings on commit.
+#
+# Without this, contributors with different core.autocrlf settings store the same file
+# with different line endings. Git then reports every line of an otherwise untouched file
+# as rewritten, which surfaces as a phantom whole-file merge conflict on pull requests
+# that changed nothing in that file. Text files are stored LF in the repository and
+# checked out in each contributor's preferred form.
+* text=auto
+
+# Windows tooling expects CRLF in these regardless of platform.
+*.sln  text eol=crlf
+*.ps1  text eol=crlf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+
+# Binary payloads: never convert line endings, never attempt a textual diff.
+*.pgm  -text -diff binary
+*.png  -text -diff binary
+*.jpg  -text -diff binary
+*.jpeg -text -diff binary
+*.ico  -text -diff binary
+*.gpkg -text -diff binary
+*.glb  -text -diff binary
+*.zip  -text -diff binary
+*.dll  -text -diff binary
+*.exe  -text -diff binary
+
+# Shapefile components are binary; the .prj/.cpg sidecars are text and stay normalized.
+*.shp -text -diff binary
+*.shx -text -diff binary
+*.dbf -text -diff binary
+
+# Generated output. Committed on purpose, but not worth reviewing by hand: the web bundle
+# comes from `npm run build`, and the bridge contracts come from .Contracts.Generator
+# (regenerate and check with tools/VerifyContracts.ps1 - never hand-edit).
+src/RevitGeoSuite.SharedUI/Resources/Web/dist/**                      linguist-generated=true
+src/RevitGeoSuite.SharedUI.Web/src/lib/bridge/contracts.generated.ts  linguist-generated=true
