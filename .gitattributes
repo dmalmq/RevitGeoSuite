@@ -30,6 +30,14 @@
 *.shx -text -diff binary
 *.dbf -text -diff binary
 
+# The Node toolchain reads and writes LF and has no notion of core.autocrlf. The .NET build
+# runs `npm run build` (see build/RevitGeoSuite.SharedUI.Web.targets), and Vite rewrites the
+# whole bundle with emptyOutDir. Checking these out as CRLF therefore leaves a permanently
+# dirty tree after any build, and Vite's index.html transform re-terminates lines that were
+# already CRLF, producing literal CR CR LF. Pin the web project and its output to LF.
+src/RevitGeoSuite.SharedUI.Web/**                 text eol=lf
+src/RevitGeoSuite.SharedUI/Resources/Web/dist/**  text eol=lf
+
 # Generated output. Committed on purpose, but not worth reviewing by hand: the web bundle
 # comes from `npm run build`, and the bridge contracts come from .Contracts.Generator
 # (regenerate and check with tools/VerifyContracts.ps1 - never hand-edit).
