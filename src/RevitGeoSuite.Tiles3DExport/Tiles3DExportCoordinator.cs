@@ -40,7 +40,7 @@ public sealed class Tiles3DExportCoordinator
         Tiles3DExportReferenceContext referenceContext,
         Tiles3DExportScopeSelection scope,
         Tiles3DLevelOfDetail levelOfDetail = Tiles3DLevelOfDetail.Fine,
-        bool usePreciseCrsProjection = false,
+        bool usePreciseCrsProjection = true,
         double? geoidHeightOffsetMeters = null)
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle

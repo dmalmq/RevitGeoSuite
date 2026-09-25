@@ -98,7 +98,7 @@
     lod: 'fine',
     geometryMode: 'lightweight',
     splitByLevel: false,
-    preciseCrs: false,
+    preciseCrs: true,
     geoidAuto: true,
     geoidOffset: 0,
     selectedViewUniqueId: ''
@@ -118,7 +118,7 @@
   let cesiumViewerUrl = $state('')
   let cesiumPush = $state(true)
   let cesiumLod = $state('fine')
-  let cesiumPreciseCrs = $state(false)
+  let cesiumPreciseCrs = $state(true)
   let cesiumRunning = $state(false)
   let cesiumProgress = $state<any>(null)
   let cesiumResult = $state<CesiumExportRunResponse | null>(null)
