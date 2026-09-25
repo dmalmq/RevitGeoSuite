@@ -146,7 +146,7 @@ public sealed class Tiles3DExportOptions
 
     public bool SplitByLevel { get; set; }
 
-    public bool PreciseCrs { get; set; }
+    public bool PreciseCrs { get; set; } = true;
 
     /// <summary>
     /// Null means auto-detect from EGM2008 at the export anchor when precise CRS projection is enabled.

@@ -41,7 +41,7 @@ internal static class Tiles3DExportSupport
     public static (bool PreciseCrs, double? GeoidOffset, string Scope, string[] SelectedLinkUniqueIds, string? SelectedViewUniqueId, Tiles3DLevelOfDetail LevelOfDetail) ReadOptions(JObject? payload)
     {
         var options = payload?["options"] as JObject;
-        bool preciseCrs = options?.Value<bool?>("preciseCrs") ?? false;
+        bool preciseCrs = options?.Value<bool?>("preciseCrs") ?? true;
         double? geoidOffset = options?.Value<double?>("geoidOffset");
         string scope = payload?.Value<string>("scope") ?? "whole";
         string? selectedViewUniqueId = options?.Value<string>("selectedViewUniqueId");
