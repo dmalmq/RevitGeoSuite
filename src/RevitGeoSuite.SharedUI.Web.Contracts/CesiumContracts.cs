@@ -38,7 +38,7 @@ public sealed class CesiumExportRunRequest
 
     public string Lod { get; set; } = "fine";
 
-    public bool PreciseCrs { get; set; }
+    public bool PreciseCrs { get; set; } = true;
 
     public double? GeoidOffset { get; set; }
 
