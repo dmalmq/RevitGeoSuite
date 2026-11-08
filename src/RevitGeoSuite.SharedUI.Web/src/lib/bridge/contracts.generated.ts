@@ -12,6 +12,7 @@ export interface CesiumExportRunRequest {
   floorPlanProfileName: string
   geoidOffset?: number
   heightDatum: string
+  keepVersions: boolean
   lod: string
   outputFolder: string
   preciseCrs: boolean
@@ -40,6 +41,7 @@ export interface CesiumExportStateResponse {
   floorPlanProfiles: string[]
   hasToken: boolean
   lastHeightDatum: string
+  lastKeepVersions: boolean
   lastOutputFolder: string
   viewerUrl: string
 }

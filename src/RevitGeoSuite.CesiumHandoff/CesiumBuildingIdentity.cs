@@ -18,7 +18,7 @@ public static class CesiumBuildingIdentity
         return slug.Length > 0 ? $"{slug}-{hash}" : hash;
     }
 
-    private static string Slugify(string? value)
+    internal static string Slugify(string? value)
     {
         string trimmed = value?.Trim().ToLowerInvariant() ?? string.Empty;
         var builder = new StringBuilder(trimmed.Length);
