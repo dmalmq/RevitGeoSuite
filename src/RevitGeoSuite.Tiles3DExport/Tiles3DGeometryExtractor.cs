@@ -349,6 +349,7 @@ public sealed class Tiles3DGeometryExtractor
         {
             metadata.LevelName = level.Name;
             metadata.LevelKey = Tiles3DLevelMetadata.BuildLevelKey(level.Name);
+            metadata.LevelUniqueId = level.UniqueId ?? string.Empty;
             // Apply the link instance transform and tileset frame so the elevation lands
             // in the same coordinate space as triangle vertex Z values. Without this,
             // linked model levels would be in local linked-doc space and miss the link's

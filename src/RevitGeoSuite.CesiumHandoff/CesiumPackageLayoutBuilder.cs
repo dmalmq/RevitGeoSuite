@@ -58,6 +58,16 @@ public sealed class CesiumPackageBuildInputs
 
     public double? GeoidOffsetMeters { get; set; }
 
+    public string? GeoidModel { get; set; }
+
+    public string? HeightDatum { get; set; }
+
+    public double? AnchorEasting { get; set; }
+
+    public double? AnchorNorthing { get; set; }
+
+    public string? ModelId { get; set; }
+
     public List<CesiumPackageLevelMapEntry>? LevelMap { get; set; }
 
     public List<string>? GisLayers { get; set; }
@@ -243,7 +253,12 @@ public sealed class CesiumPackageLayoutBuilder
             PackageId = Guid.NewGuid().ToString(),
             CreatedUtc = DateTime.UtcNow,
             Generator = new CesiumPackageGenerator { Version = inputs.GeneratorVersion },
-            Source = new CesiumPackageSource { Model = inputs.SourceModel, DocumentKey = inputs.DocumentKey },
+            Source = new CesiumPackageSource
+            {
+                Model = inputs.SourceModel,
+                DocumentKey = inputs.DocumentKey,
+                ModelId = string.IsNullOrWhiteSpace(inputs.ModelId) ? null : inputs.ModelId,
+            },
             Building = new CesiumPackageBuilding
             {
                 Id = inputs.BuildingId,
@@ -282,7 +297,12 @@ public sealed class CesiumPackageLayoutBuilder
                 Lat = inputs.AnchorLat.Value,
                 Lon = inputs.AnchorLon.Value,
                 ElevationMeters = inputs.AnchorElevationMeters.Value,
-                GeoidOffsetMeters = inputs.GeoidOffsetMeters,
+                GeoidOffsetMeters = inputs.GeoidOffsetMeters ?? 0d,
+                GeoidModel = string.IsNullOrWhiteSpace(inputs.GeoidModel) ? null : inputs.GeoidModel,
+                OrthometricHeightMeters = inputs.AnchorElevationMeters.Value - (inputs.GeoidOffsetMeters ?? 0d),
+                HeightDatum = CesiumHeightDatums.Normalize(inputs.HeightDatum),
+                Easting = inputs.AnchorEasting,
+                Northing = inputs.AnchorNorthing,
             }
             : null;
     }

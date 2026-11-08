@@ -13,6 +13,8 @@ using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.FloorPlanExport.UI;
+using RevitGeoSuite.RevitInterop;
+using RevitGeoSuite.RevitInterop.Storage;
 using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Web.Contracts;
 using RevitGeoSuite.Tiles3DExport;
@@ -87,6 +89,7 @@ public sealed class CesiumExportStateHandler : IRpcHandler
             string projectKey = DocumentProjectKeyBuilder.Create(document);
             IReadOnlyList<ExportProfile> profiles = new ExportProfileStore().LoadWithDiagnostics(projectKey).Value;
             CesiumViewerSettings viewerSettings = new CesiumViewerSettingsStore().Load();
+            Tiles3DExportState? tilesState = new Tiles3DExportStateService().Load(new RevitDocumentHandle(document));
 
             return new CesiumExportStateResponse
             {
@@ -95,6 +98,7 @@ public sealed class CesiumExportStateHandler : IRpcHandler
                 ViewerUrl = viewerSettings.ViewerUrl,
                 HasToken = !string.IsNullOrEmpty(viewerSettings.Token),
                 FirstRun = profiles.Count == 0,
+                LastHeightDatum = CesiumHeightDatums.Normalize(tilesState?.LastHeightDatum),
             };
         });
     }
@@ -170,6 +174,11 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 AnchorLon = tiles.AnchorLon,
                 AnchorElevationMeters = tiles.AnchorElevationMeters,
                 GeoidOffsetMeters = tiles.GeoidOffsetMeters,
+                GeoidModel = tiles.GeoidModel,
+                HeightDatum = request.HeightDatum,
+                AnchorEasting = tiles.AnchorEasting,
+                AnchorNorthing = tiles.AnchorNorthing,
+                ModelId = tiles.ModelId,
                 LevelMap = gis.LevelMap,
                 GisLayers = new List<string> { "unit", "detail", "opening", "fixture", "level" },
                 });
@@ -248,6 +257,10 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         public double AnchorLon;
         public double AnchorElevationMeters;
         public double? GeoidOffsetMeters;
+        public string GeoidModel = string.Empty;
+        public double AnchorEasting;
+        public double AnchorNorthing;
+        public string? ModelId;
         public Tiles3DExportState State = new();
     }
 
@@ -295,6 +308,8 @@ public sealed class CesiumExportRunHandler : IRpcHandler
 
         warnings.AddRange(Tiles3DExportSupport.ScopeWarnings(request.Scope));
         warnings.AddRange(prep.Warnings);
+        exportResult.UpdatedState.LastHeightDatum = CesiumHeightDatums.Normalize(request.HeightDatum);
+        string? modelId = new ModelIdentityService().GetOrCreate(document, warnings);
 
         Tiles3DExportReferenceContext context = prep.Package.ReferenceContext;
         return new Tiles3DStepResult
@@ -305,6 +320,10 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             AnchorLon = context.AnchorLongitude,
             AnchorElevationMeters = context.AnchorElevationMeters,
             GeoidOffsetMeters = prep.Package.GeoidHeightOffsetMeters,
+            GeoidModel = prep.Package.GeoidModel,
+            AnchorEasting = context.AnchorProjectedCoordinate.Easting,
+            AnchorNorthing = context.AnchorProjectedCoordinate.Northing,
+            ModelId = modelId,
             State = exportResult.UpdatedState,
         };
     }

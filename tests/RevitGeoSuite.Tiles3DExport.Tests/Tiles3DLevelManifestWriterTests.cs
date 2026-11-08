@@ -36,6 +36,30 @@ public sealed class Tiles3DLevelManifestWriterTests
         Assert.Equal(2.8d, (double?)levels[0]?["maxZMeters"]);
     }
 
+    [Fact]
+    public void Build_json_lists_distinct_level_unique_ids_per_level()
+    {
+        Tiles3DMeshPrimitive host = Mesh("Wall 1", "1F", 0d, 0d, 2.8d);
+        host.Metadata.LevelUniqueId = "level-host-1f";
+        Tiles3DMeshPrimitive hostAgain = Mesh("Wall 2", "1F", 0d, 0d, 2.8d);
+        hostAgain.Metadata.LevelUniqueId = "level-host-1f";
+        Tiles3DMeshPrimitive linked = Mesh("Wall 3", "1F", 0d, 0d, 2.8d);
+        linked.Metadata.LevelUniqueId = "level-link-1f";
+        Tiles3DMeshPrimitive site = Mesh("Site Object", string.Empty, 0d, -0.5d, 0.2d);
+        Tiles3DExportPackage package = new Tiles3DExportPackage
+        {
+            Meshes = new List<Tiles3DMeshPrimitive> { linked, host, hostAgain, site }
+        };
+
+        JObject document = JObject.Parse(new Tiles3DLevelManifestWriter().BuildJson(package));
+
+        JArray levels = Assert.IsType<JArray>(document["levels"]);
+        JArray firstFloorIds = Assert.IsType<JArray>(levels[0]?["levelUniqueIds"]);
+        Assert.Equal(new[] { "level-host-1f", "level-link-1f" }, firstFloorIds.Values<string>());
+        JArray unassignedIds = Assert.IsType<JArray>(levels[1]?["levelUniqueIds"]);
+        Assert.Empty(unassignedIds);
+    }
+
     private static Tiles3DMeshPrimitive Mesh(string name, string levelName, double elevationMeters, double minZ, double maxZ)
     {
         string resolvedLevelName = string.IsNullOrWhiteSpace(levelName)

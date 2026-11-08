@@ -95,6 +95,8 @@ public sealed class Tiles3DGlbWriterTests
         JToken? structuralMetadata = json["extensions"]?["EXT_structural_metadata"];
         Assert.Equal(2, (int?)structuralMetadata?["propertyTables"]?[0]?["count"]);
         Assert.NotNull(structuralMetadata?["schema"]?["classes"]?["element"]?["properties"]?["levelKey"]);
+        Assert.NotNull(structuralMetadata?["schema"]?["classes"]?["element"]?["properties"]?["levelUniqueId"]);
+        Assert.NotNull(structuralMetadata?["propertyTables"]?[0]?["properties"]?["levelUniqueId"]?["stringOffsets"]);
         Assert.NotNull(structuralMetadata?["propertyTables"]?[0]?["properties"]?["heightMeters"]?["values"]);
         Assert.NotNull(structuralMetadata?["propertyTables"]?[0]?["properties"]?["levelName"]?["stringOffsets"]);
     }

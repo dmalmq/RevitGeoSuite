@@ -5,6 +5,26 @@ namespace RevitGeoSuite.Core.ProjectMetadata;
 
 public static class GeoProjectInfoExtensions
 {
+    /// <summary>
+    /// Gives <paramref name="info"/> a <see cref="GeoProjectInfo.ModelId"/> when it has none.
+    /// Returns true when it set one, so the caller knows to save.
+    /// </summary>
+    public static bool EnsureModelId(this GeoProjectInfo info, Func<Guid>? newGuid = null)
+    {
+        if (info is null)
+        {
+            throw new ArgumentNullException(nameof(info));
+        }
+
+        if (!string.IsNullOrWhiteSpace(info.ModelId))
+        {
+            return false;
+        }
+
+        info.ModelId = (newGuid ?? Guid.NewGuid)().ToString("D");
+        return true;
+    }
+
     public static void ApplyCanonicalLocation(
         this GeoProjectInfo info,
         CrsReference? projectCrs,

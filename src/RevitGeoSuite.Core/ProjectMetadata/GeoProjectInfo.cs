@@ -22,4 +22,11 @@ public sealed class GeoProjectInfo
     public string SetupSource { get; set; } = string.Empty;
 
     public DateTime? GeoSetupDate { get; set; }
+
+    /// <summary>
+    /// A random id written once into the model, so downstream tools such as Kanizu can
+    /// recognise the same model across users, worksharing local copies, Save As and moves.
+    /// Unlike a hash of the file path, it never changes. Empty until first needed.
+    /// </summary>
+    public string? ModelId { get; set; }
 }

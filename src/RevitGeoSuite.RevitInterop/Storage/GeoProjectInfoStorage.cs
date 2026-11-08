@@ -23,6 +23,12 @@ public sealed class GeoProjectInfoStorage : IGeoProjectInfoStore
         }
 
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (string.IsNullOrWhiteSpace(info.ModelId))
+        {
+            // Re-georeferencing builds a fresh GeoProjectInfo; the model's id must survive it.
+            info.ModelId = Load(document)?.ModelId;
+        }
+
         Schema schema = GetOrCreateSchema();
         info.SchemaVersion = SchemaVersion.Current;
 

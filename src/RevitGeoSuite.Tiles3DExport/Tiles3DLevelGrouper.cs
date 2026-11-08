@@ -79,6 +79,12 @@ public sealed class Tiles3DLevelGrouper
             LevelKey = levelKey,
             LevelName = levelName,
             LevelElevationMeters = levelElevationMeters,
+            LevelUniqueIds = meshes
+                .Select(mesh => mesh.Metadata.LevelUniqueId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(id => id, StringComparer.Ordinal)
+                .ToList(),
             MinZMeters = minZ,
             MaxZMeters = maxZ,
             Meshes = meshes

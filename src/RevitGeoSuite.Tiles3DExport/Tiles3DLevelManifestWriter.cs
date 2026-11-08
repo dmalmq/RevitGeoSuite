@@ -52,6 +52,7 @@ public sealed class Tiles3DLevelManifestWriter
     {
         levelKey = group.LevelKey,
         levelName = group.LevelName,
+        levelUniqueIds = group.LevelUniqueIds,
         levelElevationMeters = group.LevelElevationMeters,
         elementCount = group.ElementCount,
         minZMeters = group.MinZMeters,

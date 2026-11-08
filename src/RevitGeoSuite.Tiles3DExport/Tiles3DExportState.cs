@@ -34,4 +34,7 @@ public sealed class Tiles3DExportState
     public bool LastUsedPreciseCrsProjection { get; set; }
 
     public double LastGeoidHeightOffsetMeters { get; set; }
+
+    /// <summary>The height datum chosen on the last package export: "TP" or "unknown".</summary>
+    public string LastHeightDatum { get; set; } = "unknown";
 }

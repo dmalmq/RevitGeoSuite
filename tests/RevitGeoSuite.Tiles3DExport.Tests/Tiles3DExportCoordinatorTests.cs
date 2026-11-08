@@ -170,36 +170,37 @@ public sealed class Tiles3DExportCoordinatorTests
     {
         double result = Tiles3DExportCoordinator.ResolveGeoidOffset(
             12.3d,
-            usePreciseCrsProjection: true,
             anchorLatitudeDegrees: 35.6895d,
             anchorLongitudeDegrees: 139.6917d);
 
         Assert.Equal(12.3d, result, precision: 6);
+        Assert.Equal(Tiles3DGeoidModels.Typed, Tiles3DExportCoordinator.ResolveGeoidModel(12.3d));
     }
 
     [Fact]
-    public void Resolve_geoid_offset_uses_egm2008_when_precise_crs_has_no_manual_value()
+    public void Resolve_geoid_offset_keeps_a_typed_zero()
+    {
+        double result = Tiles3DExportCoordinator.ResolveGeoidOffset(
+            0d,
+            anchorLatitudeDegrees: 35.6895d,
+            anchorLongitudeDegrees: 139.6917d);
+
+        Assert.Equal(0d, result, precision: 9);
+        Assert.Equal(Tiles3DGeoidModels.Typed, Tiles3DExportCoordinator.ResolveGeoidModel(0d));
+    }
+
+    [Fact]
+    public void Resolve_geoid_offset_uses_egm2008_when_no_value_is_typed()
     {
         double result = Tiles3DExportCoordinator.ResolveGeoidOffset(
             null,
-            usePreciseCrsProjection: true,
             anchorLatitudeDegrees: 35.6895d,
             anchorLongitudeDegrees: 139.6917d);
 
         double expected = Egm2008Geoid.GetUndulationMeters(35.6895d, 139.6917d);
         Assert.Equal(expected, result, precision: 9);
-    }
-
-    [Fact]
-    public void Resolve_geoid_offset_defaults_to_zero_when_precise_crs_is_disabled()
-    {
-        double result = Tiles3DExportCoordinator.ResolveGeoidOffset(
-            null,
-            usePreciseCrsProjection: false,
-            anchorLatitudeDegrees: 35.6895d,
-            anchorLongitudeDegrees: 139.6917d);
-
-        Assert.Equal(0d, result, precision: 6);
+        Assert.InRange(result, 36d, 38d);
+        Assert.Equal(Tiles3DGeoidModels.Egm2008, Tiles3DExportCoordinator.ResolveGeoidModel(null));
     }
 
     private static Tiles3DExportReferenceContext CreateReferenceContext(double anchorElevationMeters)

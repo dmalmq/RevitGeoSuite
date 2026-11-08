@@ -1,3 +1,4 @@
+using System;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.Core.Coordinates;
@@ -9,6 +10,28 @@ namespace RevitGeoSuite.Core.Tests;
 
 public sealed class GeoProjectInfoTests
 {
+    [Fact]
+    public void EnsureModelId_assigns_once_and_keeps_existing_id()
+    {
+        GeoProjectInfo info = new GeoProjectInfo();
+        Guid first = new Guid("3f2b8c1d-6a4e-4b7f-9c2d-1e5a7b9c0d3f");
+
+        Assert.True(info.EnsureModelId(() => first));
+        Assert.Equal("3f2b8c1d-6a4e-4b7f-9c2d-1e5a7b9c0d3f", info.ModelId);
+        Assert.False(info.EnsureModelId(() => Guid.NewGuid()));
+        Assert.Equal("3f2b8c1d-6a4e-4b7f-9c2d-1e5a7b9c0d3f", info.ModelId);
+    }
+
+    [Fact]
+    public void ModelId_round_trips_through_json()
+    {
+        GeoProjectInfo info = new GeoProjectInfo { ModelId = "model-1" };
+
+        GeoProjectInfo? reloaded = JsonConvert.DeserializeObject<GeoProjectInfo>(JsonConvert.SerializeObject(info));
+
+        Assert.Equal("model-1", reloaded?.ModelId);
+    }
+
     [Fact]
     public void Defaults_are_safe_for_phase1_scaffolding()
     {

@@ -20,6 +20,13 @@ public sealed class Tiles3DObjectMetadata
 
     public string LevelKey { get; set; } = Tiles3DLevelMetadata.UnassignedLevelKey;
 
+    /// <summary>
+    /// The Revit <c>Level.UniqueId</c> of the element's level, empty when it has none. Stable
+    /// across renames, unlike <see cref="LevelKey"/>, and unique per document, so together
+    /// with <see cref="SourceDocument"/> it names one level even when two links both have a "1F".
+    /// </summary>
+    public string LevelUniqueId { get; set; } = string.Empty;
+
     public double LevelElevationMeters { get; set; }
 
     public double HeightMeters { get; set; }
@@ -44,6 +51,7 @@ public sealed class Tiles3DObjectMetadata
             TypeName = TypeName,
             LevelName = LevelName,
             LevelKey = LevelKey,
+            LevelUniqueId = LevelUniqueId,
             LevelElevationMeters = LevelElevationMeters,
             HeightMeters = HeightMeters,
             MinZMeters = MinZMeters,
