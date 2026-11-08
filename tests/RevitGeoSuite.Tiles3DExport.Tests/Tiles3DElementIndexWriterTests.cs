@@ -28,7 +28,7 @@ public sealed class Tiles3DElementIndexWriterTests
     }
 
     [Fact]
-    public void Hash_ignores_the_rebased_frame_triangle_order_and_sub_millimetre_noise()
+    public void Hash_ignores_the_rebased_frame_triangle_order_and_small_noise()
     {
         Tiles3DExportPackage original = Package(1000d, 2000d, 40d, 36.7d, Cube("wall-1", 0d, 0d, 0d));
         // The same cube after a centroid rebase: the anchor moved by (5, 6, 7) and the vertices by
@@ -50,6 +50,27 @@ public sealed class Tiles3DElementIndexWriterTests
         string after = Hash(Package(1000d, 2000d, 40d, 36.7d, Cube("wall-1", 0.002d, 0d, 0d)));
 
         Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void Two_instances_of_one_link_stay_two_entries()
+    {
+        Tiles3DMeshPrimitive west = Cube("platform-wall", 0d, 0d, 0d);
+        Tiles3DMeshPrimitive east = Cube("platform-wall", 30d, 0d, 0d);
+        foreach ((Tiles3DMeshPrimitive mesh, string instance) in new[] { (west, "link-west"), (east, "link-east") })
+        {
+            mesh.Metadata.SourceDocument = "Platform";
+            mesh.Metadata.SourceLinkName = "Platform.rvt";
+            mesh.Metadata.SourceLinkInstanceUniqueId = instance;
+        }
+
+        JObject document = JObject.Parse(new Tiles3DElementIndexWriter().BuildJson(Package(1000d, 2000d, 40d, 36.7d, west, east)));
+
+        JArray elements = Assert.IsType<JArray>(document["elements"]);
+        Assert.Equal(2, elements.Count);
+        Assert.Equal(new[] { "link-east", "link-west" }, elements.Select(e => (string?)e["sourceLinkInstanceUniqueId"]));
+        Assert.All(elements, e => Assert.Equal(12, (int?)e["triangleCount"]));
+        Assert.NotEqual((string?)elements[0]["hash"], (string?)elements[1]["hash"]);
     }
 
     private static string Hash(Tiles3DExportPackage package)

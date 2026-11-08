@@ -17,9 +17,13 @@ namespace RevitGeoSuite.Tiles3DExport;
 /// Everything is measured in a frame that does not depend on what else was exported: plane-grid
 /// easting and northing in the project CRS and orthometric height. Vertices are rounded to the
 /// millimetre and triangles are put in a canonical order before hashing, because Revit does not
-/// tessellate the same element bit-for-bit between sessions. The fingerprint (bounding box,
-/// triangle count, volume) lets the consumer tell "moved" from "re-tessellated" when the hash
-/// differs.
+/// tessellate the same element bit-for-bit between sessions. That makes most re-exports of an
+/// unchanged element hash the same, not all: a coordinate near a 0.5 mm boundary can still round
+/// the other way. So a changed hash alone is not an edit. The fingerprint (bounding box,
+/// triangle count, volume) decides: a changed hash with an unchanged fingerprint is
+/// "re-tessellated", a changed fingerprint is "moved" or "edited".
+/// Elements are keyed by source document, link instance and UniqueId, because one linked file
+/// placed twice repeats its UniqueIds.
 /// </remarks>
 public sealed class Tiles3DElementIndexWriter
 {
@@ -37,9 +41,10 @@ public sealed class Tiles3DElementIndexWriter
         double originHeight = package.ReferenceContext.AnchorElevationMeters - package.GeoidHeightOffsetMeters;
 
         List<Tiles3DElementIndexEntry> elements = package.Meshes
-            .GroupBy(mesh => (mesh.Metadata.SourceDocument, mesh.Metadata.RevitUniqueId))
+            .GroupBy(mesh => (mesh.Metadata.SourceDocument, mesh.Metadata.SourceLinkInstanceUniqueId, mesh.Metadata.RevitUniqueId))
             .Select(group => BuildEntry(group.ToList(), originEasting, originNorthing, originHeight))
             .OrderBy(entry => entry.SourceDocument, StringComparer.Ordinal)
+            .ThenBy(entry => entry.SourceLinkInstanceUniqueId, StringComparer.Ordinal)
             .ThenBy(entry => entry.UniqueId, StringComparer.Ordinal)
             .ToList();
 
@@ -109,6 +114,7 @@ public sealed class Tiles3DElementIndexWriter
             ElementId = metadata.RevitElementId,
             SourceDocument = metadata.SourceDocument,
             SourceLinkName = metadata.SourceLinkName,
+            SourceLinkInstanceUniqueId = metadata.SourceLinkInstanceUniqueId,
             LevelUniqueId = metadata.LevelUniqueId,
             LevelKey = metadata.LevelKey,
             Category = metadata.Category,
@@ -281,6 +287,9 @@ public sealed class Tiles3DElementIndexEntry
     public string SourceDocument { get; set; } = string.Empty;
 
     public string SourceLinkName { get; set; } = string.Empty;
+
+    /// <summary>The link instance's UniqueId; empty for host elements.</summary>
+    public string SourceLinkInstanceUniqueId { get; set; } = string.Empty;
 
     public string LevelUniqueId { get; set; } = string.Empty;
 

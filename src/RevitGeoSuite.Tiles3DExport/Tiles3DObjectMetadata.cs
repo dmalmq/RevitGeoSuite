@@ -39,6 +39,12 @@ public sealed class Tiles3DObjectMetadata
 
     public string SourceLinkName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The <c>RevitLinkInstance.UniqueId</c> the element came through, empty for host elements.
+    /// One linked file placed twice gives the same element UniqueIds twice; this tells them apart.
+    /// </summary>
+    public string SourceLinkInstanceUniqueId { get; set; } = string.Empty;
+
     public Tiles3DObjectMetadata Clone()
     {
         return new Tiles3DObjectMetadata
@@ -57,7 +63,8 @@ public sealed class Tiles3DObjectMetadata
             MinZMeters = MinZMeters,
             MaxZMeters = MaxZMeters,
             SourceDocument = SourceDocument,
-            SourceLinkName = SourceLinkName
+            SourceLinkName = SourceLinkName,
+            SourceLinkInstanceUniqueId = SourceLinkInstanceUniqueId
         };
     }
 }
