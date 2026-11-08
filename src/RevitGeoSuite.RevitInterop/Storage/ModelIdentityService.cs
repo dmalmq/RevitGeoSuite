@@ -9,6 +9,11 @@ namespace RevitGeoSuite.RevitInterop.Storage;
 /// Reads the model's stable <see cref="GeoProjectInfo.ModelId"/>, writing a new one into the
 /// model the first time it is needed. Must run in a Revit API context with no open transaction.
 /// </summary>
+/// <remarks>
+/// In a workshared model, two users who export before either syncs can each mint an id. After
+/// they sync one id wins, so the first packages from the other user carry an id that later
+/// disappears. Consumers should treat an unknown id as "maybe this model" and confirm by name.
+/// </remarks>
 public sealed class ModelIdentityService
 {
     private readonly GeoProjectInfoStorage storage;
@@ -49,11 +54,26 @@ public sealed class ModelIdentityService
         }
 
         using Transaction transaction = new Transaction(document, "Save Model Id");
-        transaction.Start();
-        storage.Save(handle, info);
-        if (transaction.Commit() != TransactionStatus.Committed)
+        try
         {
-            warnings?.Add("Revit did not commit the model id; this package carries none.");
+            transaction.Start();
+            storage.Save(handle, info);
+            if (transaction.Commit() != TransactionStatus.Committed)
+            {
+                warnings?.Add("Revit did not commit the model id; this package carries none.");
+                return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            // A workshared model whose Project Information is borrowed by another user lands here.
+            // The id is optional for the package, so the export goes on without it.
+            if (transaction.GetStatus() == TransactionStatus.Started)
+            {
+                transaction.RollBack();
+            }
+
+            warnings?.Add($"The model id could not be saved ({ex.Message}); this package carries none.");
             return null;
         }
 
