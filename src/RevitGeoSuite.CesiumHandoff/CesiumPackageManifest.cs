@@ -56,6 +56,13 @@ public sealed class CesiumPackageSource
     public string Model { get; set; } = string.Empty;
 
     public string DocumentKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The model's stable id from <c>GeoProjectInfo.ModelId</c>. Unlike <see cref="DocumentKey"/>,
+    /// which hashes the file path, it is the same for every user and survives Save As and moves.
+    /// Absent when the model could not be written to (read-only) on its first export.
+    /// </summary>
+    public string? ModelId { get; set; }
 }
 
 public sealed class CesiumPackageBuilding
@@ -76,15 +83,52 @@ public sealed class CesiumPackageCrs
     public int GisEpsg { get; set; }
 }
 
+/// <summary>
+/// Where the tileset's east-north-up frame sits. <see cref="ElevationMeters"/> is ellipsoidal
+/// (orthometric + <see cref="GeoidOffsetMeters"/>); the other fields give the source numbers it
+/// came from, so a consumer can redo the placement with its own geoid and projection.
+/// </summary>
 public sealed class CesiumPackageAnchor
 {
     public double Lat { get; set; }
 
     public double Lon { get; set; }
 
+    /// <summary>Height above the WGS84 ellipsoid, as used in the tileset transform.</summary>
     public double ElevationMeters { get; set; }
 
+    /// <summary>The geoid undulation added to the orthometric height. Always written, 0 included.</summary>
     public double? GeoidOffsetMeters { get; set; }
+
+    /// <summary>"EGM2008", or "typed" when the user entered the offset.</summary>
+    public string? GeoidModel { get; set; }
+
+    /// <summary>The anchor height before the geoid offset, in the model's own height datum.</summary>
+    public double? OrthometricHeightMeters { get; set; }
+
+    /// <summary>What <see cref="OrthometricHeightMeters"/> is measured from: "TP" or "unknown".</summary>
+    public string? HeightDatum { get; set; }
+
+    /// <summary>The anchor's easting in <see cref="CesiumPackageCrs.ProjectEpsg"/>, metres.</summary>
+    public double? Easting { get; set; }
+
+    /// <summary>The anchor's northing in <see cref="CesiumPackageCrs.ProjectEpsg"/>, metres.</summary>
+    public double? Northing { get; set; }
+}
+
+/// <summary>The height datum names written to <see cref="CesiumPackageAnchor.HeightDatum"/>.</summary>
+public static class CesiumHeightDatums
+{
+    /// <summary>Tokyo Peil (東京湾平均海面), Japan's orthometric datum.</summary>
+    public const string Tp = "TP";
+
+    public const string Unknown = "unknown";
+
+    /// <summary>Maps a request value ("tp", "TP", anything else) to a manifest value.</summary>
+    public static string Normalize(string? value)
+    {
+        return string.Equals(value?.Trim(), Tp, StringComparison.OrdinalIgnoreCase) ? Tp : Unknown;
+    }
 }
 
 public sealed class CesiumPackageTiles

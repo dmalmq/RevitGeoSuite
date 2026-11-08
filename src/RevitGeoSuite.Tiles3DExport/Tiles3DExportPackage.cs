@@ -25,4 +25,20 @@ public sealed class Tiles3DExportPackage
     public bool UsedPreciseCrsProjection { get; set; }
 
     public double GeoidHeightOffsetMeters { get; set; }
+
+    /// <summary>
+    /// Where <see cref="GeoidHeightOffsetMeters"/> came from: <see cref="Tiles3DGeoidModels.Egm2008"/>
+    /// or <see cref="Tiles3DGeoidModels.Typed"/>. The anchor's orthometric height is
+    /// <c>ReferenceContext.AnchorElevationMeters - GeoidHeightOffsetMeters</c>.
+    /// </summary>
+    public string GeoidModel { get; set; } = Tiles3DGeoidModels.Egm2008;
+}
+
+/// <summary>The geoid model names written to package manifests.</summary>
+public static class Tiles3DGeoidModels
+{
+    public const string Egm2008 = "EGM2008";
+
+    /// <summary>The user typed the offset; it may be 0 when the elevations are already ellipsoidal.</summary>
+    public const string Typed = "typed";
 }

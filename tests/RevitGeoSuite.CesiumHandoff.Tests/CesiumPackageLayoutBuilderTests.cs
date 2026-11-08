@@ -185,6 +185,64 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
     }
 
     [Fact]
+    public void WriteManifest_WritesAnchorSourceNumbersAndModelId()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
+        CesiumPackageBuildInputs inputs = CreateInputs();
+        inputs.GeoidModel = "EGM2008";
+        inputs.HeightDatum = "tp";
+        inputs.AnchorEasting = -5995.25;
+        inputs.AnchorNorthing = -35370.5;
+        inputs.ModelId = "8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a";
+
+        builder.WriteManifest(layout, inputs);
+
+        CesiumPackageManifest reloaded = CesiumPackageManifestSerializer.Deserialize(
+            File.ReadAllText(layout.ManifestPath));
+        CesiumPackageAnchor anchor = reloaded.Anchor!;
+        Assert.Equal(40.2, anchor.ElevationMeters, 9);
+        Assert.Equal(36.7, anchor.GeoidOffsetMeters!.Value, 9);
+        Assert.Equal(3.5, anchor.OrthometricHeightMeters!.Value, 9);
+        Assert.Equal("EGM2008", anchor.GeoidModel);
+        Assert.Equal(CesiumHeightDatums.Tp, anchor.HeightDatum);
+        Assert.Equal(-5995.25, anchor.Easting!.Value, 9);
+        Assert.Equal(-35370.5, anchor.Northing!.Value, 9);
+        Assert.Equal("8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a", reloaded.Source!.ModelId);
+    }
+
+    [Fact]
+    public void WriteManifest_WritesZeroOffsetAndUnknownDatumWhenNotGiven()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
+        CesiumPackageBuildInputs inputs = CreateInputs();
+        inputs.GeoidOffsetMeters = null;
+
+        CesiumPackageManifest manifest = builder.WriteManifest(layout, inputs);
+
+        Assert.Equal(0d, manifest.Anchor!.GeoidOffsetMeters);
+        Assert.Equal(40.2, manifest.Anchor.OrthometricHeightMeters!.Value, 9);
+        Assert.Equal(CesiumHeightDatums.Unknown, manifest.Anchor.HeightDatum);
+        Assert.Null(manifest.Source!.ModelId);
+        string json = File.ReadAllText(layout.ManifestPath);
+        Assert.Contains("\"geoidOffsetMeters\"", json);
+    }
+
+    [Theory]
+    [InlineData("TP", "TP")]
+    [InlineData(" tp ", "TP")]
+    [InlineData("unknown", "unknown")]
+    [InlineData("ellipsoidal", "unknown")]
+    [InlineData(null, "unknown")]
+    public void HeightDatums_NormalizeMapsRequestValues(string? value, string expected)
+    {
+        Assert.Equal(expected, CesiumHeightDatums.Normalize(value));
+    }
+
+    [Fact]
     public void WriteManifest_OmitsTilesSectionWhenNoTileset()
     {
         var builder = new CesiumPackageLayoutBuilder();

@@ -119,6 +119,7 @@
   let cesiumPush = $state(true)
   let cesiumLod = $state('fine')
   let cesiumPreciseCrs = $state(true)
+  let cesiumHeightDatum = $state('unknown')
   let cesiumRunning = $state(false)
   let cesiumProgress = $state<any>(null)
   let cesiumResult = $state<CesiumExportRunResponse | null>(null)
@@ -134,6 +135,7 @@
       if (!cesiumProfile) cesiumProfile = state.floorPlanProfiles[0] ?? ''
       if (!cesiumOutputFolder) cesiumOutputFolder = state.lastOutputFolder
       cesiumViewerUrl = state.viewerUrl
+      cesiumHeightDatum = state.lastHeightDatum === 'TP' ? 'TP' : 'unknown'
     } catch (err: any) {
       cesiumError = err?.message ?? 'Failed to load Cesium export state'
     }
@@ -190,6 +192,7 @@
       scope: 'whole',
       lod: cesiumLod,
       preciseCrs: cesiumPreciseCrs,
+      heightDatum: cesiumHeightDatum,
       selectedLinkUniqueIds: []
     }, {
       onProgress: (p) => { cesiumProgress = p }
@@ -505,7 +508,7 @@
         ...baseTiles3dOptions,
         selectedViewUniqueId: scope === 'view' ? selectedTiles3dViewUniqueId : '',
         selectedLinkUniqueIds: [...selectedTiles3dLinkIds],
-        ...(tiles3dOptions.preciseCrs && !geoidAuto ? { geoidOffset } : {})
+        ...(!geoidAuto ? { geoidOffset } : {})
       }
     } else {
       options = citygmlOptions
@@ -539,7 +542,6 @@
     }
     if (
       format === 'tiles3d' &&
-      tiles3dOptions.preciseCrs &&
       !tiles3dOptions.geoidAuto &&
       typeof tiles3dOptions.geoidOffset !== 'number'
     ) {
@@ -1857,37 +1859,35 @@
               <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.SendToCesium'] ?? 'Send to Cesium viewer after export'}</span>
             </label>
 
-            {#if tiles3dOptions.preciseCrs}
-              <label class="flex items-center gap-2">
+            <label class="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={tiles3dOptions.geoidAuto}
+                onchange={(event) => {
+                  tiles3dOptions.geoidAuto = event.currentTarget.checked
+                  exportPreview = null
+                }}
+                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
+              />
+              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.GeoidAuto'] ?? 'Auto-detect from location (EGM2008)'}</span>
+            </label>
+
+            {#if !tiles3dOptions.geoidAuto}
+              <div>
+                <label for="export-tiles3d-geoid-offset" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  {$strings['Export.Tiles3d.GeoidOffset'] ?? 'Geoid Height Offset (meters)'}
+                </label>
                 <input
-                  type="checkbox"
-                  checked={tiles3dOptions.geoidAuto}
-                  onchange={(event) => {
-                    tiles3dOptions.geoidAuto = event.currentTarget.checked
+                  id="export-tiles3d-geoid-offset"
+                  type="number"
+                  bind:value={tiles3dOptions.geoidOffset}
+                  oninput={() => {
                     exportPreview = null
                   }}
-                  class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
+                  step="0.1"
+                  class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
-                <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.GeoidAuto'] ?? 'Auto-detect from location (EGM2008)'}</span>
-              </label>
-
-              {#if !tiles3dOptions.geoidAuto}
-                <div>
-                  <label for="export-tiles3d-geoid-offset" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    {$strings['Export.Tiles3d.GeoidOffset'] ?? 'Geoid Height Offset (meters)'}
-                  </label>
-                  <input
-                    id="export-tiles3d-geoid-offset"
-                    type="number"
-                    bind:value={tiles3dOptions.geoidOffset}
-                    oninput={() => {
-                      exportPreview = null
-                    }}
-                    step="0.1"
-                    class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              {/if}
+              </div>
             {/if}
 
             {#if tiles3dLinks.length > 0}
@@ -1980,7 +1980,7 @@
                 <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.triangleCount}</span>
               </div>
             {/if}
-            {#if format === 'tiles3d' && tiles3dOptions.preciseCrs && exportPreview.geoidOffsetMeters !== undefined}
+            {#if format === 'tiles3d' && exportPreview.geoidOffsetMeters !== undefined}
               <div class="flex justify-between gap-3 text-sm">
                 <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.GeoidOffset'] ?? 'Geoid offset:'}</span>
                 <span class="text-right text-neutral-800 dark:text-neutral-200">{formatSignedMeters(exportPreview.geoidOffsetMeters)}</span>
@@ -2291,6 +2291,20 @@
             <input type="checkbox" bind:checked={cesiumPreciseCrs} disabled={cesiumRunning} class="h-4 w-4" />
             {$strings['Export.Cesium.PreciseCrs'] ?? 'Precise CRS'}
           </label>
+        </div>
+
+        <div>
+          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumHeightDatumSelect">{$strings['Export.Cesium.HeightDatum'] ?? 'Survey point elevation is'}</label>
+          <select
+            id="cesiumHeightDatumSelect"
+            class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+            bind:value={cesiumHeightDatum}
+            disabled={cesiumRunning}
+          >
+            <option value="unknown">{$strings['Export.Cesium.HeightDatum.Unknown'] ?? 'Not checked'}</option>
+            <option value="TP">{$strings['Export.Cesium.HeightDatum.Tp'] ?? 'Tokyo Peil (T.P.)'}</option>
+          </select>
+          <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{$strings['Export.Cesium.HeightDatum.Hint'] ?? 'Choose T.P. only when the survey point elevation was set from T.P. Kanizu then trusts the floor heights in this package.'}</p>
         </div>
 
         <div>

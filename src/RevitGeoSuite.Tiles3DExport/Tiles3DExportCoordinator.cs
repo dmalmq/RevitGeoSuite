@@ -57,9 +57,11 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("Select a non-template 3D view before preparing 3D Tiles export from a selected view.");
         }
 
+        // The geoid applies in both modes: without it the orthometric anchor height would be
+        // read as ellipsoidal, and the tiles would sit about 37 m low in Tokyo.
+        string resolvedGeoidModel = ResolveGeoidModel(geoidHeightOffsetMeters);
         double resolvedGeoidHeightOffsetMeters = ResolveGeoidOffset(
             geoidHeightOffsetMeters,
-            usePreciseCrsProjection,
             referenceContext.AnchorLatitude,
             referenceContext.AnchorLongitude);
         Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(resolvedGeoidHeightOffsetMeters);
@@ -76,6 +78,7 @@ public sealed class Tiles3DExportCoordinator
         List<Tiles3DMeshPrimitive> meshList = simplified.ToList();
         IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(meshList);
         Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, resolvedGeoidHeightOffsetMeters);
+        package.GeoidModel = resolvedGeoidModel;
 
         if (usePreciseCrsProjection && preciseCrsRebaser is not null)
         {
@@ -92,12 +95,22 @@ public sealed class Tiles3DExportCoordinator
         };
     }
 
-    internal static double ResolveGeoidOffset(double? requestedGeoidOffsetMeters, bool usePreciseCrsProjection, double anchorLatitudeDegrees, double anchorLongitudeDegrees)
+    /// <summary>
+    /// The geoid undulation added to the anchor's orthometric height: the typed value when there
+    /// is one, otherwise EGM2008 at the anchor. Applies with and without precise CRS projection.
+    /// </summary>
+    internal static double ResolveGeoidOffset(double? requestedGeoidOffsetMeters, double anchorLatitudeDegrees, double anchorLongitudeDegrees)
     {
         return requestedGeoidOffsetMeters
-            ?? (usePreciseCrsProjection
-                ? Egm2008Geoid.GetUndulationMeters(anchorLatitudeDegrees, anchorLongitudeDegrees)
-                : 0d);
+            ?? Egm2008Geoid.GetUndulationMeters(anchorLatitudeDegrees, anchorLongitudeDegrees);
+    }
+
+    /// <summary>Which geoid <see cref="ResolveGeoidOffset"/> used, as written to package manifests.</summary>
+    internal static string ResolveGeoidModel(double? requestedGeoidOffsetMeters)
+    {
+        return requestedGeoidOffsetMeters.HasValue
+            ? Tiles3DGeoidModels.Typed
+            : Tiles3DGeoidModels.Egm2008;
     }
 
     internal static Tiles3DExportPackage BuildPackage(

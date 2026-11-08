@@ -21,6 +21,9 @@ public sealed class CesiumExportStateResponse
 
     /// <summary>True when no floor-plan profile exists yet — the UI walks through first-run setup.</summary>
     public bool FirstRun { get; set; }
+
+    /// <summary>The height datum chosen on the last export of this model: "TP" or "unknown".</summary>
+    public string LastHeightDatum { get; set; } = "unknown";
 }
 
 [TsExport]
@@ -41,6 +44,12 @@ public sealed class CesiumExportRunRequest
     public bool PreciseCrs { get; set; } = true;
 
     public double? GeoidOffset { get; set; }
+
+    /// <summary>
+    /// What the model's elevations are measured from: "TP" (Tokyo Peil) or "unknown". Written to
+    /// the manifest so Kanizu knows whether it may take floor heights from Revit.
+    /// </summary>
+    public string HeightDatum { get; set; } = "unknown";
 
     public string? SelectedViewUniqueId { get; set; }
 

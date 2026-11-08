@@ -10,6 +10,12 @@ public sealed class Tiles3DLevelGroup
 
     public double LevelElevationMeters { get; set; }
 
+    /// <summary>
+    /// The distinct Revit <c>Level.UniqueId</c>s of the group's elements, sorted. One entry
+    /// per link group; more than one when same-named levels from several links share a key.
+    /// </summary>
+    public List<string> LevelUniqueIds { get; set; } = new List<string>();
+
     public int ElementCount => Meshes.Count;
 
     public double MinZMeters { get; set; }
