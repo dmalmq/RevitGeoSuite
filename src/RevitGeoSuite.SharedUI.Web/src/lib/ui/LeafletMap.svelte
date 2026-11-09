@@ -6,6 +6,7 @@
   import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
   import markerIcon from 'leaflet/dist/images/marker-icon.png'
   import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+  import { mapCursor } from '$lib/shell/cursor'
 
   // Leaflet's default marker resolves its icon PNGs relative to the source CSS, which breaks under
   // Vite bundling + the WebView2 virtual host (markers render as a broken image). Drop Leaflet's
@@ -41,6 +42,7 @@
   })
 
   onDestroy(() => {
+    mapCursor.set(null)
     if (map) {
       map.remove()
       map = null
@@ -61,6 +63,9 @@
     map.on('mousedown', handleRectangleStart)
     map.on('mousemove', handleRectangleMove)
     map.on('mouseup', handleRectangleEnd)
+    // The status bar shows the latitude and longitude under the pointer.
+    map.on('mousemove', (event: L.LeafletMouseEvent) => mapCursor.set({ lat: event.latlng.lat, lon: event.latlng.lng }))
+    map.on('mouseout', () => mapCursor.set(null))
   }
 
   function handleMapClick(event: L.LeafletMouseEvent) {

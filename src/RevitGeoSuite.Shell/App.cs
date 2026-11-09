@@ -28,8 +28,8 @@ public sealed class App : IExternalApplication
     }
 
     // Adds the three web-shell entry points to a single panel in the order Georeference,
-    // Import, Export. Buttons render in add order, so this yields GEO -> IMP -> EXP. Each
-    // opens the shared WebView2 shell on its route; icons mirror the in-app nav rail.
+    // Import, Export, the same order as the web UI's sidebar groups. Each opens the shared
+    // WebView2 shell on its route; icons are the sidebar's Lucide glyphs.
     private static void AddWebShellButtons(UIControlledApplication application)
     {
         try
@@ -41,7 +41,7 @@ public sealed class App : IExternalApplication
             // panel label.
             panel.AddItem(CreateButton(
                 "GeoreferenceSetup",
-                "Georef",
+                "Georeference",
                 typeof(GeoreferenceSetupCommand),
                 RibbonIconKind.WebGeoreference,
                 "Open the georeference workflow"));
