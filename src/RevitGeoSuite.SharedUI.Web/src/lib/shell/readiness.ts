@@ -53,18 +53,34 @@ type ReadinessState = { status: ReadinessStatus; findings: ReadinessFinding[]; l
 export const readiness = writable<ReadinessState>({ status: 'unknown', findings: [], loaded: false })
 
 let run = 0
+let latest: Promise<void> = Promise.resolve()
 
-export async function refreshReadiness(): Promise<void> {
+/** Checks readiness again. Resolves once the newest check has landed, so a caller that awaits it
+ *  never reads an older result, even when another refresh started meanwhile. */
+export function refreshReadiness(): Promise<void> {
   const mine = ++run
-  try {
-    const result = await request<ReadinessStatusResponse>('readiness.getStatus', {})
-    if (mine !== run) return
-    const raw = result?.exportReadiness?.status
-    const status: ReadinessStatus = raw === 'ready' || raw === 'blocked' || raw === 'needsattention' ? raw : 'unknown'
-    readiness.set({ status, findings: result?.findings ?? [], loaded: true })
-  } catch {
-    if (mine !== run) return
-    readiness.set({ status: 'unknown', findings: [], loaded: true })
+  const check = (async () => {
+    try {
+      const result = await request<ReadinessStatusResponse>('readiness.getStatus', {})
+      if (mine !== run) return
+      const raw = result?.exportReadiness?.status
+      const status: ReadinessStatus = raw === 'ready' || raw === 'blocked' || raw === 'needsattention' ? raw : 'unknown'
+      readiness.set({ status, findings: result?.findings ?? [], loaded: true })
+    } catch {
+      // A failed check reads as unknown and gates nothing: a broken check must not lock the tools.
+      if (mine !== run) return
+      readiness.set({ status: 'unknown', findings: [], loaded: true })
+    }
+  })()
+  latest = check
+  return settle(check)
+}
+
+async function settle(check: Promise<void>): Promise<void> {
+  await check
+  while (check !== latest) {
+    check = latest
+    await check
   }
 }
 

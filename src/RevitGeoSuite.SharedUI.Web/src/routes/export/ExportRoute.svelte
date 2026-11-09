@@ -15,8 +15,9 @@
   } from '$lib/bridge/contracts.generated'
   import { onDestroy, onMount } from 'svelte'
   import { t } from '$lib/i18n'
-  import { Banner, Button, Field, Input } from '$lib/kit'
-  import { BlockedNotice, StepBar, blocked, narrow, readiness, refreshReadiness, stepNumber, workflow } from '$lib/shell'
+  import { get } from 'svelte/store'
+  import { Banner, Button, Field, Input, Progress } from '$lib/kit'
+  import { BlockedNotice, StepBar, blocked, narrow, refreshReadiness, stepNumber, workflow } from '$lib/shell'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import type { ExportFormat, ExportState, ScopeMode, PlateauTile, ExportJobResult, ExportPreview } from './steps/types'
   import FormatChooser from './steps/FormatChooser.svelte'
@@ -223,14 +224,20 @@
     if (f === 'tiles3d') {
       void loadTiles3dExportOptions()
     }
-    // The tool waits on 'preflight' only while readiness is blocked; see the effect below.
+    // Wait on 'preflight' for a fresh readiness check, and stay there only while it is blocked.
     step = 'preflight'
-    void refreshReadiness()
+    void checkThenContinue(f)
   }
 
-  $effect(() => {
-    if (step === 'preflight' && $readiness.loaded && !$blocked) continueToScope()
-  })
+  let readinessChecked = $state(false)
+
+  async function checkThenContinue(f: ExportFormat) {
+    readinessChecked = false
+    await refreshReadiness()
+    if (format !== f || step !== 'preflight') return
+    readinessChecked = true
+    if (!get(blocked)) continueToScope()
+  }
 
   function openFloorPlanExport() {
     localStorage.setItem('export.lastFormat', 'geopackage')
@@ -709,7 +716,11 @@
   {/if}
 
   {#if step === 'preflight'}
-    {#if $blocked}<BlockedNotice />{/if}
+    {#if !readinessChecked}
+      <Progress label={$t('Problems.Checking', 'Checking the project…')} />
+    {:else if $blocked}
+      <BlockedNotice />
+    {/if}
   {:else if step === 'plateau-source'}
     <PlateauSourcePanel {browsePlateauFolder} bind:plateauFolderPath {startPlateauScan} />
   {:else if step === 'plateau-scan'}

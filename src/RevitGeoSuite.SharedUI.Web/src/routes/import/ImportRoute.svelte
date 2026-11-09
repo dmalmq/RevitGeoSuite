@@ -4,8 +4,8 @@
   import { onDestroy, onMount, tick } from 'svelte'
   import { t } from '$lib/i18n'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
-  import { Banner, Button } from '$lib/kit'
-  import { BlockedNotice, StepBar, blocked, narrow, readiness, refreshReadiness, stepNumber, workflow } from '$lib/shell'
+  import { Banner, Button, Progress } from '$lib/kit'
+  import { BlockedNotice, StepBar, blocked, narrow, refreshReadiness, stepNumber, workflow } from '$lib/shell'
   import LocalGisTool from './gis/LocalGisTool.svelte'
   import type { GisPhase } from './gis/types'
   import type {
@@ -131,7 +131,16 @@
     }
     error = null
     step = 'preflight'
-    void refreshReadiness()
+    void checkReadiness()
+  }
+
+  // The options open only after a fresh readiness check, never on a result from before.
+  let readinessChecked = $state(false)
+
+  async function checkReadiness() {
+    readinessChecked = false
+    await refreshReadiness()
+    readinessChecked = true
   }
 
   function sourceTitle(): string {
@@ -920,7 +929,7 @@
     if (
       source === 'online'
       && step === 'preflight'
-      && $readiness.loaded
+      && readinessChecked
       && !$blocked
       && onlineAreas.length === 0
       && !onlineCatalogLoading
@@ -1034,7 +1043,9 @@
   {/if}
 
   {#if step === 'preflight'}
-    {#if $blocked}
+    {#if !readinessChecked}
+      <Progress label={$t('Problems.Checking', 'Checking the project…')} />
+    {:else if $blocked}
       <BlockedNotice />
     {:else}
       {#if source === 'local'}

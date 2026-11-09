@@ -42,3 +42,27 @@ describe('readiness', () => {
     expect(findingTitleKey('stale-mesh')).toEqual(['Georef.Finding.stale-mesh', 'Stale mesh'])
   })
 })
+
+describe('refreshReadiness', () => {
+  it('resolves with the newest result when two checks overlap', async () => {
+    const { vi } = await import('vitest')
+    vi.resetModules()
+    let call = 0
+    const replies: ((v: unknown) => void)[] = []
+    vi.doMock('$lib/bridge/rpc', () => ({ request: () => new Promise((resolve) => { call++; replies.push(resolve) }) }))
+    const mod = await import('../readiness')
+    const first = mod.refreshReadiness()
+    const second = mod.refreshReadiness()
+    let firstDone = false
+    first.then(() => { firstDone = true })
+    replies[0]({ exportReadiness: { status: 'ready' }, findings: [] })
+    await Promise.resolve(); await Promise.resolve()
+    expect(firstDone).toBe(false)
+    replies[1]({ exportReadiness: { status: 'blocked' }, findings: [] })
+    await first
+    await second
+    expect(call).toBe(2)
+    expect(get(mod.readiness).status).toBe('blocked')
+    vi.doUnmock('$lib/bridge/rpc')
+  })
+})
