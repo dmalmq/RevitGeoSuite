@@ -4,8 +4,8 @@ public enum RibbonIconKind
 {
     Default,
 
-    // Web shell suite entry points. Glyphs mirror the in-app nav rail (Rail.svelte):
-    // folded map (GEO), arrow-into-tray (IMP), arrow-out-of-tray (EXP).
+    // Web shell suite entry points. Glyphs are the web UI's Lucide icons for each sidebar group:
+    // map-pin (Set up / Georeference), download (Import), upload (Export).
     WebGeoreference,
     WebImport,
     WebExport

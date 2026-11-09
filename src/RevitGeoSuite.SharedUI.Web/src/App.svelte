@@ -8,9 +8,7 @@
   // theme/listener, and i18n fetches localization.getAll.
   import '$lib/ui/theme'
   import '$lib/i18n'
-  import Header from '$lib/ui/Header.svelte'
-  import Rail from '$lib/ui/Rail.svelte'
-  import StatusFooter from '$lib/ui/StatusFooter.svelte'
+  import { Sidebar, StatusBar, TitleBar, entryFor, type ReadinessStatus } from '$lib/shell'
   import { Toaster } from '$lib/kit'
   import { t } from '$lib/i18n'
   import WindowResizeGrips from '$lib/ui/WindowResizeGrips.svelte'
@@ -25,8 +23,6 @@
     const hash = window.location.hash.replace(/^#/, '')
     return hash || '/georeference'
   }
-
-  type ReadinessStatus = 'ready' | 'blocked' | 'needsattention' | 'unknown'
 
   let currentRoute = $state(routeFromHash())
   let documentName = $state('')
@@ -92,20 +88,25 @@
   }
 
   let RouteComponent = $derived(getRouteComponent(currentRoute))
+  const activeEntry = $derived(entryFor(currentRoute))
 </script>
 
-<div class="flex h-screen flex-col bg-card text-foreground">
-  <Header title="RevitGeoSuite" {documentName} />
+<!-- Kanizu's Framed sheet: title bar, sidebar and status bar sit on the frame; the route is a
+     white sheet inset 8 px with a 14 px radius. -->
+<div class="flex h-screen flex-col bg-background text-foreground">
+  <TitleBar toolName={activeEntry ? $t(activeEntry.labelKey, activeEntry.fallback) : ''} {documentName} />
 
-  <div class="flex flex-1 overflow-hidden">
-    <Rail {currentRoute} />
+  <div class="flex min-h-0 flex-1">
+    <Sidebar {currentRoute} />
 
-    <main class="flex-1 overflow-auto">
-      <RouteComponent />
-    </main>
+    <div class="flex min-w-0 flex-1 pr-2">
+      <main class="min-w-0 flex-1 overflow-auto rounded-sheet border border-border bg-card">
+        <RouteComponent />
+      </main>
+    </div>
   </div>
 
-  <StatusFooter {documentName} {crs} {meshCode} {status} />
+  <StatusBar {documentName} {crs} {meshCode} {status} />
   <WindowResizeGrips />
   <Toaster closeLabel={$t('Common.Dismiss', 'Dismiss')} />
 </div>
