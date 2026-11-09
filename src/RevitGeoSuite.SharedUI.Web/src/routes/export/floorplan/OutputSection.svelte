@@ -1,30 +1,38 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
 <script lang="ts">
   import type { ExporterSettingsPayload } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
+  import { Button, Card, Field, Input, Segmented } from '$lib/kit'
 
   export let browseOutput: (...args: any[]) => any
   export let outputError: any
   export let settings: ExporterSettingsPayload
 </script>
 
-<div class="option-section">
-  <h3>{$t('Exporter.Output', 'Output')}</h3>
-  <span class="field-label">{$t('Exporter.OutputFolder', 'Output folder')}</span>
-  <div class="flex gap-2">
-    <input class="field flex-1" class:field-error={outputError} bind:value={settings.outputDirectory} />
-    <button class="btn-secondary" on:click={browseOutput}>{$t('Exporter.Browse', 'Browse...')}</button>
+<Card title={$t('Exporter.Output', 'Output')}>
+  <div class="flex flex-col gap-3">
+    <Field label={$t('Exporter.OutputFolder', 'Output folder')} id="floorplan-output-folder" error={outputError}>
+      <div class="flex gap-1.5">
+        <Input
+          id="floorplan-output-folder"
+          mono
+          invalid={!!outputError}
+          aria-describedby={outputError ? 'floorplan-output-folder-error' : undefined}
+          bind:value={settings.outputDirectory}
+        />
+        <Button icon="folder-open" onclick={browseOutput}>{$t('Exporter.Browse', 'Browse...')}</Button>
+      </div>
+    </Field>
+    <Field label={$t('Exporter.OutputFormat', 'Output format')}>
+      <Segmented
+        label={$t('Exporter.OutputFormat', 'Output format')}
+        value={settings.outputFormat}
+        options={[
+          { value: 'geopackage', label: $t('Exporter.GeoPackage', 'GeoPackage (.gpkg)') },
+          { value: 'shapefile', label: $t('Exporter.Shapefile', 'Shapefile (.shp)') }
+        ]}
+        onchange={(outputFormat) => (settings = { ...settings, outputFormat })}
+      />
+    </Field>
   </div>
-  {#if outputError}
-    <p class="mt-1 text-xs text-red-600 dark:text-red-400">{outputError}</p>
-  {/if}
-  <span class="mt-3 block field-label">{$t('Exporter.OutputFormat', 'Output format')}</span>
-  <div class="segmented-control">
-    <button class="segmented-btn" class:active={settings.outputFormat === 'geopackage'} on:click={() => settings = { ...settings, outputFormat: 'geopackage' }}>
-      {$t('Exporter.GeoPackage', 'GeoPackage (.gpkg)')}
-    </button>
-    <button class="segmented-btn" class:active={settings.outputFormat === 'shapefile'} on:click={() => settings = { ...settings, outputFormat: 'shapefile' }}>
-      {$t('Exporter.Shapefile', 'Shapefile (.shp)')}
-    </button>
-  </div>
-</div>
+</Card>

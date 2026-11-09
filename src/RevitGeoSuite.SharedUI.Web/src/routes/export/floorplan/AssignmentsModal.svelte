@@ -1,7 +1,8 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
 <script lang="ts">
   import type { PreviewInitialStateResponse, PreviewViewPayload } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
+  import { Button, Input, Select } from '$lib/kit'
 
   export let assignFloorTypes: (...args: any[]) => any
   export let assignNewAssignment: (...args: any[]) => any
@@ -36,41 +37,42 @@
             <p class="mt-1 text-xs text-muted-foreground">{assignmentSummary.pendingMessage}</p>
           {/if}
         </div>
-        <button class="btn-secondary" type="button" on:click={closeAssignments}>{$t('Common.Close', 'Close')}</button>
+        <Button onclick={closeAssignments}>{$t('Common.Close', 'Close')}</Button>
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto p-4">
         <div class="grid gap-3 border border-border bg-muted p-3 lg:grid-cols-[minmax(220px,1fr)_220px_auto]">
-          <label>
-            <span class="field-label">{$t('Preview.FloorType', 'Floor type')}</span>
-            <select class="field" bind:value={newAssignmentFloorTypeName} disabled={busy || assignmentRows.length === 0}>
+          <label class="flex flex-col gap-1">
+            <span class="text-small font-medium text-muted-foreground">{$t('Preview.FloorType', 'Floor type')}</span>
+            <Select bind:value={newAssignmentFloorTypeName} disabled={busy || assignmentRows.length === 0}>
               {#each assignmentRows as row}
                 <option value={row.floorTypeName}>{row.floorTypeName}</option>
               {/each}
-            </select>
+            </Select>
           </label>
-          <label>
-            <span class="field-label">{$t('Preview.Category', 'Category')}</span>
-            <select class="field" bind:value={newAssignmentCategory} disabled={busy || previewState.supportedCategories.length === 0}>
+          <label class="flex flex-col gap-1">
+            <span class="text-small font-medium text-muted-foreground">{$t('Preview.Category', 'Category')}</span>
+            <Select bind:value={newAssignmentCategory} disabled={busy || previewState.supportedCategories.length === 0}>
               {#each previewState.supportedCategories as category}
                 <option value={category}>{category}</option>
               {/each}
-            </select>
+            </Select>
           </label>
-          <button
-            class="btn-primary self-end"
-            type="button"
-            on:click={assignNewAssignment}
+          <Button
+            variant="primary"
+            icon="plus"
+            class="self-end"
+            onclick={assignNewAssignment}
             disabled={busy || !newAssignmentFloorTypeName || !newAssignmentCategory}
           >
             {$t('Preview.AddAssignment', 'Add assignment')}
-          </button>
+          </Button>
         </div>
 
         <div class="mt-4 flex flex-wrap items-end justify-between gap-3">
           <label class="min-w-[260px] flex-1">
-            <span class="field-label">{$t('Preview.SearchAssignments', 'Search assignments')}</span>
-            <input class="field" bind:value={assignmentSearch} />
+            <span class="text-small font-medium text-muted-foreground">{$t('Preview.SearchAssignments', 'Search assignments')}</span>
+            <Input bind:value={assignmentSearch}/>
           </label>
           <div class="text-sm text-muted-foreground">
             {formatNumber(filteredAssignmentRows.length)} / {formatNumber(assignmentRows.length)}
@@ -98,21 +100,22 @@
                       <strong>{row.floorTypeName}</strong>
                     </td>
                     <td>
-                      <select
-                        class="field compact-field"
+                      <Select
+                        class="w-[8.5rem]"
                         value={row.category}
+                        aria-label={`${$t('Preview.Category', 'Category')}: ${row.floorTypeName}`}
                         disabled={busy || previewState.supportedCategories.length === 0}
-                        on:change={(event) => assignFloorTypes([row.floorTypeName], event.currentTarget.value)}
+                        onchange={(event) => assignFloorTypes([row.floorTypeName], event.currentTarget.value)}
                       >
                         {#each categoryOptions(row.category) as category}
                           <option value={category}>{category}</option>
                         {/each}
-                      </select>
+                      </Select>
                     </td>
                     <td>
-                      <button class="btn-small" type="button" on:click={() => clearFloorTypes([row.floorTypeName])} disabled={busy || !row.usesOverride}>
+                      <Button size="sm" onclick={() => clearFloorTypes([row.floorTypeName])} disabled={busy || !row.usesOverride}>
                         {$t('Preview.ClearOverride', 'Clear')}
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 {/each}

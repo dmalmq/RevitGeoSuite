@@ -1,7 +1,8 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
 <script lang="ts">
   import type { ExporterInitialStateResponse, ExporterSettingsPayload } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
+  import { Checkbox, Input, Select } from '$lib/kit'
 
   export let crsSearch: any
   export let epsgError: any
@@ -22,16 +23,16 @@
     <details class="sub-disclosure" open>
       <summary>{$t('Exporter.Coordinates', 'Coordinates')}</summary>
       <div class="mt-3 grid gap-3 md:grid-cols-2">
-        <label>
-          <span class="field-label">{$t('Exporter.Coordinates', 'Coordinates')}</span>
-          <select class="field" bind:value={settings.coordinateMode}>
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.Coordinates', 'Coordinates')}</span>
+          <Select bind:value={settings.coordinateMode}>
             <option value="shared">{$t('Exporter.CoordinateMode.Shared', 'Shared coordinates')}</option>
             <option value="convert">{$t('Exporter.CoordinateMode.Convert', 'Convert to target CRS')}</option>
-          </select>
+          </Select>
         </label>
-        <label>
-          <span class="field-label">{$t('Exporter.TargetEpsg', 'Target EPSG')}</span>
-          <input class="field" class:field-error={epsgError} type="number" min="1" bind:value={settings.targetEpsg} list="crs-presets" />
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.TargetEpsg', 'Target EPSG')}</span>
+          <Input invalid={!!epsgError} type="number" min="1" bind:value={settings.targetEpsg} list="crs-presets"/>
         </label>
       </div>
       <datalist id="crs-presets">
@@ -39,10 +40,10 @@
           <option value={preset.epsg}>{preset.label}</option>
         {/each}
       </datalist>
-      <input class="field mt-2" bind:value={crsSearch} placeholder={$t('Exporter.SearchCrs', 'Search CRS presets...')} on:change={(event) => {
+      <Input class="mt-2" bind:value={crsSearch} placeholder={$t('Exporter.SearchCrs', 'Search CRS presets...')} onchange={(event) => {
         const match = filteredCrsPresets.find(p => p.label.toLowerCase() === event.currentTarget.value.toLowerCase())
         if (match) settings = { ...settings, targetEpsg: match.epsg }
-      }} />
+      }}/>
       {#if epsgError}
         <p class="mt-1 text-xs text-red-600 dark:text-red-400">{epsgError}</p>
       {/if}
@@ -58,32 +59,32 @@
     <details class="sub-disclosure">
       <summary>{$t('Exporter.OutputOptions', 'Output options')}</summary>
       <div class="mt-3 grid gap-2 md:grid-cols-2">
-        <label class="check-row"><input type="checkbox" bind:checked={settings.generateDiagnosticsReport} />{$t('Exporter.Diagnostics', 'Diagnostics report')}</label>
-        <label class="check-row"><input type="checkbox" bind:checked={settings.generatePackageOutput} />{$t('Exporter.Package', 'Package output')}</label>
-        <label class="check-row" class:opacity-50={!settings.generatePackageOutput}><input type="checkbox" bind:checked={settings.includePackageLegend} disabled={!settings.generatePackageOutput} />{$t('Exporter.PackageLegend', 'Package legend')}</label>
-        <label class="check-row"><input type="checkbox" bind:checked={settings.validateAfterWrite} />{$t('Exporter.ValidateAfterWrite', 'Validate after write')}</label>
-        <label class="check-row"><input type="checkbox" bind:checked={settings.generateQgisArtifacts} />{$t('Exporter.QgisArtifacts', 'Generate QGIS artifacts')}</label>
+        <Checkbox bind:checked={settings.generateDiagnosticsReport} label={$t('Exporter.Diagnostics', 'Diagnostics report')} />
+        <Checkbox bind:checked={settings.generatePackageOutput} label={$t('Exporter.Package', 'Package output')} />
+        <Checkbox bind:checked={settings.includePackageLegend} disabled={!settings.generatePackageOutput} label={$t('Exporter.PackageLegend', 'Package legend')} />
+        <Checkbox bind:checked={settings.validateAfterWrite} label={$t('Exporter.ValidateAfterWrite', 'Validate after write')} />
+        <Checkbox bind:checked={settings.generateQgisArtifacts} label={$t('Exporter.QgisArtifacts', 'Generate QGIS artifacts')} />
       </div>
     </details>
 
     <details class="sub-disclosure">
       <summary>{$t('Exporter.Packaging', 'Packaging')}</summary>
       <div class="mt-3 grid gap-3 md:grid-cols-2">
-        <label>
-          <span class="field-label">{$t('Exporter.Packaging.PerFeature', 'Packaging')}</span>
-          <select class="field" bind:value={settings.packagingMode}>
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.Packaging.PerFeature', 'Packaging')}</span>
+          <Select bind:value={settings.packagingMode}>
             <option value="perFeature">{$t('Exporter.Packaging.PerFeature', 'Per view / feature files')}</option>
             <option value="perView">{$t('Exporter.Packaging.PerView', 'Per view GeoPackage')}</option>
             <option value="perLevel">{$t('Exporter.Packaging.PerLevel', 'Per level GeoPackage')}</option>
             <option value="perBuilding">{$t('Exporter.Packaging.PerBuilding', 'Per building GeoPackage')}</option>
-          </select>
+          </Select>
         </label>
-        <label>
-          <span class="field-label">{$t('Exporter.Incremental.All', 'Incremental export')}</span>
-          <select class="field" bind:value={settings.incrementalExportMode}>
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.Incremental.All', 'Incremental export')}</span>
+          <Select bind:value={settings.incrementalExportMode}>
             <option value="all">{$t('Exporter.Incremental.All', 'All selected views')}</option>
             <option value="changed">{$t('Exporter.Incremental.Changed', 'Changed views only')}</option>
-          </select>
+          </Select>
         </label>
       </div>
     </details>
@@ -91,40 +92,40 @@
     <details class="sub-disclosure">
       <summary>{$t('Exporter.DataSources', 'Data sources')}</summary>
       <div class="mt-3 grid gap-3 md:grid-cols-2">
-        <label>
-          <span class="field-label">{$t('Exporter.UnitGeometry', 'Unit geometry')}</span>
-          <select class="field" bind:value={settings.unitGeometrySource}>
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.UnitGeometry', 'Unit geometry')}</span>
+          <Select bind:value={settings.unitGeometrySource}>
             <option value="floors">{$t('Exporter.Floors', 'Floors')}</option>
             <option value="rooms">{$t('Exporter.Rooms', 'Rooms')}</option>
-          </select>
+          </Select>
         </label>
-        <label>
-          <span class="field-label">{$t('Exporter.UnitAttributes', 'Unit attributes')}</span>
-          <select class="field" bind:value={settings.unitAttributeSource}>
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.UnitAttributes', 'Unit attributes')}</span>
+          <Select bind:value={settings.unitAttributeSource}>
             <option value="floors">{$t('Exporter.Floors', 'Floors')}</option>
             <option value="rooms">{$t('Exporter.Rooms', 'Rooms')}</option>
             <option value="hybrid">{$t('Exporter.Hybrid', 'Hybrid')}</option>
-          </select>
+          </Select>
         </label>
-        <label>
-          <span class="field-label">{$t('Exporter.RoomCategoryParameter', 'Room category parameter')}</span>
-          <input class="field" bind:value={settings.roomCategoryParameterName} />
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.RoomCategoryParameter', 'Room category parameter')}</span>
+          <Input bind:value={settings.roomCategoryParameterName}/>
         </label>
-        <label>
-          <span class="field-label">{$t('Exporter.Schema', 'Schema')}</span>
-          <select class="field" bind:value={settings.activeSchemaProfileName}>
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.Schema', 'Schema')}</span>
+          <Select bind:value={settings.activeSchemaProfileName}>
             {#each state.schemaProfiles as profile}
               <option value={profile.name}>{profile.name}</option>
             {/each}
-          </select>
+          </Select>
         </label>
-        <label>
-          <span class="field-label">{$t('Exporter.Policy', 'Validation policy')}</span>
-          <select class="field" bind:value={settings.activeValidationPolicyProfileName}>
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.Policy', 'Validation policy')}</span>
+          <Select bind:value={settings.activeValidationPolicyProfileName}>
             {#each state.validationPolicies as policy}
               <option value={policy.name}>{policy.name}</option>
             {/each}
-          </select>
+          </Select>
         </label>
       </div>
     </details>
@@ -158,14 +159,15 @@
       <details class="sub-disclosure">
         <summary>{$t('Exporter.LinkedModels', 'Linked models')} <span class="badge">({state.links.length} {$t('Exporter.Available', 'available')})</span></summary>
         <div class="mt-3">
-          <label class="check-row"><input type="checkbox" bind:checked={settings.includeLinkedModels} />{$t('Exporter.IncludeLinkedModels', 'Include linked models')}</label>
+          <Checkbox bind:checked={settings.includeLinkedModels} label={$t('Exporter.IncludeLinkedModels', 'Include linked models')} />
           {#if settings.includeLinkedModels}
             <div class="mt-2 grid gap-2 md:grid-cols-2">
               {#each state.links as link}
-                <label class="check-row">
-                  <input type="checkbox" checked={selectedLinkIds.has(link.id)} on:change={(event) => toggleLink(link.id, event.currentTarget.checked)} />
-                  <span>{link.displayName}</span>
-                </label>
+                <Checkbox
+                  checked={selectedLinkIds.has(link.id)}
+                  onchange={(event) => toggleLink(link.id, event.currentTarget.checked)}
+                  label={link.displayName}
+                />
               {/each}
             </div>
           {/if}
@@ -176,21 +178,21 @@
     <details class="sub-disclosure">
       <summary>{$t('Exporter.Geometry', 'Geometry')}</summary>
       <div class="mt-3 grid gap-2 md:grid-cols-2">
-        <label class="check-row"><input type="checkbox" bind:checked={settings.simplifyStairUnits} />{$t('Exporter.SimplifyStairs', 'Simplify stair units')}</label>
-        <label class="check-row"><input type="checkbox" bind:checked={settings.simplifyEscalatorUnits} />{$t('Exporter.SimplifyEscalators', 'Simplify escalator units')}</label>
-        <label class="check-row"><input type="checkbox" bind:checked={settings.openOutputFolder} />{$t('Exporter.OpenOutput', 'Open output folder')}</label>
-        <label class="check-row"><input type="checkbox" bind:checked={settings.launchQgis} />{$t('Exporter.LaunchQgis', 'Launch QGIS')}</label>
-        <label class="check-row"><input type="checkbox" bind:checked={sendToCesiumViewer} />{$t('Exporter.SendToCesium', 'Send to Cesium viewer')}</label>
-        <label class="check-row md:col-span-2"><input type="checkbox" bind:checked={settings.use3DSectionBoxExport} />{$t('Exporter.SectionBox', 'Use 3D section box export')}</label>
-        <label>
-          <span class="field-label">{$t('Exporter.BelowFloor', 'Below floor (m)')}</span>
-          <input class="field" type="number" step="0.1" bind:value={settings.sectionBoxBelowFloorMeters} disabled={!settings.use3DSectionBoxExport} />
+        <Checkbox bind:checked={settings.simplifyStairUnits} label={$t('Exporter.SimplifyStairs', 'Simplify stair units')} />
+        <Checkbox bind:checked={settings.simplifyEscalatorUnits} label={$t('Exporter.SimplifyEscalators', 'Simplify escalator units')} />
+        <Checkbox bind:checked={settings.openOutputFolder} label={$t('Exporter.OpenOutput', 'Open output folder')} />
+        <Checkbox bind:checked={settings.launchQgis} label={$t('Exporter.LaunchQgis', 'Launch QGIS')} />
+        <Checkbox bind:checked={sendToCesiumViewer} label={$t('Exporter.SendToCesium', 'Send to Cesium viewer')} />
+        <Checkbox class="md:col-span-2" bind:checked={settings.use3DSectionBoxExport} label={$t('Exporter.SectionBox', 'Use 3D section box export')} />
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.BelowFloor', 'Below floor (m)')}</span>
+          <Input type="number" step="0.1" bind:value={settings.sectionBoxBelowFloorMeters} disabled={!settings.use3DSectionBoxExport}/>
         </label>
-        <label>
-          <span class="field-label">{$t('Exporter.AboveFloor', 'Above floor (m)')}</span>
-          <input class="field" type="number" step="0.1" bind:value={settings.sectionBoxAboveFloorMeters} disabled={!settings.use3DSectionBoxExport} />
+        <label class="flex flex-col gap-1">
+          <span class="text-small font-medium text-muted-foreground">{$t('Exporter.AboveFloor', 'Above floor (m)')}</span>
+          <Input type="number" step="0.1" bind:value={settings.sectionBoxAboveFloorMeters} disabled={!settings.use3DSectionBoxExport}/>
         </label>
-        <label class="check-row md:col-span-2"><input type="checkbox" bind:checked={settings.keep3DTempViewsForDebug} disabled={!settings.use3DSectionBoxExport} />{$t('Exporter.KeepTempViews', 'Keep temporary 3D views')}</label>
+        <Checkbox class="md:col-span-2" bind:checked={settings.keep3DTempViewsForDebug} disabled={!settings.use3DSectionBoxExport} label={$t('Exporter.KeepTempViews', 'Keep temporary 3D views')} />
       </div>
     </details>
   </div>

@@ -3,6 +3,7 @@
   import { request, on } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
   import { i18n, t } from '$lib/i18n'
+  import { Button } from '$lib/kit'
   import type {
     DialogOpenFolderResponse,
     ExecutionActionResponse,
@@ -143,7 +144,6 @@
       window.clearInterval(timer)
     }
   })
-
 
   function cloneSettings(value: ExporterSettingsPayload): ExporterSettingsPayload {
     return {
@@ -778,14 +778,14 @@
                 ⚠ {readinessLabel}
               {/if}
             </button>
-            <button class="btn-secondary" type="button" on:click={openAssignments} disabled={busy}>
+            <Button onclick={openAssignments} disabled={busy}>
               {$t('Preview.CategoryAssignments', 'Category assignments')}
               {#if assignmentSummary}
                 ({formatNumber(assignmentSummary.floorTypeCount)})
               {/if}
-            </button>
-            <button class="btn-secondary" on:click={() => step = 'views'} disabled={busy}>← {$t('Common.Back', 'Back')}</button>
-            <button class="btn-primary" on:click={startExport} disabled={busy}>{$t('Exporter.Export', 'Export')} →</button>
+            </Button>
+            <Button icon="arrow-left" onclick={() => (step = 'views')} disabled={busy}>{$t('Common.Back', 'Back')}</Button>
+            <Button variant="primary" iconAfter="arrow-right" onclick={startExport} disabled={busy}>{$t('Exporter.Export', 'Export')}</Button>
           </div>
         {/if}
       </div>
@@ -838,8 +838,8 @@
             <div class="flex flex-col gap-2 pb-5">
               <p class="text-xs text-muted-foreground">{exportSummary}</p>
               <div class="flex justify-end gap-3">
-                <button class="btn-link" on:click={closeWindow}>{$t('Common.Cancel', 'Cancel')}</button>
-                <button class="btn-primary" on:click={preparePreview} disabled={busy}>{$t('Exporter.Preview', 'Preview')} →</button>
+                <Button variant="ghost" onclick={closeWindow}>{$t('Common.Cancel', 'Cancel')}</Button>
+                <Button variant="primary" iconAfter="arrow-right" onclick={preparePreview} disabled={busy}>{$t('Exporter.Preview', 'Preview')}</Button>
               </div>
             </div>
           </section>
@@ -1096,13 +1096,6 @@
       outline: none;
     }
 
-    .compact-field {
-      width: 8.5rem;
-      min-height: 2rem;
-      padding-block: 0.32rem;
-      font-size: 0.78rem;
-    }
-
     .metric {
       border: 1px solid hsl(var(--border));
       background: hsl(var(--card));
@@ -1233,13 +1226,6 @@
   }
 
   .floor-plan-export :global {
-    .field.compact {
-      width: 100%;
-      min-height: 1.75rem;
-      padding: 0.25rem 0.5rem;
-      font-size: 0.78rem;
-      border-radius: 4px;
-    }
 
     .chip-group {
       display: flex;
@@ -1501,16 +1487,6 @@
       align-items: center;
     }
 
-    .details-assign .field.compact {
-      flex: 1;
-    }
-
-    .btn-sm {
-      padding: 0.3rem 0.75rem;
-      font-size: 0.75rem;
-      min-height: auto;
-    }
-
     .views-panel.has-error {
       border-color: hsl(var(--destructive));
     }
@@ -1588,27 +1564,5 @@
     }
   }
 
-  .floor-plan-export :global {
-    .btn-link {
-      background: none;
-      border: none;
-      color: hsl(var(--muted-foreground));
-      font-size: 0.82rem;
-      cursor: pointer;
-      padding: 0.4rem 0.6rem;
-      text-decoration: none;
-    }
-
-    .btn-link:hover {
-      color: hsl(var(--foreground));
-      text-decoration: underline;
-    }
-  }
-
-  .floor-plan-export :global {
-    .field.field-error {
-      border-color: hsl(var(--destructive));
-    }
-  }
 
 </style>

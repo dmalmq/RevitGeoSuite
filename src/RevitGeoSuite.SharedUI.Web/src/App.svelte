@@ -11,6 +11,8 @@
   import Header from '$lib/ui/Header.svelte'
   import Rail from '$lib/ui/Rail.svelte'
   import StatusFooter from '$lib/ui/StatusFooter.svelte'
+  import { Toaster } from '$lib/kit'
+  import { t } from '$lib/i18n'
   import WindowResizeGrips from '$lib/ui/WindowResizeGrips.svelte'
   import GeoreferenceRoute from './routes/georeference/GeoreferenceRoute.svelte'
   import ImportRoute from './routes/import/ImportRoute.svelte'
@@ -105,4 +107,5 @@
 
   <StatusFooter {documentName} {crs} {meshCode} {status} />
   <WindowResizeGrips />
+  <Toaster closeLabel={$t('Common.Dismiss', 'Dismiss')} />
 </div>

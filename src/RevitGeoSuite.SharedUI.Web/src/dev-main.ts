@@ -5,6 +5,16 @@ if (!hasHost) {
   const { installMockBridge } = await import('$lib/bridge/mock/install')
   installMockBridge()
 }
-await import('./main')
+
+// #/kit (or ?kit) shows the component kit gallery instead of the app.
+if (window.location.hash === '#/kit' || new URLSearchParams(window.location.search).has('kit')) {
+  await import('./app.css')
+  await import('$lib/ui/theme')
+  const { mount } = await import('svelte')
+  const { default: KitGallery } = await import('./dev/KitGallery.svelte')
+  mount(KitGallery, { target: document.getElementById('app')! })
+} else {
+  await import('./main')
+}
 
 export {}

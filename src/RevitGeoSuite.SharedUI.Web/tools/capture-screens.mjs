@@ -15,7 +15,7 @@ import { createServer } from 'vite'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const ROUTES = ['/georeference', '/import', '/export', '/export/geopackage']
+const ROUTES = ['/georeference', '/import', '/export', '/export/geopackage', '/kit']
 const PRIMARY = 'button.bg-teal-600:visible:enabled, button.bg-primary:visible:enabled, button.btn-primary:visible:enabled'
 const CLICKABLE = 'main button:visible, aside button:visible, [class*="flex-1"] button:visible'
 
@@ -60,7 +60,8 @@ async function capture(outDir, quick) {
     for (const route of ROUTES) {
       const name = `${route.slice(1).replace(/\//g, '-')}_${v.theme}_${v.language === 'english' ? 'en' : 'ja'}_${v.scenario}_${v.width}`
       const load = async () => {
-        await page.goto(`${base}#${route}`)
+        // The kit gallery is its own page in dev-main.ts, so it needs a full load, not a hash change.
+        await page.goto(route === '/kit' ? `${base}?kit#${route}` : `${base}#${route}`)
         await page.waitForTimeout(800)
       }
       const shoot = async (suffix) => {

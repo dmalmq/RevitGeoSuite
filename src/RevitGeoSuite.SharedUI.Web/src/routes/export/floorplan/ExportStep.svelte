@@ -1,8 +1,9 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
 <script lang="ts">
   import type { ExecutionProgressPayload, ExportResultInitialStateResponse } from '$lib/bridge/contracts.generated'
   import type { ExportStatus, WizardStep } from './types'
   import { t } from '$lib/i18n'
+  import { Button, Card } from '$lib/kit'
 
   export let cesiumPushStatus: any
   export let closeWindow: (...args: any[]) => any
@@ -53,8 +54,8 @@
           <p class="mt-1 max-w-[900px] break-all text-xs text-muted-foreground">{exportResult.outputDirectory}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <button class="btn-secondary" on:click={openOutputFolder} disabled={!exportResult.canOpenOutputDirectory}>{$t('Execution.OpenFolder', 'Open folder')}</button>
-          <button class="btn-primary" on:click={closeWindow}>{$t('Execution.Close', 'Done')}</button>
+          <Button onclick={openOutputFolder} disabled={!exportResult.canOpenOutputDirectory}>{$t('Execution.OpenFolder', 'Open folder')}</Button>
+          <Button variant="primary" onclick={closeWindow}>{$t('Execution.Close', 'Done')}</Button>
         </div>
       </div>
 
@@ -82,27 +83,26 @@
       {#if exportResult.warnings.length > 0}
         <div class="flex flex-wrap items-center justify-between gap-3 border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
           <span>{formatNumber(exportResult.warnings.length)} {$t('Execution.Warnings', 'warnings')} {$t('Execution.CompletedWithWarnings', 'were reported during export.')}</span>
-          <button
-            class="btn-secondary"
-            type="button"
+          <Button
             aria-expanded={showExportWarnings}
             aria-controls="export-warning-list"
-            on:click={() => showExportWarnings = !showExportWarnings}
+            onclick={() => (showExportWarnings = !showExportWarnings)}
           >
             {showExportWarnings
               ? $t('Execution.HideWarnings', 'Hide warnings')
               : `${$t('Execution.ShowWarnings', 'Show warnings')} (${formatNumber(exportResult.warnings.length)})`}
-          </button>
+          </Button>
         </div>
 
         {#if showExportWarnings}
-          <div id="export-warning-list" class="option-section">
-            <h3>{$t('Execution.Warnings', 'Warnings')}</h3>
-            <div class="warning-list">
-              {#each exportResult.warnings as warning}
-                <p>{warning}</p>
-              {/each}
-            </div>
+          <div id="export-warning-list">
+            <Card title={$t('Execution.Warnings', 'Warnings')}>
+              <div class="warning-list">
+                {#each exportResult.warnings as warning}
+                  <p>{warning}</p>
+                {/each}
+              </div>
+            </Card>
           </div>
         {/if}
       {/if}
@@ -112,8 +112,8 @@
       <h3 class="text-lg font-semibold">{$t('Execution.ExportFailed', 'Export failed')}</h3>
       <p class="mt-2 text-sm">{exportError || 'Export failed.'}</p>
       <div class="mt-4 flex gap-2">
-        <button class="btn-secondary" on:click={() => step = 'preview'}>{$t('Common.Back', 'Back')}</button>
-        <button class="btn-primary" on:click={startExport}>{$t('Exporter.Export', 'Export')}</button>
+        <Button icon="arrow-left" onclick={() => (step = 'preview')}>{$t('Common.Back', 'Back')}</Button>
+        <Button variant="primary" onclick={startExport}>{$t('Exporter.Export', 'Export')}</Button>
       </div>
     </div>
   {/if}

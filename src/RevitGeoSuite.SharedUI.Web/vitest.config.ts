@@ -1,7 +1,10 @@
 import { defineConfig } from 'vitest/config'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { resolve } from 'path'
 
 export default defineConfig({
+  // The kit tests mount components, so .svelte files compile for the browser build of Svelte.
+  plugins: [svelte()],
   test: {
     globals: true,
     environment: 'jsdom',
@@ -12,11 +15,8 @@ export default defineConfig({
   server: {
     fs: { allow: [resolve('.'), resolve('../RevitGeoSuite.SharedUI/Localization')] }
   },
-  // The mock bridge tests read UiLocalizer.cs from the sibling .NET project.
-  server: {
-    fs: { allow: [resolve('.'), resolve('../RevitGeoSuite.SharedUI/Localization')] }
-  },
   resolve: {
+    conditions: ['browser'],
     alias: {
       $lib: resolve('./src/lib')
     }
