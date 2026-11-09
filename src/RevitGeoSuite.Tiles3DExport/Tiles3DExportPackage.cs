@@ -22,6 +22,9 @@ public sealed class Tiles3DExportPackage
 
     public string LevelManifestFileName { get; set; } = "levels.json";
 
+    /// <summary>Per-element hashes and fingerprints; see <see cref="Tiles3DElementIndexWriter"/>.</summary>
+    public string ElementIndexFileName { get; set; } = "elements.json";
+
     public bool UsedPreciseCrsProjection { get; set; }
 
     public double GeoidHeightOffsetMeters { get; set; }

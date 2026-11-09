@@ -115,6 +115,8 @@ public sealed class Tiles3DGeometryExtractor
         List<Tiles3DMeshPrimitive> meshes,
         ICollection<string>? warnings)
     {
+        int firstLinkedMesh = meshes.Count;
+        string linkInstanceUniqueId = string.Empty;
         try
         {
             if (linkOption.LinkInstanceId <= 0)
@@ -130,6 +132,7 @@ public sealed class Tiles3DGeometryExtractor
                 return;
             }
 
+            linkInstanceUniqueId = linkInstance.UniqueId ?? string.Empty;
             Document? linkDocument = linkInstance.GetLinkDocument();
             if (linkDocument is null)
             {
@@ -166,6 +169,15 @@ public sealed class Tiles3DGeometryExtractor
         catch (Exception ex)
         {
             warnings?.Add($"Skipped linked model '{FormatLinkTitle(linkOption)}': {ex.Message}");
+        }
+        finally
+        {
+            // Two instances of one link share document title and element UniqueIds; the
+            // instance id tells their elements apart.
+            for (int i = firstLinkedMesh; i < meshes.Count; i++)
+            {
+                meshes[i].Metadata.SourceLinkInstanceUniqueId = linkInstanceUniqueId;
+            }
         }
     }
 

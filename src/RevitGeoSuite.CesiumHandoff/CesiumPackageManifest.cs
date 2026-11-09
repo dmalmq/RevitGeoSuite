@@ -136,6 +136,12 @@ public sealed class CesiumPackageTiles
     public string Tileset { get; set; } = string.Empty;
 
     public string? Levels { get; set; }
+
+    /// <summary>
+    /// Per-element geometry hashes (<c>tiles/elements.json</c>), for change lists. Not part of the
+    /// viewer push payload or <c>contentHash</c>; it is derived from the same geometry as the GLB.
+    /// </summary>
+    public string? Elements { get; set; }
 }
 
 public sealed class CesiumPackageGis

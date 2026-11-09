@@ -99,6 +99,7 @@ public sealed class CesiumExportStateHandler : IRpcHandler
                 HasToken = !string.IsNullOrEmpty(viewerSettings.Token),
                 FirstRun = profiles.Count == 0,
                 LastHeightDatum = CesiumHeightDatums.Normalize(tilesState?.LastHeightDatum),
+                LastKeepVersions = tilesState?.LastKeepVersions ?? false,
             };
         });
     }
@@ -138,7 +139,9 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         string jobId = jobs.Start(async (ct, progress) =>
         {
             var builder = new CesiumPackageLayoutBuilder();
-            CesiumPackageLayout stagingLayout = builder.CreateStagingLayout(request.OutputFolder);
+            CesiumPackageLayout stagingLayout = request.KeepVersions
+                ? CesiumStationFolder.CreateStagingLayout(request.OutputFolder)
+                : builder.CreateStagingLayout(request.OutputFolder);
             CesiumPackageLayout layout = stagingLayout;
             try
             {
@@ -160,7 +163,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
 
             progress.Report(new JobProgress { Phase = "manifest", Percent = 85, Message = "Writing package manifest…" });
 
-                builder.WriteManifest(layout, new CesiumPackageBuildInputs
+                CesiumPackageManifest manifest = builder.WriteManifest(layout, new CesiumPackageBuildInputs
                 {
                 BuildingId = CesiumBuildingIdentity.CreateId(gis.ProjectKey, gis.BuildingName),
                 BuildingName = gis.BuildingName,
@@ -184,7 +187,9 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 });
 
                 string stagedRoot = layout.RootDirectory;
-                layout = builder.PublishLayout(layout, request.OutputFolder);
+                layout = request.KeepVersions
+                    ? CesiumStationFolder.Publish(layout, request.OutputFolder, manifest)
+                    : builder.PublishLayout(layout, request.OutputFolder);
                 tiles.TilesetPath = RebasePackagePath(tiles.TilesetPath, stagedRoot, layout.RootDirectory);
                 gis.ArtifactPaths = gis.ArtifactPaths
                     .Select(path => RebasePackagePath(path, stagedRoot, layout.RootDirectory))
@@ -309,6 +314,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         warnings.AddRange(Tiles3DExportSupport.ScopeWarnings(request.Scope));
         warnings.AddRange(prep.Warnings);
         exportResult.UpdatedState.LastHeightDatum = CesiumHeightDatums.Normalize(request.HeightDatum);
+        exportResult.UpdatedState.LastKeepVersions = request.KeepVersions;
         string? modelId = new ModelIdentityService().GetOrCreate(document, warnings);
 
         Tiles3DExportReferenceContext context = prep.Package.ReferenceContext;

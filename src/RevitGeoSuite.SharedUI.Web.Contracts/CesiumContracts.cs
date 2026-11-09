@@ -24,6 +24,9 @@ public sealed class CesiumExportStateResponse
 
     /// <summary>The height datum chosen on the last export of this model: "TP" or "unknown".</summary>
     public string LastHeightDatum { get; set; } = "unknown";
+
+    /// <summary>Whether the last export of this model wrote a new version into a station folder.</summary>
+    public bool LastKeepVersions { get; set; }
 }
 
 [TsExport]
@@ -50,6 +53,12 @@ public sealed class CesiumExportRunRequest
     /// the manifest so Kanizu knows whether it may take floor heights from Revit.
     /// </summary>
     public string HeightDatum { get; set; } = "unknown";
+
+    /// <summary>
+    /// Treat <see cref="OutputFolder"/> as a station folder: write a new version under
+    /// <c>revit/&lt;model&gt;/</c> instead of replacing the package in place. Kanizu reads these.
+    /// </summary>
+    public bool KeepVersions { get; set; }
 
     public string? SelectedViewUniqueId { get; set; }
 

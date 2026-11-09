@@ -120,6 +120,7 @@
   let cesiumLod = $state('fine')
   let cesiumPreciseCrs = $state(true)
   let cesiumHeightDatum = $state('unknown')
+  let cesiumKeepVersions = $state(false)
   let cesiumRunning = $state(false)
   let cesiumProgress = $state<any>(null)
   let cesiumResult = $state<CesiumExportRunResponse | null>(null)
@@ -136,6 +137,7 @@
       if (!cesiumOutputFolder) cesiumOutputFolder = state.lastOutputFolder
       cesiumViewerUrl = state.viewerUrl
       cesiumHeightDatum = state.lastHeightDatum === 'TP' ? 'TP' : 'unknown'
+      cesiumKeepVersions = state.lastKeepVersions
     } catch (err: any) {
       cesiumError = err?.message ?? 'Failed to load Cesium export state'
     }
@@ -193,6 +195,7 @@
       lod: cesiumLod,
       preciseCrs: cesiumPreciseCrs,
       heightDatum: cesiumHeightDatum,
+      keepVersions: cesiumKeepVersions,
       selectedLinkUniqueIds: []
     }, {
       onProgress: (p) => { cesiumProgress = p }
@@ -2317,6 +2320,14 @@
             placeholder="http://localhost:3001"
           />
         </div>
+
+        <label class="flex cursor-pointer items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+          <input type="checkbox" bind:checked={cesiumKeepVersions} disabled={cesiumRunning} class="mt-0.5 h-4 w-4" />
+          <span>
+            {$strings['Export.Cesium.KeepVersions'] ?? 'Station folder for Kanizu: add a new version each time'}
+            <span class="block text-xs text-neutral-500 dark:text-neutral-400">{$strings['Export.Cesium.KeepVersions.Hint'] ?? 'Writes to revit/<model>/<time>/ inside the output folder and keeps earlier exports. Kanizu cleans up old versions.'}</span>
+          </span>
+        </label>
 
         <label class="flex cursor-pointer items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
           <input type="checkbox" bind:checked={cesiumPush} disabled={cesiumRunning} class="h-4 w-4" />
