@@ -2,13 +2,13 @@
   import { onMount } from 'svelte'
   import { request } from '$lib/bridge/rpc'
   import type { GeoreferenceCurrentStateResponse } from '$lib/bridge/contracts.generated'
-  import type { MeshOverlayResponse, ReadinessStatusResponse } from '$lib/bridge/contracts.generated'
+  import type { MeshOverlayResponse } from '$lib/bridge/contracts.generated'
   import { PROJECT_CONTEXT_CHANGED_EVENT } from '$lib/projectContext'
   // Importing these modules triggers their bottom-of-file side effects: theme applies the initial
   // theme/listener, and i18n fetches localization.getAll.
   import '$lib/ui/theme'
   import '$lib/i18n'
-  import { Sidebar, StatusBar, TitleBar, entryFor, type ReadinessStatus } from '$lib/shell'
+  import { Sidebar, StatusBar, TitleBar, entryFor, refreshReadiness } from '$lib/shell'
   import { Toaster } from '$lib/kit'
   import { t } from '$lib/i18n'
   import WindowResizeGrips from '$lib/ui/WindowResizeGrips.svelte'
@@ -28,10 +28,12 @@
   let documentName = $state('')
   let crs = $state('')
   let meshCode = $state('')
-  let status = $state<ReadinessStatus>('unknown')
 
   onMount(() => {
-    const onHashChange = () => { currentRoute = routeFromHash() }
+    const onHashChange = () => {
+      currentRoute = routeFromHash()
+      void refreshReadiness()
+    }
     const onProjectContextChanged = () => { void refreshStatusBar() }
     window.addEventListener('hashchange', onHashChange)
     window.addEventListener(PROJECT_CONTEXT_CHANGED_EVENT, onProjectContextChanged)
@@ -42,13 +44,13 @@
     }
   })
 
-  // Pulls the four status-bar values from the three RPCs that already expose them. Each fetch is
-  // independently guarded so a single failure doesn't blank the whole bar.
+  // Pulls the status-bar values from the RPCs that already expose them, and readiness for the
+  // pill, status line and sidebar marks. Each fetch is guarded so one failure doesn't blank the bar.
   async function refreshStatusBar() {
-    const [stateResult, meshResult, readinessResult] = await Promise.allSettled([
+    void refreshReadiness()
+    const [stateResult, meshResult] = await Promise.allSettled([
       request<GeoreferenceCurrentStateResponse>('georeference.getCurrentState', {}),
-      request('mesh.getOverlay', {}),
-      request('readiness.getStatus', {})
+      request('mesh.getOverlay', {})
     ])
 
     if (stateResult.status === 'fulfilled') {
@@ -60,13 +62,6 @@
     if (meshResult.status === 'fulfilled') {
       const m = (meshResult.value as MeshOverlayResponse | undefined)?.primaryMeshCode
       meshCode = m ?? ''
-    }
-
-    if (readinessResult.status === 'fulfilled') {
-      const raw = (readinessResult.value as ReadinessStatusResponse | undefined)?.exportReadiness?.status
-      if (raw === 'ready' || raw === 'blocked' || raw === 'needsattention') {
-        status = raw
-      }
     }
   }
 
@@ -106,7 +101,7 @@
     </div>
   </div>
 
-  <StatusBar {documentName} {crs} {meshCode} {status} />
+  <StatusBar {documentName} {crs} {meshCode} />
   <WindowResizeGrips />
   <Toaster closeLabel={$t('Common.Dismiss', 'Dismiss')} />
 </div>

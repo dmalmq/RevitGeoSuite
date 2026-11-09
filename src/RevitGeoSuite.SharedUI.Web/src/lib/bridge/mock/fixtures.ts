@@ -50,11 +50,38 @@ export function currentState(scenario: MockScenario): GeoreferenceCurrentStateRe
   }
 }
 
-const readiness: ReadinessStatusResponse = {
-  status: 'needsattention',
-  statusMessage: '',
-  findings: [{ severity: 'warning', code: 'true-north-unset', message: 'Angle to true north is 0. Set it before exporting 3D Tiles.' }],
-  exportReadiness: { status: 'needsattention', statusMessage: '', statusTitle: '', items: [] }
+// Readiness follows the scenario: a fresh model has no geo metadata yet (blocked); the existing
+// setup has two warnings. localStorage `mockReadiness=ready` clears them for clean captures.
+function readiness(scenario: MockScenario): ReadinessStatusResponse {
+  let ready = false
+  try {
+    ready = localStorage.getItem('mockReadiness') === 'ready'
+  } catch {
+    ready = false
+  }
+  if (ready) {
+    return { status: 'Ready', statusMessage: '', findings: [], exportReadiness: { status: 'ready', statusMessage: '', statusTitle: 'Ready', items: [] } }
+  }
+  if (scenario === 'fresh') {
+    return {
+      status: 'Blocked',
+      statusMessage: '',
+      findings: [
+        { severity: 'error', code: 'missing-info', message: 'Shared geo metadata is missing. Run Georeference Setup before relying on downstream mesh, import, or export workflows.' }
+      ],
+      exportReadiness: { status: 'blocked', statusMessage: '', statusTitle: 'Blocked', items: [] }
+    }
+  }
+  return {
+    status: 'Needs attention',
+    statusMessage: '',
+    findings: [
+      { severity: 'warning', code: 'unknown-confidence', message: 'Confidence is still Unknown. Record whether the georeference came from approximate map selection or verified coordinates.' },
+      { severity: 'warning', code: 'stale-mesh', message: 'Primary mesh code does not match the current canonical location state.' },
+      { severity: 'info', code: 'read-only-document', message: 'This Revit project is read-only.' }
+    ],
+    exportReadiness: { status: 'needsattention', statusMessage: '', statusTitle: 'Needs attention', items: [] }
+  }
 }
 
 const mesh: MeshOverlayResponse = { primaryMeshCode: '53394611', neighborMeshCodes: [], statusMessage: '' }
@@ -281,7 +308,7 @@ export function responses(scenario: MockScenario): Record<string, unknown | ((pa
     'georeference.apply': { success: true, message: 'Georeference applied to TokyoStation_Concourse.rvt.' },
     'plateau.areaLocation': (p: { areaCode?: string }) => ({ areaCode: p?.areaCode ?? '', latitude: 35.6938, longitude: 139.7034, zoom: 12 }),
     'mesh.getOverlay': mesh,
-    'readiness.getStatus': readiness,
+    'readiness.getStatus': () => readiness(scenario),
     'floorplan.getInitialState': floorPlanState,
     'floorplan.preparePreview': () => ({ ...previewState, language: mockLanguage() }),
     'floorplan.preview.getInitialState': () => ({ ...previewState, language: mockLanguage() }),

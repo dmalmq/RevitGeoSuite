@@ -1,6 +1,6 @@
 <!-- Part of GeoreferenceRoute.svelte. -->
 <script lang="ts">
-  import type { GeoreferenceCurrentStateResponse, ReadinessStatusResponse } from '$lib/bridge/contracts.generated'
+  import type { GeoreferenceCurrentStateResponse } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
   import { Banner, Button } from '$lib/kit'
 
@@ -9,20 +9,15 @@
     currentStateError: string | null
     currentStateLoading: boolean
     currentStep: string
-    findingTitle: (...args: any[]) => any
     hasUndoSnapshot: boolean
     overrideExistingSetup: boolean
-    readinessError: string | null
-    readinessStatus: ReadinessStatusResponse | null
     revertGeoreference: (...args: any[]) => any
     reverting: boolean
     treatAsExistingSetup: any
     undoSummary: string
   }
 
-  let { currentState, currentStateError, currentStateLoading, currentStep = $bindable(), findingTitle, hasUndoSnapshot, overrideExistingSetup = $bindable(), readinessError, readinessStatus, revertGeoreference, reverting, treatAsExistingSetup, undoSummary }: Props = $props()
-
-  const TONE = { error: 'danger', warning: 'warning' } as const
+  let { currentState, currentStateError, currentStateLoading, currentStep = $bindable(), hasUndoSnapshot, overrideExistingSetup = $bindable(), revertGeoreference, reverting, treatAsExistingSetup, undoSummary }: Props = $props()
 
   const choices = $derived([
     {
@@ -133,13 +128,5 @@
         {$t('Georef.Wizard.SetupNew', 'Set up new coordinates')}
       </Button>
     {/if}
-  {/if}
-
-  {#if readinessError}
-    <Banner tone="danger" title={$t('Georef.Wizard.Error.Generic', 'Error')}>{readinessError}</Banner>
-  {:else if readinessStatus?.findings && readinessStatus.findings.length > 0}
-    {#each readinessStatus.findings as finding}
-      <Banner tone={TONE[finding.severity as keyof typeof TONE] ?? 'info'} title={findingTitle(finding.code)}>{finding.message}</Banner>
-    {/each}
   {/if}
 </div>

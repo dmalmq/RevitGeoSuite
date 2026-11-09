@@ -37,6 +37,17 @@ The suite is especially focused on Japanese coordinate reference systems and [PL
 
 ---
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Georeference: the current setup, with the problems pill and the status line](docs/screenshots/georeference.png) | ![Problems: every readiness finding in one list, with Next problem](docs/screenshots/problems.png) |
+| ![Import in Japanese while the project is not georeferenced yet](docs/screenshots/import-blocked-ja.png) | ![GeoPackage export preview in dark mode](docs/screenshots/floorplan-preview-dark.png) |
+
+One status language runs through every screen. The pill at the top right counts the problems and lists them, and Next problem opens the step that fixes each one. The status bar names the first problem, and the sidebar marks show where each one is fixed.
+
+---
+
 ## Modules
 
 All functionality is reached through three web-shell entry points on a single **Geo Suite** ribbon panel — **Georef**, **Import**, and **Export**. Each button opens a shared **WebView2** window hosting a Svelte single-page app, navigated by a left rail (`/georeference`, `/import`, `/export`). C# and the web UI communicate over a typed RPC bridge whose TypeScript contracts are generated from the .NET contract assembly at build time. The UI ships in English and Japanese with a runtime language toggle.
@@ -45,7 +56,7 @@ All functionality is reached through three web-shell entry points on a single **
 |--------|-------|-------------|
 | **Georeference** | Georef | CRS selection with Japanese presets, OSM map-based point picking, PLATEAU grid-tile snapping or direct projected easting/northing entry, and a split survey / project base point apply path with placement preview |
 | **Mesh Inspector** | Georef | Japanese JIS X 0410 mesh code lookup, boundary calculation, and 8-neighbor display as a GeoJSON map overlay |
-| **Validation** | shell-wide | Live, read-only project health checks for coordinate setup and export readiness, surfaced in the shell status footer against the shared `GeoProjectInfo` |
+| **Validation** | shell-wide | Live, read-only project health checks for coordinate setup and export readiness against the shared `GeoProjectInfo`, surfaced as one problems pill, status-bar line and sidebar marks, with Next problem jumping to the step that fixes each finding |
 | **PLATEAU Import** | Import | Folder scan with codelist parsing and tile indexing, grid-tile selection, building/feature filtering, a shape-based context geometry pipeline (lightweight extrusion, detailed DirectShape, or mass-on-Relief), road/sidewalk outlines, and DXF basemap export |
 | **Ground / Terrain Import** | Import | Native Revit topography surface built from a local DEM (Kiban GML) or online Cesium Ion quantized-mesh terrain, with configurable radius/spacing and geoid-undulation offset to ellipsoidal height |
 | **3D Tiles Export** | Export | Scoped export (whole model or selected 3D view) with per-object metadata, RGBA material colors, level grouping with a manifest, optional precise CRS anchor rebasing, and automatic EGM2008 or manual geoid offset to convert orthometric anchors to WGS84 ellipsoidal height |

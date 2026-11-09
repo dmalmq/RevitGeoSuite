@@ -3,8 +3,8 @@
   import { request, on } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
   import { i18n, t } from '$lib/i18n'
-  import { Banner, Button, Chip, Progress } from '$lib/kit'
-  import { ContinueBar, StepBar, format, workflow } from '$lib/shell'
+  import { Banner, Button, Progress } from '$lib/kit'
+  import { ContinueBar, StepBar, format, workflow, type LocalProblem } from '$lib/shell'
   import type {
     DialogOpenFolderResponse,
     ExecutionActionResponse,
@@ -719,10 +719,20 @@
   $: if (previewState && !newAssignmentCategory) {
     newAssignmentCategory = previewState.supportedCategories[0] ?? ''
   }
-  $: readinessIssueCount = previewState?.readinessIssueCount ?? ((previewView?.warnings.length ?? 0) + (previewView?.unassignedFloors.length ?? 0))
-  $: readinessLabel = readinessIssueCount === 0
-    ? $t('Preview.Ready', 'Ready')
-    : format($t('Preview.IssueCount', '{0} issue(s)'), readinessIssueCount)
+  // Preview issues join the project's problems in the step bar's one pill: floor types without a
+  // category open the assignments, other warnings are listed as they are.
+  let previewProblems: LocalProblem[] = []
+  $: previewProblems = step === 'preview' && previewView
+    ? [
+        ...previewView.unassignedFloors.map((floor): LocalProblem => ({
+          title: format($t('Preview.Problem.Unassigned', 'Floor type {0} has no category'), floor.floorTypeName),
+          detail: format($t('Preview.Problem.UnassignedDetail', '{0} unit(s) export as unspecified until it is assigned.'), floor.unitCount),
+          severity: 'warning',
+          go: openAssignments
+        })),
+        ...previewView.warnings.map((warning): LocalProblem => ({ title: warning, severity: 'warning' }))
+      ]
+    : []
   $: percent = Math.max(0, Math.min(100, (progress.completedSteps / Math.max(1, progress.totalSteps)) * 100))
   $: startedAt = Date.parse(progress.startedAtUtc)
   $: elapsedSeconds = Number.isFinite(startedAt) ? Math.max(0, (now - startedAt) / 1000) : 0
@@ -792,14 +802,10 @@
       step={stepIndex + 1}
       of={flowSteps.length}
       promise={step === 'preview' && previewView ? `${$t('Exporter.Title', 'GeoPackage Export')} · ${previewView.viewName}` : $t('Exporter.Promise', 'Export Revit plan views as GeoPackage or Shapefile layers.')}
+      problems={previewProblems}
     >
       {#snippet actions()}
         {#if step === 'preview' && previewState && previewView}
-          <button type="button" class="rounded-chip" on:click={openAssignments} title={$t('Preview.CategoryAssignments', 'Category assignments')}>
-            <Chip tone={readinessIssueCount === 0 ? 'success' : 'warning'} icon={readinessIssueCount === 0 ? 'circle-check' : 'triangle-alert'}>
-              {readinessLabel}
-            </Chip>
-          </button>
           <Button size="sm" onclick={openAssignments} disabled={busy}>
             {$t('Preview.CategoryAssignments', 'Category assignments')}
             {#if assignmentSummary}<span class="font-mono tabular-nums text-muted-foreground">{formatNumber(assignmentSummary.floorTypeCount)}</span>{/if}

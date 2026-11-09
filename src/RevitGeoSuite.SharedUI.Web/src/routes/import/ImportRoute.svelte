@@ -4,9 +4,8 @@
   import { onDestroy, onMount, tick } from 'svelte'
   import { t } from '$lib/i18n'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
-  import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
-  import { Banner, Button } from '$lib/kit'
-  import { StepBar, narrow, stepNumber, workflow } from '$lib/shell'
+  import { Banner, Button, Progress } from '$lib/kit'
+  import { BlockedNotice, StepBar, blocked, narrow, refreshReadiness, stepNumber, workflow } from '$lib/shell'
   import LocalGisTool from './gis/LocalGisTool.svelte'
   import type { GisPhase } from './gis/types'
   import type {
@@ -65,7 +64,6 @@
   let importing = $state(false)
   let importProgress = $state<any>(null)
   let error = $state<string | null>(null)
-  let preflightReady = $state(false)
   let onlineCatalogLoading = $state(false)
   let onlineCatalogProgress = $state<any>(null)
   let onlineAreas = $state<PlateauOnlineArea[]>([])
@@ -132,8 +130,17 @@
       onlineCatalogAutoStarted = false
     }
     error = null
-    preflightReady = false
     step = 'preflight'
+    void checkReadiness()
+  }
+
+  // The options open only after a fresh readiness check, never on a result from before.
+  let readinessChecked = $state(false)
+
+  async function checkReadiness() {
+    readinessChecked = false
+    await refreshReadiness()
+    readinessChecked = true
   }
 
   function sourceTitle(): string {
@@ -141,18 +148,6 @@
     if (source === 'osm') return $t('Import.Source.OsmBuildings.Title', 'OSM Buildings')
     if (source === 'gis') return $t('Import.Source.Gis.Title', 'Local GIS files')
     return $t('Import.Source.OnlineApi.Title', 'PLATEAU Online / API')
-  }
-
-  function onPreflightReady() {
-    preflightReady = true
-  }
-
-  function onPreflightNeedsAttention() {
-    preflightReady = true
-  }
-
-  function onPreflightBlocked() {
-    preflightReady = false
   }
 
   async function browseFolder() {
@@ -934,7 +929,8 @@
     if (
       source === 'online'
       && step === 'preflight'
-      && preflightReady
+      && readinessChecked
+      && !$blocked
       && onlineAreas.length === 0
       && !onlineCatalogLoading
       && !onlineCatalogAutoStarted
@@ -1047,9 +1043,11 @@
   {/if}
 
   {#if step === 'preflight'}
-    <ReadinessPreflight onReady={onPreflightReady} onNeedsAttention={onPreflightNeedsAttention} onBlocked={onPreflightBlocked} />
-
-    {#if preflightReady}
+    {#if !readinessChecked}
+      <Progress label={$t('Problems.Checking', 'Checking the project…')} />
+    {:else if $blocked}
+      <BlockedNotice />
+    {:else}
       {#if source === 'local'}
         <LocalOptions
           {browseFolder}
@@ -1189,7 +1187,7 @@
         class="flex w-[300px] shrink-0 flex-col border-l border-border bg-card {$narrow ? 'absolute inset-y-0 right-0 z-[1100] shadow-lg' : ''}"
         aria-label={sourceTitle()}
       >
-        <StepBar title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={sourceTitle()}>
+        <StepBar compact={showMap} title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={sourceTitle()}>
           {#snippet actions()}
             {#if $narrow}
               <Button variant="ghost" size="sm" icon="x" aria-label={$t('Common.Hide', 'Hide')} onclick={() => (inspectorOpen = false)} />
@@ -1206,7 +1204,7 @@
 {:else}
   <!-- No map yet: the tool takes a readable column on the sheet. -->
   <section class="flex h-full min-h-0 flex-col">
-    <StepBar title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={sourceTitle()} />
+    <StepBar compact={showMap} title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={sourceTitle()} />
     <div class="min-h-0 flex-1 overflow-auto px-5 pb-5">
       <div class="flex max-w-[560px] flex-col gap-3">
         {@render panel()}
