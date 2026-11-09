@@ -27,6 +27,18 @@ public sealed class Tiles3DExportPackage
 
     public bool UsedPreciseCrsProjection { get; set; }
 
+    /// <summary>
+    /// True when <see cref="Tiles3DExactPlacement"/> moved the vertices from plane-grid metres into
+    /// the anchor's east-north-up frame.
+    /// </summary>
+    public bool UsedExactPlacement { get; set; }
+
+    /// <summary>
+    /// The element index, built while the vertices were still plane-grid metres. Null builds it at
+    /// write time from <see cref="Meshes"/>, which is right only when they still are.
+    /// </summary>
+    public Tiles3DElementIndex? ElementIndex { get; set; }
+
     public double GeoidHeightOffsetMeters { get; set; }
 
     /// <summary>

@@ -39,7 +39,7 @@ public sealed class GeospatialTransformBuilder
         };
     }
 
-    private static (double X, double Y, double Z) ToEcef(double latitudeRadians, double longitudeRadians, double elevationMeters)
+    internal static (double X, double Y, double Z) ToEcef(double latitudeRadians, double longitudeRadians, double elevationMeters)
     {
         double sinLat = Math.Sin(latitudeRadians);
         double cosLat = Math.Cos(latitudeRadians);
@@ -53,7 +53,7 @@ public sealed class GeospatialTransformBuilder
         return (x, y, z);
     }
 
-    private static double DegreesToRadians(double degrees)
+    internal static double DegreesToRadians(double degrees)
     {
         return degrees * (Math.PI / 180d);
     }
