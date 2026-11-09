@@ -1,54 +1,50 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
+<!-- Part of FloorPlanExportRoute.svelte: the plan views to export. -->
 <script lang="ts">
   import type { ExporterSettingsPayload } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
-  import { Button, Input } from '$lib/kit'
+  import { format } from '$lib/shell'
+  import { Button, Card, Checkbox, Input } from '$lib/kit'
 
-  export let filter: any
-  export let filteredViews: any
-  export let selectVisibleViews: (...args: any[]) => any
-  export let selectedViewIds: any
+  export let filter: string
+  export let filteredViews: { id: number; name: string; levelName: string }[]
+  export let selectVisibleViews: (checked: boolean) => void
+  export let selectedViewIds: Set<number>
   export let settings: ExporterSettingsPayload
-  export let toggleView: (...args: any[]) => any
-  export let viewError: any
+  export let toggleView: (id: number, checked: boolean) => void
+  export let viewError: string
 </script>
 
-<section class="views-panel flex min-h-0 flex-col border border-border bg-card" class:has-error={viewError}>
-  <div class="border-b border-border p-4">
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <h3 class="text-sm font-semibold">{$t('Exporter.Views', 'Views')}</h3>
-        <p class="mt-1 text-xs text-muted-foreground">{settings.selectedViewIds.length} {$t('Exporter.Selected', 'selected')}</p>
-      </div>
-      <div class="flex gap-2">
-        <Button size="sm" onclick={() => selectVisibleViews(true)}>{$t('Exporter.SelectAll', 'Select all')}</Button>
-        <Button size="sm" onclick={() => selectVisibleViews(false)}>{$t('Exporter.ClearAll', 'Clear all')}</Button>
-      </div>
-    </div>
-    {#if viewError}
-      <p class="mt-2 text-small text-destructive-text">{viewError}</p>
-    {/if}
+<Card
+  title={$t('Exporter.Views', 'Views')}
+  description={format($t('Exporter.SelectedCount', '{0} selected'), settings.selectedViewIds.length)}
+  padded={false}
+  class="flex min-h-0 flex-col {viewError ? 'border-destructive' : ''}"
+>
+  {#snippet actions()}
+    <Button size="sm" variant="ghost" onclick={() => selectVisibleViews(true)}>{$t('Exporter.SelectAll', 'Select all')}</Button>
+    <Button size="sm" variant="ghost" onclick={() => selectVisibleViews(false)}>{$t('Exporter.ClearAll', 'Clear all')}</Button>
+  {/snippet}
+  <div class="flex flex-col gap-2 border-b border-border px-3 py-2">
     <Input
-      class="mt-3"
+      type="search"
       bind:value={filter}
       aria-label={$t('Exporter.FilterViews', 'Filter views...')}
       placeholder={$t('Exporter.FilterViews', 'Filter views...')}
     />
+    {#if viewError}
+      <p class="text-small text-destructive-text" role="alert">{viewError}</p>
+    {/if}
   </div>
-  <div class="min-h-0 flex-1 overflow-auto p-2">
-    {#each filteredViews as view}
-      <label class="flex cursor-pointer items-start gap-3 px-2 py-2 text-sm hover:bg-accent">
-        <input
-          class="mt-1"
-          type="checkbox"
-          checked={selectedViewIds.has(view.id)}
-          on:change={(event) => toggleView(view.id, event.currentTarget.checked)}
-        />
-        <span>
-          <span class="block font-medium text-foreground">{view.name}</span>
-          <span class="block text-xs text-muted-foreground">{view.levelName}</span>
-        </span>
-      </label>
+  <div class="flex max-h-[calc(100vh-320px)] min-h-0 flex-col gap-1 overflow-auto px-3 py-2">
+    {#each filteredViews as view (view.id)}
+      <Checkbox
+        checked={selectedViewIds.has(view.id)}
+        onchange={(event) => toggleView(view.id, event.currentTarget.checked)}
+        label={view.name}
+        hint={view.levelName}
+      />
+    {:else}
+      <p class="py-2 text-small text-muted-foreground">{$t('Exporter.NoViews', 'No plan views match the filter.')}</p>
     {/each}
   </div>
-</section>
+</Card>

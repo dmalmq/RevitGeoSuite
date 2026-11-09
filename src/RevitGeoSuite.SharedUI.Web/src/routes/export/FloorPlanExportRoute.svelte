@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { request, on } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
   import { i18n, t } from '$lib/i18n'
-  import { Button } from '$lib/kit'
+  import { Banner, Button, Chip, Progress } from '$lib/kit'
+  import { ContinueBar, StepBar, format, workflow } from '$lib/shell'
   import type {
     DialogOpenFolderResponse,
     ExecutionActionResponse,
@@ -248,19 +249,17 @@
     return true
   }
 
-  async function saveProfile() {
-    const name = window.prompt($t('Exporter.Profile', 'Profile'), settings.selectedProfileName ?? '')
-    if (!name?.trim()) return
+  async function saveProfile(name: string) {
     busy = true
     try {
       const next = await request<ExporterInitialStateResponse>('floorplan.saveProfile', {
         scope: 'global',
-        name: name.trim(),
+        name,
         settings
       })
       state = next
       settings = cloneSettings(next.settings)
-      profileValue = findProfileValue(name.trim())
+      profileValue = findProfileValue(name)
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
     } finally {
@@ -268,12 +267,12 @@
     }
   }
 
+  // The confirmation is the in-app dialog in ProfileSection.
   async function deleteProfile() {
     if (!profileValue || !state) return
     const separator = profileValue.indexOf(':')
     const scope = profileValue.slice(0, separator)
     const name = profileValue.slice(separator + 1)
-    if (!window.confirm(`${$t('Exporter.DeleteProfile', 'Delete profile')} "${name}"?`)) return
 
     busy = true
     try {
@@ -570,7 +569,7 @@
     exportResult = null
     showExportWarnings = false
     progress = {
-      statusText: $t('Execution.ProgressTitle', 'Preparing export...'),
+      statusText: $t('Execution.Preparing', 'Preparing export...'),
       completedSteps: 0,
       totalSteps: 1,
       isCancelling: false,
@@ -723,7 +722,7 @@
   $: readinessIssueCount = previewState?.readinessIssueCount ?? ((previewView?.warnings.length ?? 0) + (previewView?.unassignedFloors.length ?? 0))
   $: readinessLabel = readinessIssueCount === 0
     ? $t('Preview.Ready', 'Ready')
-    : `${readinessIssueCount} ${$t('Preview.Issues', 'issues')}`
+    : format($t('Preview.IssueCount', '{0} issue(s)'), readinessIssueCount)
   $: percent = Math.max(0, Math.min(100, (progress.completedSteps / Math.max(1, progress.totalSteps)) * 100))
   $: startedAt = Date.parse(progress.startedAtUtc)
   $: elapsedSeconds = Number.isFinite(startedAt) ? Math.max(0, (now - startedAt) / 1000) : 0
@@ -737,7 +736,7 @@
   $: filteredCrsPresets = crsSearch.length === 0
     ? crsPresets
     : crsPresets.filter(p => p.label.toLowerCase().includes(crsSearch.toLowerCase()) || String(p.epsg).includes(crsSearch))
-  $: exportSummary = `${settings.selectedViewIds.length} ${$t('Exporter.Views', 'views')} · ${selectedFeatureCount} ${$t('Exporter.Features', 'features')} · ${settings.outputFormat === 'geopackage' ? 'GeoPackage' : 'Shapefile'}${settings.outputDirectory ? ` → ${settings.outputDirectory}` : ''}`
+  $: exportSummary = `${format($t('Exporter.Summary', '{0} view(s) · {1} feature type(s) · {2}'), settings.selectedViewIds.length, selectedFeatureCount, settings.outputFormat === 'geopackage' ? 'GeoPackage' : 'Shapefile')}${settings.outputDirectory ? ` → ${settings.outputDirectory}` : ''}`
   $: if (settings.selectedViewIds.length > 0) viewError = ''
   $: if (settings.outputDirectory.trim()) outputError = ''
   $: if (selectedFeatureCount > 0) featureError = ''
@@ -748,56 +747,76 @@
   $: viewBoxH = canvasHeight / zoom
   $: viewBox = `${viewBoxX} ${viewBoxY} ${viewBoxW} ${viewBoxH}`
   $: if (previewView?.viewId) { resetView() }
+
+  // ─── Frame: steps in the sidebar ─────────────────────────────────────────────
+  $: flowSteps = [
+    { id: 'views', label: $t('Exporter.Flow.Views', 'Views and settings') },
+    { id: 'preview', label: $t('Exporter.Preview', 'Preview') },
+    { id: 'export', label: $t('Exporter.Export', 'Export') }
+  ]
+  $: stepIndex = flowSteps.findIndex((s) => s.id === step)
+  $: flowCompleted = new Set([
+    ...flowSteps.slice(0, Math.max(0, stepIndex)).map((s) => s.id),
+    ...(exportStatus === 'done' ? ['export'] : [])
+  ])
+
+  // Only steps already passed can be opened from the sidebar, and not while work runs.
+  function openStep(id: string) {
+    if (busy || exportStatus === 'running') return
+    const target = flowSteps.findIndex((s) => s.id === id)
+    if (target < 0 || target >= stepIndex) return
+    if (id === 'preview' && !previewState) return
+    step = id as WizardStep
+  }
+
+  $: workflow.set(
+    state
+      ? { route: '/export/geopackage', steps: flowSteps, current: step, completed: flowCompleted, onStep: openStep }
+      : null
+  )
+  onDestroy(() => workflow.set(null))
+
+  $: levelNames = new Map((state?.views ?? []).map((view) => [view.id, view.levelName]))
+  $: selectedViewCount = settings.selectedViewIds.length
 </script>
 
-<section class="floor-plan-export flex h-full flex-col overflow-hidden bg-muted p-5">
+
+<section class="flex h-full min-h-0 flex-col">
   {#if busy && !state}
-    <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
-      {$t('Exporter.Loading', 'Loading export setup...')}
+    <div class="flex h-full items-center justify-center p-5">
+      <Progress class="w-full max-w-[360px]" label={$t('Exporter.Loading', 'Loading export setup...')} />
     </div>
   {:else if state}
-    <div class="mx-auto flex h-full w-full min-h-0 max-w-[1600px] flex-col gap-4">
-      <div class="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-3">
-          <h2 class="text-lg font-semibold text-foreground">
-            {$t('Exporter.Title', 'GeoPackage Export')}
-            <span class="ml-1 text-xs font-normal text-muted-foreground">{state.version}</span>
-          </h2>
-          <div class="stepper" aria-label="Export steps">
-            <span class:active-step={step === 'views'}>1 {$t('Exporter.Views', 'Views')}</span>
-            <span class:active-step={step === 'preview'}>2 {$t('Exporter.Preview', 'Preview')}</span>
-            <span class:active-step={step === 'export'}>3 {$t('Exporter.Export', 'Export')}</span>
-          </div>
-        </div>
+    <StepBar
+      title={flowSteps[stepIndex]?.label ?? ''}
+      step={stepIndex + 1}
+      of={flowSteps.length}
+      promise={step === 'preview' && previewView ? `${$t('Exporter.Title', 'GeoPackage Export')} · ${previewView.viewName}` : $t('Exporter.Promise', 'Export Revit plan views as GeoPackage or Shapefile layers.')}
+    >
+      {#snippet actions()}
         {#if step === 'preview' && previewState && previewView}
-          <div class="flex flex-wrap items-center gap-2">
-            <button class="readiness-chip" class:ready={readinessIssueCount === 0} on:click={openAssignments}>
-              {#if readinessIssueCount === 0}
-                {readinessLabel} ✓
-              {:else}
-                ⚠ {readinessLabel}
-              {/if}
-            </button>
-            <Button onclick={openAssignments} disabled={busy}>
-              {$t('Preview.CategoryAssignments', 'Category assignments')}
-              {#if assignmentSummary}
-                ({formatNumber(assignmentSummary.floorTypeCount)})
-              {/if}
-            </Button>
-            <Button icon="arrow-left" onclick={() => (step = 'views')} disabled={busy}>{$t('Common.Back', 'Back')}</Button>
-            <Button variant="primary" iconAfter="arrow-right" onclick={startExport} disabled={busy}>{$t('Exporter.Export', 'Export')}</Button>
-          </div>
+          <button type="button" class="rounded-chip" on:click={openAssignments} title={$t('Preview.CategoryAssignments', 'Category assignments')}>
+            <Chip tone={readinessIssueCount === 0 ? 'success' : 'warning'} icon={readinessIssueCount === 0 ? 'circle-check' : 'triangle-alert'}>
+              {readinessLabel}
+            </Chip>
+          </button>
+          <Button size="sm" onclick={openAssignments} disabled={busy}>
+            {$t('Preview.CategoryAssignments', 'Category assignments')}
+            {#if assignmentSummary}<span class="font-mono tabular-nums text-muted-foreground">{formatNumber(assignmentSummary.floorTypeCount)}</span>{/if}
+          </Button>
         {/if}
+      {/snippet}
+    </StepBar>
+
+    {#if error && step !== 'export' && !viewError && !outputError && !featureError && !epsgError}
+      <div class="shrink-0 px-5 pb-3">
+        <Banner tone="danger" onclose={() => (error = '')} closeLabel={$t('Common.Dismiss', 'Dismiss')}>{error}</Banner>
       </div>
+    {/if}
 
-      {#if error && step !== 'export' && !viewError && !outputError && !featureError && !epsgError}
-        <div class="shrink-0 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-          {error}
-        </div>
-      {/if}
-
-      {#if step === 'views'}
-        <div class="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(420px,0.9fr)_minmax(540px,1.1fr)]">
+    {#if step === 'views'}
+      <div class="min-h-0 flex-1 overflow-auto px-5 pb-5">
+        <div class="grid gap-3 xl:grid-cols-[minmax(320px,0.8fr)_minmax(460px,1.2fr)]">
           <ViewsPanel
             bind:filter
             {filteredViews}
@@ -808,20 +827,18 @@
             {viewError}
           />
 
-          <section class="flex min-h-0 flex-col gap-4 overflow-auto pr-1">
+          <div class="flex min-w-0 flex-col gap-3">
+            <OutputSection {browseOutput} {outputError} bind:settings />
+            <FeaturesSection {featureError} bind:settings />
             <ProfileSection
               {applyProfile}
               {busy}
+              currentName={settings.selectedProfileName ?? ''}
               {deleteProfile}
-              bind:profileValue
+              {profileValue}
               {saveProfile}
               {state}
             />
-
-            <OutputSection {browseOutput} {outputError} bind:settings />
-
-            <FeaturesSection {featureError} bind:settings />
-
             <AdvancedOptions
               bind:crsSearch
               {epsgError}
@@ -834,85 +851,92 @@
               {toggleLink}
               {toggleUnitCategory}
             />
-
-            <div class="flex flex-col gap-2 pb-5">
-              <p class="text-xs text-muted-foreground">{exportSummary}</p>
-              <div class="flex justify-end gap-3">
-                <Button variant="ghost" onclick={closeWindow}>{$t('Common.Cancel', 'Cancel')}</Button>
-                <Button variant="primary" iconAfter="arrow-right" onclick={preparePreview} disabled={busy}>{$t('Exporter.Preview', 'Preview')}</Button>
-              </div>
-            </div>
-          </section>
-        </div>
-      {:else if step === 'preview'}
-        {#if previewState && previewView}
-          <div class="flex min-h-0 flex-1 flex-col gap-4">
-            <PreviewMap
-              {assignSelectedFeature}
-              {busy}
-              {categoryOptions}
-              {didDrag}
-              {featureLabel}
-              {filteredFeatures}
-              {handleDoubleClick}
-              {handlePointerDown}
-              {handlePointerMove}
-              {handlePointerUp}
-              {handleWheel}
-              {isDragging}
-              bind:leftPanelCollapsed
-              {loadPreviewView}
-              bind:overridesOnly
-              {pathFor}
-              {points}
-              bind:previewSearch
-              {previewState}
-              {previewView}
-              {resetZoom}
-              {selectFeature}
-              {selectFeatureFromKeyboard}
-              bind:selectedCategory
-              bind:selectedFeature
-              bind:selectedFloorTypes
-              bind:showDetail
-              bind:showFixture
-              bind:showLevel
-              bind:showOpening
-              bind:showUnit
-              bind:unassignedOnly
-              {viewBox}
-              {viewBoxH}
-              {viewBoxW}
-              {viewBoxX}
-              {viewBoxY}
-              bind:warningsOnly
-              {zoomIn}
-              {zoomOut}
-            />
-
-            <AssignmentsModal
-              {assignFloorTypes}
-              {assignNewAssignment}
-              {assignmentRows}
-              bind:assignmentSearch
-              {assignmentSummary}
-              {assignmentsOpen}
-              {busy}
-              {categoryOptions}
-              {clearFloorTypes}
-              {closeAssignments}
-              {filteredAssignmentRows}
-              {formatNumber}
-              bind:newAssignmentCategory
-              bind:newAssignmentFloorTypeName
-              {previewState}
-              {previewView}
-            />
           </div>
-        {:else}
-          <div class="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">{$t('Preview.Loading', 'Loading preview...')}</div>
-        {/if}
-      {:else if step === 'export'}
+        </div>
+      </div>
+      <ContinueBar onback={closeWindow} backLabel={$t('Common.Cancel', 'Cancel')} context={exportSummary}>
+        <Button variant="primary" iconAfter="arrow-right" onclick={preparePreview} disabled={busy}>
+          {busy ? $t('Preview.Loading', 'Loading preview...') : $t('Exporter.Preview', 'Preview')}
+        </Button>
+      </ContinueBar>
+    {:else if step === 'preview'}
+      {#if previewState && previewView}
+        <div class="flex min-h-0 flex-1 flex-col px-5 pb-5">
+          <PreviewMap
+            {assignSelectedFeature}
+            {busy}
+            {categoryOptions}
+            {didDrag}
+            {featureLabel}
+            {filteredFeatures}
+            {handleDoubleClick}
+            {handlePointerDown}
+            {handlePointerMove}
+            {handlePointerUp}
+            {handleWheel}
+            {isDragging}
+            bind:leftPanelCollapsed
+            {levelNames}
+            {loadPreviewView}
+            bind:overridesOnly
+            {pathFor}
+            {points}
+            bind:previewSearch
+            {previewState}
+            {previewView}
+            {resetZoom}
+            {selectFeature}
+            {selectFeatureFromKeyboard}
+            bind:selectedCategory
+            bind:selectedFeature
+            bind:selectedFloorTypes
+            bind:showDetail
+            bind:showFixture
+            bind:showLevel
+            bind:showOpening
+            bind:showUnit
+            bind:unassignedOnly
+            {viewBox}
+            {viewBoxH}
+            {viewBoxW}
+            {viewBoxX}
+            {viewBoxY}
+            bind:warningsOnly
+            {zoomIn}
+            {zoomOut}
+          />
+
+          <AssignmentsModal
+            {assignFloorTypes}
+            {assignNewAssignment}
+            {assignmentRows}
+            bind:assignmentSearch
+            {assignmentSummary}
+            {assignmentsOpen}
+            {busy}
+            {categoryOptions}
+            {clearFloorTypes}
+            {closeAssignments}
+            {filteredAssignmentRows}
+            {formatNumber}
+            bind:newAssignmentCategory
+            bind:newAssignmentFloorTypeName
+            {previewState}
+            {previewView}
+          />
+        </div>
+        <ContinueBar onback={() => (step = 'views')} backLabel={$t('Common.Back', 'Back')} context={exportSummary}>
+          <Button variant="primary" icon="download" onclick={startExport} disabled={busy}>
+            {selectedViewCount === 1 ? $t('Exporter.ExportOneView', 'Export 1 view') : format($t('Exporter.ExportViews', 'Export {0} views'), selectedViewCount)}
+          </Button>
+        </ContinueBar>
+      {:else}
+        <div class="flex min-h-0 flex-1 items-center justify-center p-5">
+          <Progress class="w-full max-w-[360px]" label={$t('Preview.Loading', 'Loading preview...')} />
+        </div>
+      {/if}
+    {:else if step === 'export'}
+      <div class="min-h-0 flex-1 overflow-auto px-5 pb-5">
         <ExportStep
           {cesiumPushStatus}
           {closeWindow}
@@ -930,639 +954,16 @@
           {startExport}
           bind:step
         />
-      {/if}
-    </div>
+      </div>
+    {/if}
   {:else if error}
-    <div class="text-sm text-red-700">{error}</div>
+    <div class="p-5">
+      <Banner tone="danger" title={$t('Exporter.LoadFailed', 'Could not load the export setup')}>
+        {error}
+        {#snippet actions()}
+          <Button size="sm" icon="refresh-cw" onclick={load}>{$t('Common.Retry', 'Retry')}</Button>
+        {/snippet}
+      </Banner>
+    </div>
   {/if}
 </section>
-
-<style>
-  /* Scoped to this route by its root class, so the parts split out of it share these rules. */
-  .floor-plan-export :global {
-    .stepper {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.35rem;
-      font-size: 0.78rem;
-      font-weight: 700;
-      color: hsl(var(--muted-foreground));
-    }
-
-    .stepper span {
-      border: 1px solid hsl(var(--input));
-      background: hsl(var(--card));
-      padding: 0.45rem 0.65rem;
-    }
-  }
-
-  .floor-plan-export :global {
-    .stepper .active-step {
-      border-color: hsl(var(--primary));
-      background: hsl(var(--accent));
-      color: hsl(var(--primary));
-    }
-  }
-
-  .floor-plan-export :global {
-    .advanced-section {
-      border: 1px solid hsl(var(--border));
-      background: hsl(var(--card));
-      padding: 0.875rem;
-    }
-  }
-
-  .floor-plan-export :global {
-    .advanced-section > summary {
-      cursor: pointer;
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: hsl(var(--foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .section-title-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      margin-bottom: 0.75rem;
-    }
-
-    .section-title-row h3 {
-      margin: 0;
-    }
-
-    .readiness-chip {
-      display: inline-flex;
-      min-height: 2.25rem;
-      align-items: center;
-      justify-content: center;
-      border: 1px solid hsl(var(--warning));
-      background: hsl(var(--warning-surface));
-      color: hsl(var(--foreground));
-      padding: 0.45rem 0.8rem;
-      font-size: 0.875rem;
-      font-weight: 700;
-    }
-
-    .readiness-chip.ready {
-      border-color: hsl(var(--primary));
-      background: hsl(var(--accent));
-      color: hsl(var(--primary));
-    }
-  }
-
-  .floor-plan-export :global {
-    .assignment-modal-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 80;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(23, 23, 23, 0.42);
-      padding: 1.25rem;
-    }
-
-    .assignment-modal {
-      display: flex;
-      width: min(1280px, 96vw);
-      max-height: min(860px, 92vh);
-      min-height: min(720px, 88vh);
-      flex-direction: column;
-      border: 1px solid hsl(var(--input));
-      background: hsl(var(--card));
-      color: inherit;
-      margin: auto;
-      padding: 0;
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25);
-    }
-  }
-
-  .floor-plan-export :global {
-    .assignment-table-wrap {
-      max-height: min(460px, 48vh);
-      overflow: auto;
-      border: 1px solid hsl(var(--border));
-    }
-  }
-
-  .floor-plan-export :global {
-    .assignment-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.82rem;
-    }
-
-    .assignment-table th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      border-bottom: 1px solid hsl(var(--border));
-      background: hsl(var(--muted));
-      padding: 0.55rem;
-      text-align: left;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: hsl(var(--foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .assignment-table td {
-      border-bottom: 1px solid hsl(var(--border));
-      padding: 0.55rem;
-      vertical-align: top;
-    }
-  }
-
-  .floor-plan-export :global {
-    .assignment-table td strong {
-      display: block;
-      max-width: 26rem;
-      overflow-wrap: anywhere;
-    }
-
-    .assignment-table .empty-cell {
-      padding: 1rem;
-      text-align: center;
-      color: hsl(var(--muted-foreground));
-    }
-
-    svg path:focus,
-    svg polyline:focus {
-      outline: none;
-    }
-
-    .metric {
-      border: 1px solid hsl(var(--border));
-      background: hsl(var(--card));
-      padding: 0.75rem;
-    }
-  }
-
-  .floor-plan-export :global {
-    .metric span {
-      display: block;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: hsl(var(--muted-foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .metric strong {
-      display: block;
-      margin-top: 0.25rem;
-      font-size: 1.25rem;
-      line-height: 1.2;
-    }
-
-    .warning-list {
-      display: grid;
-      max-height: min(360px, 36vh);
-      gap: 0.5rem;
-      overflow: auto;
-      padding-right: 0.35rem;
-      font-size: 0.875rem;
-    }
-
-    .warning-list p {
-      margin: 0;
-      overflow-wrap: anywhere;
-    }
-
-    .map-container {
-      position: relative;
-      flex: 1;
-      min-height: 0;
-      overflow: hidden;
-      border: 1px solid hsl(var(--border));
-      border-radius: 8px;
-      background: hsl(var(--muted));
-    }
-  }
-
-  .floor-plan-export :global {
-    .map-overlay-left {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      z-index: 10;
-      width: 220px;
-      max-height: calc(100% - 24px);
-      overflow-y: auto;
-      background: hsl(var(--popover) / 0.94);
-      backdrop-filter: blur(12px);
-      border: 1px solid hsl(var(--border));
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-      padding: 12px;
-      transition: width 200ms ease, padding 200ms ease;
-    }
-  }
-
-  .floor-plan-export :global {
-    .map-overlay-left.collapsed {
-      width: 40px;
-      padding: 8px;
-      overflow: hidden;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-    }
-
-    .panel-title {
-      font-size: 0.75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: hsl(var(--muted-foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .panel-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-      border: none;
-      background: transparent;
-      color: hsl(var(--muted-foreground));
-      cursor: pointer;
-      border-radius: 4px;
-    }
-
-    .panel-toggle:hover {
-      background: hsl(var(--secondary));
-      color: hsl(var(--foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .panel-section {
-      margin-bottom: 10px;
-    }
-
-    .panel-section:last-child {
-      margin-bottom: 0;
-    }
-
-    .panel-label {
-      display: block;
-      font-size: 0.7rem;
-      font-weight: 600;
-      color: hsl(var(--muted-foreground));
-      margin-bottom: 4px;
-    }
-  }
-
-  .floor-plan-export :global {
-
-    .chip-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-    }
-
-    .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      font-size: 0.72rem;
-      font-weight: 500;
-      border: 1px solid hsl(var(--input));
-      border-radius: 9999px;
-      background: hsl(var(--card));
-      color: hsl(var(--muted-foreground));
-      cursor: pointer;
-      transition: all 120ms ease;
-    }
-
-    .chip input {
-      display: none;
-    }
-
-    .chip.active {
-      border-color: hsl(var(--primary));
-      background: hsl(var(--accent));
-      color: hsl(var(--primary));
-    }
-
-    .chip.disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
-  }
-
-  .floor-plan-export :global {
-    .unit-filter-body.disabled {
-      opacity: 0.62;
-    }
-
-    .map-overlay-pill {
-      position: absolute;
-      top: 12px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
-      padding: 4px 14px;
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: hsl(var(--muted-foreground));
-      background: hsl(var(--popover) / 0.92);
-      backdrop-filter: blur(12px);
-      border: 1px solid hsl(var(--border));
-      border-radius: 9999px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-      white-space: nowrap;
-    }
-  }
-
-  .floor-plan-export :global {
-    .map-overlay-caption {
-      position: absolute;
-      bottom: 12px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
-      max-width: calc(100% - 120px);
-      padding: 4px 14px;
-      font-size: 0.72rem;
-      color: hsl(var(--muted-foreground));
-      background: hsl(var(--popover) / 0.92);
-      backdrop-filter: blur(12px);
-      border: 1px solid hsl(var(--border));
-      border-radius: 9999px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-align: center;
-    }
-  }
-
-  .floor-plan-export :global {
-    .map-overlay-legend {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      z-index: 10;
-      max-width: 200px;
-      background: hsl(var(--popover) / 0.94);
-      backdrop-filter: blur(12px);
-      border: 1px solid hsl(var(--border));
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-      padding: 8px 10px;
-    }
-  }
-
-  .floor-plan-export :global {
-    .legend-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.72rem;
-      color: hsl(var(--muted-foreground));
-      line-height: 1.6;
-    }
-  }
-
-  .floor-plan-export :global {
-    .legend-swatch {
-      width: 10px;
-      height: 10px;
-      flex-shrink: 0;
-      border: 1px solid hsl(var(--input));
-      border-radius: 2px;
-    }
-  }
-
-  .floor-plan-export :global {
-    .legend-count {
-      margin-left: auto;
-      font-weight: 600;
-      color: hsl(var(--muted-foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .map-canvas {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      padding: 12px;
-      cursor: grab;
-      touch-action: none;
-    }
-
-    .map-canvas.dragging {
-      cursor: grabbing;
-    }
-
-    .map-overlay-zoom {
-      position: absolute;
-      bottom: 12px;
-      left: 12px;
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      background: hsl(var(--popover) / 0.94);
-      backdrop-filter: blur(12px);
-      border: 1px solid hsl(var(--border));
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-    }
-  }
-
-  .floor-plan-export :global {
-    .zoom-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      border: none;
-      background: transparent;
-      color: hsl(var(--foreground));
-      font-size: 1.05rem;
-      line-height: 1;
-      cursor: pointer;
-      transition: background 120ms ease, color 120ms ease;
-    }
-
-    .zoom-btn:not(:last-child) {
-      border-bottom: 1px solid hsl(var(--border));
-    }
-
-    .zoom-btn:hover {
-      background: hsl(var(--secondary));
-      color: hsl(var(--foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .map-overlay-details {
-      position: absolute;
-      bottom: 12px;
-      right: 12px;
-      z-index: 10;
-      width: 280px;
-      max-height: calc(100% - 80px);
-      overflow-y: auto;
-      background: hsl(var(--popover) / 0.96);
-      backdrop-filter: blur(12px);
-      border: 1px solid hsl(var(--border));
-      border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-      padding: 12px;
-    }
-  }
-
-  .floor-plan-export :global {
-    .details-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-
-    .details-title {
-      font-size: 0.75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: hsl(var(--muted-foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .details-close {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 22px;
-      height: 22px;
-      border: none;
-      background: transparent;
-      font-size: 1.1rem;
-      line-height: 1;
-      color: hsl(var(--muted-foreground));
-      cursor: pointer;
-      border-radius: 4px;
-    }
-
-    .details-close:hover {
-      background: hsl(var(--secondary));
-      color: hsl(var(--foreground));
-    }
-  }
-
-  .floor-plan-export :global {
-    .details-grid {
-      display: grid;
-      gap: 4px;
-      font-size: 0.78rem;
-    }
-
-    .details-grid dd {
-      overflow-wrap: anywhere;
-    }
-
-    .details-assign {
-      display: flex;
-      gap: 6px;
-      margin-top: 10px;
-      align-items: center;
-    }
-
-    .views-panel.has-error {
-      border-color: hsl(var(--destructive));
-    }
-  }
-
-  .floor-plan-export :global {
-    .segmented-control {
-      display: inline-flex;
-      border: 1px solid hsl(var(--input));
-      border-radius: 6px;
-      overflow: hidden;
-    }
-  }
-
-  .floor-plan-export :global {
-    .segmented-btn {
-      padding: 0.4rem 0.9rem;
-      font-size: 0.78rem;
-      font-weight: 500;
-      background: hsl(var(--card));
-      color: hsl(var(--muted-foreground));
-      border: none;
-      cursor: pointer;
-      transition: all 120ms ease;
-    }
-
-    .segmented-btn:not(:last-child) {
-      border-right: 1px solid hsl(var(--input));
-    }
-
-    .segmented-btn.active {
-      background: hsl(var(--primary));
-      color: hsl(var(--card));
-    }
-  }
-
-  .floor-plan-export :global {
-    .sub-disclosure {
-      border: none;
-      padding: 0;
-    }
-
-    .sub-disclosure > summary {
-      cursor: pointer;
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: hsl(var(--foreground));
-      padding: 0.4rem 0;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-
-    .sub-disclosure > summary::before {
-      content: '▸';
-      font-size: 0.7rem;
-      transition: transform 150ms ease;
-    }
-
-    .sub-disclosure[open] > summary::before {
-      transform: rotate(90deg);
-    }
-
-    .sub-disclosure > summary::-webkit-details-marker {
-      display: none;
-    }
-  }
-
-  .floor-plan-export :global {
-    .sub-disclosure .badge {
-      font-size: 0.68rem;
-      font-weight: 500;
-      color: hsl(var(--muted-foreground));
-    }
-  }
-
-
-</style>

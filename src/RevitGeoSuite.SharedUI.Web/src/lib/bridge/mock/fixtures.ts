@@ -138,7 +138,7 @@ function unit(index: number, category: string, name: string): PreviewViewPayload
     featureType: 'unit',
     fillColor: category === 'retail' ? '#ccbb99' : '#99ccbb',
     floorTypeName: `FT${index}`,
-    geometryType: 'Polygon',
+    geometryType: 'polygon',
     hasWarning: index === 2,
     index,
     isUnassignedFloor: index === 3,
@@ -152,6 +152,15 @@ function unit(index: number, category: string, name: string): PreviewViewPayload
     strokeColor: '#336655',
     supportsFloorCategoryAssignment: true,
     usesFloorCategoryOverride: false
+  }
+}
+
+/** The floor plan dialogs report the UI language back; keep the one the mock was opened in. */
+function mockLanguage(): string {
+  try {
+    return localStorage.getItem('mockLanguage') === 'japanese' ? 'japanese' : 'english'
+  } catch {
+    return 'english'
   }
 }
 
@@ -204,7 +213,25 @@ const previewState: PreviewInitialStateResponse = {
   readinessUnassignedFloorTypeCount: 1,
   readinessWarningCount: 1,
   supportedCategories: ['room', 'walkway', 'retail'],
-  views: [{ displayName: '1F Plan', id: 11, name: '1F Plan' }]
+  views: [
+    { displayName: '1F Plan', id: 11, name: '1F Plan' },
+    { displayName: 'B1 Plan', id: 12, name: 'B1 Plan' }
+  ]
+}
+
+const previewViewB1: PreviewViewPayload = {
+  ...previewView,
+  features: [unit(0, 'walkway', 'Gate concourse'), unit(1, 'retail', 'Kiosk'), unit(2, 'room', 'Staff room')],
+  legend: [
+    { count: 1, fillColor: '#99ccbb', label: 'room' },
+    { count: 1, fillColor: '#ccbb99', label: 'retail' }
+  ],
+  levelName: 'B1',
+  quickSummary: '3 features',
+  unassignedFloors: [],
+  viewId: 12,
+  viewName: 'B1 Plan',
+  warnings: []
 }
 
 const tiles3dOptions: Tiles3DExportOptionsResponse = {
@@ -256,9 +283,32 @@ export function responses(scenario: MockScenario): Record<string, unknown | ((pa
     'mesh.getOverlay': mesh,
     'readiness.getStatus': readiness,
     'floorplan.getInitialState': floorPlanState,
-    'floorplan.preparePreview': previewState,
-    'floorplan.preview.getInitialState': previewState,
-    'floorplan.preview.loadView': previewView,
+    'floorplan.preparePreview': () => ({ ...previewState, language: mockLanguage() }),
+    'floorplan.preview.getInitialState': () => ({ ...previewState, language: mockLanguage() }),
+    'floorplan.preview.loadView': (payload: any) => (payload?.viewId === 12 ? previewViewB1 : previewView),
+    'floorplan.saveProfile': (payload: any) => ({
+      ...floorPlanState,
+      profiles: [...floorPlanState.profiles, { displayName: payload?.name ?? 'New', name: payload?.name ?? 'New', scope: 'global', settings: payload?.settings ?? settings }]
+    }),
+    'floorplan.deleteProfile': { ...floorPlanState, profiles: [] },
+    'floorplan.cancel': {},
+    'floorplan.run': () => ({
+      success: true,
+      result: {
+        canOpenOutputDirectory: true,
+        changes: [],
+        files: [],
+        message: '2 views exported as GeoPackage.',
+        outputDirectory: 'C:\\Exports\\TokyoStation\\floorplan',
+        packageLines: [],
+        summary: { artifactCount: 6, featureCount: 7, packageErrorCount: 0, packageWarningCount: 0, reusedArtifactCount: 1, viewCount: 2, warningCount: 1, writtenArtifactCount: 5 },
+        timings: [],
+        title: 'Export finished',
+        language: mockLanguage(),
+        warnings: ['Unit FT3 on 1F has no category and was exported as unspecified.']
+      }
+    }),
+    'floorplan.execution.result.openOutputFolder': { success: true },
     'tiles3d.exportOptions': tiles3dOptions,
     'gis.exportOptions': gisOptions,
     'cesium.export.getState': cesiumState,
