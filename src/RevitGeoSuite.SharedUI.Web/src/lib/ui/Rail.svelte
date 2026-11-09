@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { strings } from '$lib/i18n'
+  import { t } from '$lib/i18n'
 
   export let currentRoute: string = ''
 
@@ -28,8 +28,8 @@
     <button
       class="w-12 h-12 flex flex-col items-center justify-center rounded-lg transition-colors {isActive(item.route, currentRoute) ? 'bg-teal-600 text-white' : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100'}"
       onclick={() => navigate(item.route)}
-      aria-label={$strings[item.labelKey] ?? item.labelKey}
-      title={$strings[item.labelKey] ?? item.labelKey}
+      aria-label={$t(item.labelKey, item.labelKey)}
+      title={$t(item.labelKey, item.labelKey)}
     >
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={item.icon} />

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { request } from '$lib/bridge/rpc'
   import { onMount } from 'svelte'
-  import { strings } from '$lib/i18n'
+  import { t } from '$lib/i18n'
   import type { ReadinessStatusResponse } from '$lib/bridge/contracts.generated'
 
   let {
@@ -39,7 +39,7 @@
         onBlocked()
       }
     } catch (err: any) {
-      error = err.message || ($strings['Readiness.Preflight.Error'] ?? 'Failed to check readiness')
+      error = err.message || $t('Readiness.Preflight.Error', 'Failed to check readiness')
     } finally {
       loading = false
     }
@@ -84,15 +84,15 @@
     onclick={() => (showDetails = !showDetails)}
   >
     {showDetails
-      ? ($strings['Readiness.Preflight.HideDetails'] ?? 'Hide')
-      : ($strings['Readiness.Preflight.Details'] ?? 'Details')}
+      ? $t('Readiness.Preflight.HideDetails', 'Hide')
+      : $t('Readiness.Preflight.Details', 'Details')}
   </button>
 {/snippet}
 
 {#if loading}
   <div class="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
     <div class="w-4 h-4 border-2 border-neutral-300 dark:border-neutral-600 border-t-teal-500 rounded-full animate-spin"></div>
-    <span>{$strings['Readiness.Preflight.Checking'] ?? 'Checking readiness...'}</span>
+    <span>{$t('Readiness.Preflight.Checking', 'Checking readiness...')}</span>
   </div>
 {:else if error}
   <div class="text-sm text-red-500 dark:text-red-400">{error}</div>
@@ -100,7 +100,7 @@
     class="mt-1 text-xs text-teal-500 hover:text-teal-600 dark:text-teal-400 dark:hover:text-teal-300 transition-colors"
     onclick={checkReadiness}
   >
-    {$strings['Readiness.Preflight.Retry'] ?? 'Retry'}
+    {$t('Readiness.Preflight.Retry', 'Retry')}
   </button>
 {:else if exportReadiness}
   {#if status !== 'ready'}
@@ -110,7 +110,7 @@
         <span class="text-lg {getStatusColor(status)}">{getStatusIcon(status)}</span>
         <div class="min-w-0">
           <div class="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            {exportReadiness.statusTitle || ($strings['Readiness.Preflight.Unknown'] ?? 'Unknown')}
+            {exportReadiness.statusTitle || $t('Readiness.Preflight.Unknown', 'Unknown')}
           </div>
           {#if exportReadiness.statusMessage}
             <div class="text-xs text-neutral-500 dark:text-neutral-500">{exportReadiness.statusMessage}</div>
@@ -129,7 +129,7 @@
       <div class="mt-2 flex items-center justify-between gap-2">
         {#if status === 'blocked'}
           <p class="text-xs text-red-500 dark:text-red-400">
-            {$strings['Readiness.Preflight.BlockedHint'] ?? 'Fix the blocking items above to continue.'}
+            {$t('Readiness.Preflight.BlockedHint', 'Fix the blocking items above to continue.')}
           </p>
         {:else}
           <span></span>

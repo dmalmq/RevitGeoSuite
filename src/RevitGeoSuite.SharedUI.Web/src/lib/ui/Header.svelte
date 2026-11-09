@@ -1,7 +1,7 @@
 <script lang="ts">
   import { request } from '$lib/bridge/rpc'
   import { theme } from '$lib/ui/theme'
-  import { i18n, strings, currentLanguage } from '$lib/i18n'
+  import { i18n, currentLanguage, t } from '$lib/i18n'
 
   export let title: string = 'RevitGeoSuite'
   export let documentName: string = ''
@@ -56,7 +56,7 @@
   <div class="flex items-center" style="app-region: no-drag; -webkit-app-region: no-drag">
     <!-- Language switcher: EN / 日本語 pill. -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="mr-2 flex cursor-default items-center text-xs font-medium" on:mousedown|stopPropagation role="group" aria-label={$strings['Header.LanguageToggle'] ?? 'Language'}>
+    <div class="mr-2 flex cursor-default items-center text-xs font-medium" on:mousedown|stopPropagation role="group" aria-label={$t('Header.LanguageToggle', 'Language')}>
       <button
         class="cursor-pointer rounded-l px-2 py-1 transition-colors {lang === 'english' ? 'bg-teal-600 text-white' : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
         on:click={() => i18n.setLanguage('english')}
@@ -76,8 +76,8 @@
       class="flex h-10 w-10 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
       on:mousedown|stopPropagation
       on:click={toggleTheme}
-      aria-label={$strings['Header.ThemeToggle'] ?? 'Theme'}
-      title={isDark ? ($strings['Theme.Light'] ?? 'Light') : ($strings['Theme.Dark'] ?? 'Dark')}
+      aria-label={$t('Header.ThemeToggle', 'Theme')}
+      title={isDark ? $t('Theme.Light', 'Light') : $t('Theme.Dark', 'Dark')}
     >
       {#if isDark}
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,7 +94,7 @@
       class="flex h-10 w-10 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
       on:mousedown|stopPropagation
       on:click={minimize}
-      aria-label={$strings['Header.Minimize'] ?? 'Minimize'}
+      aria-label={$t('Header.Minimize', 'Minimize')}
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
@@ -104,7 +104,7 @@
       class="flex h-10 w-10 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
       on:mousedown|stopPropagation
       on:click={maximize}
-      aria-label={$strings['Header.Maximize'] ?? 'Maximize'}
+      aria-label={$t('Header.Maximize', 'Maximize')}
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
@@ -114,7 +114,7 @@
       class="flex h-10 w-10 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:bg-red-600 hover:text-white dark:text-neutral-400"
       on:mousedown|stopPropagation
       on:click={close}
-      aria-label={$strings['Header.Close'] ?? 'Close'}
+      aria-label={$t('Header.Close', 'Close')}
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

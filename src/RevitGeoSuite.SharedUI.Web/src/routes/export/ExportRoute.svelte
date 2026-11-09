@@ -8,39 +8,34 @@
     CesiumPushResponse,
     CesiumViewerSettingsPayload,
     CityGmlExportPrepareResponse,
-    CityGmlExportResponse,
     GisExportOptionsResponse,
     GisLevelOption,
     PlateauContextExportPreviewResponse,
-    PlateauContextExportResponse,
     Tiles3DExportOptionsResponse,
     Tiles3DExportPrepareResponse,
-    Tiles3DExportResponse,
     Tiles3DLinkOption,
     Tiles3DViewOption
   } from '$lib/bridge/contracts.generated'
   import { onMount } from 'svelte'
-  import { strings } from '$lib/i18n'
+  import { t } from '$lib/i18n'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
-
-  type ExportFormat = 'plateau' | 'tiles3d' | 'citygml' | 'gis' | null
-  type ExportState = 'format' | 'preflight' | 'plateau-source' | 'plateau-scan' | 'plateau-select' | 'scope' | 'options' | 'review' | 'gis-options' | 'export'
-  type GisExportCategory = 'opening' | 'unit' | 'level' | 'detail'
-  type GisFileAssignmentState = { path: string; levelId: number | null; category: GisExportCategory }
-  type ScopeMode = 'whole' | 'view'
-  type PlateauTile = { id: string; featureCount?: number; lod?: number | string; fileSize?: number; geometry?: unknown }
-  type ExportJobResult = PlateauContextExportResponse | Tiles3DExportResponse | CityGmlExportResponse
-  type ExportPreview = {
-    format: Exclude<ExportFormat, 'gis' | null>
-    crs: string
-    warnings: string[]
-    elementCount?: number
-    triangleCount?: number
-    featureCount?: number
-    perLayerCounts?: Record<string, number>
-    geoidOffsetMeters?: number
-  }
+  import type { ExportFormat, ExportState, GisExportCategory, GisFileAssignmentState, ScopeMode, PlateauTile, ExportJobResult, ExportPreview } from './steps/types'
+  import FormatChooser from './steps/FormatChooser.svelte'
+  import PlateauScanMap from './steps/PlateauScanMap.svelte'
+  import PlateauSelectOverlay from './steps/PlateauSelectOverlay.svelte'
+  import ExportProgress from './steps/ExportProgress.svelte'
+  import PlateauSourcePanel from './steps/PlateauSourcePanel.svelte'
+  import PlateauScanPanel from './steps/PlateauScanPanel.svelte'
+  import PlateauSelectPanel from './steps/PlateauSelectPanel.svelte'
+  import GisOptions from './steps/GisOptions.svelte'
+  import ScopeStep from './steps/ScopeStep.svelte'
+  import PlateauOptions from './steps/PlateauOptions.svelte'
+  import Tiles3dOptions from './steps/Tiles3dOptions.svelte'
+  import CityGmlOptions from './steps/CityGmlOptions.svelte'
+  import ReviewStep from './steps/ReviewStep.svelte'
+  import GisAssignmentsModal from './steps/GisAssignmentsModal.svelte'
+  import CesiumModal from './steps/CesiumModal.svelte'
 
   // Fills {0}/{1} placeholders in a localized template so count/number strings can keep
   // language-specific word order (e.g. Japanese "{1} 件中 {0} 件").
@@ -79,8 +74,8 @@
   let selectedPlateauTiles = $state<Set<string>>(new Set())
   let selectedKibanLayers = $state<Set<string>>(new Set(plateauKibanLayerOptions.map(layer => layer.id)))
 
-  let exportCancel: (() => void) | null = null
-  let plateauScanCancel: (() => void) | null = null
+  let exportCancel = $state<(() => void) | null>(null)
+  let plateauScanCancel = $state<(() => void) | null>(null)
   let mapRef = $state<LeafletMap | null>(null)
 
   // Format-specific options
@@ -151,7 +146,7 @@
   async function pickCesiumOutputFolder() {
     try {
       const result = await request('dialog.openFolder', {
-        title: $strings['Export.Cesium.PickFolder'] ?? 'Choose the Cesium package folder'
+        title: $t('Export.Cesium.PickFolder', 'Choose the Cesium package folder')
       }) as { path?: string }
       if (result?.path) cesiumOutputFolder = result.path
     } catch {
@@ -173,11 +168,11 @@
 
   async function runCesiumExport() {
     if (!cesiumOutputFolder.trim()) {
-      cesiumError = $strings['Export.Cesium.FolderRequired'] ?? 'Choose an output folder for the package'
+      cesiumError = $t('Export.Cesium.FolderRequired', 'Choose an output folder for the package')
       return
     }
     if (!cesiumProfile) {
-      cesiumError = $strings['Export.Cesium.ProfileRequired'] ?? 'Choose a floor-plan export profile'
+      cesiumError = $t('Export.Cesium.ProfileRequired', 'Choose a floor-plan export profile')
       return
     }
 
@@ -245,7 +240,7 @@
   let gisSelectedAssignmentPaths = $state<Set<string>>(new Set())
   let gisBulkCategoryValue = $state<string>('')
   let gisBulkLevelValue = $state<string>('')
-  let gisExportCancel: (() => void) | null = null
+  let gisExportCancel = $state<(() => void) | null>(null)
 
   let gisFileDisplay = $derived.by(() => {
     if (gisFilePaths.length === 0) return ''
@@ -354,13 +349,13 @@
     try {
       const result = await request('dialog.openFolder', {
         initialPath: outputFolder,
-        title: $strings['Export.OutputFolder'] ?? 'Output Folder'
+        title: $t('Export.OutputFolder', 'Output Folder')
       })
       if (result?.path) {
         outputFolder = result.path
       }
     } catch (err: any) {
-      error = err.message || ($strings['Export.Error.FolderDialog'] ?? 'Failed to open folder dialog')
+      error = err.message || $t('Export.Error.FolderDialog', 'Failed to open folder dialog')
     }
   }
 
@@ -368,13 +363,13 @@
     try {
       const result = await request('dialog.openFolder', {
         initialPath: plateauFolderPath,
-        title: $strings['Export.PlateauFolder'] ?? 'PLATEAU Folder'
+        title: $t('Export.PlateauFolder', 'PLATEAU Folder')
       })
       if (result?.path) {
         plateauFolderPath = result.path
       }
     } catch (err: any) {
-      error = err.message || ($strings['Export.Error.FolderDialog'] ?? 'Failed to open folder dialog')
+      error = err.message || $t('Export.Error.FolderDialog', 'Failed to open folder dialog')
     }
   }
 
@@ -382,19 +377,19 @@
     try {
       const result = await request('dialog.openFolder', {
         initialPath: plateauKibanFolderPath,
-        title: $strings['Export.KibanFolder'] ?? 'Kiban Folder'
+        title: $t('Export.KibanFolder', 'Kiban Folder')
       })
       if (result?.path) {
         plateauKibanFolderPath = result.path
       }
     } catch (err: any) {
-      error = err.message || ($strings['Export.Error.FolderDialog'] ?? 'Failed to open folder dialog')
+      error = err.message || $t('Export.Error.FolderDialog', 'Failed to open folder dialog')
     }
   }
 
   async function startPlateauScan() {
     if (!plateauFolderPath) {
-      error = $strings['Export.Error.SelectPlateauFolder'] ?? 'Please select a PLATEAU folder first'
+      error = $t('Export.Error.SelectPlateauFolder', 'Please select a PLATEAU folder first')
       return
     }
 
@@ -416,7 +411,7 @@
       step = 'plateau-select'
       loadPlateauTilesOnMap(true)
     } catch (err: any) {
-      error = err.message || ($strings['Export.Error.ScanFailed'] ?? 'Scan failed')
+      error = err.message || $t('Export.Error.ScanFailed', 'Scan failed')
       plateauScanning = false
       step = 'plateau-source'
     } finally {
@@ -485,7 +480,7 @@
 
   function continueToPlateauOptions() {
     if (selectedPlateauTiles.size === 0) {
-      error = $strings['Export.Error.SelectTile'] ?? 'Please select at least one PLATEAU tile'
+      error = $t('Export.Error.SelectTile', 'Please select at least one PLATEAU tile')
       return
     }
     error = null
@@ -526,21 +521,21 @@
 
   function validateExportInputs(): boolean {
     if (!outputFolder) {
-      error = $strings['Export.Error.SelectOutput'] ?? 'Please select an output folder first'
+      error = $t('Export.Error.SelectOutput', 'Please select an output folder first')
       return false
     }
     if (format === 'plateau') {
       if (!plateauFolderPath || selectedPlateauTiles.size === 0) {
-        error = $strings['Export.Error.ScanAndSelect'] ?? 'Please scan a PLATEAU folder and select at least one tile'
+        error = $t('Export.Error.ScanAndSelect', 'Please scan a PLATEAU folder and select at least one tile')
         return false
       }
       if (!plateauOptions.formats.shapefile && !plateauOptions.formats.dxf) {
-        error = $strings['Export.Error.SelectFormat'] ?? 'Please select at least one export format'
+        error = $t('Export.Error.SelectFormat', 'Please select at least one export format')
         return false
       }
     }
     if (format === 'tiles3d' && scope === 'view' && !selectedTiles3dViewUniqueId) {
-      error = $strings['Export.Error.Select3dView'] ?? 'Select a 3D view before previewing the export'
+      error = $t('Export.Error.Select3dView', 'Select a 3D view before previewing the export')
       return false
     }
     if (
@@ -549,8 +544,7 @@
       typeof tiles3dOptions.geoidOffset !== 'number'
     ) {
       error =
-        $strings['Export.Error.GeoidOffsetRequired'] ??
-        'Enter a geoid height offset or enable auto-detect'
+        $t('Export.Error.GeoidOffsetRequired', 'Enter a geoid height offset or enable auto-detect')
       return false
     }
 
@@ -615,7 +609,7 @@
         step = 'review'
       }
     } catch (err: any) {
-      error = err.message || ($strings['Export.Error.Prepare'] ?? 'Failed to prepare export')
+      error = err.message || $t('Export.Error.Prepare', 'Failed to prepare export')
     } finally {
       preparingPreview = false
       exportCancel = null
@@ -651,7 +645,7 @@
         await pushFolderToCesiumViewer(outputFolder)
       }
     } catch (err: any) {
-      error = err.message || ($strings['Export.Error.Failed'] ?? 'Export failed')
+      error = err.message || $t('Export.Error.Failed', 'Export failed')
       exporting = false
     } finally {
       exportCancel = null
@@ -664,7 +658,7 @@
   let cesiumPushStatus = $state<string | null>(null)
 
   async function pushFolderToCesiumViewer(folder: string) {
-    cesiumPushStatus = $strings['Export.Cesium.Pushing'] ?? 'Sending to Cesium viewer…'
+    cesiumPushStatus = $t('Export.Cesium.Pushing', 'Sending to Cesium viewer…')
     try {
       const job = startJob<CesiumPushResponse>('cesium.push', { folder }, {})
       const result = await job.result
@@ -795,7 +789,7 @@
       }
       const result = await request<{ path?: string; paths?: string[]; error?: string }>('dialog.openFile', {
         initialPath: gisFilePaths[0] ?? '',
-        title: 'Local GIS files'
+        title: $t('Import.Source.Gis.Title', 'Local GIS files')
       })
       if (result?.error) {
         error = result.error
@@ -1032,11 +1026,11 @@
   }
 
   let formatLabel = $derived(
-    format === 'plateau' ? $strings['Export.Format.Plateau'] ?? 'PLATEAU Context' :
-    format === 'tiles3d' ? $strings['Export.Format.Tiles3d'] ?? '3D Tiles' :
-    format === 'citygml' ? $strings['Export.Format.CityGml'] ?? 'CityGML' :
-    format === 'gis' ? 'Local GIS Files' :
-    $strings['Export.Title'] ?? 'Export'
+    format === 'plateau' ? $t('Export.Format.Plateau', 'PLATEAU Context') :
+    format === 'tiles3d' ? $t('Export.Format.Tiles3d', '3D Tiles') :
+    format === 'citygml' ? $t('Export.Format.CityGml', 'CityGML') :
+    format === 'gis' ? $t('Import.Source.Gis.Title', 'Local GIS Files') :
+    $t('Export.Title', 'Export')
   )
 
   let selectedPlateauTileCount = $derived(selectedPlateauTiles.size)
@@ -1058,292 +1052,44 @@
     {/if}
 
     {#if step === 'format'}
-      <div class="absolute inset-0 flex items-center justify-center">
-        <div class="bg-neutral-100 border border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700 rounded-lg p-8 max-w-md">
-          <h2 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100 mb-6">{$strings['Export.ChooseFormat'] ?? 'Choose Export Format'}</h2>
-
-          <div class="space-y-3">
-            <button
-              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
-              onclick={() => selectFormat('plateau')}
-            >
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-teal-50 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-700 rounded-lg flex items-center justify-center">
-                  <svg class="w-5 h-5 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Format.Plateau'] ?? 'PLATEAU Context'}</div>
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Format.PlateauDesc'] ?? 'Export as shapefile/DXF for PLATEAU workflow'}</div>
-                </div>
-              </div>
-            </button>
-
-            <button
-              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
-              onclick={() => selectFormat('tiles3d')}
-            >
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-blue-50 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-700 rounded-lg flex items-center justify-center">
-                  <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                  </svg>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Format.Tiles3d'] ?? '3D Tiles'}</div>
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Format.Tiles3dDesc'] ?? 'Export as 3D Tiles for web visualization'}</div>
-                </div>
-              </div>
-            </button>
-
-            <button
-              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
-              onclick={() => selectFormat('citygml')}
-            >
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-purple-50 border border-purple-200 dark:bg-purple-900/30 dark:border-purple-700 rounded-lg flex items-center justify-center">
-                  <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Format.CityGml'] ?? 'CityGML'}</div>
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Format.CityGmlDesc'] ?? 'Export as CityGML for semantic 3D city models'}</div>
-                </div>
-              </div>
-            </button>
-
-            <button
-              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
-              onclick={openCesiumExport}
-            >
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-sky-50 border border-sky-200 dark:bg-sky-900/30 dark:border-sky-700 rounded-lg flex items-center justify-center">
-                  <svg class="w-5 h-5 text-sky-600 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Format.Cesium'] ?? 'Export to Cesium'}</div>
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Format.CesiumDesc'] ?? 'One-click 3D Tiles + GeoPackage package for the Cesium viewer'}</div>
-                </div>
-              </div>
-            </button>
-
-            <button
-              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
-              onclick={openFloorPlanExport}
-            >
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-amber-50 border border-amber-200 dark:bg-amber-900/30 dark:border-amber-700 rounded-lg flex items-center justify-center">
-                  <svg class="w-5 h-5 text-amber-700 dark:text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7v10a2 2 0 002 2h10a2 2 0 002-2V7M9 11h6M9 15h4M8 3h8a2 2 0 012 2v2H6V5a2 2 0 012-2z" />
-                  </svg>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">GeoPackage / Shapefile</div>
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">Export floor-plan GIS packages from Revit plan views</div>
-                </div>
-              </div>
-            </button>
-
-            <button
-              class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
-              onclick={() => selectFormat('gis')}
-            >
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-emerald-50 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700 rounded-lg flex items-center justify-center">
-                  <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v15m6-12v15" />
-                  </svg>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">Local GIS Files</div>
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">Convert Shapefile / GeoPackage to georeferenced DXF</div>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
-      </div>
+      <FormatChooser {openCesiumExport} {openFloorPlanExport} {selectFormat} />
     {:else if step === 'plateau-scan'}
-      <div class="absolute inset-0 flex items-center justify-center p-8 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm">
-        <div class="bg-neutral-100 border border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700 rounded-lg p-6 max-w-md w-full">
-          <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$strings['Export.Scan.Title'] ?? 'Scanning PLATEAU Folder'}</h2>
-          <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4">
-            {#if plateauScanning}
-              <div class="flex items-center gap-2 mb-3">
-                <div class="w-4 h-4 border-2 border-neutral-600 border-t-teal-500 rounded-full animate-spin"></div>
-                <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Scan.InProgress'] ?? 'Scanning source data...'}</span>
-              </div>
-              {#if plateauScanProgress}
-                <div class="space-y-2">
-                  <div class="text-xs text-neutral-500 dark:text-neutral-400 truncate">{plateauScanProgress.message || ($strings['Export.Scan.ReadingFiles'] ?? 'Reading files...')}</div>
-                  {#if plateauScanProgress.percent !== undefined}
-                    <div class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-full h-2">
-                      <div class="bg-teal-500 h-2 rounded-full transition-all" style="width: {plateauScanProgress.percent}%"></div>
-                    </div>
-                    <div class="text-xs text-neutral-500 dark:text-neutral-500">{plateauScanProgress.percent}% {$strings['Common.PercentComplete'] ?? 'complete'}</div>
-                  {/if}
-                </div>
-              {/if}
-              <button
-                class="mt-3 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-                onclick={() => plateauScanCancel?.()}
-              >
-                {$strings['Export.Scan.Cancel'] ?? 'Cancel scan'}
-              </button>
-            {/if}
-          </div>
-        </div>
-      </div>
+      <PlateauScanMap {plateauScanCancel} {plateauScanProgress} {plateauScanning} />
     {:else if step === 'plateau-select' && plateauTiles.length > 0}
-      <div class="absolute top-4 right-4 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm border border-neutral-200 dark:border-neutral-700 rounded-lg p-4 max-w-xs">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{$strings['Export.Tiles.Title'] ?? 'Tile Selection'}</h3>
-          <div class="flex gap-2">
-            <button
-              class="text-xs text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 transition-colors"
-              onclick={selectAllPlateauTiles}
-            >
-              {$strings['Export.Tiles.All'] ?? 'All'}
-            </button>
-            <button
-              class="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-              onclick={selectNoPlateauTiles}
-            >
-              {$strings['Export.Tiles.None'] ?? 'None'}
-            </button>
-          </div>
-        </div>
-        <p class="text-xs text-neutral-500 dark:text-neutral-500 mb-2">
-          {$strings['Export.Tiles.ClickHint'] ?? 'Click tiles to toggle, or Shift+drag to select an area'}
-        </p>
-        <div class="text-xs text-neutral-500 dark:text-neutral-400">
-          {fmt($strings['Export.Tiles.SelectedOfTotal'] ?? '{0} of {1} tiles selected', selectedPlateauTileCount, plateauTiles.length)}
-        </div>
-      </div>
+      <PlateauSelectOverlay
+        {fmt}
+        {plateauTiles}
+        {selectAllPlateauTiles}
+        {selectNoPlateauTiles}
+        {selectedPlateauTileCount}
+      />
     {:else if step === 'export'}
-      <div class="absolute inset-0 flex items-center justify-center p-8">
-        <div class="bg-neutral-100 border border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700 rounded-lg p-6 max-w-md w-full">
-          <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$strings['Export.Progress.Title'] ?? 'Exporting'}</h2>
-
-          <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4">
-            {#if exporting}
-              <div class="flex items-center gap-2 mb-3">
-                <div class="w-4 h-4 border-2 border-neutral-600 border-t-teal-500 rounded-full animate-spin"></div>
-                <span class="text-sm text-neutral-700 dark:text-neutral-300">{fmt($strings['Export.Progress.Exporting'] ?? 'Exporting {0}...', formatLabel)}</span>
-              </div>
-              {#if exportProgress}
-                <div class="space-y-2">
-                  <div class="text-xs text-neutral-500 dark:text-neutral-400 truncate">
-                    {exportProgress.message || ($strings['Export.Progress.Preparing'] ?? 'Preparing...')}
-                  </div>
-                  {#if exportProgress.percent !== undefined}
-                    <div class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-full h-2">
-                      <div
-                        class="bg-teal-500 h-2 rounded-full transition-all"
-                        style="width: {exportProgress.percent}%"
-                      ></div>
-                    </div>
-                    <div class="text-xs text-neutral-500 dark:text-neutral-500">
-                      {exportProgress.percent}% {$strings['Common.PercentComplete'] ?? 'complete'}
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-              <button
-                class="mt-3 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-                onclick={() => format === 'gis' ? gisExportCancel?.() : exportCancel?.()}
-              >
-                {$strings['Export.Progress.Cancel'] ?? 'Cancel export'}
-              </button>
-            {:else if exportProgress?.complete}
-              {#if format === 'gis'}
-                <div class="py-4 text-center">
-                  <div class="text-green-600 dark:text-green-400 text-2xl mb-2">✓</div>
-                  <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-2">DXF export complete</div>
-                  {#each exportProgress.outputs ?? [] as output}
-                    <div class="font-mono text-xs text-neutral-600 dark:text-neutral-400 break-all mt-1 text-left">{output.dxfPath}</div>
-                  {/each}
-                  {#if exportProgress.summary}
-                    <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-2 text-left">{exportProgress.summary}</div>
-                  {/if}
-                  {#if exportProgress.warnings && exportProgress.warnings.length > 0}
-                    <div class="mt-3 text-left">
-                      <div class="text-xs text-amber-600 dark:text-amber-400 mb-1">{fmt($strings['Export.Warnings'] ?? '{0} warning(s)', exportProgress.warnings.length)}</div>
-                      <ul class="list-disc ml-4 space-y-0.5 max-h-24 overflow-y-auto text-xs text-neutral-500 dark:text-neutral-500">
-                        {#each exportProgress.warnings.slice(0, 10) as w}
-                          <li>{w}</li>
-                        {/each}
-                      </ul>
-                    </div>
-                  {/if}
-                  <div class="mt-3 p-3 bg-teal-50 border border-teal-200 dark:bg-teal-900/20 dark:border-teal-700 rounded-lg text-left">
-                    <div class="text-xs font-medium text-teal-800 dark:text-teal-200 mb-1">To link in Revit:</div>
-                    <div class="text-xs text-teal-700 dark:text-teal-300 space-y-0.5">
-                      <div>Insert → Link CAD → select the DXF file</div>
-                      <div>• Positioning: <strong>Auto - By Shared Coordinates</strong></div>
-                      <div>• Import units: <strong>meter</strong></div>
-                    </div>
-                  </div>
-                  <button
-                    class="mt-5 w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
-                    onclick={resetExport}
-                  >
-                    {$strings['Common.Done'] ?? 'Done'}
-                  </button>
-                </div>
-              {:else}
-                <div class="py-4 text-center">
-                  <div class="text-green-600 dark:text-green-400 text-2xl mb-2">✓</div>
-                  <div class="text-sm text-neutral-800 dark:text-neutral-200 mb-1">{$strings['Export.Complete.Title'] ?? 'Export Complete'}</div>
-                  <div class="text-xs text-neutral-500 dark:text-neutral-500">
-                    {fmt($strings['Export.Complete.Count'] ?? '{0} {1} exported', exportProgress.exportedElements ?? exportProgress.files ?? 0, $strings[exportProgress.files ? 'Export.Unit.File' : 'Export.Unit.Element'] ?? (exportProgress.files ? 'files' : 'elements'))}
-                  </div>
-                  {#if exportProgress.summary}
-                    <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{exportProgress.summary}</div>
-                  {/if}
-                  {#if exportProgress.warnings && exportProgress.warnings.length > 0}
-                    <div class="mt-3 text-left">
-                      <div class="text-xs text-amber-600 dark:text-amber-400 mb-1">{fmt($strings['Export.Warnings'] ?? '{0} warning(s)', exportProgress.warnings.length)}</div>
-                      <ul class="list-disc ml-4 space-y-0.5 max-h-32 overflow-y-auto text-xs text-neutral-500 dark:text-neutral-500">
-                        {#each exportProgress.warnings.slice(0, 10) as w}
-                          <li>{w}</li>
-                        {/each}
-                      </ul>
-                    </div>
-                  {/if}
-                  <button
-                    class="mt-5 w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
-                    onclick={resetExport}
-                  >
-                    {$strings['Common.Done'] ?? 'Done'}
-                  </button>
-                </div>
-              {/if}
-            {/if}
-          </div>
-        </div>
-      </div>
+      <ExportProgress
+        {exportCancel}
+        {exportProgress}
+        {exporting}
+        {fmt}
+        {format}
+        {formatLabel}
+        {gisExportCancel}
+        {resetExport}
+      />
     {/if}
   </div>
 
   <aside class="w-96 bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200 dark:border-neutral-700 p-6 overflow-y-auto">
     {#if step === 'format'}
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$strings['Export.Title'] ?? 'Export'}</h2>
+      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$t('Export.Title', 'Export')}</h2>
       <p class="text-sm text-neutral-500 dark:text-neutral-400">
-        {$strings['Export.FormatIntro'] ?? 'Select an export format to begin exporting your Revit model.'}
+        {$t('Export.FormatIntro', 'Select an export format to begin exporting your Revit model.')}
       </p>
 
     {:else if step === 'preflight'}
       <div class="flex items-center gap-2 mb-4">
         <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
+          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
           onclick={goBack}
-          aria-label={$strings['Common.Back'] ?? 'Back'}
+          aria-label={$t('Common.Back', 'Back')}
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -1363,574 +1109,110 @@
           class="w-full mt-4 bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
           onclick={continueToScope}
         >
-          {$strings['Common.Continue'] ?? 'Continue'}
+          {$t('Common.Continue', 'Continue')}
         </button>
       {/if}
 
     {:else if step === 'plateau-source'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
-          onclick={goBack}
-          aria-label={$strings['Common.Back'] ?? 'Back'}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$strings['Export.PlateauSource.Title'] ?? 'PLATEAU Source'}</h2>
-      </div>
-
-      <div class="space-y-4">
-        <div>
-          <label for="export-plateau-folder-path" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-            {$strings['Export.PlateauFolder'] ?? 'PLATEAU Folder'}
-          </label>
-          <div class="flex gap-2">
-            <input
-              id="export-plateau-folder-path"
-              type="text"
-              bind:value={plateauFolderPath}
-              placeholder={$strings['Export.SelectFolder'] ?? 'Select folder...'}
-              class="flex-1 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-            />
-            <button
-              class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
-              onclick={browsePlateauFolder}
-            >
-              {$strings['Common.Browse'] ?? 'Browse'}
-            </button>
-          </div>
-        </div>
-
-        <button
-          class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          onclick={startPlateauScan}
-          disabled={!plateauFolderPath}
-        >
-          {$strings['Common.ScanFolder'] ?? 'Scan Folder'}
-        </button>
-      </div>
-
+      <PlateauSourcePanel {browsePlateauFolder} {goBack} bind:plateauFolderPath {startPlateauScan} />
     {:else if step === 'plateau-scan'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
-          onclick={goBack}
-          aria-label={$strings['Common.Back'] ?? 'Back'}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$strings['Export.Scan.Heading'] ?? 'Scanning'}</h2>
-      </div>
-
-      <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4">
-        <div class="text-sm text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.Scan.ReadingSource'] ?? 'Reading PLATEAU source files'}</div>
-        {#if plateauScanProgress?.percent !== undefined}
-          <div class="w-full bg-neutral-200 dark:bg-neutral-800 rounded-full h-2">
-            <div class="bg-teal-500 h-2 rounded-full transition-all" style="width: {plateauScanProgress.percent}%"></div>
-          </div>
-        {/if}
-      </div>
-
+      <PlateauScanPanel {goBack} {plateauScanProgress} />
     {:else if step === 'plateau-select'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
-          onclick={goBack}
-          aria-label={$strings['Common.Back'] ?? 'Back'}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$strings['Export.Tiles.SelectTitle'] ?? 'Select Tiles'}</h2>
-      </div>
-
-      <div class="space-y-4">
-        <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4">
-          <div class="text-sm text-neutral-800 dark:text-neutral-200">{fmt($strings['Export.Tiles.SelectedOfTotal'] ?? '{0} of {1} tiles selected', selectedPlateauTileCount, plateauTiles.length)}</div>
-          <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{fmt($strings['Export.Tiles.MbSelected'] ?? '{0} MB selected', (selectedPlateauSize / 1024 / 1024).toFixed(1))}</div>
-        </div>
-
-        <button
-          class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          onclick={continueToPlateauOptions}
-          disabled={selectedPlateauTileCount === 0}
-        >
-          {$strings['Common.Continue'] ?? 'Continue'}
-        </button>
-      </div>
-
+      <PlateauSelectPanel
+        {continueToPlateauOptions}
+        {fmt}
+        {goBack}
+        {plateauTiles}
+        {selectedPlateauSize}
+        {selectedPlateauTileCount}
+      />
     {:else if step === 'gis-options'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
-          onclick={goBack}
-          aria-label={$strings['Common.Back'] ?? 'Back'}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Local GIS Files</h2>
-      </div>
-
-      <div class="space-y-4">
-        <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4 space-y-3">
-
-          <div>
-            <label for="gis-file-path" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">GIS files</label>
-            <div class="flex gap-2">
-              <input
-                id="gis-file-path"
-                type="text"
-                value={gisFileDisplay}
-                readonly
-                placeholder="Select .shp or .gpkg files..."
-                class="flex-1 min-w-0 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-              {#if gisFilePaths.length > 0}
-                <button
-                  class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
-                  onclick={clearGisSelection}
-                >
-                  {$strings['Common.Clear'] ?? 'Clear'}
-                </button>
-              {/if}
-              <button
-                class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
-                onclick={browseGisFiles}
-              >
-                {$strings['Common.Browse'] ?? 'Browse'}
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label for="gis-basemap-name" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Basemap name</label>
-            <input
-              id="gis-basemap-name"
-              type="text"
-              bind:value={gisBasemapName}
-              placeholder="e.g. Retail layout"
-              class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-            />
-          </div>
-
-          <div class="space-y-2">
-            <div class="flex items-center justify-between gap-3">
-              <div class="text-xs font-medium text-neutral-600 dark:text-neutral-400">Line colors</div>
-              <button
-                class="text-xs text-neutral-500 transition-colors hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                onclick={resetGisCategoryColors}
-              >
-                {$strings['Common.Reset'] ?? 'Reset'}
-              </button>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              {#each gisCategoryOptions as option}
-                <label class="flex items-center justify-between gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                  <span class="truncate">{option.label}</span>
-                  <input
-                    type="color"
-                    value={gisCategoryColors[option.id]}
-                    aria-label={`${option.label} line color`}
-                    class="h-7 w-9 shrink-0 cursor-pointer rounded border border-neutral-300 bg-transparent p-0 dark:border-neutral-600"
-                    onchange={(event) => setGisCategoryColor(option.id, event.currentTarget.value)}
-                  />
-                </label>
-              {/each}
-            </div>
-          </div>
-
-          {#if gisOptionsLoading}
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">
-              Loading Revit levels...
-            </div>
-          {/if}
-
-          {#if gisFileAssignments.length > 0}
-            <div class="space-y-2">
-              <div class="flex items-center justify-between gap-3">
-                <div class="text-xs font-medium text-neutral-600 dark:text-neutral-400">Assign files</div>
-                <button
-                  class="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
-                  onclick={openGisAssignmentsModal}
-                >
-                  Assign files...
-                </button>
-              </div>
-              {#if gisLevels.length > 0}
-                {#if gisFilesNeedingLevel > 0}
-                  <div class="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400">
-                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400"></span>
-                    <span>{gisFilesNeedingLevel} file(s) without a level — will merge into one DXF</span>
-                  </div>
-                {:else}
-                  <div class="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
-                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"></span>
-                    <span>All {gisFileAssignments.length} file(s) assigned to a level</span>
-                  </div>
-                {/if}
-              {/if}
-            </div>
-
-            {#if gisOutputPreview.length > 0}
-              <div class="rounded-md border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-800">
-                <div class="mb-1 text-xs font-medium text-neutral-600 dark:text-neutral-400">DXF files</div>
-                <div class="space-y-1">
-                  {#each gisOutputPreview as name}
-                    <div class="truncate text-xs font-mono text-neutral-700 dark:text-neutral-200" title={name}>{name}</div>
-                  {/each}
-                </div>
-              </div>
-            {/if}
-          {/if}
-
-          <div>
-            <label for="gis-output-folder" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">DXF output folder</label>
-            <div class="flex gap-2">
-              <input
-                id="gis-output-folder"
-                type="text"
-                value={gisOutputFolder}
-                readonly
-                placeholder="Select folder for DXF output..."
-                class="flex-1 min-w-0 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-              <button
-                class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
-                onclick={browseGisOutputFolder}
-              >
-                {$strings['Common.Browse'] ?? 'Browse'}
-              </button>
-            </div>
-          </div>
-
-          <p class="text-xs text-neutral-500 dark:text-neutral-500">
-            DXF files will be written to the selected folder. After export, link them in Revit using the settings shown on the result page.
-          </p>
-        </div>
-
-        {#if error}
-          <div class="p-3 bg-red-50 border border-red-200 dark:bg-red-900/30 dark:border-red-700 rounded-lg">
-            <div class="text-sm text-red-700 dark:text-red-300">{error}</div>
-          </div>
-        {/if}
-
-        <button
-          class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          onclick={startGisExport}
-          disabled={!canExportGis}
-        >
-          Export to DXF
-        </button>
-      </div>
-
+      <GisOptions
+        {browseGisFiles}
+        {browseGisOutputFolder}
+        {canExportGis}
+        {clearGisSelection}
+        {error}
+        bind:gisBasemapName
+        {gisCategoryColors}
+        {gisCategoryOptions}
+        {gisFileAssignments}
+        {gisFileDisplay}
+        {gisFilePaths}
+        {gisFilesNeedingLevel}
+        {gisLevels}
+        {gisOptionsLoading}
+        {gisOutputFolder}
+        {gisOutputPreview}
+        {goBack}
+        {openGisAssignmentsModal}
+        {resetGisCategoryColors}
+        {setGisCategoryColor}
+        {startGisExport}
+      />
     {:else if step === 'scope'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
-          onclick={goBack}
-          aria-label={$strings['Common.Back'] ?? 'Back'}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$strings['Export.Scope.Title'] ?? 'Select Scope'}</h2>
-      </div>
-
-      <div class="space-y-3">
-        <button
-          class="w-full p-3 bg-white dark:bg-neutral-900 border rounded-lg transition-colors text-left {scope === 'whole' ? 'border-teal-500' : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'}"
-          onclick={() => setScope('whole')}
-        >
-          <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Scope.Whole'] ?? 'Whole Model'}</div>
-          <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Scope.WholeDesc'] ?? 'Export all elements in the model'}</div>
-        </button>
-
-        <button
-          class="w-full p-3 bg-white dark:bg-neutral-900 border rounded-lg transition-colors text-left {scope === 'view' ? 'border-teal-500' : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'}"
-          onclick={() => setScope('view')}
-        >
-          <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$strings['Export.Scope.View'] ?? 'Active 3D View'}</div>
-          <div class="text-xs text-neutral-500 dark:text-neutral-500">{$strings['Export.Scope.ViewDesc'] ?? 'Export only visible elements in current view'}</div>
-        </button>
-
-        <button
-          class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
-          onclick={continueToOptions}
-        >
-          {$strings['Common.Continue'] ?? 'Continue'}
-        </button>
-      </div>
-
+      <ScopeStep {continueToOptions} {goBack} {scope} {setScope} />
     {:else if step === 'options'}
       <div class="flex items-center gap-2 mb-4">
         <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
+          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
           onclick={goBack}
-          aria-label={$strings['Common.Back'] ?? 'Back'}
+          aria-label={$t('Common.Back', 'Back')}
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{fmt($strings['Export.Options.Title'] ?? '{0} Options', formatLabel)}</h2>
+        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{fmt($t('Export.Options.Title', '{0} Options'), formatLabel)}</h2>
       </div>
 
       <div class="space-y-4">
         <div>
           <label for="export-output-folder" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-            {$strings['Export.OutputFolder'] ?? 'Output Folder'}
+            {$t('Export.OutputFolder', 'Output Folder')}
           </label>
           <div class="flex gap-2">
             <input
               id="export-output-folder"
               type="text"
               bind:value={outputFolder}
-              placeholder={$strings['Export.SelectFolder'] ?? 'Select folder...'}
+              placeholder={$t('Export.SelectFolder', 'Select folder...')}
               class="flex-1 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
             <button
               class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
               onclick={browseOutputFolder}
             >
-              {$strings['Common.Browse'] ?? 'Browse'}
+              {$t('Common.Browse', 'Browse')}
             </button>
           </div>
         </div>
 
         {#if format === 'plateau'}
-          <div class="space-y-4">
-            <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-3">
-              <div class="text-xs text-neutral-500 dark:text-neutral-400 mb-1">{$strings['Export.Source'] ?? 'Source'}</div>
-              <div class="text-sm text-neutral-800 dark:text-neutral-200 truncate">{plateauFolderPath}</div>
-              <div class="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{fmt($strings['Export.SelectedTiles'] ?? '{0} selected tile(s)', selectedPlateauTileCount)}</div>
-            </div>
-
-            <div>
-              <div class="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.Formats'] ?? 'Formats'}</div>
-              <div class="space-y-2">
-                <label class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    bind:checked={plateauOptions.formats.shapefile}
-                    class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-                  />
-                  <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Format.Shapefile'] ?? 'Shapefile'}</span>
-                </label>
-                <label class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    bind:checked={plateauOptions.formats.dxf}
-                    class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-                  />
-                  <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Format.Dxf'] ?? 'DXF'}</span>
-                </label>
-              </div>
-            </div>
-
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                bind:checked={plateauOptions.includeContext}
-                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-              />
-              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.IncludeContext'] ?? 'Include PLATEAU context'}</span>
-            </label>
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                bind:checked={plateauOptions.includeKiban}
-                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-              />
-              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.IncludeKiban'] ?? 'Include GSI/Kiban layers'}</span>
-            </label>
-
-            {#if plateauOptions.includeKiban}
-              <div>
-                <label for="export-kiban-folder" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                  {$strings['Export.KibanFolder'] ?? 'Kiban Folder'}
-                </label>
-                <div class="flex gap-2">
-                  <input
-                    id="export-kiban-folder"
-                    type="text"
-                    bind:value={plateauKibanFolderPath}
-                    placeholder={$strings['Export.OptionalFolder'] ?? 'Optional folder...'}
-                    class="flex-1 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                  <button
-                    class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
-                    onclick={browseKibanFolder}
-                  >
-                    {$strings['Common.Browse'] ?? 'Browse'}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div class="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.KibanLayers'] ?? 'Kiban Layers'}</div>
-                <div class="grid grid-cols-2 gap-2">
-                  {#each plateauKibanLayerOptions as layer}
-                    <label class="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedKibanLayers.has(layer.id)}
-                        onchange={() => toggleKibanLayer(layer.id)}
-                        class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-                      />
-                      <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings[layer.labelKey] ?? layer.label}</span>
-                    </label>
-                  {/each}
-                </div>
-              </div>
-            {/if}
-
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                bind:checked={plateauOptions.includeRevitModel}
-                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-              />
-              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.IncludeRevitModel'] ?? 'Include Revit model footprint'}</span>
-            </label>
-          </div>
-
+          <PlateauOptions
+            {browseKibanFolder}
+            {fmt}
+            {plateauFolderPath}
+            bind:plateauKibanFolderPath
+            {plateauKibanLayerOptions}
+            bind:plateauOptions
+            {selectedKibanLayers}
+            {selectedPlateauTileCount}
+            {toggleKibanLayer}
+          />
         {:else if format === 'tiles3d'}
-          <div class="space-y-3">
-            <div>
-              <label for="export-tiles3d-lod" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.Tiles3d.Lod'] ?? 'LOD Level'}</label>
-              <select
-                id="export-tiles3d-lod"
-                bind:value={tiles3dOptions.lod}
-                class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="coarse">{$strings['Export.Tiles3d.LodCoarse'] ?? 'Coarse'}</option>
-                <option value="medium">{$strings['Export.Tiles3d.LodMedium'] ?? 'Medium'}</option>
-                <option value="fine">{$strings['Export.Tiles3d.LodFine'] ?? 'Fine'}</option>
-              </select>
-            </div>
-
-            {#if scope === 'view'}
-              <div>
-                <label for="export-tiles3d-view" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.Tiles3d.View'] ?? '3D View'}</label>
-                <select
-                  id="export-tiles3d-view"
-                  bind:value={selectedTiles3dViewUniqueId}
-                  onchange={(event) => {
-                    selectedTiles3dViewUniqueId = event.currentTarget.value
-                    tiles3dOptions.selectedViewUniqueId = selectedTiles3dViewUniqueId
-                    exportPreview = null
-                  }}
-                  class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                >
-                  {#each tiles3dViews as view}
-                    <option value={view.uniqueId}>{view.title}</option>
-                  {/each}
-                </select>
-                {#if tiles3dViews.length === 0}
-                  <div class="mt-2 text-xs text-amber-600 dark:text-amber-400">{$strings['Export.Tiles3d.NoViews'] ?? 'No non-template 3D views are available.'}</div>
-                {/if}
-              </div>
-            {/if}
-
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={tiles3dOptions.preciseCrs}
-                onchange={(event) => {
-                  tiles3dOptions.preciseCrs = event.currentTarget.checked
-                  exportPreview = null
-                }}
-                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-              />
-              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.PreciseCrs'] ?? 'Use precise CRS projection'}</span>
-            </label>
-
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                bind:checked={sendToCesiumViewer}
-                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-              />
-              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.SendToCesium'] ?? 'Send to Cesium viewer after export'}</span>
-            </label>
-
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={tiles3dOptions.geoidAuto}
-                onchange={(event) => {
-                  tiles3dOptions.geoidAuto = event.currentTarget.checked
-                  exportPreview = null
-                }}
-                class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-              />
-              <span class="text-sm text-neutral-700 dark:text-neutral-300">{$strings['Export.Tiles3d.GeoidAuto'] ?? 'Auto-detect from location (EGM2008)'}</span>
-            </label>
-
-            {#if !tiles3dOptions.geoidAuto}
-              <div>
-                <label for="export-tiles3d-geoid-offset" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                  {$strings['Export.Tiles3d.GeoidOffset'] ?? 'Geoid Height Offset (meters)'}
-                </label>
-                <input
-                  id="export-tiles3d-geoid-offset"
-                  type="number"
-                  bind:value={tiles3dOptions.geoidOffset}
-                  oninput={() => {
-                    exportPreview = null
-                  }}
-                  step="0.1"
-                  class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-            {/if}
-
-            {#if tiles3dLinks.length > 0}
-              <div>
-                <div class="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.Tiles3d.LinkedModels'] ?? 'Linked Models'}</div>
-                <div class="space-y-2">
-                  {#each tiles3dLinks as link}
-                    <label class="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedTiles3dLinkIds.has(link.uniqueId)}
-                        onchange={() => {
-                          const next = new Set(selectedTiles3dLinkIds)
-                          if (next.has(link.uniqueId)) next.delete(link.uniqueId)
-                          else next.add(link.uniqueId)
-                          selectedTiles3dLinkIds = next
-                        }}
-                        class="rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
-                      />
-                      <span class="text-sm text-neutral-700 dark:text-neutral-300">{link.title}</span>
-                    </label>
-                  {/each}
-                </div>
-              </div>
-            {/if}
-          </div>
-
+          <Tiles3dOptions
+            bind:exportPreview
+            {scope}
+            bind:selectedTiles3dLinkIds
+            bind:selectedTiles3dViewUniqueId
+            bind:sendToCesiumViewer
+            {tiles3dLinks}
+            bind:tiles3dOptions
+            {tiles3dViews}
+          />
         {:else if format === 'citygml'}
-          <div class="space-y-3">
-            <div>
-              <label for="export-citygml-schema-version" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{$strings['Export.CityGml.SchemaVersion'] ?? 'Schema Version'}</label>
-              <select
-                id="export-citygml-schema-version"
-                bind:value={citygmlOptions.schemaVersion}
-                class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="2.0">{$strings['Export.CityGml.V2'] ?? 'CityGML 2.0 Lightweight'}</option>
-              </select>
-            </div>
-          </div>
+          <CityGmlOptions bind:citygmlOptions />
         {/if}
 
         <button
@@ -1938,109 +1220,31 @@
           onclick={prepareExport}
           disabled={preparingPreview || !outputFolder || (format === 'plateau' && (!plateauOptions.formats.shapefile && !plateauOptions.formats.dxf)) || (format === 'tiles3d' && scope === 'view' && !selectedTiles3dViewUniqueId)}
         >
-          {preparingPreview ? ($strings['Export.Prepare.Preparing'] ?? 'Preparing...') : ($strings['Export.Action.Preview'] ?? 'Preview Export')}
+          {preparingPreview ? $t('Export.Prepare.Preparing', 'Preparing...') : $t('Export.Action.Preview', 'Preview Export')}
         </button>
       </div>
 
     {:else if step === 'review'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:text-neutral-200 transition-colors"
-          onclick={goBack}
-          aria-label={$strings['Common.Back'] ?? 'Back'}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$strings['Export.Preview.Title'] ?? 'Export Preview'}</h2>
-      </div>
-
-      {#if exportPreview}
-        <div class="space-y-4">
-          <div class="space-y-2 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
-            <div class="flex justify-between gap-3 text-sm">
-              <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Format'] ?? 'Format:'}</span>
-              <span class="text-right text-neutral-800 dark:text-neutral-200">{formatLabel}</span>
-            </div>
-            <div class="flex justify-between gap-3 text-sm">
-              <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Scope'] ?? 'Scope:'}</span>
-              <span class="text-right text-neutral-800 dark:text-neutral-200">{scope === 'view' ? ($strings['Export.Scope.View'] ?? 'Selected 3D View') : ($strings['Export.Scope.Whole'] ?? 'Whole Model')}</span>
-            </div>
-            <div class="flex justify-between gap-3 text-sm">
-              <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Crs'] ?? 'CRS:'}</span>
-              <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.crs}</span>
-            </div>
-            {#if exportPreview.elementCount !== undefined}
-              <div class="flex justify-between gap-3 text-sm">
-                <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Elements'] ?? 'Elements:'}</span>
-                <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.elementCount}</span>
-              </div>
-            {/if}
-            {#if exportPreview.triangleCount !== undefined}
-              <div class="flex justify-between gap-3 text-sm">
-                <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Triangles'] ?? 'Triangles:'}</span>
-                <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.triangleCount}</span>
-              </div>
-            {/if}
-            {#if format === 'tiles3d' && exportPreview.geoidOffsetMeters !== undefined}
-              <div class="flex justify-between gap-3 text-sm">
-                <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.GeoidOffset'] ?? 'Geoid offset:'}</span>
-                <span class="text-right text-neutral-800 dark:text-neutral-200">{formatSignedMeters(exportPreview.geoidOffsetMeters)}</span>
-              </div>
-            {/if}
-            {#if exportPreview.featureCount !== undefined}
-              <div class="flex justify-between gap-3 text-sm">
-                <span class="text-neutral-500 dark:text-neutral-400">{$strings['Export.Preview.Features'] ?? 'Features:'}</span>
-                <span class="text-right text-neutral-800 dark:text-neutral-200">{exportPreview.featureCount}</span>
-              </div>
-            {/if}
-          </div>
-
-          {#if exportPreview.perLayerCounts && Object.keys(exportPreview.perLayerCounts).length > 0}
-            <div class="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
-              <div class="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">{$strings['Export.Preview.Layers'] ?? 'Layers'}</div>
-              <div class="max-h-32 space-y-1 overflow-y-auto">
-                {#each Object.entries(exportPreview.perLayerCounts) as [layer, count]}
-                  <div class="flex justify-between gap-3 text-xs">
-                    <span class="truncate text-neutral-500 dark:text-neutral-400">{layer}</span>
-                    <span class="text-neutral-800 dark:text-neutral-200">{count}</span>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          {#if exportPreview.warnings.length > 0}
-            <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
-              <div class="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">{fmt($strings['Export.Warnings'] ?? '{0} warning(s)', exportPreview.warnings.length)}</div>
-              <ul class="ml-4 max-h-32 list-disc space-y-1 overflow-y-auto text-xs text-amber-700 dark:text-amber-200">
-                {#each exportPreview.warnings.slice(0, 10) as warning}
-                  <li>{warning}</li>
-                {/each}
-              </ul>
-            </div>
-          {/if}
-
-          <button
-            class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            onclick={startExport}
-            disabled={exporting}
-          >
-            {$strings['Export.Action.Export'] ?? 'Export'}
-          </button>
-        </div>
-      {/if}
-
+      <ReviewStep
+        {exportPreview}
+        {exporting}
+        {fmt}
+        {format}
+        {formatLabel}
+        {formatSignedMeters}
+        {goBack}
+        {scope}
+        {startExport}
+      />
     {:else if step === 'export'}
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$strings['Export.Progress.Title'] ?? 'Exporting'}</h2>
+      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$t('Export.Progress.Title', 'Exporting')}</h2>
       {#if exporting}
         <div class="flex items-center gap-2">
           <div class="w-4 h-4 border-2 border-neutral-600 border-t-teal-500 rounded-full animate-spin"></div>
-          <span class="text-sm text-neutral-500 dark:text-neutral-400">{exportProgress?.message || ($strings['Export.Progress.Preparing'] ?? 'Preparing…')}</span>
+          <span class="text-sm text-neutral-500 dark:text-neutral-400">{exportProgress?.message || $t('Export.Progress.Preparing', 'Preparing…')}</span>
         </div>
       {:else if exportProgress?.complete}
-        <p class="text-sm text-neutral-500 dark:text-neutral-400">{$strings['Export.Complete.Title'] ?? 'Export Complete'}</p>
+        <p class="text-sm text-neutral-500 dark:text-neutral-400">{$t('Export.Complete.Title', 'Export Complete')}</p>
       {/if}
       {#if cesiumPushStatus}
         <p class="mt-2 text-xs text-sky-600 dark:text-sky-400">{cesiumPushStatus}</p>
@@ -2058,327 +1262,46 @@
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 {#if gisAssignmentsModalOpen}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-5">
-    <button
-      type="button"
-      class="absolute inset-0 cursor-default bg-neutral-900/50 backdrop-blur-sm"
-      aria-label={$strings['Common.Close'] ?? 'Close'}
-      onclick={closeGisAssignmentsModal}
-    ></button>
-
-    <div
-      class="relative z-10 flex max-h-[88vh] w-[min(1024px,96vw)] flex-col rounded-lg border border-neutral-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="gis-assignments-title"
-    >
-      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 p-4 dark:border-neutral-700">
-        <div>
-          <h3 id="gis-assignments-title" class="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-            Assign files
-          </h3>
-          <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            {gisFileAssignments.length} file(s) - {gisFilesNeedingLevel} need a level
-          </p>
-        </div>
-        <button
-          class="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
-          onclick={closeGisAssignmentsModal}
-        >
-          {$strings['Common.Close'] ?? 'Close'}
-        </button>
-      </div>
-
-      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <input
-            type="text"
-            bind:value={gisAssignmentSearch}
-            placeholder="Search file, path, category, or level..."
-            class="min-w-[240px] flex-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-          />
-          <div class="text-xs text-neutral-500 dark:text-neutral-400">
-            {gisFilteredAssignments.length} of {gisFileAssignments.length}
-          </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-          <span class="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-            {gisSelectedAssignmentPaths.size} selected
-          </span>
-          <select
-            class="h-9 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-            bind:value={gisBulkCategoryValue}
-            disabled={gisSelectedAssignmentPaths.size === 0}
-            aria-label="Set category for selected"
-            onchange={() => bulkSetGisCategory(gisBulkCategoryValue)}
-          >
-            <option value="">Set category...</option>
-            {#each gisCategoryOptions as option}
-              <option value={option.id}>{option.label}</option>
-            {/each}
-          </select>
-          <select
-            class="h-9 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-            bind:value={gisBulkLevelValue}
-            disabled={gisSelectedAssignmentPaths.size === 0 || gisLevels.length === 0}
-            aria-label="Set level for selected"
-            onchange={() => bulkSetGisLevel(gisBulkLevelValue)}
-          >
-            <option value="">Set level...</option>
-            {#each gisLevels as level}
-              <option value={level.id}>{levelLabel(level)}</option>
-            {/each}
-          </select>
-          <div class="ml-auto flex items-center gap-3">
-            <button
-              class="text-xs text-teal-600 transition-colors hover:text-teal-700 disabled:opacity-50 dark:text-teal-400 dark:hover:text-teal-300"
-              onclick={selectVisibleGisAssignments}
-              disabled={gisFilteredAssignments.length === 0}
-            >
-              Select visible
-            </button>
-            <button
-              class="text-xs text-neutral-500 transition-colors hover:text-neutral-800 disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200"
-              onclick={clearGisAssignmentSelection}
-              disabled={gisSelectedAssignmentPaths.size === 0}
-            >
-              Clear selection
-            </button>
-          </div>
-        </div>
-
-        <div class="min-h-0 flex-1 overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700">
-          <table class="w-full border-collapse text-sm">
-            <thead>
-              <tr class="sticky top-0 z-[1] bg-neutral-50 text-left text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                <th class="w-10 border-b border-neutral-200 p-2 dark:border-neutral-700"><span class="sr-only">Select</span></th>
-                <th class="border-b border-neutral-200 p-2 dark:border-neutral-700">File</th>
-                <th class="w-40 border-b border-neutral-200 p-2 dark:border-neutral-700">Category</th>
-                <th class="w-56 border-b border-neutral-200 p-2 dark:border-neutral-700">Level</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#if gisFilteredAssignments.length === 0}
-                <tr>
-                  <td colspan="4" class="p-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                    No files match the current search.
-                  </td>
-                </tr>
-              {:else}
-                {#each gisFilteredAssignments as assignment (assignment.path)}
-                  <tr class="border-b border-neutral-100 last:border-b-0 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800/50">
-                    <td class="p-2 align-top">
-                      <input
-                        type="checkbox"
-                        class="mt-1 h-4 w-4 rounded border-neutral-300 text-teal-600 focus:ring-teal-500"
-                        checked={gisSelectedAssignmentPaths.has(assignment.path)}
-                        aria-label={fileNameFromPath(assignment.path)}
-                        onchange={() => toggleGisAssignmentSelection(assignment.path)}
-                      />
-                    </td>
-                    <td class="min-w-0 p-2">
-                      <div class="truncate font-mono text-xs text-neutral-800 dark:text-neutral-200" title={assignment.path}>
-                        {fileNameFromPath(assignment.path)}
-                      </div>
-                      <div class="truncate text-[11px] text-neutral-500 dark:text-neutral-500" title={assignment.path}>
-                        {assignment.path}
-                      </div>
-                    </td>
-                    <td class="p-2 align-top">
-                      <select
-                        class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                        value={assignment.category}
-                        aria-label="Category"
-                        onchange={(event) => setGisAssignmentCategory(assignment.path, event.currentTarget.value)}
-                      >
-                        {#each gisCategoryOptions as option}
-                          <option value={option.id}>{option.label}</option>
-                        {/each}
-                      </select>
-                    </td>
-                    <td class="p-2 align-top">
-                      <select
-                        class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-teal-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                        value={assignment.levelId ?? ''}
-                        disabled={gisLevels.length === 0}
-                        aria-label="Select level"
-                        onchange={(event) => setGisAssignmentLevel(assignment.path, event.currentTarget.value)}
-                      >
-                        <option value="">Select level</option>
-                        {#each gisLevels as level}
-                          <option value={level.id}>{levelLabel(level)}</option>
-                        {/each}
-                      </select>
-                    </td>
-                  </tr>
-                {/each}
-              {/if}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
+  <GisAssignmentsModal
+    {bulkSetGisCategory}
+    {bulkSetGisLevel}
+    {clearGisAssignmentSelection}
+    {closeGisAssignmentsModal}
+    {fileNameFromPath}
+    bind:gisAssignmentSearch
+    bind:gisBulkCategoryValue
+    bind:gisBulkLevelValue
+    {gisCategoryOptions}
+    {gisFileAssignments}
+    {gisFilesNeedingLevel}
+    {gisFilteredAssignments}
+    {gisLevels}
+    {gisSelectedAssignmentPaths}
+    {levelLabel}
+    {selectVisibleGisAssignments}
+    {setGisAssignmentCategory}
+    {setGisAssignmentLevel}
+    {toggleGisAssignmentSelection}
+  />
 {/if}
 
 {#if cesiumOpen}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-    <div class="w-full max-w-lg rounded-lg border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900 max-h-[90vh] overflow-y-auto">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$strings['Export.Cesium.Title'] ?? 'Export to Cesium'}</h2>
-        <button
-          class="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 disabled:opacity-40"
-          onclick={closeCesiumExport}
-          disabled={cesiumRunning}
-          aria-label="Close"
-        >
-          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-        </button>
-      </div>
-
-      {#if cesiumState?.firstRun}
-        <div class="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
-          {$strings['Export.Cesium.FirstRun'] ?? 'No floor-plan export profile exists yet. Open "GeoPackage / Shapefile", configure an export once, and save it as a profile — then it becomes the one-click source here.'}
-        </div>
-      {/if}
-
-      <div class="space-y-4">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumProfileSelect">{$strings['Export.Cesium.Profile'] ?? 'Floor-plan profile'}</label>
-          <select
-            id="cesiumProfileSelect"
-            class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-            bind:value={cesiumProfile}
-            disabled={cesiumRunning || (cesiumState?.floorPlanProfiles.length ?? 0) === 0}
-          >
-            {#each cesiumState?.floorPlanProfiles ?? [] as profileName}
-              <option value={profileName}>{profileName}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div>
-          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumFolderInput">{$strings['Export.Cesium.Folder'] ?? 'Package folder'}</label>
-          <div class="flex gap-2">
-            <input
-              id="cesiumFolderInput"
-              class="h-9 flex-1 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-              bind:value={cesiumOutputFolder}
-              disabled={cesiumRunning}
-              placeholder="C:\Exports\Tower-cesium"
-            />
-            <button
-              class="h-9 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 hover:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 disabled:opacity-40"
-              onclick={pickCesiumOutputFolder}
-              disabled={cesiumRunning}
-            >…</button>
-          </div>
-        </div>
-
-        <div class="flex gap-4">
-          <div class="flex-1">
-            <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumLodSelect">{$strings['Export.Cesium.Lod'] ?? 'Level of detail'}</label>
-            <select
-              id="cesiumLodSelect"
-              class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-              bind:value={cesiumLod}
-              disabled={cesiumRunning}
-            >
-              <option value="fine">{$strings['Export.Lod.Fine'] ?? 'Fine'}</option>
-              <option value="medium">{$strings['Export.Lod.Medium'] ?? 'Medium'}</option>
-              <option value="coarse">{$strings['Export.Lod.Coarse'] ?? 'Coarse'}</option>
-            </select>
-          </div>
-          <label class="flex flex-1 cursor-pointer items-end gap-2 pb-2 text-sm text-neutral-700 dark:text-neutral-300">
-            <input type="checkbox" bind:checked={cesiumPreciseCrs} disabled={cesiumRunning} class="h-4 w-4" />
-            {$strings['Export.Cesium.PreciseCrs'] ?? 'Precise CRS'}
-          </label>
-        </div>
-
-        <div>
-          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumHeightDatumSelect">{$strings['Export.Cesium.HeightDatum'] ?? 'Survey point elevation is'}</label>
-          <select
-            id="cesiumHeightDatumSelect"
-            class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-            bind:value={cesiumHeightDatum}
-            disabled={cesiumRunning}
-          >
-            <option value="unknown">{$strings['Export.Cesium.HeightDatum.Unknown'] ?? 'Not checked'}</option>
-            <option value="TP">{$strings['Export.Cesium.HeightDatum.Tp'] ?? 'Tokyo Peil (T.P.)'}</option>
-          </select>
-          <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{$strings['Export.Cesium.HeightDatum.Hint'] ?? 'Choose T.P. only when the survey point elevation was set from T.P. Kanizu then trusts the floor heights in this package.'}</p>
-        </div>
-
-        <div>
-          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumViewerUrlInput">{$strings['Export.Cesium.ViewerUrl'] ?? 'Cesium viewer URL'}</label>
-          <input
-            id="cesiumViewerUrlInput"
-            class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-            bind:value={cesiumViewerUrl}
-            disabled={cesiumRunning}
-            placeholder="http://localhost:3001"
-          />
-        </div>
-
-        <label class="flex cursor-pointer items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-          <input type="checkbox" bind:checked={cesiumKeepVersions} disabled={cesiumRunning} class="mt-0.5 h-4 w-4" />
-          <span>
-            {$strings['Export.Cesium.KeepVersions'] ?? 'Station folder for Kanizu: add a new version each time'}
-            <span class="block text-xs text-neutral-500 dark:text-neutral-400">{$strings['Export.Cesium.KeepVersions.Hint'] ?? 'Writes to revit/<model>/<time>/ inside the output folder and keeps earlier exports. Kanizu cleans up old versions.'}</span>
-          </span>
-        </label>
-
-        <label class="flex cursor-pointer items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-          <input type="checkbox" bind:checked={cesiumPush} disabled={cesiumRunning} class="h-4 w-4" />
-          {$strings['Export.Cesium.Push'] ?? 'Push to viewer after export (falls back to the folder when the viewer is offline)'}
-        </label>
-
-        {#if cesiumRunning}
-          <div class="rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-            <div class="mb-2 flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-              <div class="h-4 w-4 animate-spin rounded-full border-2 border-neutral-500 border-t-teal-500"></div>
-              {cesiumProgress?.message ?? ($strings['Export.Cesium.Running'] ?? 'Exporting…')}
-            </div>
-            {#if cesiumProgress?.percent != null}
-              <div class="h-1.5 overflow-hidden rounded bg-neutral-200 dark:bg-neutral-700">
-                <div class="h-full bg-teal-500 transition-all" style="width: {cesiumProgress.percent}%"></div>
-              </div>
-            {/if}
-          </div>
-        {/if}
-
-        {#if cesiumResult}
-          <div class="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
-            <div class="font-medium">{cesiumResult.summary}</div>
-            {#if cesiumResult.pushed}
-              <div>{$strings['Export.Cesium.Pushed'] ?? 'Pushed to the Cesium viewer.'}</div>
-            {:else if cesiumPush}
-              <div>{cesiumResult.pushMessage}</div>
-            {/if}
-            {#each cesiumResult.warnings as warning}
-              <div class="mt-1 text-amber-700 dark:text-amber-300">{warning}</div>
-            {/each}
-          </div>
-        {/if}
-
-        {#if cesiumError}
-          <div class="rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-700 dark:border-red-700 dark:bg-red-900/30 dark:text-red-300">{cesiumError}</div>
-        {/if}
-
-        <div class="flex justify-end gap-2 pt-2">
-          <button
-            class="h-9 rounded-md border border-neutral-300 bg-white px-4 text-sm text-neutral-700 hover:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 disabled:opacity-40"
-            onclick={closeCesiumExport}
-            disabled={cesiumRunning}
-          >{$strings['Common.Close'] ?? 'Close'}</button>
-          <button
-            class="h-9 rounded-md bg-teal-600 px-4 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-40"
-            onclick={runCesiumExport}
-            disabled={cesiumRunning || cesiumState?.firstRun}
-          >{$strings['Export.Cesium.Run'] ?? 'Export'}</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <CesiumModal
+    {cesiumError}
+    bind:cesiumHeightDatum
+    bind:cesiumKeepVersions
+    bind:cesiumLod
+    bind:cesiumOutputFolder
+    bind:cesiumPreciseCrs
+    bind:cesiumProfile
+    {cesiumProgress}
+    bind:cesiumPush
+    {cesiumResult}
+    {cesiumRunning}
+    {cesiumState}
+    bind:cesiumViewerUrl
+    {closeCesiumExport}
+    {pickCesiumOutputFolder}
+    {runCesiumExport}
+  />
 {/if}

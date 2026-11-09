@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { strings } from '$lib/i18n'
+  import { t } from '$lib/i18n'
 
   export let documentName: string = ''
   export let crs: string = ''
@@ -15,12 +15,12 @@
         : 'bg-neutral-600'
 
   $: statusLabel = status === 'ready'
-    ? $strings['Status.Ready'] ?? 'Ready'
+    ? $t('Status.Ready', 'Ready')
     : status === 'blocked'
-      ? $strings['Status.Blocked'] ?? 'Blocked'
+      ? $t('Status.Blocked', 'Blocked')
       : status === 'needsattention'
-        ? $strings['Status.NeedsAttention'] ?? 'Needs attention'
-        : $strings['Status.Unknown'] ?? 'Unknown'
+        ? $t('Status.NeedsAttention', 'Needs attention')
+        : $t('Status.Unknown', 'Unknown')
 </script>
 
 <footer class="h-8 bg-white border-t border-neutral-200 dark:bg-neutral-900 dark:border-neutral-800 flex items-center px-4 gap-4 text-xs">
