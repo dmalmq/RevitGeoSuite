@@ -28,7 +28,7 @@ public sealed class ChangeSummaryServiceTests
             fullRewriteReason: "No previous baseline.");
 
         Assert.Equal(ExportBaselineStatus.Unavailable, summary.BaselineStatus);
-        Assert.Contains(summary.Lines, line => line.Contains("baseline", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(summary.Lines, line => line.IndexOf("baseline", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     [Fact]
@@ -58,9 +58,9 @@ public sealed class ChangeSummaryServiceTests
             missingBaselineArtifactCount: 0,
             fullRewriteReason: null);
 
-        Assert.Contains(summary.Lines, line => line.Contains("Layer count changed", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(summary.Lines, line => line.Contains("Warning count changed", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(summary.Lines, line => line.Contains("Output file added", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(summary.Lines, line => line.IndexOf("Layer count changed", StringComparison.OrdinalIgnoreCase) >= 0);
+        Assert.Contains(summary.Lines, line => line.IndexOf("Warning count changed", StringComparison.OrdinalIgnoreCase) >= 0);
+        Assert.Contains(summary.Lines, line => line.IndexOf("Output file added", StringComparison.OrdinalIgnoreCase) >= 0);
         Assert.Equal(1, summary.ChangedViewCount);
         Assert.Equal(2, summary.WrittenArtifactCount);
     }

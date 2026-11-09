@@ -75,7 +75,7 @@ public sealed class PackageValidationServiceTests
 
             PackageValidationResult result = new PackageValidationService().Validate(manifest);
 
-            Assert.Contains(result.Issues, issue => issue.Message.Contains("not found", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Issues, issue => issue.Message.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0);
         }
         finally
         {

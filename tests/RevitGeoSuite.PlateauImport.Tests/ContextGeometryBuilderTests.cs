@@ -262,8 +262,8 @@ public sealed class ContextGeometryBuilderTests
         ContextShapePlan shape = Assert.Single(plan.Shapes);
 
         Assert.Equal(32.808, shape.HeightFeet, 3);
-        Assert.Contains(plan.WarningMessages, warning => warning.Contains("default 10.0 m height", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(plan.WarningMessages, warning => warning.Contains("Flat Only Building", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(plan.WarningMessages, warning => warning.IndexOf("default 10.0 m height", StringComparison.OrdinalIgnoreCase) >= 0);
+        Assert.Contains(plan.WarningMessages, warning => warning.IndexOf("Flat Only Building", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     [Fact]
@@ -586,7 +586,7 @@ public sealed class ContextGeometryBuilderTests
 
         ContextShapePlan shape = Assert.Single(plan.Shapes);
         Assert.True(plan.PreparedTriangleCount > 0);
-        Assert.DoesNotContain(plan.WarningMessages, warning => warning.Contains("interior ring", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(plan.WarningMessages, warning => warning.IndexOf("interior ring", StringComparison.OrdinalIgnoreCase) >= 0);
         Assert.Equal(84d, shape.Triangles.Sum(ComputeTriangleAreaMeters), precision: 6);
         Assert.DoesNotContain(shape.Triangles, triangle =>
         {
@@ -774,8 +774,8 @@ public sealed class ContextGeometryBuilderTests
         Assert.Equal(5d / 0.3048d, buildingShape.BaseElevationFeet, 3);
         Assert.Equal(20d / 0.3048d, buildingShape.HeightFeet, 3);
         Assert.Equal(PlateauGeometryImportMode.LightweightMassOnRelief, plan.GeometryImportMode);
-        Assert.DoesNotContain(plan.WarningMessages, w => w.Contains("outside the Relief hull", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(plan.WarningMessages, w => w.Contains("no Relief surfaces", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(plan.WarningMessages, w => w.IndexOf("outside the Relief hull", StringComparison.OrdinalIgnoreCase) >= 0);
+        Assert.DoesNotContain(plan.WarningMessages, w => w.IndexOf("no Relief surfaces", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     [Fact]
@@ -794,7 +794,7 @@ public sealed class ContextGeometryBuilderTests
         // Centroid of the only Relief triangle is (100/3, 100/3, 20/3) m.
         double expectedNearestZ = 20d / 3d;
         Assert.Equal(expectedNearestZ / 0.3048d, buildingShape.BaseElevationFeet, 3);
-        Assert.Contains(plan.WarningMessages, w => w.Contains("outside the Relief hull", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(plan.WarningMessages, w => w.IndexOf("outside the Relief hull", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     [Fact]
@@ -817,7 +817,7 @@ public sealed class ContextGeometryBuilderTests
         // No Relief: falls back to the building's own BaseElevationMeters = 0 m.
         Assert.Equal(0d, buildingShape.BaseElevationFeet, 3);
         Assert.Equal(20d / 0.3048d, buildingShape.HeightFeet, 3);
-        Assert.Contains(plan.WarningMessages, w => w.Contains("no Relief surfaces", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(plan.WarningMessages, w => w.IndexOf("no Relief surfaces", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     private static PlateauCityModel BuildBuildingAndReliefModel(double buildingCenterX = 25d, double buildingCenterY = 25d)
