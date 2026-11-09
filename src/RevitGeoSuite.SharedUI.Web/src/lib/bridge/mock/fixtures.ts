@@ -262,6 +262,9 @@ export function responses(scenario: MockScenario): Record<string, unknown | ((pa
     'tiles3d.exportOptions': tiles3dOptions,
     'gis.exportOptions': gisOptions,
     'cesium.export.getState': cesiumState,
+    'cesium.settings.save': (payload: any) => ({ hasToken: false, viewerUrl: payload?.viewerUrl ?? '' }),
+    'tiles3d.export.prepare': { crs: 'JGD2011 / Japan Plane Rectangular CS IX (EPSG:6677)', elementCount: 4_812, triangleCount: 1_284_330, geoidOffsetMeters: 36.71, warnings: ['3 elements have no geometry in the 3D view and are skipped.'] },
+    'citygml.export.prepare': { crs: 'JGD2011 / Japan Plane Rectangular CS IX (EPSG:6677)', featureCount: 1_206, warnings: [] },
     'dialog.openFolder': { path: 'C:\\Data\\PLATEAU\\13100_tokyo23-ku_2023' },
     'dialog.openFile': { paths: ['C:\\Data\\GIS\\concourse_units.gpkg'] },
     'window.minimize': {},
@@ -285,11 +288,31 @@ export const jobResults: Record<string, unknown> = {
   },
   'plateau.scanFolder': {
     tiles: [
-      { id: '53394611', featureCount: 812, lod: 2, fileSize: 18_400_000 },
-      { id: '53394612', featureCount: 784, lod: 2, fileSize: 17_100_000 }
+      { id: '53394611', featureCount: 812, lod: 2, fileSize: 18_400_000, geometry: { type: 'Polygon', coordinates: [[[139.6875, 35.6833], [139.7, 35.6833], [139.7, 35.69163], [139.6875, 35.69163], [139.6875, 35.6833]]] } },
+      { id: '53394612', featureCount: 784, lod: 2, fileSize: 17_100_000, geometry: { type: 'Polygon', coordinates: [[[139.7, 35.6833], [139.71249999999998, 35.6833], [139.71249999999998, 35.69163], [139.7, 35.69163], [139.7, 35.6833]]] } }
     ]
   },
   'plateau.importTiles': { tilesImported: 2, importedElements: 1596, groups: 2, mode: 'solids', warnings: [] },
+  'plateau.exportContext.prepare': {
+    crs: 'JGD2011 / Japan Plane Rectangular CS IX (EPSG:6677)',
+    featureCount: 1_596,
+    perLayerCounts: { PLATEAU_BLDG: 1_402, PLATEAU_TRAN: 118, GSI_SIDEWALKS: 46, GSI_RAILWAYS: 12, GSI_WATER: 18 },
+    warnings: []
+  },
+  'plateau.exportContext': { exportedElements: 1_596, exportedFeatures: 1_596, filePaths: [], files: 10, summary: 'Shapefile and DXF for 2 tiles', warnings: [] },
+  'tiles3d.export': { exportedElements: 4_809, files: 38, summary: 'tileset.json and 37 b3dm tiles', tilesetPath: 'C:\\Exports\\Tower\\tileset.json', triangleCount: 1_284_330, warnings: [] },
+  'citygml.export': { exportedElements: 1_206, exportPath: 'C:\\Exports\\Tower\\tower.gml', featureCount: 1_206, files: 1, summary: 'CityGML 2.0, 1 file', warnings: [] },
+  'cesium.export.run': {
+    gisArtifacts: ['floorplan.gpkg'],
+    manifestPath: 'C:\\Exports\\Tower-cesium\\cesium-package.json',
+    packageRoot: 'C:\\Exports\\Tower-cesium',
+    pushed: false,
+    pushMessage: 'The viewer did not answer; the package is in the folder.',
+    summary: '3D Tiles and floor plan written to C:\\Exports\\Tower-cesium',
+    tilesetPath: 'C:\\Exports\\Tower-cesium\\tiles\\tileset.json',
+    warnings: []
+  },
+  'cesium.push': { message: 'Sent to the Cesium viewer.', pushed: true },
   'gis.export': {
     outputs: [{ dxfPath: 'C:\\Exports\\DXF\\concourse_units.dxf' }],
     summary: '1 file, 412 features, 4 layers',

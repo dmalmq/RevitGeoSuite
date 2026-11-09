@@ -1,115 +1,55 @@
-<!-- Part of ExportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of ExportRoute.svelte: PLATEAU context options. -->
 <script lang="ts">
   import { t } from '$lib/i18n'
+  import { Button, Checkbox, Field, Input, SummaryStrip } from '$lib/kit'
 
   interface Props {
-    browseKibanFolder: (...args: any[]) => any
-    fmt: (...args: any[]) => any
+    browseKibanFolder: () => void
     plateauFolderPath: string
     plateauKibanFolderPath: string
-    plateauKibanLayerOptions: any
+    plateauKibanLayerOptions: { id: string; labelKey: string; label: string }[]
     plateauOptions: any
     selectedKibanLayers: Set<string>
-    selectedPlateauTileCount: any
-    toggleKibanLayer: (...args: any[]) => any
+    selectedPlateauTileCount: number
+    toggleKibanLayer: (id: string) => void
   }
 
-  let { browseKibanFolder, fmt, plateauFolderPath, plateauKibanFolderPath = $bindable(), plateauKibanLayerOptions, plateauOptions = $bindable(), selectedKibanLayers, selectedPlateauTileCount, toggleKibanLayer }: Props = $props()
+  let { browseKibanFolder, plateauFolderPath, plateauKibanFolderPath = $bindable(), plateauKibanLayerOptions, plateauOptions = $bindable(), selectedKibanLayers, selectedPlateauTileCount, toggleKibanLayer }: Props = $props()
 </script>
 
-<div class="space-y-4">
-  <div class="bg-card border border-border rounded-lg p-3">
-    <div class="text-xs text-muted-foreground mb-1">{$t('Export.Source', 'Source')}</div>
-    <div class="text-sm text-foreground truncate">{plateauFolderPath}</div>
-    <div class="text-xs text-muted-foreground mt-1">{fmt($t('Export.SelectedTiles', '{0} selected tile(s)'), selectedPlateauTileCount)}</div>
-  </div>
+<SummaryStrip
+  items={[
+    { label: $t('Export.Source', 'Source'), value: plateauFolderPath.split(/[\\/]/).filter(Boolean).pop() ?? plateauFolderPath, mono: true },
+    { label: $t('Export.Tiles.Selected', 'Selected'), value: selectedPlateauTileCount, mono: true }
+  ]}
+/>
 
-  <div>
-    <div class="text-sm font-medium text-foreground mb-2">{$t('Export.Formats', 'Formats')}</div>
-    <div class="space-y-2">
-      <label class="flex items-center gap-2">
-        <input
-          type="checkbox"
-          bind:checked={plateauOptions.formats.shapefile}
-          class="rounded border-input bg-card text-primary focus:ring-ring"
-        />
-        <span class="text-sm text-foreground">{$t('Export.Format.Shapefile', 'Shapefile')}</span>
-      </label>
-      <label class="flex items-center gap-2">
-        <input
-          type="checkbox"
-          bind:checked={plateauOptions.formats.dxf}
-          class="rounded border-input bg-card text-primary focus:ring-ring"
-        />
-        <span class="text-sm text-foreground">{$t('Export.Format.Dxf', 'DXF')}</span>
-      </label>
-    </div>
-  </div>
+<fieldset class="flex flex-col gap-1.5">
+  <legend class="mb-1 text-small font-medium text-foreground">{$t('Export.Formats', 'Formats')}</legend>
+  <Checkbox bind:checked={plateauOptions.formats.shapefile} label={$t('Export.Format.Shapefile', 'Shapefile')} />
+  <Checkbox bind:checked={plateauOptions.formats.dxf} label={$t('Export.Format.Dxf', 'DXF')} />
+</fieldset>
 
-  <label class="flex items-center gap-2">
-    <input
-      type="checkbox"
-      bind:checked={plateauOptions.includeContext}
-      class="rounded border-input bg-card text-primary focus:ring-ring"
-    />
-    <span class="text-sm text-foreground">{$t('Export.IncludeContext', 'Include PLATEAU context')}</span>
-  </label>
-  <label class="flex items-center gap-2">
-    <input
-      type="checkbox"
-      bind:checked={plateauOptions.includeKiban}
-      class="rounded border-input bg-card text-primary focus:ring-ring"
-    />
-    <span class="text-sm text-foreground">{$t('Export.IncludeKiban', 'Include GSI/Kiban layers')}</span>
-  </label>
+<fieldset class="flex flex-col gap-1.5">
+  <legend class="mb-1 text-small font-medium text-foreground">{$t('Export.Include', 'Include')}</legend>
+  <Checkbox bind:checked={plateauOptions.includeContext} label={$t('Export.IncludeContext', 'Include PLATEAU context')} />
+  <Checkbox bind:checked={plateauOptions.includeKiban} label={$t('Export.IncludeKiban', 'Include GSI/Kiban layers')} />
+  <Checkbox bind:checked={plateauOptions.includeRevitModel} label={$t('Export.IncludeRevitModel', 'Include Revit model footprint')} />
+</fieldset>
 
-  {#if plateauOptions.includeKiban}
-    <div>
-      <label for="export-kiban-folder" class="block text-sm font-medium text-foreground mb-2">
-        {$t('Export.KibanFolder', 'Kiban Folder')}
-      </label>
-      <div class="flex gap-2">
-        <input
-          id="export-kiban-folder"
-          type="text"
-          bind:value={plateauKibanFolderPath}
-          placeholder={$t('Export.OptionalFolder', 'Optional folder...')}
-          class="flex-1 bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <button
-          class="px-3 py-2 bg-card border border-border text-foreground hover:bg-accent hover:border-muted-foreground text-sm rounded-md transition-colors"
-          onclick={browseKibanFolder}
-        >
-          {$t('Common.Browse', 'Browse')}
-        </button>
+{#if plateauOptions.includeKiban}
+  <div class="flex flex-col gap-2 rounded-control bg-muted px-2.5 py-2">
+    <Field label={$t('Export.KibanFolder', 'Kiban Folder')} id="export-kiban-folder">
+      <div class="flex gap-1.5">
+        <Input id="export-kiban-folder" class="min-w-0 flex-1" mono bind:value={plateauKibanFolderPath} placeholder={$t('Export.OptionalFolder', 'Optional folder...')} />
+        <Button icon="folder-open" onclick={browseKibanFolder}>{$t('Common.Browse', 'Browse')}</Button>
       </div>
-    </div>
-
-    <div>
-      <div class="text-sm font-medium text-foreground mb-2">{$t('Export.KibanLayers', 'Kiban Layers')}</div>
-      <div class="grid grid-cols-2 gap-2">
-        {#each plateauKibanLayerOptions as layer}
-          <label class="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={selectedKibanLayers.has(layer.id)}
-              onchange={() => toggleKibanLayer(layer.id)}
-              class="rounded border-input bg-card text-primary focus:ring-ring"
-            />
-            <span class="text-sm text-foreground">{$t(layer.labelKey, layer.label)}</span>
-          </label>
-        {/each}
-      </div>
-    </div>
-  {/if}
-
-  <label class="flex items-center gap-2">
-    <input
-      type="checkbox"
-      bind:checked={plateauOptions.includeRevitModel}
-      class="rounded border-input bg-card text-primary focus:ring-ring"
-    />
-    <span class="text-sm text-foreground">{$t('Export.IncludeRevitModel', 'Include Revit model footprint')}</span>
-  </label>
-</div>
-
+    </Field>
+    <fieldset class="grid grid-cols-2 gap-1.5">
+      <legend class="mb-1 text-small font-medium text-foreground">{$t('Export.KibanLayers', 'Kiban Layers')}</legend>
+      {#each plateauKibanLayerOptions as layer (layer.id)}
+        <Checkbox checked={selectedKibanLayers.has(layer.id)} onchange={() => toggleKibanLayer(layer.id)} label={$t(layer.labelKey, layer.label)} />
+      {/each}
+    </fieldset>
+  </div>
+{/if}

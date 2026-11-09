@@ -13,17 +13,18 @@
     Tiles3DLinkOption,
     Tiles3DViewOption
   } from '$lib/bridge/contracts.generated'
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { t } from '$lib/i18n'
+  import { Banner, Button, Field, Input } from '$lib/kit'
+  import { StepBar, narrow, stepNumber, workflow } from '$lib/shell'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
   import type { ExportFormat, ExportState, ScopeMode, PlateauTile, ExportJobResult, ExportPreview } from './steps/types'
   import FormatChooser from './steps/FormatChooser.svelte'
-  import PlateauScanMap from './steps/PlateauScanMap.svelte'
   import PlateauSelectOverlay from './steps/PlateauSelectOverlay.svelte'
   import ExportProgress from './steps/ExportProgress.svelte'
   import PlateauSourcePanel from './steps/PlateauSourcePanel.svelte'
-  import PlateauScanPanel from './steps/PlateauScanPanel.svelte'
+  import PlateauScanStep from './steps/PlateauScanStep.svelte'
   import PlateauSelectPanel from './steps/PlateauSelectPanel.svelte'
   import ScopeStep from './steps/ScopeStep.svelte'
   import PlateauOptions from './steps/PlateauOptions.svelte'
@@ -653,217 +654,226 @@
       .filter((tile: PlateauTile) => selectedPlateauTiles.has(tile.id))
       .reduce((sum: number, tile: PlateauTile) => sum + (tile.fileSize || 0), 0)
   )
+
+  // ─── Frame: steps in the sidebar, map or sheet ──────────────────────────────
+  const flowSteps = $derived(
+    format === 'plateau'
+      ? [
+          { id: 'plateau-source', label: $t('Import.Flow.Data', 'Choose data') },
+          { id: 'plateau-scan', label: $t('Import.Flow.Scan', 'Scan folder') },
+          { id: 'plateau-select', label: $t('Export.Tiles.SelectTitle', 'Select Tiles') },
+          { id: 'options', label: $t('Export.Flow.Options', 'Options') },
+          { id: 'review', label: $t('Export.Flow.Review', 'Review') },
+          { id: 'export', label: $t('Export.Flow.Export', 'Export') }
+        ]
+      : [
+          { id: 'scope', label: $t('Export.Flow.Scope', 'Scope') },
+          { id: 'options', label: $t('Export.Flow.Options', 'Options') },
+          { id: 'review', label: $t('Export.Flow.Review', 'Review') },
+          { id: 'export', label: $t('Export.Flow.Export', 'Export') }
+        ]
+  )
+  // The model check runs under the first step.
+  const flowCurrent = $derived(step === 'preflight' ? flowSteps[0].id : step)
+  const flowCompleted = $derived.by(() => {
+    const index = flowSteps.findIndex((s) => s.id === flowCurrent)
+    const done = new Set(flowSteps.slice(0, Math.max(0, index)).map((s) => s.id))
+    if (exportProgress?.complete) done.add('export')
+    return done
+  })
+  const flowStep = $derived(flowSteps.find((s) => s.id === flowCurrent) ?? flowSteps[0])
+  const busy = $derived(exporting || preparingPreview || plateauScanning)
+
+  // Only steps already passed can be opened from the sidebar, and not while a job runs.
+  function openStep(id: string) {
+    if (busy || id === 'plateau-scan' || id === 'export') return
+    const target = flowSteps.findIndex((s) => s.id === id)
+    const current = flowSteps.findIndex((s) => s.id === flowCurrent)
+    if (target < 0 || target >= current) return
+    if (id === 'review' && !exportPreview) return
+    if (id === 'plateau-select' && plateauTiles.length === 0) return
+    error = null
+    step = id as ExportState
+  }
+
+  $effect(() => {
+    workflow.set(
+      step === 'format' || !format
+        ? null
+        : { route: '/export', steps: flowSteps, current: flowCurrent, completed: flowCompleted, onStep: openStep }
+    )
+  })
+  onDestroy(() => workflow.set(null))
+
+  const showMap = $derived(format === 'plateau' && ['plateau-scan', 'plateau-select', 'options', 'review', 'export'].includes(step))
+  const canGoBack = $derived(step !== 'format' && step !== 'export' && !busy)
+  let inspectorOpen = $state(true)
+
+  const optionsBlocked = $derived(
+    preparingPreview ||
+      !outputFolder ||
+      (format === 'plateau' && !plateauOptions.formats.shapefile && !plateauOptions.formats.dxf) ||
+      (format === 'tiles3d' && scope === 'view' && !selectedTiles3dViewUniqueId)
+  )
 </script>
 
-<div class="flex h-full">
-  <div class="flex-1 relative bg-muted">
-    {#if format === 'plateau' && (step === 'plateau-source' || step === 'plateau-scan' || step === 'plateau-select' || step === 'options' || step === 'review' || step === 'export')}
+
+{#snippet panel()}
+  {#if error && step !== 'export'}
+    <Banner tone="danger" onclose={() => (error = null)} closeLabel={$t('Common.Dismiss', 'Dismiss')}>{error}</Banner>
+  {/if}
+
+  {#if step === 'preflight'}
+    <ReadinessPreflight onReady={onPreflightReady} onNeedsAttention={onPreflightNeedsAttention} onBlocked={onPreflightBlocked} />
+    {#if preflightReady && preflightNeedsAttention}
+      <Button variant="primary" class="w-full" onclick={continueToScope}>{$t('Common.Continue', 'Continue')}</Button>
+    {/if}
+  {:else if step === 'plateau-source'}
+    <PlateauSourcePanel {browsePlateauFolder} bind:plateauFolderPath {startPlateauScan} />
+  {:else if step === 'plateau-scan'}
+    <PlateauScanStep {plateauScanCancel} {plateauScanProgress} />
+  {:else if step === 'plateau-select'}
+    <PlateauSelectPanel {continueToPlateauOptions} {plateauTiles} {selectedPlateauSize} {selectedPlateauTileCount} />
+  {:else if step === 'scope'}
+    <ScopeStep {continueToOptions} {scope} {setScope} />
+  {:else if step === 'options'}
+    <Field label={$t('Export.OutputFolder', 'Output Folder')} id="export-output-folder">
+      <div class="flex gap-1.5">
+        <Input id="export-output-folder" class="min-w-0 flex-1" mono bind:value={outputFolder} placeholder={$t('Export.SelectFolder', 'Select folder...')} />
+        <Button icon="folder-open" onclick={browseOutputFolder}>{$t('Common.Browse', 'Browse')}</Button>
+      </div>
+    </Field>
+
+    {#if format === 'plateau'}
+      <PlateauOptions
+        {browseKibanFolder}
+        {plateauFolderPath}
+        bind:plateauKibanFolderPath
+        {plateauKibanLayerOptions}
+        bind:plateauOptions
+        {selectedKibanLayers}
+        {selectedPlateauTileCount}
+        {toggleKibanLayer}
+      />
+    {:else if format === 'tiles3d'}
+      <Tiles3dOptions
+        bind:exportPreview
+        {scope}
+        bind:selectedTiles3dLinkIds
+        bind:selectedTiles3dViewUniqueId
+        bind:sendToCesiumViewer
+        {tiles3dLinks}
+        bind:tiles3dOptions
+        {tiles3dViews}
+      />
+    {:else if format === 'citygml'}
+      <CityGmlOptions bind:citygmlOptions />
+    {/if}
+
+    <Button variant="primary" class="w-full" onclick={prepareExport} disabled={optionsBlocked}>
+      {preparingPreview ? $t('Export.Prepare.Preparing', 'Preparing...') : $t('Export.Action.Preview', 'Preview Export')}
+    </Button>
+  {:else if step === 'review'}
+    <ReviewStep {exportPreview} {exporting} {fmt} {format} {formatLabel} {formatSignedMeters} {outputFolder} {scope} {startExport} />
+  {:else if step === 'export'}
+    <ExportProgress
+      {cesiumPushStatus}
+      {error}
+      {exportCancel}
+      {exportProgress}
+      {exporting}
+      {fmt}
+      {formatLabel}
+      {goBack}
+      {outputFolder}
+      {resetExport}
+      retryExport={startExport}
+    />
+  {/if}
+{/snippet}
+
+{#snippet backBar()}
+  {#if canGoBack}
+    <div class="shrink-0 border-t border-border px-5 py-2">
+      <Button variant="ghost" size="sm" icon="arrow-left" onclick={goBack}>{$t('Common.Back', 'Back')}</Button>
+    </div>
+  {/if}
+{/snippet}
+
+{#if step === 'format'}
+  <!-- Home: one row per format on the sheet. -->
+  <section class="flex h-full min-h-0 flex-col">
+    <StepBar title={$t('Export.Title', 'Export')} promise={$t('Export.FormatIntro', 'Select an export format to begin exporting your Revit model.')} />
+    <div class="min-h-0 flex-1 overflow-auto px-5 pb-5">
+      <FormatChooser {openCesiumExport} {openFloorPlanExport} {selectFormat} />
+    </div>
+  </section>
+{:else if showMap}
+  <div class="relative flex h-full min-h-0">
+    <div class="relative min-w-0 flex-1">
       <LeafletMap
         bind:this={mapRef}
         on:overlayClick={handlePlateauTileClick}
         on:overlayRectangleSelect={handlePlateauRectangleSelect}
       />
-    {/if}
+      {#if step === 'plateau-select' && plateauTiles.length > 0}
+        <PlateauSelectOverlay {fmt} {plateauTiles} {selectAllPlateauTiles} {selectNoPlateauTiles} {selectedPlateauTileCount} />
+      {/if}
+      {#if $narrow && !inspectorOpen}
+        <div class="absolute bottom-8 right-3 z-[1100]">
+          <Button icon="panel-right-open" onclick={() => (inspectorOpen = true)}>{flowStep.label}</Button>
+        </div>
+      {/if}
+    </div>
 
-    {#if step === 'format'}
-      <FormatChooser {openCesiumExport} {openFloorPlanExport} {selectFormat} />
-    {:else if step === 'plateau-scan'}
-      <PlateauScanMap {plateauScanCancel} {plateauScanProgress} {plateauScanning} />
-    {:else if step === 'plateau-select' && plateauTiles.length > 0}
-      <PlateauSelectOverlay
-        {fmt}
-        {plateauTiles}
-        {selectAllPlateauTiles}
-        {selectNoPlateauTiles}
-        {selectedPlateauTileCount}
-      />
-    {:else if step === 'export'}
-      <ExportProgress
-        {exportCancel}
-        {exportProgress}
-        {exporting}
-        {fmt}
-        {formatLabel}
-        {resetExport}
-      />
+    {#if !$narrow || inspectorOpen}
+      <aside
+        class="flex w-[300px] shrink-0 flex-col border-l border-border bg-card {$narrow ? 'absolute inset-y-0 right-0 z-[1100] shadow-lg' : ''}"
+        aria-label={formatLabel}
+      >
+        <StepBar title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={formatLabel}>
+          {#snippet actions()}
+            {#if $narrow}
+              <Button variant="ghost" size="sm" icon="x" aria-label={$t('Common.Hide', 'Hide')} onclick={() => (inspectorOpen = false)} />
+            {/if}
+          {/snippet}
+        </StepBar>
+        <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5">
+          {@render panel()}
+        </div>
+        {@render backBar()}
+      </aside>
     {/if}
   </div>
-
-  <aside class="w-96 bg-muted border-l border-border p-6 overflow-y-auto">
-    {#if step === 'format'}
-      <h2 class="text-lg font-semibold text-foreground mb-4">{$t('Export.Title', 'Export')}</h2>
-      <p class="text-sm text-muted-foreground">
-        {$t('Export.FormatIntro', 'Select an export format to begin exporting your Revit model.')}
-      </p>
-
-    {:else if step === 'preflight'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-muted-foreground hover:text-foreground transition-colors"
-          onclick={goBack}
-          aria-label={$t('Common.Back', 'Back')}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-foreground">{formatLabel}</h2>
+{:else}
+  <!-- No map: the tool takes a readable column on the sheet. -->
+  <section class="flex h-full min-h-0 flex-col">
+    <StepBar title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={formatLabel} />
+    <div class="min-h-0 flex-1 overflow-auto px-5 pb-5">
+      <div class="flex max-w-[560px] flex-col gap-3">
+        {@render panel()}
       </div>
-
-      <ReadinessPreflight
-        onReady={onPreflightReady}
-        onNeedsAttention={onPreflightNeedsAttention}
-        onBlocked={onPreflightBlocked}
-      />
-
-      {#if preflightReady && preflightNeedsAttention}
-        <button
-          class="w-full mt-4 bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors"
-          onclick={continueToScope}
-        >
-          {$t('Common.Continue', 'Continue')}
-        </button>
-      {/if}
-
-    {:else if step === 'plateau-source'}
-      <PlateauSourcePanel {browsePlateauFolder} {goBack} bind:plateauFolderPath {startPlateauScan} />
-    {:else if step === 'plateau-scan'}
-      <PlateauScanPanel {goBack} {plateauScanProgress} />
-    {:else if step === 'plateau-select'}
-      <PlateauSelectPanel
-        {continueToPlateauOptions}
-        {fmt}
-        {goBack}
-        {plateauTiles}
-        {selectedPlateauSize}
-        {selectedPlateauTileCount}
-      />
-    {:else if step === 'scope'}
-      <ScopeStep {continueToOptions} {goBack} {scope} {setScope} />
-    {:else if step === 'options'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-muted-foreground hover:text-foreground transition-colors"
-          onclick={goBack}
-          aria-label={$t('Common.Back', 'Back')}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-foreground">{fmt($t('Export.Options.Title', '{0} Options'), formatLabel)}</h2>
-      </div>
-
-      <div class="space-y-4">
-        <div>
-          <label for="export-output-folder" class="block text-sm font-medium text-foreground mb-2">
-            {$t('Export.OutputFolder', 'Output Folder')}
-          </label>
-          <div class="flex gap-2">
-            <input
-              id="export-output-folder"
-              type="text"
-              bind:value={outputFolder}
-              placeholder={$t('Export.SelectFolder', 'Select folder...')}
-              class="flex-1 bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            <button
-              class="px-3 py-2 bg-card border border-border text-foreground hover:bg-accent hover:border-muted-foreground text-sm rounded-md transition-colors"
-              onclick={browseOutputFolder}
-            >
-              {$t('Common.Browse', 'Browse')}
-            </button>
-          </div>
-        </div>
-
-        {#if format === 'plateau'}
-          <PlateauOptions
-            {browseKibanFolder}
-            {fmt}
-            {plateauFolderPath}
-            bind:plateauKibanFolderPath
-            {plateauKibanLayerOptions}
-            bind:plateauOptions
-            {selectedKibanLayers}
-            {selectedPlateauTileCount}
-            {toggleKibanLayer}
-          />
-        {:else if format === 'tiles3d'}
-          <Tiles3dOptions
-            bind:exportPreview
-            {scope}
-            bind:selectedTiles3dLinkIds
-            bind:selectedTiles3dViewUniqueId
-            bind:sendToCesiumViewer
-            {tiles3dLinks}
-            bind:tiles3dOptions
-            {tiles3dViews}
-          />
-        {:else if format === 'citygml'}
-          <CityGmlOptions bind:citygmlOptions />
-        {/if}
-
-        <button
-          class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          onclick={prepareExport}
-          disabled={preparingPreview || !outputFolder || (format === 'plateau' && (!plateauOptions.formats.shapefile && !plateauOptions.formats.dxf)) || (format === 'tiles3d' && scope === 'view' && !selectedTiles3dViewUniqueId)}
-        >
-          {preparingPreview ? $t('Export.Prepare.Preparing', 'Preparing...') : $t('Export.Action.Preview', 'Preview Export')}
-        </button>
-      </div>
-
-    {:else if step === 'review'}
-      <ReviewStep
-        {exportPreview}
-        {exporting}
-        {fmt}
-        {format}
-        {formatLabel}
-        {formatSignedMeters}
-        {goBack}
-        {scope}
-        {startExport}
-      />
-    {:else if step === 'export'}
-      <h2 class="text-lg font-semibold text-foreground mb-4">{$t('Export.Progress.Title', 'Exporting')}</h2>
-      {#if exporting}
-        <div class="flex items-center gap-2">
-          <div class="w-4 h-4 border-2 border-input border-t-primary rounded-full animate-spin"></div>
-          <span class="text-sm text-muted-foreground">{exportProgress?.message || $t('Export.Progress.Preparing', 'Preparing…')}</span>
-        </div>
-      {:else if exportProgress?.complete}
-        <p class="text-sm text-muted-foreground">{$t('Export.Complete.Title', 'Export Complete')}</p>
-      {/if}
-      {#if cesiumPushStatus}
-        <p class="mt-2 text-xs text-sky-600 dark:text-sky-400">{cesiumPushStatus}</p>
-      {/if}
-    {/if}
-
-    {#if error}
-      <div class="mt-4 p-3 bg-red-50 border border-red-200 dark:bg-red-900/30 dark:border-red-700 rounded-lg">
-        <div class="text-sm text-red-700 dark:text-red-300">{error}</div>
-      </div>
-    {/if}
-  </aside>
-</div>
-
-{#if cesiumOpen}
-  <CesiumModal
-    {cesiumError}
-    bind:cesiumHeightDatum
-    bind:cesiumKeepVersions
-    bind:cesiumLod
-    bind:cesiumOutputFolder
-    bind:cesiumPreciseCrs
-    bind:cesiumProfile
-    {cesiumProgress}
-    bind:cesiumPush
-    {cesiumResult}
-    {cesiumRunning}
-    {cesiumState}
-    bind:cesiumViewerUrl
-    {closeCesiumExport}
-    {pickCesiumOutputFolder}
-    {runCesiumExport}
-  />
+    </div>
+    {@render backBar()}
+  </section>
 {/if}
+
+<CesiumModal
+  bind:open={cesiumOpen}
+  {cesiumError}
+  bind:cesiumHeightDatum
+  bind:cesiumKeepVersions
+  bind:cesiumLod
+  bind:cesiumOutputFolder
+  bind:cesiumPreciseCrs
+  bind:cesiumProfile
+  {cesiumProgress}
+  bind:cesiumPush
+  {cesiumResult}
+  {cesiumRunning}
+  {cesiumState}
+  bind:cesiumViewerUrl
+  {closeCesiumExport}
+  {pickCesiumOutputFolder}
+  {runCesiumExport}
+/>
