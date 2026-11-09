@@ -1,41 +1,27 @@
-<!-- Part of ExportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of ExportRoute.svelte: tile count and All / None over the map. -->
 <script lang="ts">
   import type { PlateauTile } from './types'
   import { t } from '$lib/i18n'
+  import { Button } from '$lib/kit'
 
   interface Props {
-    fmt: (...args: any[]) => any
+    fmt: (template: string, ...args: (string | number)[]) => string
     plateauTiles: PlateauTile[]
-    selectAllPlateauTiles: (...args: any[]) => any
-    selectNoPlateauTiles: (...args: any[]) => any
-    selectedPlateauTileCount: any
+    selectAllPlateauTiles: () => void
+    selectNoPlateauTiles: () => void
+    selectedPlateauTileCount: number
   }
 
   let { fmt, plateauTiles, selectAllPlateauTiles, selectNoPlateauTiles, selectedPlateauTileCount }: Props = $props()
 </script>
 
-<div class="absolute top-4 right-4 bg-card/90 backdrop-blur-sm border border-border rounded-lg p-4 max-w-xs">
-  <div class="flex items-center justify-between mb-3">
-    <h3 class="text-sm font-semibold text-foreground">{$t('Export.Tiles.Title', 'Tile Selection')}</h3>
-    <div class="flex gap-2">
-      <button
-        class="text-xs text-primary hover:text-primary transition-colors"
-        onclick={selectAllPlateauTiles}
-      >
-        {$t('Export.Tiles.All', 'All')}
-      </button>
-      <button
-        class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-        onclick={selectNoPlateauTiles}
-      >
-        {$t('Export.Tiles.None', 'None')}
-      </button>
-    </div>
-  </div>
-  <p class="text-xs text-muted-foreground mb-2">
-    {$t('Export.Tiles.ClickHint', 'Click tiles to toggle, or Shift+drag to select an area')}
-  </p>
-  <div class="text-xs text-muted-foreground">
+<!-- Floats over the map, above Leaflet's panes. -->
+<div class="absolute left-14 top-3 z-[500] flex max-w-xs items-center justify-between gap-3 rounded-card border border-border bg-card/95 px-3 py-2 shadow-sm">
+  <span class="font-mono text-small tabular-nums text-foreground">
     {fmt($t('Export.Tiles.SelectedOfTotal', '{0} of {1} tiles selected'), selectedPlateauTileCount, plateauTiles.length)}
+  </span>
+  <div class="flex gap-0.5">
+    <Button variant="ghost" size="sm" onclick={selectAllPlateauTiles}>{$t('Export.Tiles.All', 'All')}</Button>
+    <Button variant="ghost" size="sm" onclick={selectNoPlateauTiles}>{$t('Export.Tiles.None', 'None')}</Button>
   </div>
 </div>
