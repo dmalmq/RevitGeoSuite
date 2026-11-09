@@ -11,6 +11,7 @@
     value = $bindable(),
     label,
     size = 'md',
+    fill = false,
     onchange,
     class: klass = ''
   }: {
@@ -19,6 +20,8 @@
     /** Accessible name for the group. */
     label: string
     size?: 'sm' | 'md'
+    /** Stretch to the container width and share it equally between the options. */
+    fill?: boolean
     onchange?: (value: T) => void
     class?: string
   } = $props()
@@ -49,7 +52,7 @@
 <div
   role="radiogroup"
   aria-label={label}
-  class="inline-flex max-w-full items-center gap-0.5 self-start rounded-control border border-input bg-muted p-0.5 {klass}"
+  class="{fill ? 'flex w-full' : 'inline-flex max-w-full self-start'} items-center gap-0.5 rounded-control border border-input bg-muted p-0.5 {klass}"
 >
   {#each options as option, index (option.value)}
     {@const selected = option.value === value}
@@ -60,7 +63,7 @@
       aria-checked={selected}
       tabindex={selected ? 0 : -1}
       disabled={option.disabled}
-      class="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-chip font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-55 {size ===
+      class="{fill ? 'min-w-0 flex-1 truncate' : ''} inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-chip font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-55 {size ===
       'sm'
         ? 'h-5 px-2 text-small'
         : 'h-6 px-2.5 text-body'} {selected

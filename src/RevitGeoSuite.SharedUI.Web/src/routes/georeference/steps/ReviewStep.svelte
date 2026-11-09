@@ -1,8 +1,9 @@
-<!-- Part of GeoreferenceRoute.svelte; split out with no change to its markup. -->
+<!-- Part of GeoreferenceRoute.svelte. -->
 <script lang="ts">
   import type { GeoreferenceCurrentStateResponse, ReadinessStatusResponse } from '$lib/bridge/contracts.generated'
-  import ReadinessBanner from '$lib/ui/ReadinessBanner.svelte'
   import { t } from '$lib/i18n'
+  import { Banner, Button } from '$lib/kit'
+  import PointCard from './PointCard.svelte'
 
   interface Props {
     currentState: GeoreferenceCurrentStateResponse | null
@@ -21,146 +22,98 @@
   }
 
   let { currentState, currentStateError, currentStateLoading, currentStep = $bindable(), findingTitle, hasUndoSnapshot, overrideExistingSetup = $bindable(), readinessError, readinessStatus, revertGeoreference, reverting, treatAsExistingSetup, undoSummary }: Props = $props()
+
+  const TONE = { error: 'danger', warning: 'warning' } as const
 </script>
 
-<h2 class="text-lg font-semibold text-foreground mb-4">{$t('Georef.Wizard.CurrentSetup', 'Current Setup')}</h2>
-
-<div class="space-y-4">
+<div class="flex flex-col gap-3">
   {#if currentStateLoading}
-    <div class="flex items-center gap-2 text-sm text-muted-foreground">
-      <div class="w-4 h-4 border-2 border-input border-t-primary rounded-full animate-spin"></div>
-      <span>{$t('Georef.Wizard.ReadingState', 'Reading current Revit project state…')}</span>
-    </div>
+    <p class="text-body text-muted-foreground">{$t('Georef.Wizard.ReadingState', 'Reading current Revit project state…')}</p>
   {:else if currentStateError}
-    <ReadinessBanner type="error" title={$t('Georef.Wizard.Error.ReadStateTitle', 'Could not read project state')} message={currentStateError} />
+    <Banner tone="danger" title={$t('Georef.Wizard.Error.ReadStateTitle', 'Could not read project state')}>{currentStateError}</Banner>
   {:else if currentState && !currentState.isSupportedDocument}
-    <ReadinessBanner type="error" title={$t('Georef.Wizard.Error.Unsupported', 'Unsupported document')} message={currentState.statusMessage || $t('Georef.Wizard.Unsupported.Fallback', 'This document is not supported by the georeference workflow.')} />
+    <Banner tone="danger" title={$t('Georef.Wizard.Error.Unsupported', 'Unsupported document')}>
+      {currentState.statusMessage || $t('Georef.Wizard.Unsupported.Fallback', 'This document is not supported by the georeference workflow.')}
+    </Banner>
   {:else if currentState}
-    <div class="bg-card border border-border rounded-lg p-4">
-      <h3 class="text-sm font-semibold text-foreground uppercase tracking-wide mb-2">{$t('Georef.Wizard.Document', 'Document')}</h3>
-      <p class="text-sm text-foreground">{currentState.documentTitle || $t('Georef.Wizard.Untitled', 'Untitled')}</p>
-      {#if currentState.isReadOnly}
-        <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">{$t('Georef.Wizard.ReadOnly', 'Read-only · preview only')}</p>
-      {/if}
-    </div>
+    <PointCard
+      label={$t('Georef.Wizard.Document', 'Document')}
+      lines={[currentState.documentTitle || $t('Georef.Wizard.Untitled', 'Untitled')]}
+    />
+    {#if currentState.isReadOnly}
+      <Banner tone="warning" title={$t('Georef.Wizard.ReadOnly', 'Read-only · preview only')} />
+    {/if}
 
     {#if treatAsExistingSetup}
-      <ReadinessBanner
-        type="info"
-        title={$t('Georef.Wizard.ExistingDetected.Title', 'Existing coordinate setup detected')}
-        message={$t('Georef.Wizard.ExistingDetected.Fallback', 'The Survey Point and Project Base Point both have readable shared coordinates.')}
-      />
+      <Banner tone="info" title={$t('Georef.Wizard.ExistingDetected.Title', 'Existing coordinate setup detected')}>
+        {$t('Georef.Wizard.ExistingDetected.Fallback', 'The Survey Point and Project Base Point both have readable shared coordinates.')}
+      </Banner>
 
-      <div class="bg-card border border-border rounded-lg p-4 space-y-2">
-        {#if currentState.surveyPoint.estimatedLatitudeDegrees != null && currentState.surveyPoint.estimatedLongitudeDegrees != null}
-          <div>
-            <div class="text-[10px] text-muted-foreground uppercase tracking-wide">{$t('Georef.Wizard.SurveyEstimated', 'Survey Point (estimated)')}</div>
-            <div class="text-xs font-mono text-primary">
-              {$t('Common.LatShort', 'Lat')} {currentState.surveyPoint.estimatedLatitudeDegrees.toFixed(6)} · {$t('Common.LonShort', 'Lon')} {currentState.surveyPoint.estimatedLongitudeDegrees.toFixed(6)}
-            </div>
-          </div>
-        {/if}
-        {#if currentState.projectBasePoint.estimatedLatitudeDegrees != null && currentState.projectBasePoint.estimatedLongitudeDegrees != null}
-          <div>
-            <div class="text-[10px] text-muted-foreground uppercase tracking-wide">{$t('Georef.Wizard.PbpEstimated', 'Project Base Point (estimated)')}</div>
-            <div class="text-xs font-mono text-blue-600 dark:text-blue-400">
-              {$t('Common.LatShort', 'Lat')} {currentState.projectBasePoint.estimatedLatitudeDegrees.toFixed(6)} · {$t('Common.LonShort', 'Lon')} {currentState.projectBasePoint.estimatedLongitudeDegrees.toFixed(6)}
-            </div>
-          </div>
-        {/if}
-        {#if currentState.storedCrsEpsgCode != null}
-          <div>
-            <div class="text-[10px] text-muted-foreground uppercase tracking-wide">{$t('Georef.Wizard.StoredCrs', 'Stored CRS')}</div>
-            <div class="text-xs font-mono text-foreground">EPSG:{currentState.storedCrsEpsgCode}</div>
-          </div>
-        {/if}
-      </div>
+      <PointCard
+        kind="survey"
+        label={$t('Georef.Wizard.SurveyEstimated', 'Survey Point (estimated)')}
+        lat={currentState.surveyPoint.estimatedLatitudeDegrees}
+        lon={currentState.surveyPoint.estimatedLongitudeDegrees}
+      />
+      <PointCard
+        kind="pbp"
+        label={$t('Georef.Wizard.PbpEstimated', 'Project Base Point (estimated)')}
+        lat={currentState.projectBasePoint.estimatedLatitudeDegrees}
+        lon={currentState.projectBasePoint.estimatedLongitudeDegrees}
+      />
+      {#if currentState.storedCrsEpsgCode != null}
+        <PointCard label={$t('Georef.Wizard.StoredCrs', 'Stored CRS')} lines={[`EPSG:${currentState.storedCrsEpsgCode}`]} />
+      {/if}
 
       {#if hasUndoSnapshot}
-        <div class="bg-amber-50 border border-amber-200 dark:bg-amber-900/30 dark:border-amber-700 rounded-lg p-4">
-          <div class="text-sm font-medium text-amber-700 dark:text-amber-300 mb-1">
-            {$t('Georef.Revert.Available', 'Previous state available')}
-          </div>
-          <p class="text-xs text-amber-600 dark:text-amber-400 mb-3">
-            {undoSummary || $t('Georef.Revert.Hint', 'You can revert to the georeference state before the last apply.')}
-          </p>
-          <button
-            class="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-            onclick={revertGeoreference}
-            disabled={reverting}
-          >
-            {reverting
-              ? $t('Georef.Revert.Reverting', 'Reverting…')
-              : $t('Georef.Revert.Button', 'Revert to previous')}
-          </button>
-        </div>
+        <Banner tone="warning" title={$t('Georef.Revert.Available', 'Previous state available')}>
+          {undoSummary || $t('Georef.Revert.Hint', 'You can revert to the georeference state before the last apply.')}
+          {#snippet actions()}
+            <Button size="sm" icon="rotate-ccw" busy={reverting} onclick={revertGeoreference}>
+              {reverting ? $t('Georef.Revert.Reverting', 'Reverting…') : $t('Georef.Revert.Button', 'Revert to previous')}
+            </Button>
+          {/snippet}
+        </Banner>
       {/if}
 
-      <div class="space-y-2">
+      <div class="flex flex-col gap-1.5 pt-1">
         {#if !overrideExistingSetup}
-        <button
-          class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors"
-          onclick={() => { overrideExistingSetup = false; currentStep = 'confirm' }}
-        >
-          {$t('Georef.Wizard.ConfirmExistingBtn', 'Confirm existing setup')}
-        </button>
-        <p class="text-xs text-muted-foreground">
-          {$t('Georef.Wizard.ConfirmExistingHint', 'Save the GeoSuite shared metadata so the existing Revit coordinates are recognized by export and import flows. Project location values are not changed.')}
+          <Button variant="primary" size="lg" onclick={() => { overrideExistingSetup = false; currentStep = 'confirm' }}>
+            {$t('Georef.Wizard.ConfirmExistingBtn', 'Confirm existing setup')}
+          </Button>
+          <p class="text-small text-muted-foreground">
+            {$t('Georef.Wizard.ConfirmExistingHint', 'Save the GeoSuite shared metadata so the existing Revit coordinates are recognized by export and import flows. Project location values are not changed.')}
+          </p>
+        {/if}
+        <Button size="lg" class="mt-1" onclick={() => { overrideExistingSetup = true; currentStep = 'crs' }}>
+          {overrideExistingSetup ? $t('Georef.Wizard.OverrideActive', 'Setting up new coordinates') : $t('Georef.Wizard.OverrideBtn', 'Override and set new coordinates')}
+        </Button>
+        <p class="text-small text-muted-foreground">
+          {overrideExistingSetup
+            ? $t('Georef.Wizard.OverrideActiveHint', 'You are creating a new georeference. The existing Revit coordinates will be replaced.')
+            : $t('Georef.Wizard.OverrideHint', 'Replace the existing setup with a new one based on a CRS and PLATEAU grid selection.')}
         </p>
-      {/if}
-
-      <button
-        class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
-        onclick={() => { overrideExistingSetup = true; currentStep = 'crs' }}
-      >
-        {overrideExistingSetup ? $t('Georef.Wizard.OverrideActive', 'Setting up new coordinates') : $t('Georef.Wizard.OverrideBtn', 'Override and set new coordinates')}
-      </button>
-      <p class="text-xs text-muted-foreground">
-        {overrideExistingSetup
-          ? $t('Georef.Wizard.OverrideActiveHint', 'You are creating a new georeference. The existing Revit coordinates will be replaced.')
-          : $t('Georef.Wizard.OverrideHint', 'Replace the existing setup with a new one based on a CRS and PLATEAU grid selection.')}
-      </p>
-      {#if overrideExistingSetup}
-        <button
-          class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          onclick={() => { overrideExistingSetup = false }}
-        >
-          ← {$t('Georef.Wizard.BackToConfirm', 'Back to confirming existing setup')}
-        </button>
-      {/if}
-    </div>
-  {:else}
-    <div class="space-y-3">
-      <p class="text-sm text-muted-foreground">
+        {#if overrideExistingSetup}
+          <Button variant="ghost" size="sm" icon="arrow-left" class="self-start" onclick={() => { overrideExistingSetup = false }}>
+            {$t('Georef.Wizard.BackToConfirm', 'Back to confirming existing setup')}
+          </Button>
+        {/if}
+      </div>
+    {:else}
+      <p class="text-body text-muted-foreground">
         {$t('Georef.Wizard.NoExisting', 'No existing coordinate setup was detected on the Survey Point or Project Base Point. You can set up a new georeference.')}
       </p>
-      <button
-        class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors"
-        onclick={() => currentStep = 'crs'}
-      >
+      <Button variant="primary" size="lg" onclick={() => (currentStep = 'crs')}>
         {$t('Georef.Wizard.SetupNew', 'Set up new coordinates')}
-      </button>
-    </div>
+      </Button>
+    {/if}
   {/if}
-{/if}
 
-{#if readinessError}
-  <div>
-    <ReadinessBanner type="error" title={$t('Georef.Wizard.Error.Generic', 'Error')} message={readinessError} />
-  </div>
-{:else if readinessStatus}
-  {#if readinessStatus.findings && readinessStatus.findings.length > 0}
-    <div class="space-y-3">
-      {#each readinessStatus.findings as finding}
-        <ReadinessBanner
-          type={finding.severity === 'error' ? 'error' : finding.severity === 'warning' ? 'warning' : 'info'}
-          title={findingTitle(finding.code)}
-          message={finding.message}
-          blocking={finding.severity === 'error'}
-        />
-      {/each}
-    </div>
+  {#if readinessError}
+    <Banner tone="danger" title={$t('Georef.Wizard.Error.Generic', 'Error')}>{readinessError}</Banner>
+  {:else if readinessStatus?.findings && readinessStatus.findings.length > 0}
+    {#each readinessStatus.findings as finding}
+      <Banner tone={TONE[finding.severity as keyof typeof TONE] ?? 'info'} title={findingTitle(finding.code)}>{finding.message}</Banner>
+    {/each}
   {/if}
-{/if}
 </div>
-

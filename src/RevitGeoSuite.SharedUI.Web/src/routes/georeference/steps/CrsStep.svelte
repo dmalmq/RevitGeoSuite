@@ -1,7 +1,8 @@
-<!-- Part of GeoreferenceRoute.svelte; split out with no change to its markup. -->
+<!-- Part of GeoreferenceRoute.svelte. -->
 <script lang="ts">
   import type { CrsGroup } from './types'
   import { t } from '$lib/i18n'
+  import { Button, Field, Select } from '$lib/kit'
 
   interface Props {
     confirmCrs: (...args: any[]) => any
@@ -14,19 +15,13 @@
   let { confirmCrs, confirmingCrs, crsGroups, crsLoading, selectedCrs = $bindable() }: Props = $props()
 </script>
 
-<h2 class="text-lg font-semibold text-foreground mb-4">{$t('Georef.Wizard.Step.Crs', 'Select CRS')}</h2>
-
-<div class="space-y-4">
-  <div>
-    <label for="crs-select" class="block text-sm font-medium text-foreground mb-2">
-      {$t('Crs.Title', 'Coordinate Reference System')}
-    </label>
-    <select
-      id="crs-select"
-      bind:value={selectedCrs}
-      disabled={crsLoading}
-      class="w-full bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-    >
+<div class="flex flex-col gap-3">
+  <Field
+    label={$t('Crs.Title', 'Coordinate Reference System')}
+    id="crs-select"
+    hint={$t('Georef.Wizard.CrsOriginHint', 'The Survey Point is placed automatically at this CRS origin (projected 0,0). No clicking required.')}
+  >
+    <Select id="crs-select" bind:value={selectedCrs} disabled={crsLoading}>
       {#each crsGroups as group}
         <optgroup label={group.region}>
           {#each group.entries as entry}
@@ -34,18 +29,9 @@
           {/each}
         </optgroup>
       {/each}
-    </select>
-    <p class="text-xs text-muted-foreground mt-1">
-      {$t('Georef.Wizard.CrsOriginHint', 'The Survey Point is placed automatically at this CRS origin (projected 0,0). No clicking required.')}
-    </p>
-  </div>
-
-  <button
-    class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-    onclick={confirmCrs}
-    disabled={confirmingCrs}
-  >
+    </Select>
+  </Field>
+  <Button variant="primary" size="lg" busy={confirmingCrs} onclick={confirmCrs}>
     {confirmingCrs ? $t('Georef.Wizard.Resolving', 'Resolving…') : $t('Georef.Wizard.ConfirmCrs', 'Confirm CRS')}
-  </button>
+  </Button>
 </div>
-
