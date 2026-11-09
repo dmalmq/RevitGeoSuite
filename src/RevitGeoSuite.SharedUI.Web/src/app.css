@@ -39,6 +39,7 @@
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-text: hsl(var(--primary-text));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-muted: hsl(var(--muted));
@@ -56,6 +57,7 @@
   --color-info-foreground: hsl(var(--info-foreground));
   --color-info-muted: hsl(var(--info-muted));
   --color-success: hsl(var(--success));
+  --color-success-text: hsl(var(--success-text));
   --color-warning: hsl(var(--warning));
   --color-warning-foreground: hsl(var(--warning-foreground));
   --color-warning-surface: hsl(var(--warning-surface));
@@ -63,6 +65,13 @@
   /* Kanizu ui/tokens.rs: Yu Gothic UI for both languages, Geist Mono for numbers and paths. */
   --font-sans: "Yu Gothic UI", "Segoe UI", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --font-mono: "Geist Mono", "Cascadia Mono", Consolas, "Yu Gothic UI", monospace;
+
+  /* Kanizu type scale (ui/tokens.rs): caption 11, small 12, body 13, title 15, heading 20. */
+  --text-caption: 11px;
+  --text-small: 12px;
+  --text-body: 13px;
+  --text-title: 15px;
+  --text-heading: 20px;
 
   --radius-chip: 4px;
   --radius-control: 6px;
@@ -117,104 +126,7 @@ html, body {
   height: 100%;
 }
 
-/* Shared classes the floor plan export route uses. They move into the component kit next. */
-.option-section {
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--card));
-  padding: 0.875rem;
-}
-
-.option-section h3 {
-  margin: 0 0 0.65rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-  color: hsl(var(--foreground));
-}
-
-.field-label {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: hsl(var(--muted-foreground));
-}
-
-.field {
-  width: 100%;
-  border: 1px solid hsl(var(--input));
-  background: hsl(var(--card));
-  padding: 0.45rem 0.55rem;
-  font-size: 0.875rem;
-  color: hsl(var(--foreground));
-  outline: none;
-}
-
-.field:focus {
-  border-color: hsl(var(--primary));
-  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.18);
-}
-
-.check-row {
-  display: flex;
-  min-height: 1.75rem;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  color: hsl(var(--foreground));
-}
-
-.btn-primary,
-.btn-secondary {
-  display: inline-flex;
-  min-height: 2.25rem;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  padding: 0.45rem 0.8rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1.1;
-}
-
-.btn-primary {
-  border-color: hsl(var(--primary));
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: hsl(var(--primary) / 0.9);
-}
-
-.btn-secondary,
-.btn-small {
-  border-color: hsl(var(--input));
-  background: hsl(var(--card));
-  color: hsl(var(--foreground));
-}
-
-.btn-secondary:hover:not(:disabled),
-.btn-small:hover:not(:disabled) {
-  background: hsl(var(--accent));
-}
-
-.btn-small {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-width: 1px;
-  border-style: solid;
-  padding: 0.35rem 0.55rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.1;
-}
-
-.btn-primary:disabled,
-.btn-secondary:disabled,
-.btn-small:disabled,
+/* Native disabled controls outside the kit read as disabled too. */
 button:disabled,
 input:disabled {
   cursor: not-allowed;

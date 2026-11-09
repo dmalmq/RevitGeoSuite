@@ -1,22 +1,30 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
 <script lang="ts">
   import type { ExporterSettingsPayload } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
+  import { Card, Chip } from '$lib/kit'
 
   export let featureError: any
   export let settings: ExporterSettingsPayload
+
+  const FEATURES = [
+    { key: 'unit', label: 'Exporter.Unit', fallback: 'unit' },
+    { key: 'detail', label: 'Exporter.Detail', fallback: 'detail' },
+    { key: 'opening', label: 'Exporter.Opening', fallback: 'opening' },
+    { key: 'level', label: 'Exporter.Level', fallback: 'level' },
+    { key: 'fixture', label: 'Exporter.Fixture', fallback: 'fixture' }
+  ] as const
 </script>
 
-<div class="option-section">
-  <h3>{$t('Exporter.Features', 'Features')}</h3>
-  <div class="chip-group">
-    <label class="chip" class:active={settings.unit}><input type="checkbox" bind:checked={settings.unit} />{$t('Exporter.Unit', 'unit')}</label>
-    <label class="chip" class:active={settings.detail}><input type="checkbox" bind:checked={settings.detail} />{$t('Exporter.Detail', 'detail')}</label>
-    <label class="chip" class:active={settings.opening}><input type="checkbox" bind:checked={settings.opening} />{$t('Exporter.Opening', 'opening')}</label>
-    <label class="chip" class:active={settings.level}><input type="checkbox" bind:checked={settings.level} />{$t('Exporter.Level', 'level')}</label>
-    <label class="chip" class:active={settings.fixture}><input type="checkbox" bind:checked={settings.fixture} />{$t('Exporter.Fixture', 'fixture')}</label>
+<Card title={$t('Exporter.Features', 'Features')}>
+  <div class="flex flex-wrap gap-1">
+    {#each FEATURES as feature (feature.key)}
+      <Chip selected={settings[feature.key]} onclick={() => (settings = { ...settings, [feature.key]: !settings[feature.key] })}>
+        {$t(feature.label, feature.fallback)}
+      </Chip>
+    {/each}
   </div>
   {#if featureError}
-    <p class="mt-2 text-xs text-red-600 dark:text-red-400">{featureError}</p>
+    <p class="mt-2 text-small text-destructive-text">{featureError}</p>
   {/if}
-</div>
+</Card>

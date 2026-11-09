@@ -83,6 +83,15 @@ All spacing follows a 4px grid.
 
 ## 5. Components
 
+Screens build from the kit in `src/lib/kit` (import from `$lib/kit`), not from raw styled elements: Button, Field, Input, Select, Segmented, Checkbox, Chip, Card, Table, SummaryStrip, Banner, Progress, Result, Dialog, Toaster/`toasts`, and Icon. Every status uses one of five tones (neutral, info, success, warning, danger) from `lib/kit/tone.ts`. Icons come only from the shared Lucide list in `lib/kit/icons.ts`, which uses Kanizu's names. Run `npm run dev` and open `?kit#/kit` to see every component in light and dark.
+
+| Size | Value | Source |
+|---|---:|---|
+| Control height | 28px (Button md, Input, Select) | Kanizu CONTROL |
+| Row height | 26px (Table, Checkbox) | Kanizu ROW |
+| Type | caption 11, small 12, body 13, title 15, heading 20 (`text-caption` ...) | Kanizu ui/tokens.rs |
+
+
 ### Disclosure
 
 - **Structure**: native `details` with a compact `summary` row.

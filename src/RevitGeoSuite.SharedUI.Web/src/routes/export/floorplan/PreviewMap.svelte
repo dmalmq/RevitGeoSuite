@@ -1,7 +1,8 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
 <script lang="ts">
   import type { PreviewFeaturePayload, PreviewInitialStateResponse, PreviewViewPayload } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
+  import { Button, Input, Select } from '$lib/kit'
 
   export let assignSelectedFeature: (...args: any[]) => any
   export let busy: any
@@ -61,16 +62,16 @@
 
       <div class="panel-section">
         <span class="panel-label">{$t('Preview.Views', 'Views')}</span>
-        <select class="field compact" value={previewView.viewId} on:change={(event) => loadPreviewView(Number(event.currentTarget.value))}>
+        <Select value={previewView.viewId} onchange={(event) => loadPreviewView(Number(event.currentTarget.value))}>
           {#each previewState.views as item}
             <option value={item.id}>{item.displayName}</option>
           {/each}
-        </select>
+        </Select>
       </div>
 
       <div class="panel-section">
         <span class="panel-label">{$t('Preview.Search', 'Search')}</span>
-        <input class="field compact" bind:value={previewSearch} />
+        <Input bind:value={previewSearch}/>
       </div>
 
       <div class="panel-section">
@@ -171,26 +172,26 @@
         <button class="details-close" type="button" on:click={() => { selectedFeature = null; selectedFloorTypes = [] }} aria-label="Close">×</button>
       </div>
       <dl class="details-grid">
-        <div><dt class="field-label">{$t('Preview.FeatureType', 'Feature type')}</dt><dd>{selectedFeature.featureType}</dd></div>
-        <div><dt class="field-label">{$t('Preview.Category', 'Category')}</dt><dd>{selectedFeature.category || '-'}</dd></div>
-        <div><dt class="field-label">{$t('Preview.Name', 'Name')}</dt><dd>{selectedFeature.name || '-'}</dd></div>
-        <div><dt class="field-label">{$t('Preview.ExportId', 'Export ID')}</dt><dd>{selectedFeature.exportId || '-'}</dd></div>
-        <div><dt class="field-label">{$t('Preview.Source', 'Source')}</dt><dd>{selectedFeature.sourceLabel || '-'}</dd></div>
+        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.FeatureType', 'Feature type')}</dt><dd>{selectedFeature.featureType}</dd></div>
+        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.Category', 'Category')}</dt><dd>{selectedFeature.category || '-'}</dd></div>
+        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.Name', 'Name')}</dt><dd>{selectedFeature.name || '-'}</dd></div>
+        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.ExportId', 'Export ID')}</dt><dd>{selectedFeature.exportId || '-'}</dd></div>
+        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.Source', 'Source')}</dt><dd>{selectedFeature.sourceLabel || '-'}</dd></div>
         {#if selectedFeature.floorTypeName}
-          <div><dt class="field-label">{$t('Preview.FloorType', 'Floor type')}</dt><dd>{selectedFeature.floorTypeName}</dd></div>
-          <div><dt class="field-label">{$t('Preview.ParsedCandidate', 'Parsed candidate')}</dt><dd>{selectedFeature.parsedZoneCandidate || '-'}</dd></div>
+          <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.FloorType', 'Floor type')}</dt><dd>{selectedFeature.floorTypeName}</dd></div>
+          <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.ParsedCandidate', 'Parsed candidate')}</dt><dd>{selectedFeature.parsedZoneCandidate || '-'}</dd></div>
         {/if}
       </dl>
       {#if selectedFeature.supportsFloorCategoryAssignment}
         <div class="details-assign">
-          <select class="field compact" bind:value={selectedCategory} disabled={previewState.supportedCategories.length === 0}>
+          <Select class="flex-1" bind:value={selectedCategory} disabled={previewState.supportedCategories.length === 0}>
             {#each categoryOptions(selectedCategory) as category}
               <option value={category}>{category}</option>
             {/each}
-          </select>
-          <button class="btn-primary btn-sm" on:click={assignSelectedFeature} disabled={busy || selectedFloorTypes.length === 0 || !selectedCategory}>
+          </Select>
+          <Button variant="primary" size="sm" onclick={assignSelectedFeature} disabled={busy || selectedFloorTypes.length === 0 || !selectedCategory}>
             {$t('Preview.Assign', 'Assign')}
-          </button>
+          </Button>
         </div>
       {/if}
     </div>
