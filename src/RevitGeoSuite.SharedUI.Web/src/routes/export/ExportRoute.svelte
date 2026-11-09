@@ -1042,7 +1042,7 @@
 </script>
 
 <div class="flex h-full">
-  <div class="flex-1 relative bg-neutral-100 dark:bg-neutral-900">
+  <div class="flex-1 relative bg-muted">
     {#if format === 'plateau' && (step === 'plateau-source' || step === 'plateau-scan' || step === 'plateau-select' || step === 'options' || step === 'review' || step === 'export')}
       <LeafletMap
         bind:this={mapRef}
@@ -1077,17 +1077,17 @@
     {/if}
   </div>
 
-  <aside class="w-96 bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200 dark:border-neutral-700 p-6 overflow-y-auto">
+  <aside class="w-96 bg-muted border-l border-border p-6 overflow-y-auto">
     {#if step === 'format'}
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$t('Export.Title', 'Export')}</h2>
-      <p class="text-sm text-neutral-500 dark:text-neutral-400">
+      <h2 class="text-lg font-semibold text-foreground mb-4">{$t('Export.Title', 'Export')}</h2>
+      <p class="text-sm text-muted-foreground">
         {$t('Export.FormatIntro', 'Select an export format to begin exporting your Revit model.')}
       </p>
 
     {:else if step === 'preflight'}
       <div class="flex items-center gap-2 mb-4">
         <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+          class="text-muted-foreground hover:text-foreground transition-colors"
           onclick={goBack}
           aria-label={$t('Common.Back', 'Back')}
         >
@@ -1095,7 +1095,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{formatLabel}</h2>
+        <h2 class="text-lg font-semibold text-foreground">{formatLabel}</h2>
       </div>
 
       <ReadinessPreflight
@@ -1106,7 +1106,7 @@
 
       {#if preflightReady && preflightNeedsAttention}
         <button
-          class="w-full mt-4 bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+          class="w-full mt-4 bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors"
           onclick={continueToScope}
         >
           {$t('Common.Continue', 'Continue')}
@@ -1155,7 +1155,7 @@
     {:else if step === 'options'}
       <div class="flex items-center gap-2 mb-4">
         <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+          class="text-muted-foreground hover:text-foreground transition-colors"
           onclick={goBack}
           aria-label={$t('Common.Back', 'Back')}
         >
@@ -1163,12 +1163,12 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{fmt($t('Export.Options.Title', '{0} Options'), formatLabel)}</h2>
+        <h2 class="text-lg font-semibold text-foreground">{fmt($t('Export.Options.Title', '{0} Options'), formatLabel)}</h2>
       </div>
 
       <div class="space-y-4">
         <div>
-          <label for="export-output-folder" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+          <label for="export-output-folder" class="block text-sm font-medium text-foreground mb-2">
             {$t('Export.OutputFolder', 'Output Folder')}
           </label>
           <div class="flex gap-2">
@@ -1177,10 +1177,10 @@
               type="text"
               bind:value={outputFolder}
               placeholder={$t('Export.SelectFolder', 'Select folder...')}
-              class="flex-1 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              class="flex-1 bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <button
-              class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
+              class="px-3 py-2 bg-card border border-border text-foreground hover:bg-accent hover:border-muted-foreground text-sm rounded-md transition-colors"
               onclick={browseOutputFolder}
             >
               {$t('Common.Browse', 'Browse')}
@@ -1216,7 +1216,7 @@
         {/if}
 
         <button
-          class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           onclick={prepareExport}
           disabled={preparingPreview || !outputFolder || (format === 'plateau' && (!plateauOptions.formats.shapefile && !plateauOptions.formats.dxf)) || (format === 'tiles3d' && scope === 'view' && !selectedTiles3dViewUniqueId)}
         >
@@ -1237,14 +1237,14 @@
         {startExport}
       />
     {:else if step === 'export'}
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$t('Export.Progress.Title', 'Exporting')}</h2>
+      <h2 class="text-lg font-semibold text-foreground mb-4">{$t('Export.Progress.Title', 'Exporting')}</h2>
       {#if exporting}
         <div class="flex items-center gap-2">
-          <div class="w-4 h-4 border-2 border-neutral-600 border-t-teal-500 rounded-full animate-spin"></div>
-          <span class="text-sm text-neutral-500 dark:text-neutral-400">{exportProgress?.message || $t('Export.Progress.Preparing', 'Preparing…')}</span>
+          <div class="w-4 h-4 border-2 border-input border-t-primary rounded-full animate-spin"></div>
+          <span class="text-sm text-muted-foreground">{exportProgress?.message || $t('Export.Progress.Preparing', 'Preparing…')}</span>
         </div>
       {:else if exportProgress?.complete}
-        <p class="text-sm text-neutral-500 dark:text-neutral-400">{$t('Export.Complete.Title', 'Export Complete')}</p>
+        <p class="text-sm text-muted-foreground">{$t('Export.Complete.Title', 'Export Complete')}</p>
       {/if}
       {#if cesiumPushStatus}
         <p class="mt-2 text-xs text-sky-600 dark:text-sky-400">{cesiumPushStatus}</p>

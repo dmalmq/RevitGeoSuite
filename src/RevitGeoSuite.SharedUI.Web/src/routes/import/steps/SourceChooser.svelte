@@ -10,29 +10,29 @@
 </script>
 
 <div class="absolute inset-0 flex items-center justify-center">
-  <div class="bg-neutral-100 border border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700 rounded-lg p-8 max-w-md">
-    <h2 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100 mb-6">{$t('Import.Step.Source', 'Choose Import Source')}</h2>
+  <div class="bg-muted border border-border rounded-lg p-8 max-w-md">
+    <h2 class="text-xl font-semibold text-foreground mb-6">{$t('Import.Step.Source', 'Choose Import Source')}</h2>
 
     <div class="space-y-3">
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={() => selectSource('local')}
       >
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 bg-teal-50 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-700 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="w-10 h-10 bg-accent border border-primary/40 rounded-lg flex items-center justify-center">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$t('Import.Source.Local.Title', 'Local PLATEAU Folder')}</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">{$t('Import.Source.Local.Description', 'Import from downloaded PLATEAU data')}</div>
+            <div class="text-sm font-medium text-foreground">{$t('Import.Source.Local.Title', 'Local PLATEAU Folder')}</div>
+            <div class="text-xs text-muted-foreground">{$t('Import.Source.Local.Description', 'Import from downloaded PLATEAU data')}</div>
           </div>
         </div>
       </button>
 
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={() => selectSource('online')}
       >
         <div class="flex items-center gap-3">
@@ -42,14 +42,14 @@
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$t('Import.Source.OnlineApi.Title', 'PLATEAU Online / API')}</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">{$t('Import.Source.OnlineApi.Description', 'Browse and download from the PLATEAU API')}</div>
+            <div class="text-sm font-medium text-foreground">{$t('Import.Source.OnlineApi.Title', 'PLATEAU Online / API')}</div>
+            <div class="text-xs text-muted-foreground">{$t('Import.Source.OnlineApi.Description', 'Browse and download from the PLATEAU API')}</div>
           </div>
         </div>
       </button>
 
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={() => selectSource('osm')}
       >
         <div class="flex items-center gap-3">
@@ -59,8 +59,8 @@
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$t('Import.Source.OsmBuildings.Title', 'OSM Buildings')}</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">{$t('Import.Source.OsmBuildings.Description', 'Import OpenStreetMap buildings worldwide via Cesium Ion')}</div>
+            <div class="text-sm font-medium text-foreground">{$t('Import.Source.OsmBuildings.Title', 'OSM Buildings')}</div>
+            <div class="text-xs text-muted-foreground">{$t('Import.Source.OsmBuildings.Description', 'Import OpenStreetMap buildings worldwide via Cesium Ion')}</div>
           </div>
         </div>
       </button>

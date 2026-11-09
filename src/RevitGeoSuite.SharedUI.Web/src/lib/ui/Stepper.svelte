@@ -40,18 +40,18 @@
     {@const status = getStepStatus(step, index)}
     <button
       class="flex items-start gap-3 p-3 rounded-lg text-left transition-colors
-        {status === 'current' ? 'bg-teal-50 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-700' : ''}
-        {status === 'completed' ? 'hover:bg-neutral-100 dark:hover:bg-neutral-800' : ''}
+        {status === 'current' ? 'bg-accent border border-primary/40' : ''}
+        {status === 'completed' ? 'hover:bg-accent' : ''}
         {status === 'locked' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
       "
       onclick={() => handleClick(step.id)}
       disabled={status === 'locked'}
     >
       <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold
-        {status === 'completed' ? 'bg-teal-600 text-white' : ''}
-        {status === 'current' ? 'bg-teal-500 text-white' : ''}
-        {status === 'upcoming' ? 'bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300' : ''}
-        {status === 'locked' ? 'bg-neutral-100 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500' : ''}
+        {status === 'completed' ? 'bg-primary text-primary-foreground' : ''}
+        {status === 'current' ? 'bg-primary text-primary-foreground' : ''}
+        {status === 'upcoming' ? 'bg-border text-muted-foreground' : ''}
+        {status === 'locked' ? 'bg-muted text-muted-foreground' : ''}
       ">
         {#if status === 'completed'}
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -64,19 +64,19 @@
 
       <div class="flex-1 min-w-0">
         <div class="text-sm font-medium
-          {status === 'current' ? 'text-teal-700 dark:text-teal-300' : ''}
-          {status === 'completed' ? 'text-neutral-700 dark:text-neutral-200' : ''}
-          {status === 'upcoming' ? 'text-neutral-500 dark:text-neutral-400' : ''}
-          {status === 'locked' ? 'text-neutral-400 dark:text-neutral-500' : ''}
+          {status === 'current' ? 'text-primary' : ''}
+          {status === 'completed' ? 'text-foreground' : ''}
+          {status === 'upcoming' ? 'text-muted-foreground' : ''}
+          {status === 'locked' ? 'text-muted-foreground' : ''}
         ">
           {step.label}
         </div>
         {#if step.description}
           <div class="text-xs mt-0.5
-            {status === 'current' ? 'text-teal-600 dark:text-teal-400' : ''}
-            {status === 'completed' ? 'text-neutral-500 dark:text-neutral-400' : ''}
-            {status === 'upcoming' ? 'text-neutral-400 dark:text-neutral-500' : ''}
-            {status === 'locked' ? 'text-neutral-300 dark:text-neutral-600' : ''}
+            {status === 'current' ? 'text-primary' : ''}
+            {status === 'completed' ? 'text-muted-foreground' : ''}
+            {status === 'upcoming' ? 'text-muted-foreground' : ''}
+            {status === 'locked' ? 'text-muted-foreground' : ''}
           ">
             {step.description}
           </div>
@@ -86,7 +86,7 @@
 
     {#if index < steps.length - 1}
       <div class="ml-4 h-4 w-px
-        {completedSteps.has(step.id) ? 'bg-teal-600' : 'bg-neutral-200 dark:bg-neutral-700'}
+        {completedSteps.has(step.id) ? 'bg-primary' : 'bg-border'}
       "></div>
     {/if}
   {/each}

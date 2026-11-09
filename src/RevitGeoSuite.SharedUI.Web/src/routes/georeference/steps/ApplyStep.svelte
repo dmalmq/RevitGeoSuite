@@ -22,7 +22,7 @@
   let { applyGeoreference, applyResult, applying, basePoint, basePointSource, currentState, currentStep = $bindable(), fmt, isConfirmExistingSetupMode, reset, selectedCrsName, selectedMeshCodes, surveyOrigin }: Props = $props()
 </script>
 
-<h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">
+<h2 class="text-lg font-semibold text-foreground mb-4">
   {isConfirmExistingSetupMode ? $t('Georef.Wizard.SaveMetadata', 'Save Metadata') : $t('Georef.Wizard.ApplyGeoreference', 'Apply Georeference')}
 </h2>
 
@@ -34,18 +34,18 @@
         {isConfirmExistingSetupMode ? $t('Georef.Wizard.MetadataSaved', 'Metadata saved') : $t('Georef.Wizard.Applied', 'Applied')}
       </span>
     </div>
-    <p class="text-xs text-neutral-500 dark:text-neutral-400">{applyResult.message}</p>
+    <p class="text-xs text-muted-foreground">{applyResult.message}</p>
   </div>
   <button
-    class="mt-4 w-full bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-white font-medium py-2 px-4 rounded-md transition-colors"
+    class="mt-4 w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
     onclick={reset}
   >
     {$t('Georef.Wizard.StartOver', 'Start Over')}
   </button>
 {:else if isConfirmExistingSetupMode}
-  <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4 mb-4">
-    <p class="text-sm text-neutral-500 dark:text-neutral-400 mb-2">{$t('Georef.Wizard.SaveMetaIntro', 'This will save the following shared metadata for the existing setup:')}</p>
-    <ul class="text-xs text-neutral-500 dark:text-neutral-500 space-y-1 ml-4 list-disc">
+  <div class="bg-card border border-border rounded-lg p-4 mb-4">
+    <p class="text-sm text-muted-foreground mb-2">{$t('Georef.Wizard.SaveMetaIntro', 'This will save the following shared metadata for the existing setup:')}</p>
+    <ul class="text-xs text-muted-foreground space-y-1 ml-4 list-disc">
       <li>{fmt($t('Georef.Wizard.CrsLine', 'CRS: {0}'), selectedCrsName)}</li>
       {#if currentState?.surveyPoint.estimatedLatitudeDegrees != null && currentState?.surveyPoint.estimatedLongitudeDegrees != null}
         <li>{fmt($t('Georef.Wizard.SurveyAt', 'Survey Point at ({0}, {1})'), currentState.surveyPoint.estimatedLatitudeDegrees.toFixed(6), currentState.surveyPoint.estimatedLongitudeDegrees.toFixed(6))}</li>
@@ -55,21 +55,21 @@
       {/if}
       <li>{fmt($t('Georef.Wizard.WorkingPbp', 'Working Project Base Point: {0}'), currentState?.projectBasePoint.sharedEastWestFeet != null && currentState?.projectBasePoint.sharedNorthSouthFeet != null ? `E ${(currentState.projectBasePoint.sharedEastWestFeet * 0.3048).toFixed(3)} m, N ${(currentState.projectBasePoint.sharedNorthSouthFeet * 0.3048).toFixed(3)} m` : $t('Georef.Wizard.WorkingPbpFallback', 'current Revit shared coordinates'))}</li>
     </ul>
-    <p class="text-xs text-neutral-500 dark:text-neutral-500 mt-3">
+    <p class="text-xs text-muted-foreground mt-3">
       {$t('Georef.Wizard.NoModifyPre', "Revit's")} <code>ProjectPosition</code> {$t('Georef.Wizard.NoModifyPost', 'and base points are not modified.')}
     </p>
   </div>
 
   <div class="space-y-2">
     <button
-      class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       onclick={applyGeoreference}
       disabled={applying}
     >
       {applying ? $t('Georef.Wizard.Saving', 'Saving…') : $t('Georef.Wizard.SaveMetadata', 'Save Metadata')}
     </button>
     <button
-      class="w-full bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-white font-medium py-2 px-4 rounded-md transition-colors"
+      class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
       onclick={() => currentStep = 'confirm'}
       disabled={applying}
     >
@@ -77,9 +77,9 @@
     </button>
   </div>
 {:else}
-  <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4 mb-4">
-    <p class="text-sm text-neutral-500 dark:text-neutral-400 mb-2">{$t('Georef.Wizard.ApplyIntro', 'This will apply the following to your Revit project:')}</p>
-    <ul class="text-xs text-neutral-500 dark:text-neutral-500 space-y-1 ml-4 list-disc">
+  <div class="bg-card border border-border rounded-lg p-4 mb-4">
+    <p class="text-sm text-muted-foreground mb-2">{$t('Georef.Wizard.ApplyIntro', 'This will apply the following to your Revit project:')}</p>
+    <ul class="text-xs text-muted-foreground space-y-1 ml-4 list-disc">
       <li>{fmt($t('Georef.Wizard.SetCrsTo', 'Set CRS to {0}'), selectedCrsName)}</li>
       {#if surveyOrigin}
         <li>{fmt($t('Georef.Wizard.SurveyAtOrigin', 'Survey Point at CRS origin ({0}, {1})'), surveyOrigin.lat.toFixed(6), surveyOrigin.lon.toFixed(6))}</li>
@@ -97,14 +97,14 @@
 
   <div class="space-y-2">
     <button
-      class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       onclick={applyGeoreference}
       disabled={applying}
     >
       {applying ? $t('Georef.Wizard.Applying', 'Applying…') : $t('Georef.Wizard.ConfirmApply', 'Confirm Apply')}
     </button>
     <button
-      class="w-full bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-white font-medium py-2 px-4 rounded-md transition-colors"
+      class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
       onclick={() => currentStep = 'preview'}
       disabled={applying}
     >

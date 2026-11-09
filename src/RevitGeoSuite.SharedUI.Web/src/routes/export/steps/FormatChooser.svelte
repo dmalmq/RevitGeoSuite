@@ -12,29 +12,29 @@
 </script>
 
 <div class="absolute inset-0 flex items-center justify-center">
-  <div class="bg-neutral-100 border border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700 rounded-lg p-8 max-w-md">
-    <h2 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100 mb-6">{$t('Export.ChooseFormat', 'Choose Export Format')}</h2>
+  <div class="bg-muted border border-border rounded-lg p-8 max-w-md">
+    <h2 class="text-xl font-semibold text-foreground mb-6">{$t('Export.ChooseFormat', 'Choose Export Format')}</h2>
 
     <div class="space-y-3">
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={() => selectFormat('plateau')}
       >
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 bg-teal-50 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-700 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="w-10 h-10 bg-accent border border-primary/40 rounded-lg flex items-center justify-center">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$t('Export.Format.Plateau', 'PLATEAU Context')}</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">{$t('Export.Format.PlateauDesc', 'Export as shapefile/DXF for PLATEAU workflow')}</div>
+            <div class="text-sm font-medium text-foreground">{$t('Export.Format.Plateau', 'PLATEAU Context')}</div>
+            <div class="text-xs text-muted-foreground">{$t('Export.Format.PlateauDesc', 'Export as shapefile/DXF for PLATEAU workflow')}</div>
           </div>
         </div>
       </button>
 
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={() => selectFormat('tiles3d')}
       >
         <div class="flex items-center gap-3">
@@ -44,14 +44,14 @@
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$t('Export.Format.Tiles3d', '3D Tiles')}</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">{$t('Export.Format.Tiles3dDesc', 'Export as 3D Tiles for web visualization')}</div>
+            <div class="text-sm font-medium text-foreground">{$t('Export.Format.Tiles3d', '3D Tiles')}</div>
+            <div class="text-xs text-muted-foreground">{$t('Export.Format.Tiles3dDesc', 'Export as 3D Tiles for web visualization')}</div>
           </div>
         </div>
       </button>
 
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={() => selectFormat('citygml')}
       >
         <div class="flex items-center gap-3">
@@ -61,14 +61,14 @@
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$t('Export.Format.CityGml', 'CityGML')}</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">{$t('Export.Format.CityGmlDesc', 'Export as CityGML for semantic 3D city models')}</div>
+            <div class="text-sm font-medium text-foreground">{$t('Export.Format.CityGml', 'CityGML')}</div>
+            <div class="text-xs text-muted-foreground">{$t('Export.Format.CityGmlDesc', 'Export as CityGML for semantic 3D city models')}</div>
           </div>
         </div>
       </button>
 
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={openCesiumExport}
       >
         <div class="flex items-center gap-3">
@@ -78,14 +78,14 @@
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$t('Export.Format.Cesium', 'Export to Cesium')}</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">{$t('Export.Format.CesiumDesc', 'One-click 3D Tiles + GeoPackage package for the Cesium viewer')}</div>
+            <div class="text-sm font-medium text-foreground">{$t('Export.Format.Cesium', 'Export to Cesium')}</div>
+            <div class="text-xs text-muted-foreground">{$t('Export.Format.CesiumDesc', 'One-click 3D Tiles + GeoPackage package for the Cesium viewer')}</div>
           </div>
         </div>
       </button>
 
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={openFloorPlanExport}
       >
         <div class="flex items-center gap-3">
@@ -95,14 +95,14 @@
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">GeoPackage / Shapefile</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">Export floor-plan GIS packages from Revit plan views</div>
+            <div class="text-sm font-medium text-foreground">GeoPackage / Shapefile</div>
+            <div class="text-xs text-muted-foreground">Export floor-plan GIS packages from Revit plan views</div>
           </div>
         </div>
       </button>
 
       <button
-        class="w-full p-4 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg hover:border-teal-500 transition-colors text-left"
+        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
         onclick={() => selectFormat('gis')}
       >
         <div class="flex items-center gap-3">
@@ -113,8 +113,8 @@
             </svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-neutral-800 dark:text-neutral-200">{$t('Import.Source.Gis.Title', 'Local GIS Files')}</div>
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">Convert Shapefile / GeoPackage to georeferenced DXF</div>
+            <div class="text-sm font-medium text-foreground">{$t('Import.Source.Gis.Title', 'Local GIS Files')}</div>
+            <div class="text-xs text-muted-foreground">Convert Shapefile / GeoPackage to georeferenced DXF</div>
           </div>
         </div>
       </button>

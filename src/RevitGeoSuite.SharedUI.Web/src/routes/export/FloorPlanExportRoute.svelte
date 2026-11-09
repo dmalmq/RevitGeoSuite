@@ -750,18 +750,18 @@
   $: if (previewView?.viewId) { resetView() }
 </script>
 
-<section class="floor-plan-export flex h-full flex-col overflow-hidden bg-neutral-50 p-5 dark:bg-neutral-950">
+<section class="floor-plan-export flex h-full flex-col overflow-hidden bg-muted p-5">
   {#if busy && !state}
-    <div class="flex h-full items-center justify-center text-sm text-neutral-500">
+    <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
       {$t('Exporter.Loading', 'Loading export setup...')}
     </div>
   {:else if state}
     <div class="mx-auto flex h-full w-full min-h-0 max-w-[1600px] flex-col gap-4">
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap items-center gap-3">
-          <h2 class="text-lg font-semibold text-neutral-950 dark:text-neutral-50">
+          <h2 class="text-lg font-semibold text-foreground">
             {$t('Exporter.Title', 'GeoPackage Export')}
-            <span class="ml-1 text-xs font-normal text-neutral-400 dark:text-neutral-500">{state.version}</span>
+            <span class="ml-1 text-xs font-normal text-muted-foreground">{state.version}</span>
           </h2>
           <div class="stepper" aria-label="Export steps">
             <span class:active-step={step === 'views'}>1 {$t('Exporter.Views', 'Views')}</span>
@@ -836,7 +836,7 @@
             />
 
             <div class="flex flex-col gap-2 pb-5">
-              <p class="text-xs text-neutral-500 dark:text-neutral-400">{exportSummary}</p>
+              <p class="text-xs text-muted-foreground">{exportSummary}</p>
               <div class="flex justify-end gap-3">
                 <button class="btn-link" on:click={closeWindow}>{$t('Common.Cancel', 'Cancel')}</button>
                 <button class="btn-primary" on:click={preparePreview} disabled={busy}>{$t('Exporter.Preview', 'Preview')} →</button>
@@ -910,7 +910,7 @@
             />
           </div>
         {:else}
-          <div class="flex min-h-0 flex-1 items-center justify-center text-sm text-neutral-500">{$t('Preview.Loading', 'Loading preview...')}</div>
+          <div class="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">{$t('Preview.Loading', 'Loading preview...')}</div>
         {/if}
       {:else if step === 'export'}
         <ExportStep
@@ -946,52 +946,29 @@
       gap: 0.35rem;
       font-size: 0.78rem;
       font-weight: 700;
-      color: rgb(82 82 82);
+      color: hsl(var(--muted-foreground));
     }
 
     .stepper span {
-      border: 1px solid rgb(212 212 212);
-      background: white;
+      border: 1px solid hsl(var(--input));
+      background: hsl(var(--card));
       padding: 0.45rem 0.65rem;
     }
   }
 
-  :global(.dark) .floor-plan-export :global {
-    .stepper span {
-      border-color: rgb(64 64 64);
-      background: rgb(38 38 38);
-      color: rgb(212 212 212);
-    }
-  }
-
   .floor-plan-export :global {
     .stepper .active-step {
-      border-color: rgb(15 118 110);
-      background: rgb(240 253 250);
-      color: rgb(15 118 110);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .stepper .active-step {
-      border-color: rgb(20 184 166);
-      background: rgba(19, 78, 74, 0.45);
-      color: rgb(153 246 228);
+      border-color: hsl(var(--primary));
+      background: hsl(var(--accent));
+      color: hsl(var(--primary));
     }
   }
 
   .floor-plan-export :global {
     .advanced-section {
-      border: 1px solid rgb(229 229 229);
-      background: white;
+      border: 1px solid hsl(var(--border));
+      background: hsl(var(--card));
       padding: 0.875rem;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .advanced-section {
-      border-color: rgb(38 38 38);
-      background: rgb(23 23 23);
     }
   }
 
@@ -1000,13 +977,7 @@
       cursor: pointer;
       font-size: 0.82rem;
       font-weight: 700;
-      color: rgb(64 64 64);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .advanced-section > summary {
-      color: rgb(212 212 212);
+      color: hsl(var(--foreground));
     }
   }
 
@@ -1028,32 +999,18 @@
       min-height: 2.25rem;
       align-items: center;
       justify-content: center;
-      border: 1px solid rgb(245 158 11);
-      background: rgb(255 251 235);
-      color: rgb(146 64 14);
+      border: 1px solid hsl(var(--warning));
+      background: hsl(var(--warning-surface));
+      color: hsl(var(--foreground));
       padding: 0.45rem 0.8rem;
       font-size: 0.875rem;
       font-weight: 700;
     }
 
     .readiness-chip.ready {
-      border-color: rgb(13 148 136);
-      background: rgb(240 253 250);
-      color: rgb(15 118 110);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .readiness-chip {
-      border-color: rgb(180 83 9);
-      background: rgba(120, 53, 15, 0.4);
-      color: rgb(253 186 116);
-    }
-
-    .readiness-chip.ready {
-      border-color: rgb(20 184 166);
-      background: rgba(19, 78, 74, 0.45);
-      color: rgb(153 246 228);
+      border-color: hsl(var(--primary));
+      background: hsl(var(--accent));
+      color: hsl(var(--primary));
     }
   }
 
@@ -1075,8 +1032,8 @@
       max-height: min(860px, 92vh);
       min-height: min(720px, 88vh);
       flex-direction: column;
-      border: 1px solid rgb(212 212 212);
-      background: white;
+      border: 1px solid hsl(var(--input));
+      background: hsl(var(--card));
       color: inherit;
       margin: auto;
       padding: 0;
@@ -1084,24 +1041,11 @@
     }
   }
 
-  :global(.dark) .floor-plan-export :global {
-    .assignment-modal {
-      border-color: rgb(64 64 64);
-      background: rgb(23 23 23);
-    }
-  }
-
   .floor-plan-export :global {
     .assignment-table-wrap {
       max-height: min(460px, 48vh);
       overflow: auto;
-      border: 1px solid rgb(229 229 229);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .assignment-table-wrap {
-      border-color: rgb(38 38 38);
+      border: 1px solid hsl(var(--border));
     }
   }
 
@@ -1116,35 +1060,21 @@
       position: sticky;
       top: 0;
       z-index: 1;
-      border-bottom: 1px solid rgb(229 229 229);
-      background: rgb(250 250 250);
+      border-bottom: 1px solid hsl(var(--border));
+      background: hsl(var(--muted));
       padding: 0.55rem;
       text-align: left;
       font-size: 0.72rem;
       font-weight: 700;
-      color: rgb(64 64 64);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .assignment-table th {
-      border-color: rgb(38 38 38);
-      background: rgb(38 38 38);
-      color: rgb(212 212 212);
+      color: hsl(var(--foreground));
     }
   }
 
   .floor-plan-export :global {
     .assignment-table td {
-      border-bottom: 1px solid rgb(245 245 245);
+      border-bottom: 1px solid hsl(var(--border));
       padding: 0.55rem;
       vertical-align: top;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .assignment-table td {
-      border-color: rgb(38 38 38);
     }
   }
 
@@ -1158,7 +1088,7 @@
     .assignment-table .empty-cell {
       padding: 1rem;
       text-align: center;
-      color: rgb(115 115 115);
+      color: hsl(var(--muted-foreground));
     }
 
     svg path:focus,
@@ -1174,16 +1104,9 @@
     }
 
     .metric {
-      border: 1px solid rgb(229 229 229);
-      background: white;
+      border: 1px solid hsl(var(--border));
+      background: hsl(var(--card));
       padding: 0.75rem;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .metric {
-      border-color: rgb(38 38 38);
-      background: rgb(23 23 23);
     }
   }
 
@@ -1192,13 +1115,7 @@
       display: block;
       font-size: 0.72rem;
       font-weight: 700;
-      color: rgb(82 82 82);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .metric span {
-      color: rgb(163 163 163);
+      color: hsl(var(--muted-foreground));
     }
   }
 
@@ -1229,16 +1146,9 @@
       flex: 1;
       min-height: 0;
       overflow: hidden;
-      border: 1px solid rgb(229 229 229);
+      border: 1px solid hsl(var(--border));
       border-radius: 8px;
-      background: rgb(250 250 250);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .map-container {
-      border-color: rgb(38 38 38);
-      background: rgb(23 23 23);
+      background: hsl(var(--muted));
     }
   }
 
@@ -1251,20 +1161,13 @@
       width: 220px;
       max-height: calc(100% - 24px);
       overflow-y: auto;
-      background: rgba(255, 255, 255, 0.94);
+      background: hsl(var(--popover) / 0.94);
       backdrop-filter: blur(12px);
-      border: 1px solid rgb(229 229 229);
+      border: 1px solid hsl(var(--border));
       border-radius: 8px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
       padding: 12px;
       transition: width 200ms ease, padding 200ms ease;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .map-overlay-left {
-      background: rgba(38, 38, 38, 0.94);
-      border-color: rgb(64 64 64);
     }
   }
 
@@ -1287,13 +1190,7 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      color: rgb(82 82 82);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .panel-title {
-      color: rgb(163 163 163);
+      color: hsl(var(--muted-foreground));
     }
   }
 
@@ -1306,25 +1203,14 @@
       height: 24px;
       border: none;
       background: transparent;
-      color: rgb(115 115 115);
+      color: hsl(var(--muted-foreground));
       cursor: pointer;
       border-radius: 4px;
     }
 
     .panel-toggle:hover {
-      background: rgb(229 229 229);
-      color: rgb(38 38 38);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .panel-toggle {
-      color: rgb(163 163 163);
-    }
-
-    .panel-toggle:hover {
-      background: rgb(64 64 64);
-      color: rgb(229 229 229);
+      background: hsl(var(--secondary));
+      color: hsl(var(--foreground));
     }
   }
 
@@ -1341,14 +1227,8 @@
       display: block;
       font-size: 0.7rem;
       font-weight: 600;
-      color: rgb(115 115 115);
+      color: hsl(var(--muted-foreground));
       margin-bottom: 4px;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .panel-label {
-      color: rgb(163 163 163);
     }
   }
 
@@ -1374,10 +1254,10 @@
       padding: 2px 8px;
       font-size: 0.72rem;
       font-weight: 500;
-      border: 1px solid rgb(212 212 212);
+      border: 1px solid hsl(var(--input));
       border-radius: 9999px;
-      background: white;
-      color: rgb(82 82 82);
+      background: hsl(var(--card));
+      color: hsl(var(--muted-foreground));
       cursor: pointer;
       transition: all 120ms ease;
     }
@@ -1387,28 +1267,14 @@
     }
 
     .chip.active {
-      border-color: rgb(15 118 110);
-      background: rgb(240 253 250);
-      color: rgb(15 118 110);
+      border-color: hsl(var(--primary));
+      background: hsl(var(--accent));
+      color: hsl(var(--primary));
     }
 
     .chip.disabled {
       cursor: not-allowed;
       opacity: 0.5;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .chip {
-      border-color: rgb(64 64 64);
-      background: rgb(38 38 38);
-      color: rgb(212 212 212);
-    }
-
-    .chip.active {
-      border-color: rgb(20 184 166);
-      background: rgba(19, 78, 74, 0.45);
-      color: rgb(153 246 228);
     }
   }
 
@@ -1426,21 +1292,13 @@
       padding: 4px 14px;
       font-size: 0.75rem;
       font-weight: 500;
-      color: rgb(82 82 82);
-      background: rgba(255, 255, 255, 0.92);
+      color: hsl(var(--muted-foreground));
+      background: hsl(var(--popover) / 0.92);
       backdrop-filter: blur(12px);
-      border: 1px solid rgb(229 229 229);
+      border: 1px solid hsl(var(--border));
       border-radius: 9999px;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
       white-space: nowrap;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .map-overlay-pill {
-      background: rgba(38, 38, 38, 0.92);
-      border-color: rgb(64 64 64);
-      color: rgb(212 212 212);
     }
   }
 
@@ -1454,24 +1312,16 @@
       max-width: calc(100% - 120px);
       padding: 4px 14px;
       font-size: 0.72rem;
-      color: rgb(82 82 82);
-      background: rgba(255, 255, 255, 0.92);
+      color: hsl(var(--muted-foreground));
+      background: hsl(var(--popover) / 0.92);
       backdrop-filter: blur(12px);
-      border: 1px solid rgb(229 229 229);
+      border: 1px solid hsl(var(--border));
       border-radius: 9999px;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       text-align: center;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .map-overlay-caption {
-      background: rgba(38, 38, 38, 0.92);
-      border-color: rgb(64 64 64);
-      color: rgb(212 212 212);
     }
   }
 
@@ -1482,19 +1332,12 @@
       right: 12px;
       z-index: 10;
       max-width: 200px;
-      background: rgba(255, 255, 255, 0.94);
+      background: hsl(var(--popover) / 0.94);
       backdrop-filter: blur(12px);
-      border: 1px solid rgb(229 229 229);
+      border: 1px solid hsl(var(--border));
       border-radius: 8px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
       padding: 8px 10px;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .map-overlay-legend {
-      background: rgba(38, 38, 38, 0.94);
-      border-color: rgb(64 64 64);
     }
   }
 
@@ -1504,14 +1347,8 @@
       align-items: center;
       gap: 6px;
       font-size: 0.72rem;
-      color: rgb(82 82 82);
+      color: hsl(var(--muted-foreground));
       line-height: 1.6;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .legend-row {
-      color: rgb(212 212 212);
     }
   }
 
@@ -1520,14 +1357,8 @@
       width: 10px;
       height: 10px;
       flex-shrink: 0;
-      border: 1px solid rgb(212 212 212);
+      border: 1px solid hsl(var(--input));
       border-radius: 2px;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .legend-swatch {
-      border-color: rgb(64 64 64);
     }
   }
 
@@ -1535,13 +1366,7 @@
     .legend-count {
       margin-left: auto;
       font-weight: 600;
-      color: rgb(115 115 115);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .legend-count {
-      color: rgb(163 163 163);
+      color: hsl(var(--muted-foreground));
     }
   }
 
@@ -1567,18 +1392,11 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      background: rgba(255, 255, 255, 0.94);
+      background: hsl(var(--popover) / 0.94);
       backdrop-filter: blur(12px);
-      border: 1px solid rgb(229 229 229);
+      border: 1px solid hsl(var(--border));
       border-radius: 8px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .map-overlay-zoom {
-      background: rgba(38, 38, 38, 0.94);
-      border-color: rgb(64 64 64);
     }
   }
 
@@ -1591,7 +1409,7 @@
       height: 32px;
       border: none;
       background: transparent;
-      color: rgb(64 64 64);
+      color: hsl(var(--foreground));
       font-size: 1.05rem;
       line-height: 1;
       cursor: pointer;
@@ -1599,27 +1417,12 @@
     }
 
     .zoom-btn:not(:last-child) {
-      border-bottom: 1px solid rgb(229 229 229);
+      border-bottom: 1px solid hsl(var(--border));
     }
 
     .zoom-btn:hover {
-      background: rgb(229 229 229);
-      color: rgb(23 23 23);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .zoom-btn {
-      color: rgb(212 212 212);
-    }
-
-    .zoom-btn:not(:last-child) {
-      border-bottom-color: rgb(64 64 64);
-    }
-
-    .zoom-btn:hover {
-      background: rgb(64 64 64);
-      color: rgb(245 245 245);
+      background: hsl(var(--secondary));
+      color: hsl(var(--foreground));
     }
   }
 
@@ -1632,19 +1435,12 @@
       width: 280px;
       max-height: calc(100% - 80px);
       overflow-y: auto;
-      background: rgba(255, 255, 255, 0.96);
+      background: hsl(var(--popover) / 0.96);
       backdrop-filter: blur(12px);
-      border: 1px solid rgb(229 229 229);
+      border: 1px solid hsl(var(--border));
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
       padding: 12px;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .map-overlay-details {
-      background: rgba(38, 38, 38, 0.96);
-      border-color: rgb(64 64 64);
     }
   }
 
@@ -1661,13 +1457,7 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      color: rgb(82 82 82);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .details-title {
-      color: rgb(163 163 163);
+      color: hsl(var(--muted-foreground));
     }
   }
 
@@ -1682,25 +1472,14 @@
       background: transparent;
       font-size: 1.1rem;
       line-height: 1;
-      color: rgb(115 115 115);
+      color: hsl(var(--muted-foreground));
       cursor: pointer;
       border-radius: 4px;
     }
 
     .details-close:hover {
-      background: rgb(229 229 229);
-      color: rgb(38 38 38);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .details-close {
-      color: rgb(163 163 163);
-    }
-
-    .details-close:hover {
-      background: rgb(64 64 64);
-      color: rgb(229 229 229);
+      background: hsl(var(--secondary));
+      color: hsl(var(--foreground));
     }
   }
 
@@ -1733,28 +1512,16 @@
     }
 
     .views-panel.has-error {
-      border-color: rgb(239 68 68);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .views-panel.has-error {
-      border-color: rgb(185 28 28);
+      border-color: hsl(var(--destructive));
     }
   }
 
   .floor-plan-export :global {
     .segmented-control {
       display: inline-flex;
-      border: 1px solid rgb(212 212 212);
+      border: 1px solid hsl(var(--input));
       border-radius: 6px;
       overflow: hidden;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .segmented-control {
-      border-color: rgb(64 64 64);
     }
   }
 
@@ -1763,36 +1530,20 @@
       padding: 0.4rem 0.9rem;
       font-size: 0.78rem;
       font-weight: 500;
-      background: white;
-      color: rgb(82 82 82);
+      background: hsl(var(--card));
+      color: hsl(var(--muted-foreground));
       border: none;
       cursor: pointer;
       transition: all 120ms ease;
     }
 
     .segmented-btn:not(:last-child) {
-      border-right: 1px solid rgb(212 212 212);
+      border-right: 1px solid hsl(var(--input));
     }
 
     .segmented-btn.active {
-      background: rgb(15 118 110);
-      color: white;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .segmented-btn {
-      background: rgb(38 38 38);
-      color: rgb(212 212 212);
-    }
-
-    .segmented-btn:not(:last-child) {
-      border-right-color: rgb(64 64 64);
-    }
-
-    .segmented-btn.active {
-      background: rgb(20 184 166);
-      color: rgb(15 23 42);
+      background: hsl(var(--primary));
+      color: hsl(var(--card));
     }
   }
 
@@ -1806,7 +1557,7 @@
       cursor: pointer;
       font-size: 0.78rem;
       font-weight: 600;
-      color: rgb(64 64 64);
+      color: hsl(var(--foreground));
       padding: 0.4rem 0;
       list-style: none;
       display: flex;
@@ -1829,23 +1580,11 @@
     }
   }
 
-  :global(.dark) .floor-plan-export :global {
-    .sub-disclosure > summary {
-      color: rgb(212 212 212);
-    }
-  }
-
   .floor-plan-export :global {
     .sub-disclosure .badge {
       font-size: 0.68rem;
       font-weight: 500;
-      color: rgb(115 115 115);
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .sub-disclosure .badge {
-      color: rgb(163 163 163);
+      color: hsl(var(--muted-foreground));
     }
   }
 
@@ -1853,7 +1592,7 @@
     .btn-link {
       background: none;
       border: none;
-      color: rgb(115 115 115);
+      color: hsl(var(--muted-foreground));
       font-size: 0.82rem;
       cursor: pointer;
       padding: 0.4rem 0.6rem;
@@ -1861,30 +1600,15 @@
     }
 
     .btn-link:hover {
-      color: rgb(64 64 64);
+      color: hsl(var(--foreground));
       text-decoration: underline;
-    }
-  }
-
-  :global(.dark) .floor-plan-export :global {
-    .btn-link {
-      color: rgb(163 163 163);
-    }
-
-    .btn-link:hover {
-      color: rgb(212 212 212);
     }
   }
 
   .floor-plan-export :global {
     .field.field-error {
-      border-color: rgb(239 68 68);
+      border-color: hsl(var(--destructive));
     }
   }
 
-  :global(.dark) .floor-plan-export :global {
-    .field.field-error {
-      border-color: rgb(185 28 28);
-    }
-  }
 </style>

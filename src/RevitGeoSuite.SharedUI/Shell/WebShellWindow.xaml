@@ -9,7 +9,7 @@
         WindowStyle="None"
         ResizeMode="CanResizeWithGrip"
         AllowsTransparency="False"
-        Background="#171717">
+        Background="#E9EEEC">
     <WindowChrome.WindowChrome>
         <WindowChrome
             CaptionHeight="0"
@@ -20,17 +20,18 @@
     <Grid>
         <wv2:WebView2 x:Name="ShellBrowser" />
         <Border x:Name="FallbackOverlay"
-                Background="#171717"
+                Background="#E9EEEC"
+                TextElement.FontFamily="Yu Gothic UI, Segoe UI"
                 Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
                         MaxWidth="520">
                 <TextBlock x:Name="FallbackTitle"
                            Text="WebView2 initialization failed"
-                           Foreground="#F87171"
+                           Foreground="#B42318"
                            FontSize="18"
                            HorizontalAlignment="Center" />
                 <TextBlock x:Name="FallbackMessage"
-                           Foreground="#A3A3A3"
+                           Foreground="#56605C"
                            FontSize="14"
                            Margin="0,8,0,0"
                            HorizontalAlignment="Center"
@@ -41,7 +42,7 @@
                         Margin="0,20,0,0"
                         Padding="16,8"
                         HorizontalAlignment="Center"
-                        Background="#0F7B7B"
+                        Background="#1D5E51"
                         Foreground="White"
                         BorderThickness="0"
                         FontSize="13"
@@ -50,7 +51,7 @@
                         Click="DownloadRuntimeButton_Click" />
                 <TextBlock x:Name="DownloadHint"
                            Text="Opens the Microsoft download page in your browser."
-                           Foreground="#737373"
+                           Foreground="#56605C"
                            FontSize="11"
                            Margin="0,8,0,0"
                            HorizontalAlignment="Center"

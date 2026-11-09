@@ -24,43 +24,43 @@
   }
 </script>
 
-<div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4">
-  <h3 class="text-sm font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wide mb-4">{$t('VisualDiff.Title', 'VisualDiff.Title')}</h3>
+<div class="bg-card border border-border rounded-lg p-4">
+  <h3 class="text-sm font-semibold text-foreground uppercase tracking-wide mb-4">{$t('VisualDiff.Title', 'VisualDiff.Title')}</h3>
 
   <div class="space-y-4">
     <div>
-      <div class="text-xs font-semibold text-neutral-500 dark:text-neutral-500 uppercase tracking-wide mb-2">{$t('VisualDiff.Crs', 'VisualDiff.Crs')}</div>
+      <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{$t('VisualDiff.Crs', 'VisualDiff.Crs')}</div>
       <div class="flex items-center gap-3">
-        <div class="flex-1 p-2 rounded bg-neutral-100 border border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700">
-          <div class="text-xs text-neutral-500 dark:text-neutral-500 mb-1">{$t('VisualDiff.Current', 'VisualDiff.Current')}</div>
-          <div class="text-sm font-mono text-neutral-700 dark:text-neutral-300">{current.crs || '—'}</div>
+        <div class="flex-1 p-2 rounded bg-muted border border-border">
+          <div class="text-xs text-muted-foreground mb-1">{$t('VisualDiff.Current', 'VisualDiff.Current')}</div>
+          <div class="text-sm font-mono text-foreground">{current.crs || '—'}</div>
         </div>
-        <svg class="w-5 h-5 text-neutral-400 dark:text-neutral-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-5 h-5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
         </svg>
-        <div class="flex-1 p-2 rounded bg-teal-50 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-700">
-          <div class="text-xs text-teal-600 dark:text-teal-400 mb-1">{$t('VisualDiff.Proposed', 'VisualDiff.Proposed')}</div>
-          <div class="text-sm font-mono text-teal-700 dark:text-teal-300">{proposed.crs || '—'}</div>
+        <div class="flex-1 p-2 rounded bg-accent border border-primary/40">
+          <div class="text-xs text-primary mb-1">{$t('VisualDiff.Proposed', 'VisualDiff.Proposed')}</div>
+          <div class="text-sm font-mono text-primary">{proposed.crs || '—'}</div>
         </div>
       </div>
     </div>
 
     <div>
-      <div class="text-xs font-semibold text-neutral-500 dark:text-neutral-500 uppercase tracking-wide mb-2">{$t('VisualDiff.SurveyPoint', 'VisualDiff.SurveyPoint')}</div>
+      <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{$t('VisualDiff.SurveyPoint', 'VisualDiff.SurveyPoint')}</div>
       <div class="flex items-center gap-3">
-        <div class="flex-1 p-2 rounded bg-neutral-100 border border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700">
-          <div class="text-xs text-neutral-500 dark:text-neutral-500 mb-1">{$t('VisualDiff.Current', 'VisualDiff.Current')}</div>
-          <div class="text-xs font-mono text-neutral-500 dark:text-neutral-400">
+        <div class="flex-1 p-2 rounded bg-muted border border-border">
+          <div class="text-xs text-muted-foreground mb-1">{$t('VisualDiff.Current', 'VisualDiff.Current')}</div>
+          <div class="text-xs font-mono text-muted-foreground">
             <div>{$t('Common.LatShort', 'Lat')}: {formatCoord(current.surveyPoint?.lat)}</div>
             <div>{$t('Common.LonShort', 'Lon')}: {formatCoord(current.surveyPoint?.lon)}</div>
           </div>
         </div>
-        <svg class="w-5 h-5 text-neutral-400 dark:text-neutral-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-5 h-5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
         </svg>
-        <div class="flex-1 p-2 rounded bg-teal-50 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-700">
-          <div class="text-xs text-teal-600 dark:text-teal-400 mb-1">{$t('VisualDiff.Proposed', 'VisualDiff.Proposed')}</div>
-          <div class="text-xs font-mono text-teal-700 dark:text-teal-300">
+        <div class="flex-1 p-2 rounded bg-accent border border-primary/40">
+          <div class="text-xs text-primary mb-1">{$t('VisualDiff.Proposed', 'VisualDiff.Proposed')}</div>
+          <div class="text-xs font-mono text-primary">
             <div class={hasChanged(current.surveyPoint?.lat, proposed.surveyPoint?.lat) ? 'text-amber-600 dark:text-amber-300' : ''}>
               {$t('Common.LatShort', 'Lat')}: {formatCoord(proposed.surveyPoint?.lat)}
             </div>
@@ -73,21 +73,21 @@
     </div>
 
     <div>
-      <div class="text-xs font-semibold text-neutral-500 dark:text-neutral-500 uppercase tracking-wide mb-2">{$t('VisualDiff.ProjectBasePoint', 'VisualDiff.ProjectBasePoint')}</div>
+      <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{$t('VisualDiff.ProjectBasePoint', 'VisualDiff.ProjectBasePoint')}</div>
       <div class="flex items-center gap-3">
-        <div class="flex-1 p-2 rounded bg-neutral-100 border border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700">
-          <div class="text-xs text-neutral-500 dark:text-neutral-500 mb-1">{$t('VisualDiff.Current', 'VisualDiff.Current')}</div>
-          <div class="text-xs font-mono text-neutral-500 dark:text-neutral-400">
+        <div class="flex-1 p-2 rounded bg-muted border border-border">
+          <div class="text-xs text-muted-foreground mb-1">{$t('VisualDiff.Current', 'VisualDiff.Current')}</div>
+          <div class="text-xs font-mono text-muted-foreground">
             <div>{$t('Common.LatShort', 'Lat')}: {formatCoord(current.projectBasePoint?.lat)}</div>
             <div>{$t('Common.LonShort', 'Lon')}: {formatCoord(current.projectBasePoint?.lon)}</div>
           </div>
         </div>
-        <svg class="w-5 h-5 text-neutral-400 dark:text-neutral-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-5 h-5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 13l5 5m0 0l-5 5m5-5H6" />
         </svg>
-        <div class="flex-1 p-2 rounded bg-teal-50 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-700">
-          <div class="text-xs text-teal-600 dark:text-teal-400 mb-1">{$t('VisualDiff.Proposed', 'VisualDiff.Proposed')}</div>
-          <div class="text-xs font-mono text-teal-700 dark:text-teal-300">
+        <div class="flex-1 p-2 rounded bg-accent border border-primary/40">
+          <div class="text-xs text-primary mb-1">{$t('VisualDiff.Proposed', 'VisualDiff.Proposed')}</div>
+          <div class="text-xs font-mono text-primary">
             <div class={hasChanged(current.projectBasePoint?.lat, proposed.projectBasePoint?.lat) ? 'text-amber-600 dark:text-amber-300' : ''}>
               {$t('Common.LatShort', 'Lat')}: {formatCoord(proposed.projectBasePoint?.lat)}
             </div>

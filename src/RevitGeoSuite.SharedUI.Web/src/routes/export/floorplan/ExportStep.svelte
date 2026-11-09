@@ -23,17 +23,17 @@
 
 <div class="flex min-h-0 flex-1 flex-col justify-center">
   {#if exportStatus === 'running'}
-    <div class="mx-auto w-full max-w-[760px] border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
+    <div class="mx-auto w-full max-w-[760px] border border-border bg-card p-5">
       <div>
-        <h3 class="text-xl font-semibold text-neutral-950 dark:text-neutral-50">{$t('Execution.ProgressTitle', 'Export Progress')}</h3>
-        <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{progress.statusText}</p>
+        <h3 class="text-xl font-semibold text-foreground">{$t('Execution.ProgressTitle', 'Export Progress')}</h3>
+        <p class="mt-1 text-sm text-muted-foreground">{progress.statusText}</p>
       </div>
 
       <div class="mt-6">
-        <div class="h-4 w-full overflow-hidden border border-neutral-300 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-950">
-          <div class="h-full bg-teal-600 transition-[width] duration-200" style={`width: ${percent}%`}></div>
+        <div class="h-4 w-full overflow-hidden border border-input bg-muted">
+          <div class="h-full bg-primary transition-[width] duration-200" style={`width: ${percent}%`}></div>
         </div>
-        <div class="mt-3 flex flex-wrap justify-between gap-3 text-sm text-neutral-600 dark:text-neutral-400">
+        <div class="mt-3 flex flex-wrap justify-between gap-3 text-sm text-muted-foreground">
           <span>{progress.completedSteps} / {progress.totalSteps}</span>
           <span>
             {$t('Execution.Elapsed', 'Elapsed')}: {formatDuration(elapsedSeconds)}
@@ -48,9 +48,9 @@
     <div class="mx-auto flex w-full max-w-[1280px] flex-col gap-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 class="text-xl font-semibold text-neutral-950 dark:text-neutral-50">{exportResult.title || $t('Execution.ResultTitle', 'Export Results')}</h3>
-          <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{exportResult.message}</p>
-          <p class="mt-1 max-w-[900px] break-all text-xs text-neutral-500 dark:text-neutral-500">{exportResult.outputDirectory}</p>
+          <h3 class="text-xl font-semibold text-foreground">{exportResult.title || $t('Execution.ResultTitle', 'Export Results')}</h3>
+          <p class="mt-1 text-sm text-muted-foreground">{exportResult.message}</p>
+          <p class="mt-1 max-w-[900px] break-all text-xs text-muted-foreground">{exportResult.outputDirectory}</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <button class="btn-secondary" on:click={openOutputFolder} disabled={!exportResult.canOpenOutputDirectory}>{$t('Execution.OpenFolder', 'Open folder')}</button>

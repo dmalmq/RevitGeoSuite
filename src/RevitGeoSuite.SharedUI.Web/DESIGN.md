@@ -2,29 +2,37 @@
 
 ## 1. Atmosphere & Identity
 
-RevitGeoSuite web dialogs are compact production tools for GIS/Revit workflows. The signature is a quiet command surface: dense enough for repeated expert use, with teal accents reserved for action, selection, and focus.
+RevitGeoSuite web dialogs are compact production tools for GIS/Revit workflows. They use Kanizu's "Framed sheet" design, so people who use both apps feel at home in each: a cool grey frame, white sheets for content, and pine green reserved for action, selection and focus.
 
 ## 2. Color
 
+### Source of truth
+
+The colours are Kanizu's, copied unchanged into `src/styles/kanizu-framed-sheet.css` (the header names the Kanizu commit). `src/lib/__tests__/tokens.test.ts` pins the copy with a hash, so change colours in Kanizu and copy the file again rather than editing it here. Values are HSL triplets; `app.css` maps each to a Tailwind utility (`bg-card`, `text-muted-foreground`, `border-border`, `bg-primary` ...). The `.dark` class swaps every value, so components never need a `dark:` colour.
+
 ### Palette
 
-| Role | Token | Light | Dark | Usage |
+| Role | Utility | Light | Dark | Usage |
 |---|---|---|---|---|
-| Surface/primary | neutral-50 / neutral-950 | #fafafa | #0a0a0a | App background |
-| Surface/panel | white / neutral-900 | #ffffff | #171717 | Panels and disclosures |
-| Surface/muted | neutral-100 / neutral-800 | #f5f5f5 | #262626 | Secondary controls |
-| Text/primary | neutral-900 / neutral-100 | #171717 | #f5f5f5 | Main copy |
-| Text/secondary | neutral-600 / neutral-400 | #525252 | #a3a3a3 | Hints and labels |
-| Border/default | neutral-200 / neutral-800 | #e5e5e5 | #262626 | Panels and fields |
-| Accent/primary | teal-600 / teal-400 | #0d9488 | #2dd4bf | Buttons, active chips, focus |
-| Status/error | red-600 / red-400 | #dc2626 | #f87171 | Validation |
-| Status/warning | amber-600 / amber-400 | #d97706 | #fbbf24 | Warnings |
+| Frame | `bg-background` | #E9EEEC | #121514 | App background around sheets |
+| Sheet | `bg-card` | #FFFFFF | #1B1F1E | Panels, cards, fields |
+| Muted surface | `bg-muted` | #F2F5F4 | #232826 | Secondary areas, table heads |
+| Selected / hover | `bg-accent` | #E3EFEB | #1E3530 | Hover rows, selected chips |
+| Text | `text-foreground` | #141716 | #ECF1EF | Main copy |
+| Secondary text | `text-muted-foreground` | #56605C | #A3ADA9 | Hints and labels |
+| Hairline | `border-border` | #DCE3E0 | #2A302E | Sheets and cards |
+| Field border | `border-input` | #C9D2CE | #3A423F | Inputs and buttons |
+| Pine | `bg-primary` / `text-primary` | #1D5E51 | #6CC2AC | Primary action, active state, focus ring |
+| Error | `destructive` | #B42318 | #C4402E | Validation and failures |
+| Warning | `warning` / `bg-warning-surface` | #E0A23A / #FCF0DC | #E9AE4E / #352812 | Warnings |
+| Info | `info` | #2F6DB5 | #86B6EE | Neutral notices |
 
 ### Rules
 
-- Accent color is functional only: selected state, focus, primary action, or active workflow state.
-- Use neutral ramps for hierarchy before adding color.
-- New semantic colors must be added here before use.
+- Pine is functional only: selected state, focus, primary action, or active workflow state.
+- Use the surface tokens for hierarchy before adding colour.
+- Never use raw Tailwind colour ramps (`neutral-*`, `teal-*`) or hex in components. A new semantic colour goes into Kanizu first.
+- The theme follows Windows (light or dark apps setting) unless the user pins one in Settings. The WPF window frame reads the same setting so it matches before the page loads.
 
 ## 3. Typography
 
@@ -41,8 +49,8 @@ RevitGeoSuite web dialogs are compact production tools for GIS/Revit workflows. 
 
 ### Font Stack
 
-- Primary: system UI stack via Tailwind defaults.
-- Mono: system monospace for CRS definitions, IDs, and file-like output.
+- Primary: Yu Gothic UI for English and Japanese (Kanizu ui/tokens.rs), then Segoe UI and system fallbacks.
+- Mono: Geist Mono (bundled, OFL-1.1, `src/styles/fonts/`) for numbers, coordinates, CRS codes and paths.
 
 ### Rules
 
@@ -89,7 +97,7 @@ All spacing follows a 4px grid.
 - **Structure**: `chip-group` wrapping `label.chip > input[type=checkbox] + text`.
 - **Variants**: default, active, disabled.
 - **Spacing**: 4px wrap gap, 2px by 8px chip padding.
-- **States**: default neutral, active teal, disabled reduced opacity with not-allowed cursor.
+- **States**: default muted, active pine, disabled reduced opacity with not-allowed cursor.
 - **Accessibility**: the checkbox remains the semantic control even when visually hidden.
 - **Motion**: color and border transition over 120ms.
 
@@ -100,7 +108,7 @@ All spacing follows a 4px grid.
 - **Spacing**: 8-12px within form groups.
 - **States**: default, focus, disabled, error.
 - **Accessibility**: visible label or adjacent field label for every input.
-- **Motion**: none beyond focus color transition.
+- **Motion**: none beyond focus color transition. Keyboard focus shows a 2px pine ring on every control.
 
 ## 6. Motion & Interaction
 
@@ -123,10 +131,11 @@ Mixed, but restrained: thin borders define tool panels, and tonal shifts define 
 
 | Type | Value | Usage |
 |---|---|---|
-| Border/default | 1px solid neutral-200 / neutral-800 | Panels, fields, chips |
-| Radius/field | 4px | Fields and compact controls |
-| Radius/panel | 8px max | Repeated cards and panels |
-| Radius/pill | 9999px | Chips and segmented pills only |
+| Border/default | 1px solid `border-border` | Sheets, cards, chips |
+| Radius/chip | 4px (`rounded-chip`) | Chips and badges |
+| Radius/control | 6px (`rounded-control`) | Fields, buttons, segmented controls |
+| Radius/card | 10px (`rounded-card`) | Cards and panels |
+| Radius/sheet | 14px (`rounded-sheet`) | The main sheet and dialogs |
 
 ### Rules
 

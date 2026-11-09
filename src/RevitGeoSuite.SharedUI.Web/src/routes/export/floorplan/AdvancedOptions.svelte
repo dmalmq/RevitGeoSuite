@@ -46,11 +46,11 @@
       {#if epsgError}
         <p class="mt-1 text-xs text-red-600 dark:text-red-400">{epsgError}</p>
       {/if}
-      <p class="mt-2 text-xs text-neutral-500">{state.coordinateStatus}</p>
+      <p class="mt-2 text-xs text-muted-foreground">{state.coordinateStatus}</p>
       {#if state.coordinateDetail}
-        <details class="mt-1 text-xs text-neutral-500">
+        <details class="mt-1 text-xs text-muted-foreground">
           <summary class="cursor-pointer select-none">{$t('Exporter.CrsDefinition', 'CRS definition')}</summary>
-          <pre class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words border border-neutral-200 bg-neutral-50 p-2 text-[11px] leading-relaxed text-neutral-600 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-400">{state.coordinateDetail}</pre>
+          <pre class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words border border-border bg-muted p-2 text-[11px] leading-relaxed text-muted-foreground">{state.coordinateDetail}</pre>
         </details>
       {/if}
     </details>
@@ -138,7 +138,7 @@
           {/if}
         </summary>
         <div class="mt-3 unit-filter-body" class:disabled={!settings.unit}>
-          <p class="mb-2 text-xs text-neutral-500 dark:text-neutral-400">{$t('Exporter.UnitFilterHint', 'Export only units with the selected categories. Leave all unchecked to export every unit.')}</p>
+          <p class="mb-2 text-xs text-muted-foreground">{$t('Exporter.UnitFilterHint', 'Export only units with the selected categories. Leave all unchecked to export every unit.')}</p>
           <div class="chip-group">
             {#each state.unitCategoryOptions as category}
               <label class="chip" class:active={selectedUnitCategories.has(category)} class:disabled={!settings.unit} aria-disabled={!settings.unit}>
@@ -148,7 +148,7 @@
             {/each}
           </div>
           {#if !settings.unit}
-            <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{$t('Exporter.UnitFilterDisabled', 'Enable the unit feature type to use this filter.')}</p>
+            <p class="mt-2 text-xs text-muted-foreground">{$t('Exporter.UnitFilterDisabled', 'Enable the unit feature type to use this filter.')}</p>
           {/if}
         </div>
       </details>

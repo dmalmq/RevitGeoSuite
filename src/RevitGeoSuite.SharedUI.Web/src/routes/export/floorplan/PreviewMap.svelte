@@ -123,7 +123,7 @@
     on:dblclick={handleDoubleClick}
   >
     {#if filteredFeatures.length === 0}
-      <div class="flex h-full items-center justify-center text-sm text-neutral-500">{$t('Preview.NoFeatures', 'No preview features match the current filters.')}</div>
+      <div class="flex h-full items-center justify-center text-sm text-muted-foreground">{$t('Preview.NoFeatures', 'No preview features match the current filters.')}</div>
     {:else}
       <svg class="h-auto w-full" viewBox={viewBox} role="img" aria-label={previewView.viewName}>
         <rect x={viewBoxX} y={viewBoxY} width={viewBoxW} height={viewBoxH} fill="rgb(250 250 250)" />

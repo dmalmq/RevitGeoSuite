@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using RevitGeoSuite.SharedUI.Shell.Handlers;
 
@@ -24,6 +25,12 @@ public partial class WebShellWindow : Window
     {
         this.options = options ?? throw new ArgumentNullException(nameof(options));
         InitializeComponent();
+
+        // Paint the frame colour the page will use, so opening the window does not flash.
+        var (r, g, b) = WindowsAppTheme.FrameColor();
+        var frame = new SolidColorBrush(Color.FromRgb(r, g, b));
+        frame.Freeze();
+        Background = frame;
 
         var allHandlers = new List<IRpcHandler>(options.Handlers ?? Array.Empty<IRpcHandler>())
         {
