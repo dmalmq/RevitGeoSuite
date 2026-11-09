@@ -33,7 +33,7 @@
 
 <div class="flex items-center gap-2 mb-4">
   <button
-    class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+    class="text-muted-foreground hover:text-foreground transition-colors"
     onclick={goBack}
     aria-label={$t('Common.Back', 'Back')}
   >
@@ -41,14 +41,14 @@
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
     </svg>
   </button>
-  <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$t('Import.Source.Gis.Title', 'Local GIS Files')}</h2>
+  <h2 class="text-lg font-semibold text-foreground">{$t('Import.Source.Gis.Title', 'Local GIS Files')}</h2>
 </div>
 
 <div class="space-y-4">
-  <div class="bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-lg p-4 space-y-3">
+  <div class="bg-card border border-border rounded-lg p-4 space-y-3">
 
     <div>
-      <label for="gis-file-path" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">GIS files</label>
+      <label for="gis-file-path" class="block text-sm font-medium text-foreground mb-2">GIS files</label>
       <div class="flex gap-2">
         <input
           id="gis-file-path"
@@ -56,18 +56,18 @@
           value={gisFileDisplay}
           readonly
           placeholder="Select .shp or .gpkg files..."
-          class="flex-1 min-w-0 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          class="flex-1 min-w-0 bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
         {#if gisFilePaths.length > 0}
           <button
-            class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
+            class="px-3 py-2 bg-card border border-border text-foreground hover:bg-accent hover:border-muted-foreground text-sm rounded-md transition-colors"
             onclick={clearGisSelection}
           >
             {$t('Common.Clear', 'Clear')}
           </button>
         {/if}
         <button
-          class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
+          class="px-3 py-2 bg-card border border-border text-foreground hover:bg-accent hover:border-muted-foreground text-sm rounded-md transition-colors"
           onclick={browseGisFiles}
         >
           {$t('Common.Browse', 'Browse')}
@@ -76,21 +76,21 @@
     </div>
 
     <div>
-      <label for="gis-basemap-name" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Basemap name</label>
+      <label for="gis-basemap-name" class="block text-sm font-medium text-foreground mb-2">Basemap name</label>
       <input
         id="gis-basemap-name"
         type="text"
         bind:value={gisBasemapName}
         placeholder="e.g. Retail layout"
-        class="w-full bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+        class="w-full bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
       />
     </div>
 
     <div class="space-y-2">
       <div class="flex items-center justify-between gap-3">
-        <div class="text-xs font-medium text-neutral-600 dark:text-neutral-400">Line colors</div>
+        <div class="text-xs font-medium text-muted-foreground">Line colors</div>
         <button
-          class="text-xs text-neutral-500 transition-colors hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+          class="text-xs text-muted-foreground transition-colors hover:text-foreground"
           onclick={resetGisCategoryColors}
         >
           {$t('Common.Reset', 'Reset')}
@@ -98,13 +98,13 @@
       </div>
       <div class="grid grid-cols-2 gap-2">
         {#each gisCategoryOptions as option}
-          <label class="flex items-center justify-between gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+          <label class="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2 py-2 text-xs text-foreground">
             <span class="truncate">{option.label}</span>
             <input
               type="color"
               value={gisCategoryColors[option.id]}
               aria-label={`${option.label} line color`}
-              class="h-7 w-9 shrink-0 cursor-pointer rounded border border-neutral-300 bg-transparent p-0 dark:border-neutral-600"
+              class="h-7 w-9 shrink-0 cursor-pointer rounded border border-input bg-transparent p-0"
               onchange={(event) => setGisCategoryColor(option.id, event.currentTarget.value)}
             />
           </label>
@@ -113,7 +113,7 @@
     </div>
 
     {#if gisOptionsLoading}
-      <div class="text-xs text-neutral-500 dark:text-neutral-500">
+      <div class="text-xs text-muted-foreground">
         Loading Revit levels...
       </div>
     {/if}
@@ -121,9 +121,9 @@
     {#if gisFileAssignments.length > 0}
       <div class="space-y-2">
         <div class="flex items-center justify-between gap-3">
-          <div class="text-xs font-medium text-neutral-600 dark:text-neutral-400">Assign files</div>
+          <div class="text-xs font-medium text-muted-foreground">Assign files</div>
           <button
-            class="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
+            class="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-muted-foreground hover:bg-accent"
             onclick={openGisAssignmentsModal}
           >
             Assign files...
@@ -131,8 +131,8 @@
         </div>
         {#if gisLevels.length > 0}
           {#if gisFilesNeedingLevel > 0}
-            <div class="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400">
-              <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400"></span>
+            <div class="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5 text-xs text-muted-foreground">
+              <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-input"></span>
               <span>{gisFilesNeedingLevel} file(s) without a level — will merge into one DXF</span>
             </div>
           {:else}
@@ -145,11 +145,11 @@
       </div>
 
       {#if gisOutputPreview.length > 0}
-        <div class="rounded-md border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-800">
-          <div class="mb-1 text-xs font-medium text-neutral-600 dark:text-neutral-400">DXF files</div>
+        <div class="rounded-md border border-border bg-muted p-2">
+          <div class="mb-1 text-xs font-medium text-muted-foreground">DXF files</div>
           <div class="space-y-1">
             {#each gisOutputPreview as name}
-              <div class="truncate text-xs font-mono text-neutral-700 dark:text-neutral-200" title={name}>{name}</div>
+              <div class="truncate text-xs font-mono text-foreground" title={name}>{name}</div>
             {/each}
           </div>
         </div>
@@ -157,7 +157,7 @@
     {/if}
 
     <div>
-      <label for="gis-output-folder" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">DXF output folder</label>
+      <label for="gis-output-folder" class="block text-sm font-medium text-foreground mb-2">DXF output folder</label>
       <div class="flex gap-2">
         <input
           id="gis-output-folder"
@@ -165,10 +165,10 @@
           value={gisOutputFolder}
           readonly
           placeholder="Select folder for DXF output..."
-          class="flex-1 min-w-0 bg-white border border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700 rounded-md px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          class="flex-1 min-w-0 bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
         <button
-          class="px-3 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 dark:bg-neutral-700 dark:border-neutral-700 dark:text-white dark:hover:bg-neutral-600 text-sm rounded-md transition-colors"
+          class="px-3 py-2 bg-card border border-border text-foreground hover:bg-accent hover:border-muted-foreground text-sm rounded-md transition-colors"
           onclick={browseGisOutputFolder}
         >
           {$t('Common.Browse', 'Browse')}
@@ -176,7 +176,7 @@
       </div>
     </div>
 
-    <p class="text-xs text-neutral-500 dark:text-neutral-500">
+    <p class="text-xs text-muted-foreground">
       DXF files will be written to the selected folder. After export, link them in Revit using the settings shown on the result page.
     </p>
   </div>
@@ -188,7 +188,7 @@
   {/if}
 
   <button
-    class="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+    class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
     onclick={startGisExport}
     disabled={!canExportGis}
   >

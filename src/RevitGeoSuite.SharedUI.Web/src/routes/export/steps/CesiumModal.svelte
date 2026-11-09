@@ -26,11 +26,11 @@
 </script>
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-  <div class="w-full max-w-lg rounded-lg border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900 max-h-[90vh] overflow-y-auto">
+  <div class="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl max-h-[90vh] overflow-y-auto">
     <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{$t('Export.Cesium.Title', 'Export to Cesium')}</h2>
+      <h2 class="text-lg font-semibold text-foreground">{$t('Export.Cesium.Title', 'Export to Cesium')}</h2>
       <button
-        class="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 disabled:opacity-40"
+        class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
         onclick={closeCesiumExport}
         disabled={cesiumRunning}
         aria-label="Close"
@@ -47,10 +47,10 @@
 
     <div class="space-y-4">
       <div>
-        <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumProfileSelect">{$t('Export.Cesium.Profile', 'Floor-plan profile')}</label>
+        <label class="mb-1 block text-xs font-medium text-muted-foreground" for="cesiumProfileSelect">{$t('Export.Cesium.Profile', 'Floor-plan profile')}</label>
         <select
           id="cesiumProfileSelect"
-          class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+          class="h-9 w-full rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus:border-primary"
           bind:value={cesiumProfile}
           disabled={cesiumRunning || (cesiumState?.floorPlanProfiles.length ?? 0) === 0}
         >
@@ -61,17 +61,17 @@
       </div>
 
       <div>
-        <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumFolderInput">{$t('Export.Cesium.Folder', 'Package folder')}</label>
+        <label class="mb-1 block text-xs font-medium text-muted-foreground" for="cesiumFolderInput">{$t('Export.Cesium.Folder', 'Package folder')}</label>
         <div class="flex gap-2">
           <input
             id="cesiumFolderInput"
-            class="h-9 flex-1 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+            class="h-9 flex-1 rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus:border-primary"
             bind:value={cesiumOutputFolder}
             disabled={cesiumRunning}
             placeholder="C:\Exports\Tower-cesium"
           />
           <button
-            class="h-9 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 hover:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 disabled:opacity-40"
+            class="h-9 rounded-md border border-input bg-card px-3 text-sm text-foreground hover:border-primary disabled:opacity-40"
             onclick={pickCesiumOutputFolder}
             disabled={cesiumRunning}
           >…</button>
@@ -80,10 +80,10 @@
 
       <div class="flex gap-4">
         <div class="flex-1">
-          <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumLodSelect">{$t('Export.Cesium.Lod', 'Level of detail')}</label>
+          <label class="mb-1 block text-xs font-medium text-muted-foreground" for="cesiumLodSelect">{$t('Export.Cesium.Lod', 'Level of detail')}</label>
           <select
             id="cesiumLodSelect"
-            class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+            class="h-9 w-full rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus:border-primary"
             bind:value={cesiumLod}
             disabled={cesiumRunning}
           >
@@ -92,59 +92,59 @@
             <option value="coarse">{$t('Export.Lod.Coarse', 'Coarse')}</option>
           </select>
         </div>
-        <label class="flex flex-1 cursor-pointer items-end gap-2 pb-2 text-sm text-neutral-700 dark:text-neutral-300">
+        <label class="flex flex-1 cursor-pointer items-end gap-2 pb-2 text-sm text-foreground">
           <input type="checkbox" bind:checked={cesiumPreciseCrs} disabled={cesiumRunning} class="h-4 w-4" />
           {$t('Export.Cesium.PreciseCrs', 'Precise CRS')}
         </label>
       </div>
 
       <div>
-        <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumHeightDatumSelect">{$t('Export.Cesium.HeightDatum', 'Survey point elevation is')}</label>
+        <label class="mb-1 block text-xs font-medium text-muted-foreground" for="cesiumHeightDatumSelect">{$t('Export.Cesium.HeightDatum', 'Survey point elevation is')}</label>
         <select
           id="cesiumHeightDatumSelect"
-          class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+          class="h-9 w-full rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus:border-primary"
           bind:value={cesiumHeightDatum}
           disabled={cesiumRunning}
         >
           <option value="unknown">{$t('Export.Cesium.HeightDatum.Unknown', 'Not checked')}</option>
           <option value="TP">{$t('Export.Cesium.HeightDatum.Tp', 'Tokyo Peil (T.P.)')}</option>
         </select>
-        <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{$t('Export.Cesium.HeightDatum.Hint', 'Choose T.P. only when the survey point elevation was set from T.P. Kanizu then trusts the floor heights in this package.')}</p>
+        <p class="mt-1 text-xs text-muted-foreground">{$t('Export.Cesium.HeightDatum.Hint', 'Choose T.P. only when the survey point elevation was set from T.P. Kanizu then trusts the floor heights in this package.')}</p>
       </div>
 
       <div>
-        <label class="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400" for="cesiumViewerUrlInput">{$t('Export.Cesium.ViewerUrl', 'Cesium viewer URL')}</label>
+        <label class="mb-1 block text-xs font-medium text-muted-foreground" for="cesiumViewerUrlInput">{$t('Export.Cesium.ViewerUrl', 'Cesium viewer URL')}</label>
         <input
           id="cesiumViewerUrlInput"
-          class="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-900 outline-none focus:border-teal-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+          class="h-9 w-full rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus:border-primary"
           bind:value={cesiumViewerUrl}
           disabled={cesiumRunning}
           placeholder="http://localhost:3001"
         />
       </div>
 
-      <label class="flex cursor-pointer items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+      <label class="flex cursor-pointer items-start gap-2 text-sm text-foreground">
         <input type="checkbox" bind:checked={cesiumKeepVersions} disabled={cesiumRunning} class="mt-0.5 h-4 w-4" />
         <span>
           {$t('Export.Cesium.KeepVersions', 'Station folder for Kanizu: add a new version each time')}
-          <span class="block text-xs text-neutral-500 dark:text-neutral-400">{$t('Export.Cesium.KeepVersions.Hint', 'Writes to revit/<model>/<time>/ inside the output folder and keeps earlier exports. Kanizu cleans up old versions.')}</span>
+          <span class="block text-xs text-muted-foreground">{$t('Export.Cesium.KeepVersions.Hint', 'Writes to revit/<model>/<time>/ inside the output folder and keeps earlier exports. Kanizu cleans up old versions.')}</span>
         </span>
       </label>
 
-      <label class="flex cursor-pointer items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+      <label class="flex cursor-pointer items-center gap-2 text-sm text-foreground">
         <input type="checkbox" bind:checked={cesiumPush} disabled={cesiumRunning} class="h-4 w-4" />
         {$t('Export.Cesium.Push', 'Push to viewer after export (falls back to the folder when the viewer is offline)')}
       </label>
 
       {#if cesiumRunning}
-        <div class="rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-          <div class="mb-2 flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-            <div class="h-4 w-4 animate-spin rounded-full border-2 border-neutral-500 border-t-teal-500"></div>
+        <div class="rounded-md border border-border bg-muted p-3">
+          <div class="mb-2 flex items-center gap-2 text-sm text-foreground">
+            <div class="h-4 w-4 animate-spin rounded-full border-2 border-input border-t-primary"></div>
             {cesiumProgress?.message ?? $t('Export.Cesium.Running', 'Exporting…')}
           </div>
           {#if cesiumProgress?.percent != null}
-            <div class="h-1.5 overflow-hidden rounded bg-neutral-200 dark:bg-neutral-700">
-              <div class="h-full bg-teal-500 transition-all" style="width: {cesiumProgress.percent}%"></div>
+            <div class="h-1.5 overflow-hidden rounded bg-secondary">
+              <div class="h-full bg-primary transition-all" style="width: {cesiumProgress.percent}%"></div>
             </div>
           {/if}
         </div>
@@ -170,12 +170,12 @@
 
       <div class="flex justify-end gap-2 pt-2">
         <button
-          class="h-9 rounded-md border border-neutral-300 bg-white px-4 text-sm text-neutral-700 hover:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 disabled:opacity-40"
+          class="h-9 rounded-md border border-input bg-card px-4 text-sm text-foreground hover:border-muted-foreground disabled:opacity-40"
           onclick={closeCesiumExport}
           disabled={cesiumRunning}
         >{$t('Common.Close', 'Close')}</button>
         <button
-          class="h-9 rounded-md bg-teal-600 px-4 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-40"
+          class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
           onclick={runCesiumExport}
           disabled={cesiumRunning || cesiumState?.firstRun}
         >{$t('Export.Cesium.Run', 'Export')}</button>

@@ -92,7 +92,7 @@
   let RouteComponent = $derived(getRouteComponent(currentRoute))
 </script>
 
-<div class="flex h-screen flex-col bg-white text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
+<div class="flex h-screen flex-col bg-card text-foreground">
   <Header title="RevitGeoSuite" {documentName} />
 
   <div class="flex flex-1 overflow-hidden">

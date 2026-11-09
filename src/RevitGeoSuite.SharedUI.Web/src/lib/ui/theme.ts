@@ -9,8 +9,8 @@ function getSystemTheme(): 'light' | 'dark' {
 
 function createThemeStore() {
   const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('theme') : null
-  // Default to light per user request. If the user previously picked dark, that is restored.
-  const initial: Theme = (stored as Theme) || 'light'
+  // Follow the Windows app theme until the user pins light or dark in Settings.
+  const initial: Theme = (stored as Theme) || 'system'
   
   const { subscribe, set, update } = writable<Theme>(initial)
 
@@ -56,11 +56,11 @@ function applyTheme(theme: Theme) {
 export const theme = createThemeStore()
 
 if (typeof window !== 'undefined') {
-  const stored = localStorage.getItem('theme') as Theme || 'light'
+  const stored = localStorage.getItem('theme') as Theme || 'system'
   applyTheme(stored)
   
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const current = localStorage.getItem('theme') as Theme || 'light'
+    const current = localStorage.getItem('theme') as Theme || 'system'
     if (current === 'system') {
       applyTheme('system')
     }

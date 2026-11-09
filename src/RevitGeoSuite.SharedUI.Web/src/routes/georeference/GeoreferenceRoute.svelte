@@ -599,8 +599,8 @@
 </script>
 
 <div class="flex h-full">
-  <div class="w-64 bg-neutral-100 border-r border-neutral-200 dark:bg-neutral-800 dark:border-r-neutral-700 p-4 overflow-y-auto">
-    <h2 class="text-sm font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wide mb-4">{$t('Georef.Wizard.SetupSteps', 'Setup Steps')}</h2>
+  <div class="w-64 bg-muted border-r border-border p-4 overflow-y-auto">
+    <h2 class="text-sm font-semibold text-foreground uppercase tracking-wide mb-4">{$t('Georef.Wizard.SetupSteps', 'Setup Steps')}</h2>
     <Stepper {steps} {currentStep} {completedSteps} onStepClick={handleStepClick} />
   </div>
 
@@ -613,19 +613,19 @@
     />
 
     {#if currentStep === 'area' && inputMode === 'map'}
-      <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-teal-50/90 dark:bg-teal-900/90 backdrop-blur-sm border border-teal-200 dark:border-teal-700 rounded-lg px-4 py-2">
-        <p class="text-sm text-teal-700 dark:text-teal-200">{$t('Georef.Wizard.MapHint.Area', 'Click on the map to choose your project area')}</p>
+      <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-accent/90 backdrop-blur-sm border border-primary/40 rounded-lg px-4 py-2">
+        <p class="text-sm text-primary">{$t('Georef.Wizard.MapHint.Area', 'Click on the map to choose your project area')}</p>
       </div>
     {/if}
 
     {#if currentStep === 'grids'}
-      <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 dark:bg-blue-900/90 backdrop-blur-sm border border-blue-700 rounded-lg px-4 py-2">
+      <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-card/90 dark:bg-blue-900/90 backdrop-blur-sm border border-blue-700 rounded-lg px-4 py-2">
         <p class="text-sm text-blue-700 dark:text-blue-200">{$t('Georef.Wizard.MapHint.Grids', 'Click grids to toggle · Shift+drag to select an area')}</p>
       </div>
     {/if}
   </div>
 
-  <aside class="w-96 bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200 dark:border-neutral-700 p-6 overflow-y-auto">
+  <aside class="w-96 bg-muted border-l border-border p-6 overflow-y-auto">
     {#if currentStep === 'review'}
       <ReviewStep
         {currentState}
@@ -732,9 +732,9 @@
     {/if}
 
     {#if currentStep !== 'review' && currentStep !== 'apply'}
-      <div class="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+      <div class="mt-6 pt-6 border-t border-border">
         <button
-          class="text-xs text-neutral-500 dark:text-neutral-500 hover:text-neutral-700 dark:text-neutral-300 transition-colors"
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors"
           onclick={reset}
         >
           {$t('Georef.Wizard.Reset', 'Reset')}

@@ -220,8 +220,8 @@
 
   function getSelectableAreaStyle(selected?: boolean): L.CircleMarkerOptions {
     return selected
-      ? { radius: 7, color: '#0f7b7b', weight: 2, fillColor: '#0f7b7b', fillOpacity: 0.95 }
-      : { radius: 6, color: '#0f7b7b', weight: 2, fillColor: '#5eead4', fillOpacity: 0.85 }
+      ? { radius: 7, color: '#1d5e51', weight: 2, fillColor: '#1d5e51', fillOpacity: 0.95 }
+      : { radius: 6, color: '#1d5e51', weight: 2, fillColor: '#6cc2ac', fillOpacity: 0.85 }
   }
 
   export function showMeshGrid(geoJsonText: string) {
@@ -401,9 +401,9 @@
       rectangleLayer.setBounds(bounds)
     } else {
       rectangleLayer = L.rectangle(bounds, {
-        color: '#5eead4',
+        color: '#6cc2ac',
         weight: 1,
-        fillColor: '#5eead4',
+        fillColor: '#6cc2ac',
         fillOpacity: 0.1,
         dashArray: '4 4'
       }).addTo(map)
@@ -440,7 +440,7 @@
   }
 </script>
 
-<div bind:this={mapContainer} class="w-full h-full bg-neutral-100 dark:bg-neutral-800"></div>
+<div bind:this={mapContainer} class="w-full h-full bg-muted"></div>
 
 <style>
   /* Leaflet chrome colors are themed via the --map-* CSS variables defined in app.css.

@@ -50,7 +50,7 @@
       case 'ready': return 'text-green-500 dark:text-green-400'
       case 'needsattention': return 'text-amber-500 dark:text-amber-400'
       case 'blocked': return 'text-red-500 dark:text-red-400'
-      default: return 'text-neutral-400 dark:text-neutral-400'
+      default: return 'text-muted-foreground'
     }
   }
 
@@ -70,9 +70,9 @@
       {item.isSatisfied ? '✓' : '✗'}
     </span>
     <div class="flex-1">
-      <div class="text-neutral-600 dark:text-neutral-300">{item.title}</div>
+      <div class="text-muted-foreground">{item.title}</div>
       {#if item.detail}
-        <div class="text-neutral-500 dark:text-neutral-500 mt-0.5">{item.detail}</div>
+        <div class="text-muted-foreground mt-0.5">{item.detail}</div>
       {/if}
     </div>
   </div>
@@ -80,7 +80,7 @@
 
 {#snippet detailsToggle()}
   <button
-    class="shrink-0 text-xs text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 transition-colors"
+    class="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors"
     onclick={() => (showDetails = !showDetails)}
   >
     {showDetails
@@ -90,14 +90,14 @@
 {/snippet}
 
 {#if loading}
-  <div class="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
-    <div class="w-4 h-4 border-2 border-neutral-300 dark:border-neutral-600 border-t-teal-500 rounded-full animate-spin"></div>
+  <div class="flex items-center gap-2 text-sm text-muted-foreground">
+    <div class="w-4 h-4 border-2 border-input border-t-primary rounded-full animate-spin"></div>
     <span>{$t('Readiness.Preflight.Checking', 'Checking readiness...')}</span>
   </div>
 {:else if error}
   <div class="text-sm text-red-500 dark:text-red-400">{error}</div>
   <button
-    class="mt-1 text-xs text-teal-500 hover:text-teal-600 dark:text-teal-400 dark:hover:text-teal-300 transition-colors"
+    class="mt-1 text-xs text-primary hover:text-primary transition-colors"
     onclick={checkReadiness}
   >
     {$t('Readiness.Preflight.Retry', 'Retry')}
@@ -105,15 +105,15 @@
 {:else if exportReadiness}
   {#if status !== 'ready'}
     <!-- Blocked / needs attention: status + the failing reasons (satisfied items hidden). -->
-    <div class="bg-white border rounded-lg p-3 dark:bg-neutral-900 {status === 'blocked' ? 'border-red-200 dark:border-red-800' : 'border-amber-200 dark:border-amber-800'}">
+    <div class="bg-card border rounded-lg p-3 {status === 'blocked' ? 'border-red-200 dark:border-red-800' : 'border-amber-200 dark:border-amber-800'}">
       <div class="flex items-center gap-2">
         <span class="text-lg {getStatusColor(status)}">{getStatusIcon(status)}</span>
         <div class="min-w-0">
-          <div class="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          <div class="text-sm font-medium text-foreground">
             {exportReadiness.statusTitle || $t('Readiness.Preflight.Unknown', 'Unknown')}
           </div>
           {#if exportReadiness.statusMessage}
-            <div class="text-xs text-neutral-500 dark:text-neutral-500">{exportReadiness.statusMessage}</div>
+            <div class="text-xs text-muted-foreground">{exportReadiness.statusMessage}</div>
           {/if}
         </div>
       </div>

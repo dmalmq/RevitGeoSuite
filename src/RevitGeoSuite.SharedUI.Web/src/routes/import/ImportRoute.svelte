@@ -958,7 +958,7 @@
 </script>
 
 <div class="flex h-full">
-  <div class="flex-1 relative bg-neutral-100 dark:bg-neutral-900">
+  <div class="flex-1 relative bg-muted">
     {#if (source === 'local' && (step === 'scan' || step === 'select' || step === 'import'))
       || (source === 'online' && onlineAreas.length > 0 && (step === 'preflight' || step === 'scan' || step === 'select' || step === 'import'))}
       <LeafletMap
@@ -985,17 +985,17 @@
     {/if}
   </div>
 
-  <aside class="w-96 bg-neutral-100 dark:bg-neutral-800 border-l border-neutral-200 dark:border-neutral-700 p-6 overflow-y-auto">
+  <aside class="w-96 bg-muted border-l border-border p-6 overflow-y-auto">
     {#if step === 'source'}
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{$t('Import.Sidebar.Title', 'Import PLATEAU')}</h2>
-      <p class="text-sm text-neutral-500 dark:text-neutral-400">
+      <h2 class="text-lg font-semibold text-foreground mb-4">{$t('Import.Sidebar.Title', 'Import PLATEAU')}</h2>
+      <p class="text-sm text-muted-foreground">
         {$t('Import.SourceIntro', 'Select a source to begin importing context data into your Revit project.')}
       </p>
 
     {:else if step === 'preflight'}
       <div class="flex items-center gap-2 mb-4">
         <button
-          class="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+          class="text-muted-foreground hover:text-foreground transition-colors"
           onclick={goBack}
           aria-label={$t('Common.Back', 'Back')}
         >
@@ -1003,7 +1003,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+        <h2 class="text-lg font-semibold text-foreground">
           {sourceTitle()}
         </h2>
       </div>

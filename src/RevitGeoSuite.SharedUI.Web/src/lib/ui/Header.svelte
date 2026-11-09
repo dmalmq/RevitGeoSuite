@@ -39,17 +39,17 @@
 </script>
 
 <header
-  class="flex h-10 items-center justify-between select-none border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+  class="flex h-10 items-center justify-between select-none border-b border-border bg-card"
   style="app-region: drag; -webkit-app-region: drag"
 >
   <div class="flex items-center gap-3 px-4">
-    <div class="w-6 h-6 bg-teal-600 rounded flex items-center justify-center text-white font-bold text-xs">
+    <div class="w-6 h-6 bg-primary rounded flex items-center justify-center text-primary-foreground font-bold text-xs">
       R
     </div>
-    <h1 class="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{title}</h1>
+    <h1 class="text-sm font-semibold text-foreground">{title}</h1>
     {#if documentName}
-      <span class="text-xs text-neutral-400 dark:text-neutral-500">·</span>
-      <span class="text-xs text-neutral-500 dark:text-neutral-400">{documentName}</span>
+      <span class="text-xs text-muted-foreground">·</span>
+      <span class="text-xs text-muted-foreground">{documentName}</span>
     {/if}
   </div>
 
@@ -58,13 +58,13 @@
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div class="mr-2 flex cursor-default items-center text-xs font-medium" on:mousedown|stopPropagation role="group" aria-label={$t('Header.LanguageToggle', 'Language')}>
       <button
-        class="cursor-pointer rounded-l px-2 py-1 transition-colors {lang === 'english' ? 'bg-teal-600 text-white' : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
+        class="cursor-pointer rounded-l px-2 py-1 transition-colors {lang === 'english' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
         on:click={() => i18n.setLanguage('english')}
         aria-pressed={lang === 'english'}
         title="English"
       >EN</button>
       <button
-        class="cursor-pointer rounded-r px-2 py-1 transition-colors {lang === 'japanese' ? 'bg-teal-600 text-white' : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
+        class="cursor-pointer rounded-r px-2 py-1 transition-colors {lang === 'japanese' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
         on:click={() => i18n.setLanguage('japanese')}
         aria-pressed={lang === 'japanese'}
         title="日本語"
@@ -73,7 +73,7 @@
 
     <!-- Theme toggle: sun in dark mode, moon in light mode. -->
     <button
-      class="flex h-10 w-10 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+      class="flex h-10 w-10 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       on:mousedown|stopPropagation
       on:click={toggleTheme}
       aria-label={$t('Header.ThemeToggle', 'Theme')}
@@ -91,7 +91,7 @@
     </button>
 
     <button
-      class="flex h-10 w-10 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+      class="flex h-10 w-10 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       on:mousedown|stopPropagation
       on:click={minimize}
       aria-label={$t('Header.Minimize', 'Minimize')}
@@ -101,7 +101,7 @@
       </svg>
     </button>
     <button
-      class="flex h-10 w-10 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+      class="flex h-10 w-10 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       on:mousedown|stopPropagation
       on:click={maximize}
       aria-label={$t('Header.Maximize', 'Maximize')}
@@ -111,7 +111,7 @@
       </svg>
     </button>
     <button
-      class="flex h-10 w-10 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:bg-red-600 hover:text-white dark:text-neutral-400"
+      class="flex h-10 w-10 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-red-600 hover:text-white"
       on:mousedown|stopPropagation
       on:click={close}
       aria-label={$t('Header.Close', 'Close')}
