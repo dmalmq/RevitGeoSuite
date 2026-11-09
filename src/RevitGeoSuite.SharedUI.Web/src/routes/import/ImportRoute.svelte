@@ -1,10 +1,14 @@
 <script lang="ts">
   import { request } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
-  import { onMount, tick } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { t } from '$lib/i18n'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
+  import { Banner, Button } from '$lib/kit'
+  import { StepBar, narrow, stepNumber, workflow } from '$lib/shell'
+  import LocalGisTool from './gis/LocalGisTool.svelte'
+  import type { GisPhase } from './gis/types'
   import type {
     PlateauOnlineArea,
     PlateauOnlineAreaGridSelection,
@@ -113,7 +117,7 @@
 
   onMount(async () => {
     const lastSource = localStorage.getItem('import.lastSource')
-    if (lastSource === 'local' || lastSource === 'online' || lastSource === 'osm') {
+    if (lastSource === 'local' || lastSource === 'online' || lastSource === 'osm' || lastSource === 'gis') {
       source = lastSource
     }
     ckanDownloadFolder = localStorage.getItem('import.ckanDownloadFolder') ?? ''
@@ -135,6 +139,7 @@
   function sourceTitle(): string {
     if (source === 'local') return $t('Import.Step.Preflight', 'Local Folder')
     if (source === 'osm') return $t('Import.Source.OsmBuildings.Title', 'OSM Buildings')
+    if (source === 'gis') return $t('Import.Source.Gis.Title', 'Local GIS files')
     return $t('Import.Source.OnlineApi.Title', 'PLATEAU Online / API')
   }
 
@@ -538,7 +543,6 @@
     } catch (err: any) {
       error = err.message || $t('Import.Online.Error.Import', 'Online import failed')
       importing = false
-      step = 'preflight'
     } finally {
       importCancel = null
     }
@@ -566,12 +570,11 @@
       onlineGridLoading = false
       step = 'preflight'
     } else if (step === 'select') {
-      step = 'preflight'
-      tiles = []
-      selectedTiles = new Set()
-      selectedOnlineAreaCodes = new Set()
+      backToOptions()
     } else if (step === 'import') {
-      step = source === 'online' ? 'preflight' : 'select'
+      error = null
+      importProgress = null
+      step = tiles.length > 0 ? 'select' : 'preflight'
     }
   }
 
@@ -587,6 +590,19 @@
     onlineGridProgress = null
     source = null
     step = 'source'
+  }
+
+  function backToOptions() {
+    step = 'preflight'
+    tiles = []
+    selectedTiles = new Set()
+    selectedOnlineAreaCodes = new Set()
+  }
+
+  // Runs the same import again with the same selection after a failure or a cancel.
+  function retryImport() {
+    error = null
+    runImport()
   }
 
   // ─── Local "download from geospatial.jp" (CKAN) ────────────────────────────
@@ -955,191 +971,247 @@
     onlineSuggestionViewKey = key
     mapRef.setView(onlineSuggestion.latitude, onlineSuggestion.longitude, 11)
   })
+  // ─── Frame: steps in the sidebar, map or sheet ──────────────────────────────
+  let gisPhase = $state<GisPhase>('options')
+
+  const flowSteps = $derived.by(() => {
+    if (source === 'gis') return [
+      { id: 'preflight', label: $t('Import.Flow.Files', 'Choose files') },
+      { id: 'import', label: $t('Import.Flow.Convert', 'Convert') }
+    ]
+    if (source === 'osm') return [
+      { id: 'preflight', label: $t('Import.Flow.Options', 'Options') },
+      { id: 'import', label: $t('Import.Flow.Import', 'Import') }
+    ]
+    return [
+      { id: 'preflight', label: source === 'online' ? $t('Import.Flow.Area', 'Choose area') : $t('Import.Flow.Data', 'Choose data') },
+      { id: 'scan', label: source === 'online' ? $t('Import.Flow.LoadGrids', 'Load grids') : $t('Import.Flow.Scan', 'Scan folder') },
+      { id: 'select', label: source === 'online' ? $t('Import.Online.SelectGrids', 'Select Grids') : $t('Import.Step.Select', 'Select Tiles') },
+      { id: 'import', label: $t('Import.Flow.Import', 'Import') }
+    ]
+  })
+
+  // OSM and GIS run from their options step; show their job under the last step.
+  const flowCurrent = $derived(
+    source === 'gis' ? (gisPhase === 'options' ? 'preflight' : 'import')
+      : source === 'osm' ? (osmImporting || osmImportProgress?.complete ? 'import' : 'preflight')
+      : step
+  )
+  // Every step before the current one is done; the last step is done once its job finished.
+  const flowCompleted = $derived.by(() => {
+    const index = flowSteps.findIndex((s) => s.id === flowCurrent)
+    const done = new Set(flowSteps.slice(0, Math.max(0, index)).map((s) => s.id))
+    const finished = source === 'gis' ? gisPhase === 'done' : source === 'osm' ? !!osmImportProgress?.complete : !!importProgress?.complete
+    if (finished) done.add('import')
+    return done
+  })
+  const flowStep = $derived(flowSteps.find((s) => s.id === flowCurrent) ?? flowSteps[0])
+  const busy = $derived(scanning || importing || onlineGridLoading || osmImporting || gisPhase === 'running')
+
+  // Only steps already passed can be opened from the sidebar, and not while a job runs.
+  function openStep(id: string) {
+    if (busy || source === 'gis' || source === 'osm') return
+    const target = flowSteps.findIndex((s) => s.id === id)
+    const current = flowSteps.findIndex((s) => s.id === step)
+    if (target < 0 || target >= current) return
+    if (id === 'preflight') backToOptions()
+    else if (id === 'select') goBack()
+  }
+
+  $effect(() => {
+    workflow.set(
+      step === 'source' || !source
+        ? null
+        : {
+            route: '/import',
+            steps: flowSteps,
+            current: flowCurrent,
+            completed: flowCompleted,
+            onStep: openStep
+          }
+    )
+  })
+  onDestroy(() => workflow.set(null))
+
+  const showMap = $derived(
+    (source === 'local' && (step === 'scan' || step === 'select' || step === 'import'))
+      || (source === 'online' && onlineAreas.length > 0 && (step === 'preflight' || step === 'scan' || step === 'select' || step === 'import'))
+  )
+  const canGoBack = $derived(step !== 'source' && step !== 'import' && !importing && !(source === 'gis' && gisPhase !== 'options') && !osmImporting)
+  let inspectorOpen = $state(true)
 </script>
 
-<div class="flex h-full">
-  <div class="flex-1 relative bg-muted">
-    {#if (source === 'local' && (step === 'scan' || step === 'select' || step === 'import'))
-      || (source === 'online' && onlineAreas.length > 0 && (step === 'preflight' || step === 'scan' || step === 'select' || step === 'import'))}
+{#snippet panel()}
+  {#if error && step !== 'import' && source !== 'gis'}
+    <Banner tone="danger" onclose={() => (error = null)} closeLabel={$t('Common.Dismiss', 'Dismiss')}>{error}</Banner>
+  {/if}
+
+  {#if step === 'preflight'}
+    <ReadinessPreflight onReady={onPreflightReady} onNeedsAttention={onPreflightNeedsAttention} onBlocked={onPreflightBlocked} />
+
+    {#if preflightReady}
+      {#if source === 'local'}
+        <LocalOptions
+          {browseFolder}
+          {changeCkanYear}
+          {chooseCkanFolder}
+          {ckanAreas}
+          {ckanCatalogCancel}
+          {ckanCatalogLoading}
+          {ckanCatalogProgress}
+          bind:ckanConfirmVisible
+          {ckanDestinationDisplay}
+          {ckanDownloadCancel}
+          {ckanDownloadFolder}
+          {ckanDownloadProgress}
+          {ckanDownloading}
+          {ckanExistingResources}
+          {ckanFilteredAreas}
+          {ckanNewSelectedCount}
+          {ckanResources}
+          {ckanResourcesLoading}
+          bind:ckanSearchText
+          {ckanSelectedResourceIds}
+          {ckanSelectedSize}
+          {ckanSelectedYear}
+          bind:ckanUrlInput
+          {clearCkanSelection}
+          {fmt}
+          bind:folderPath
+          {formatBytes}
+          {loadCkanCatalog}
+          {resetCkanFolder}
+          {runCkanDownload}
+          {selectCkanArea}
+          {selectedCkanArea}
+          {startCkanDownload}
+          {startScan}
+          {toggleCkanResource}
+          {useCkanUrl}
+        />
+      {:else if source === 'osm'}
+        <OsmOptions
+          {fmt}
+          {osmImportCancel}
+          {osmImportProgress}
+          {osmImporting}
+          bind:osmIonToken
+          bind:osmMode
+          bind:osmRadiusMeters
+          {startOsmImport}
+        />
+      {:else if source === 'gis'}
+        <LocalGisTool bind:phase={gisPhase} onhome={resetImport} />
+      {:else}
+        <OnlineOptions
+          {activeOnlineAreas}
+          {filteredOnlineAreas}
+          {fmt}
+          {getSuggestionAreaCodes}
+          {loadOnlineCatalog}
+          {loadOnlineGrids}
+          {onlineAreas}
+          {onlineCatalogCancel}
+          {onlineCatalogLoading}
+          {onlineCatalogProgress}
+          {onlineDracoAvailable}
+          {onlineDracoMessage}
+          bind:onlineSearchText
+          {onlineSuggestion}
+          {removeOnlineArea}
+          {selectedOnlineAreaCodes}
+        />
+      {/if}
+    {/if}
+  {:else if step === 'scan'}
+    <ScanStep {onlineGridCancel} {onlineGridLoading} {onlineGridProgress} {scanCancel} {scanProgress} {scanning} {source} />
+  {:else if step === 'select'}
+    <SelectStep
+      {activeOnlineAreas}
+      {estimatedTime}
+      bind:geometryMode
+      bind:groundGeoidOffsetMeters
+      bind:groundRadiusMeters
+      bind:groundSpacingMeters
+      {onlineBasemapCategories}
+      {onlineBasemapCategoryOptions}
+      {removeOnlineArea}
+      {runImport}
+      {selectedCount}
+      {selectedSize}
+      {selectedTiles}
+      {source}
+      {tiles}
+      {toggleOnlineBasemapCategory}
+    />
+  {:else if step === 'import'}
+    <ImportStep {error} {fmt} {goBack} {importCancel} {importProgress} {importedCount} {importing} {resetImport} {retryImport} />
+  {/if}
+{/snippet}
+
+{#snippet backBar()}
+  {#if canGoBack}
+    <div class="shrink-0 border-t border-border px-5 py-2">
+      <Button variant="ghost" size="sm" icon="arrow-left" onclick={goBack}>{$t('Common.Back', 'Back')}</Button>
+    </div>
+  {/if}
+{/snippet}
+
+{#if step === 'source'}
+  <!-- Home: one row per source on the sheet; the map appears once there is something to show. -->
+  <section class="flex h-full min-h-0 flex-col">
+    <StepBar title={$t('Import.Sidebar.Title', 'Import PLATEAU')} promise={$t('Import.SourceIntro', 'Select a source to begin importing context data into your Revit project.')} />
+    <div class="min-h-0 flex-1 overflow-auto px-5 pb-5">
+      <SourceChooser {selectSource} />
+    </div>
+  </section>
+{:else if showMap}
+  <div class="relative flex h-full min-h-0">
+    <div class="relative min-w-0 flex-1">
       <LeafletMap
         bind:this={mapRef}
         on:overlayClick={handleTileClick}
         on:overlayRectangleSelect={handleRectangleSelect}
         on:areaClick={handleAreaClick}
       />
-    {/if}
-
-    {#if step === 'source'}
-      <SourceChooser {selectSource} />
-    {/if}
-
-    {#if step === 'select' && tiles.length > 0}
-      <TileSelectionOverlay
-        {fmt}
-        {selectAll}
-        {selectNone}
-        {selectedCount}
-        {source}
-        {tiles}
-      />
-    {/if}
-  </div>
-
-  <aside class="w-96 bg-muted border-l border-border p-6 overflow-y-auto">
-    {#if step === 'source'}
-      <h2 class="text-lg font-semibold text-foreground mb-4">{$t('Import.Sidebar.Title', 'Import PLATEAU')}</h2>
-      <p class="text-sm text-muted-foreground">
-        {$t('Import.SourceIntro', 'Select a source to begin importing context data into your Revit project.')}
-      </p>
-
-    {:else if step === 'preflight'}
-      <div class="flex items-center gap-2 mb-4">
-        <button
-          class="text-muted-foreground hover:text-foreground transition-colors"
-          onclick={goBack}
-          aria-label={$t('Common.Back', 'Back')}
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h2 class="text-lg font-semibold text-foreground">
-          {sourceTitle()}
-        </h2>
-      </div>
-
-      <ReadinessPreflight
-        onReady={onPreflightReady}
-        onNeedsAttention={onPreflightNeedsAttention}
-        onBlocked={onPreflightBlocked}
-      />
-
-      {#if preflightReady}
-        <div class="mt-4">
-          {#if source === 'local'}
-            <LocalOptions
-              {browseFolder}
-              {changeCkanYear}
-              {chooseCkanFolder}
-              {ckanAreas}
-              {ckanCatalogCancel}
-              {ckanCatalogLoading}
-              {ckanCatalogProgress}
-              bind:ckanConfirmVisible
-              {ckanDestinationDisplay}
-              {ckanDownloadCancel}
-              {ckanDownloadFolder}
-              {ckanDownloadProgress}
-              {ckanDownloading}
-              {ckanExistingResources}
-              {ckanFilteredAreas}
-              {ckanNewSelectedCount}
-              {ckanResources}
-              {ckanResourcesLoading}
-              bind:ckanSearchText
-              {ckanSelectedResourceIds}
-              {ckanSelectedSize}
-              {ckanSelectedYear}
-              bind:ckanUrlInput
-              {clearCkanSelection}
-              {fmt}
-              bind:folderPath
-              {formatBytes}
-              {loadCkanCatalog}
-              {resetCkanFolder}
-              {runCkanDownload}
-              {selectCkanArea}
-              {selectedCkanArea}
-              {startCkanDownload}
-              {startScan}
-              {toggleCkanResource}
-              {useCkanUrl}
-            />
-          {:else if source === 'osm'}
-            <OsmOptions
-              {error}
-              {fmt}
-              {osmImportCancel}
-              {osmImportProgress}
-              {osmImporting}
-              bind:osmIonToken
-              bind:osmMode
-              bind:osmRadiusMeters
-              {startOsmImport}
-            />
-          {:else}
-            <OnlineOptions
-              {activeOnlineAreas}
-              {filteredOnlineAreas}
-              {fmt}
-              {getSuggestionAreaCodes}
-              {loadOnlineCatalog}
-              {loadOnlineGrids}
-              {onlineAreas}
-              {onlineCatalogCancel}
-              {onlineCatalogLoading}
-              {onlineCatalogProgress}
-              {onlineDracoAvailable}
-              {onlineDracoMessage}
-              bind:onlineSearchText
-              {onlineSuggestion}
-              {removeOnlineArea}
-              {selectedOnlineAreaCodes}
-            />
-          {/if}
+      {#if step === 'select' && tiles.length > 0}
+        <TileSelectionOverlay {fmt} {selectAll} {selectNone} {selectedCount} {source} {tiles} />
+      {/if}
+      {#if $narrow && !inspectorOpen}
+        <div class="absolute bottom-8 right-3 z-[1100]">
+          <Button icon="panel-right-open" onclick={() => (inspectorOpen = true)}>{flowStep.label}</Button>
         </div>
       {/if}
+    </div>
 
-    {:else if step === 'scan'}
-      <ScanStep
-        {fmt}
-        {goBack}
-        {onlineGridCancel}
-        {onlineGridLoading}
-        {onlineGridProgress}
-        {scanCancel}
-        {scanProgress}
-        {scanning}
-        {source}
-      />
-
-    {:else if step === 'select'}
-      <SelectStep
-        {activeOnlineAreas}
-        {estimatedTime}
-        {fmt}
-        bind:geometryMode
-        {goBack}
-        bind:groundGeoidOffsetMeters
-        bind:groundRadiusMeters
-        bind:groundSpacingMeters
-        {onlineBasemapCategories}
-        {onlineBasemapCategoryOptions}
-        {removeOnlineArea}
-        {runImport}
-        {selectedCount}
-        {selectedSize}
-        {selectedTiles}
-        {source}
-        {tiles}
-        {toggleOnlineBasemapCategory}
-      />
-
-    {:else if step === 'import'}
-      <ImportStep
-        {fmt}
-        {importCancel}
-        {importProgress}
-        {importedCount}
-        {importing}
-        {resetImport}
-      />
+    {#if !$narrow || inspectorOpen}
+      <aside
+        class="flex w-[300px] shrink-0 flex-col border-l border-border bg-card {$narrow ? 'absolute inset-y-0 right-0 z-[1100] shadow-lg' : ''}"
+        aria-label={sourceTitle()}
+      >
+        <StepBar title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={sourceTitle()}>
+          {#snippet actions()}
+            {#if $narrow}
+              <Button variant="ghost" size="sm" icon="x" aria-label={$t('Common.Hide', 'Hide')} onclick={() => (inspectorOpen = false)} />
+            {/if}
+          {/snippet}
+        </StepBar>
+        <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5">
+          {@render panel()}
+        </div>
+        {@render backBar()}
+      </aside>
     {/if}
-
-    {#if error}
-      <div class="mt-4 p-3 bg-red-50 border border-red-200 dark:bg-red-900/30 dark:border-red-700 rounded-lg">
-        <div class="text-sm text-red-700 dark:text-red-300">{error}</div>
+  </div>
+{:else}
+  <!-- No map yet: the tool takes a readable column on the sheet. -->
+  <section class="flex h-full min-h-0 flex-col">
+    <StepBar title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={sourceTitle()} />
+    <div class="min-h-0 flex-1 overflow-auto px-5 pb-5">
+      <div class="flex max-w-[560px] flex-col gap-3">
+        {@render panel()}
       </div>
-    {/if}
-  </aside>
-</div>
+    </div>
+    {@render backBar()}
+  </section>
+{/if}

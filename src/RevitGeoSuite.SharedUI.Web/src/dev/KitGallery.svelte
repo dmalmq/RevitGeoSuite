@@ -1,7 +1,7 @@
 <script lang="ts">
   // Dev-only page (vite dev, #/kit): every kit component in each state, for review and captures.
   import {
-    Banner, Button, Card, Checkbox, Chip, Dialog, Field, Icon, Input, Progress, Result, Segmented,
+    Banner, Button, Card, Checkbox, Chip, Dialog, Field, Icon, Input, Progress, ProgressCard, Result, Segmented,
     Select, SummaryStrip, Table, Toaster, ICONS, toasts, type IconName
   } from '$lib/kit'
 
@@ -112,6 +112,11 @@
         <Progress value={0.8} tone="danger" label="Stopped" />
       </div>
     </Card>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      <ProgressCard title="Importing tiles" message="53394611 · buildings" percent={42} oncancel={() => {}} />
+      <ProgressCard title="Scanning folder" message="Reading codelists" />
+    </div>
 
     <div class="grid gap-4 md:grid-cols-2">
       <Result title="Export finished">

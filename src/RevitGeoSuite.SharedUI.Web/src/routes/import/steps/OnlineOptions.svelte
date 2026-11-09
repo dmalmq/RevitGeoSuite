@@ -1,7 +1,9 @@
-<!-- Part of ImportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of ImportRoute.svelte. -->
 <script lang="ts">
   import type { PlateauOnlineArea, PlateauOnlineSuggestion } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
+  import { Banner, Button, Field, Input, ProgressCard } from '$lib/kit'
+  import RemovableChip from './RemovableChip.svelte'
 
   interface Props {
     activeOnlineAreas: any
@@ -25,145 +27,90 @@
   let { activeOnlineAreas, filteredOnlineAreas, fmt, getSuggestionAreaCodes, loadOnlineCatalog, loadOnlineGrids, onlineAreas, onlineCatalogCancel, onlineCatalogLoading, onlineCatalogProgress, onlineDracoAvailable, onlineDracoMessage, onlineSearchText = $bindable(), onlineSuggestion, removeOnlineArea, selectedOnlineAreaCodes }: Props = $props()
 </script>
 
-<div class="space-y-4">
+<div class="flex flex-col gap-3">
   {#if onlineCatalogLoading}
-    <div class="bg-card border border-border rounded-lg p-4">
-      <div class="flex items-center gap-2 mb-3">
-        <div class="w-4 h-4 border-2 border-input border-t-primary rounded-full animate-spin"></div>
-        <span class="text-sm text-foreground">{$t('Import.Online.LoadingCatalog', 'Loading PLATEAU catalog...')}</span>
-      </div>
-      {#if onlineCatalogProgress}
-        <div class="space-y-2 text-xs text-muted-foreground">
-          <div>{onlineCatalogProgress.message || $t('Import.Online.Indexing', 'Indexing municipalities...')}</div>
-          {#if onlineCatalogProgress.percent !== undefined}
-            <div class="w-full bg-border rounded-full h-2">
-              <div class="bg-primary h-2 rounded-full transition-all" style="width: {onlineCatalogProgress.percent}%"></div>
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <button
-        class="mt-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        onclick={() => onlineCatalogCancel?.()}
-      >
-        {$t('Import.Scan.Cancel', 'Cancel scan')}
-      </button>
-    </div>
+    <ProgressCard
+      title={$t('Import.Online.LoadingCatalog', 'Loading PLATEAU catalog...')}
+      message={onlineCatalogProgress?.message || $t('Import.Online.Indexing', 'Indexing municipalities...')}
+      percent={onlineCatalogProgress?.percent}
+      oncancel={onlineCatalogCancel}
+      cancelLabel={$t('Common.Cancel', 'Cancel')}
+    />
   {:else if onlineAreas.length === 0}
-    <div class="bg-card border border-border rounded-lg p-4">
-      <p class="text-sm text-muted-foreground mb-4">
-        {$t('Import.Online.Intro', 'Load the PLATEAU online catalog, search for a municipality, then download and import its building dataset.')}
-      </p>
-      <button
-        class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors"
-        onclick={loadOnlineCatalog}
-      >
-        {$t('Import.Online.LoadCatalog', 'Load PLATEAU Catalog')}
-      </button>
-    </div>
+    <p class="text-body text-muted-foreground">
+      {$t('Import.Online.Intro', 'Load the PLATEAU online catalog, search for a municipality, then download and import its building dataset.')}
+    </p>
+    <Button variant="primary" size="lg" class="w-full" icon="download" onclick={loadOnlineCatalog}>
+      {$t('Import.Online.LoadCatalog', 'Load PLATEAU Catalog')}
+    </Button>
   {:else}
     {#if !onlineDracoAvailable}
-      <div class="p-3 bg-amber-50 border border-amber-200 dark:bg-amber-900/30 dark:border-amber-700 rounded-lg">
-        <div class="text-sm text-amber-700 dark:text-amber-300">
-          {onlineDracoMessage || $t('Import.Online.DracoUnavailable', 'Draco mesh decoder is not available')}
-        </div>
-      </div>
+      <Banner tone="warning">{onlineDracoMessage || $t('Import.Online.DracoUnavailable', 'Draco mesh decoder is not available')}</Banner>
     {/if}
 
     {#if onlineSuggestion}
-      <div class="bg-accent border border-primary/40 rounded-lg p-4">
-        <div class="text-xs font-medium text-primary mb-1">
+      {@const codes = getSuggestionAreaCodes(onlineSuggestion)}
+      <div class="flex flex-col gap-1.5 rounded-card border border-primary/30 bg-accent px-3 py-2">
+        <div class="text-caption font-medium text-primary-text">
           {onlineSuggestion.message || $t('Import.Online.SuggestionTitle', 'Suggested from Project Base Point')}
         </div>
-        <div class="text-sm font-medium text-foreground break-words">
-          {getSuggestionAreaCodes(onlineSuggestion).length > 1
-            ? fmt($t('Import.Online.SuggestionMulti', '{0} nearby datasets'), getSuggestionAreaCodes(onlineSuggestion).length)
-            : onlineSuggestion.displayLabel}
-        </div>
-        <div class="mt-2 space-y-1">
-          {#each (onlineSuggestion.areas?.length ? onlineSuggestion.areas : [{ areaCode: onlineSuggestion.areaCode, displayLabel: onlineSuggestion.displayLabel, codeLabel: onlineSuggestion.codeLabel, nearestDistanceMeters: 0 }]) as area}
-            <div class="flex items-center justify-between gap-2 rounded border border-primary/40 bg-card/70 px-2 py-1 text-xs">
-              <span class="min-w-0 truncate text-foreground">{area.displayLabel}</span>
-              <span class="shrink-0 text-muted-foreground">{area.codeLabel}</span>
-            </div>
-          {/each}
-        </div>
-        <div class="flex items-center justify-between gap-3 mt-3">
-          <div class="text-xs text-muted-foreground">
-            {getSuggestionAreaCodes(onlineSuggestion).length > 1
-              ? $t('Import.Online.BorderSuggestion', 'Near a municipality border')
-              : onlineSuggestion.codeLabel}
+        {#each (onlineSuggestion.areas?.length ? onlineSuggestion.areas : [{ areaCode: onlineSuggestion.areaCode, displayLabel: onlineSuggestion.displayLabel, codeLabel: onlineSuggestion.codeLabel, nearestDistanceMeters: 0 }]) as area (area.areaCode)}
+          <div class="flex items-baseline justify-between gap-2 text-body">
+            <span class="min-w-0 truncate font-medium text-foreground">{area.displayLabel}</span>
+            <span class="shrink-0 font-mono text-small text-muted-foreground">{area.codeLabel}</span>
           </div>
-          <button
-            class="shrink-0 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium rounded-md transition-colors"
-            onclick={() => loadOnlineGrids(getSuggestionAreaCodes(onlineSuggestion))}
-          >
-            {getSuggestionAreaCodes(onlineSuggestion).length > 1
-              ? $t('Import.Online.LoadSuggestions', 'Load suggestions')
-              : $t('Import.Online.LoadSuggestion', 'Load suggestion')}
-          </button>
+        {/each}
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-small text-muted-foreground">
+            {codes.length > 1 ? $t('Import.Online.BorderSuggestion', 'Near a municipality border') : ''}
+          </span>
+          <Button variant="primary" size="sm" onclick={() => loadOnlineGrids(codes)}>
+            {codes.length > 1 ? $t('Import.Online.LoadSuggestions', 'Load suggestions') : $t('Import.Online.LoadSuggestion', 'Load suggestion')}
+          </Button>
         </div>
       </div>
     {/if}
 
-    <div class="bg-card border border-border rounded-lg p-4">
-      <label for="plateau-online-area-search" class="block text-sm font-medium text-foreground mb-2">
-        {$t('Import.Online.SearchLabel', 'Municipality')}
-      </label>
-      <input
-        id="plateau-online-area-search"
-        type="text"
-        bind:value={onlineSearchText}
-        placeholder={$t('Import.Online.SearchPlaceholder', 'Search city, ward, prefecture, or code...')}
-        class="w-full bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-      />
-      <div class="text-xs text-muted-foreground mt-2">
-        {fmt($t('Import.Online.CatalogSummary', '{0} importable area(s)'), onlineAreas.filter(area => area.hasBuildings).length)}
-      </div>
-    </div>
+    <Field
+      label={$t('Import.Online.SearchLabel', 'Municipality')}
+      id="plateau-online-area-search"
+      hint={fmt($t('Import.Online.CatalogSummary', '{0} importable area(s)'), onlineAreas.filter(area => area.hasBuildings).length)}
+    >
+      <Input id="plateau-online-area-search" type="search" bind:value={onlineSearchText} placeholder={$t('Import.Online.SearchPlaceholder', 'Search city, ward, prefecture, or code...')} />
+    </Field>
 
-    <div class="space-y-2 max-h-80 overflow-y-auto">
+    <div class="max-h-80 overflow-y-auto rounded-card border border-border bg-card">
       {#if filteredOnlineAreas.length === 0}
-        <div class="text-sm text-muted-foreground">
-          {$t('Import.Online.NoResults', 'No matching areas')}
-        </div>
+        <p class="px-3 py-2 text-small text-muted-foreground">{$t('Import.Online.NoResults', 'No matching areas')}</p>
       {:else}
-        {#each filteredOnlineAreas as area}
+        {#each filteredOnlineAreas as area (area.code)}
+          {@const selected = selectedOnlineAreaCodes.has(area.code)}
           <button
-            class={`w-full p-3 border rounded-lg text-left transition-colors ${
- selectedOnlineAreaCodes.has(area.code)
- ? 'bg-accent border-primary'
- : 'bg-card border-border hover:border-primary'
- }`}
+            type="button"
+            class="block w-full border-b border-border px-3 py-1.5 text-left last:border-b-0 hover:bg-accent {selected ? 'bg-accent' : ''}"
+            aria-pressed={selected}
             onclick={() => loadOnlineGrids(area.code)}
           >
-            <div class="text-sm font-medium text-foreground">{area.displayLabel}</div>
-            <div class="text-xs text-muted-foreground mt-1">{area.codeLabel}</div>
+            <span class="block truncate text-body font-medium {selected ? 'text-primary-text' : 'text-foreground'}">{area.displayLabel}</span>
+            <span class="block font-mono text-caption text-muted-foreground">{area.codeLabel}</span>
           </button>
         {/each}
       {/if}
     </div>
 
     {#if activeOnlineAreas.length > 0}
-      <div class="bg-card border border-border rounded-lg p-4">
-        <div class="text-xs text-muted-foreground mb-2">{$t('Import.Online.SelectedAreas', 'Selected datasets')}</div>
-        <div class="flex flex-wrap gap-2">
-          {#each activeOnlineAreas as area}
-            <button
-              class="max-w-full rounded border border-primary/40 bg-accent px-2 py-1 text-left text-xs text-foreground transition-colors hover:border-primary"
-              onclick={() => removeOnlineArea(area.code)}
-              title={$t('Common.Remove', 'Remove')}
-            >
-              <span class="inline-block max-w-44 truncate align-bottom">{area.displayLabel}</span>
-              <span class="ml-1 text-muted-foreground">x</span>
-            </button>
+      <div class="flex flex-col gap-1">
+        <span class="text-caption font-medium text-muted-foreground">{$t('Import.Online.SelectedAreas', 'Selected datasets')}</span>
+        <div class="flex flex-wrap gap-1">
+          {#each activeOnlineAreas as area (area.code)}
+            <RemovableChip label={area.displayLabel} removeLabel={$t('Common.Remove', 'Remove')} onremove={() => removeOnlineArea(area.code)} />
           {/each}
         </div>
       </div>
     {/if}
 
-    <div class="text-xs text-muted-foreground">
+    <p class="text-small text-muted-foreground">
       {$t('Import.Online.SelectAreaHint', 'Click a municipality on the map or pick one from the list to load its grids.')}
-    </div>
+    </p>
   {/if}
 </div>

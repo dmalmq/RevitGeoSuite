@@ -1,15 +1,12 @@
 <script lang="ts">
   import { request } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
-  import { inferGisLevelIdFromFileName } from '$lib/import/gisLevelInference'
   import type {
     CesiumExportRunResponse,
     CesiumExportStateResponse,
     CesiumPushResponse,
     CesiumViewerSettingsPayload,
     CityGmlExportPrepareResponse,
-    GisExportOptionsResponse,
-    GisLevelOption,
     PlateauContextExportPreviewResponse,
     Tiles3DExportOptionsResponse,
     Tiles3DExportPrepareResponse,
@@ -20,7 +17,7 @@
   import { t } from '$lib/i18n'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
-  import type { ExportFormat, ExportState, GisExportCategory, GisFileAssignmentState, ScopeMode, PlateauTile, ExportJobResult, ExportPreview } from './steps/types'
+  import type { ExportFormat, ExportState, ScopeMode, PlateauTile, ExportJobResult, ExportPreview } from './steps/types'
   import FormatChooser from './steps/FormatChooser.svelte'
   import PlateauScanMap from './steps/PlateauScanMap.svelte'
   import PlateauSelectOverlay from './steps/PlateauSelectOverlay.svelte'
@@ -28,13 +25,11 @@
   import PlateauSourcePanel from './steps/PlateauSourcePanel.svelte'
   import PlateauScanPanel from './steps/PlateauScanPanel.svelte'
   import PlateauSelectPanel from './steps/PlateauSelectPanel.svelte'
-  import GisOptions from './steps/GisOptions.svelte'
   import ScopeStep from './steps/ScopeStep.svelte'
   import PlateauOptions from './steps/PlateauOptions.svelte'
   import Tiles3dOptions from './steps/Tiles3dOptions.svelte'
   import CityGmlOptions from './steps/CityGmlOptions.svelte'
   import ReviewStep from './steps/ReviewStep.svelte'
-  import GisAssignmentsModal from './steps/GisAssignmentsModal.svelte'
   import CesiumModal from './steps/CesiumModal.svelte'
 
   // Fills {0}/{1} placeholders in a localized template so count/number strings can keep
@@ -211,87 +206,10 @@
     codelistOverrides: {} as Record<string, string>
   })
 
-  const defaultGisCategoryColors: Record<GisExportCategory, string> = {
-    opening: '#FF0000',
-    unit: '#00B050',
-    level: '#0070C0',
-    detail: '#A6A6A6'
-  }
-
-  const gisCategoryOptions: { id: GisExportCategory; label: string }[] = [
-    { id: 'opening', label: 'Openings' },
-    { id: 'unit', label: 'Units' },
-    { id: 'level', label: 'Levels' },
-    { id: 'detail', label: 'Details' }
-  ]
-
-  const gisCategoryColorsStorageKey = 'export.gis.categoryColors.v1'
-
-  let gisFilePaths = $state<string[]>([])
-  let gisFileAssignments = $state<GisFileAssignmentState[]>([])
-  let gisBasemapName = $state<string>('')
-  let gisOutputFolder = $state<string>('')
-  let gisCategoryColors = $state<Record<GisExportCategory, string>>({ ...defaultGisCategoryColors })
-  let gisLevels = $state<GisLevelOption[]>([])
-  let gisDefaultLevelId = $state<number | null>(null)
-  let gisOptionsLoading = $state(false)
-  let gisAssignmentsModalOpen = $state(false)
-  let gisAssignmentSearch = $state('')
-  let gisSelectedAssignmentPaths = $state<Set<string>>(new Set())
-  let gisBulkCategoryValue = $state<string>('')
-  let gisBulkLevelValue = $state<string>('')
-  let gisExportCancel = $state<(() => void) | null>(null)
-
-  let gisFileDisplay = $derived.by(() => {
-    if (gisFilePaths.length === 0) return ''
-    if (gisFilePaths.length === 1) return gisFilePaths[0]
-    return `${gisFilePaths.length} files selected`
-  })
-
-  let gisOutputPreview = $derived.by(() => {
-    const groupNames = new Map<number | null, string>()
-    for (const assignment of gisFileAssignments) {
-      if (!groupNames.has(assignment.levelId)) {
-        groupNames.set(assignment.levelId, levelName(assignment.levelId))
-      }
-    }
-    const baseName = gisBasemapName.trim() || 'GIS Basemap'
-    const appendLevelName = groupNames.size > 1
-    return Array.from(groupNames.values()).map(name => appendLevelName ? `${baseName} - ${name}` : baseName)
-  })
-
-  let canExportGis = $derived(
-    gisFileAssignments.length > 0 &&
-    gisBasemapName.trim().length > 0 &&
-    gisOutputFolder.trim().length > 0
-  )
-
-  let gisFilesNeedingLevel = $derived(
-    gisFileAssignments.filter(assignment => assignment.levelId === null).length
-  )
-
-  let gisFilteredAssignments = $derived.by(() => {
-    const tokens = gisAssignmentSearch.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    if (tokens.length === 0) return gisFileAssignments
-    return gisFileAssignments.filter(assignment => {
-      const haystack = [
-        fileNameFromPath(assignment.path),
-        assignment.path,
-        gisCategoryLabel(assignment.category),
-        levelName(assignment.levelId)
-      ].join(' ').toLowerCase()
-      return tokens.every(token => haystack.includes(token))
-    })
-  })
-
   onMount(async () => {
     const lastFormat = localStorage.getItem('export.lastFormat')
-    if (lastFormat === 'plateau' || lastFormat === 'tiles3d' || lastFormat === 'citygml' || lastFormat === 'gis') {
+    if (lastFormat === 'plateau' || lastFormat === 'tiles3d' || lastFormat === 'citygml') {
       format = lastFormat
-    }
-    gisCategoryColors = loadGisCategoryColors()
-    if (format === 'gis') {
-      void loadGisExportOptions()
     }
     if (format === 'tiles3d') {
       void loadTiles3dExportOptions()
@@ -306,9 +224,6 @@
     exportPreview = null
     preflightReady = false
     preflightNeedsAttention = false
-    if (f === 'gis') {
-      void loadGisExportOptions()
-    }
     if (f === 'tiles3d') {
       void loadTiles3dExportOptions()
     }
@@ -552,9 +467,6 @@
   }
 
   async function prepareExport() {
-    if (format === 'gis') {
-      return
-    }
     if (!validateExportInputs()) {
       return
     }
@@ -676,57 +588,7 @@
     error = null
     exporting = false
     preparingPreview = false
-    gisFilePaths = []
-    gisFileAssignments = []
-    gisBasemapName = ''
-    gisOutputFolder = ''
-    gisCategoryColors = { ...defaultGisCategoryColors }
-    gisAssignmentsModalOpen = false
-    gisAssignmentSearch = ''
-    gisSelectedAssignmentPaths = new Set()
-    gisBulkCategoryValue = ''
-    gisBulkLevelValue = ''
     step = 'format'
-  }
-
-  function normalizeHexColor(value: string | undefined, fallback: string): string {
-    const candidate = (value || '').trim()
-    return /^#[0-9a-fA-F]{6}$/.test(candidate) ? candidate.toUpperCase() : fallback
-  }
-
-  function loadGisCategoryColors(): Record<GisExportCategory, string> {
-    try {
-      const raw = localStorage.getItem(gisCategoryColorsStorageKey)
-      if (!raw) return { ...defaultGisCategoryColors }
-      const parsed = JSON.parse(raw) as Partial<Record<GisExportCategory, string>>
-      return {
-        opening: normalizeHexColor(parsed.opening, defaultGisCategoryColors.opening),
-        unit: normalizeHexColor(parsed.unit, defaultGisCategoryColors.unit),
-        level: normalizeHexColor(parsed.level, defaultGisCategoryColors.level),
-        detail: normalizeHexColor(parsed.detail, defaultGisCategoryColors.detail)
-      }
-    } catch {
-      return { ...defaultGisCategoryColors }
-    }
-  }
-
-  function saveGisCategoryColors(colors: Record<GisExportCategory, string>) {
-    localStorage.setItem(gisCategoryColorsStorageKey, JSON.stringify(colors))
-  }
-
-  async function loadGisExportOptions() {
-    if (gisOptionsLoading) return
-    gisOptionsLoading = true
-    try {
-      const result = await request<GisExportOptionsResponse>('gis.exportOptions', {})
-      gisLevels = result.levels || []
-      gisDefaultLevelId = result.defaultLevelId ?? gisLevels[0]?.id ?? null
-      applyDefaultGisLevels()
-    } catch (err: any) {
-      error = err.message || 'Failed to load Revit levels'
-    } finally {
-      gisOptionsLoading = false
-    }
   }
 
   async function loadTiles3dExportOptions() {
@@ -748,251 +610,6 @@
     }
   }
 
-  function applyDefaultGisLevels() {
-    const fallbackLevelId = gisDefaultLevelId ?? gisLevels[0]?.id ?? null
-    if (fallbackLevelId === null) return
-    gisFileAssignments = gisFileAssignments.map(assignment => ({
-      ...assignment,
-      levelId: assignment.levelId ?? inferGisLevelIdFromFileName(assignment.path, gisLevels) ?? fallbackLevelId
-    }))
-  }
-
-  function setGisSelection(paths: string[]) {
-    const previousAssignments = new Map(gisFileAssignments.map(assignment => [assignment.path.toLowerCase(), assignment]))
-    const fallbackLevelId = gisDefaultLevelId ?? gisLevels[0]?.id ?? null
-    gisFilePaths = paths
-    gisFileAssignments = paths.map(path => {
-      const previous = previousAssignments.get(path.toLowerCase())
-      return {
-        path,
-        levelId: previous?.levelId ?? inferGisLevelIdFromFileName(path, gisLevels) ?? fallbackLevelId,
-        category: previous?.category ?? inferGisCategory(path)
-      }
-    })
-
-    const validPaths = new Set(paths)
-    gisSelectedAssignmentPaths = new Set(
-      Array.from(gisSelectedAssignmentPaths).filter(path => validPaths.has(path))
-    )
-
-    if (!gisBasemapName.trim() && paths.length > 0) {
-      gisBasemapName = paths.length === 1
-        ? fileStemFromPath(paths[0])
-        : 'GIS Basemap'
-    }
-  }
-
-  async function browseGisFiles() {
-    try {
-      if (gisLevels.length === 0 && !gisOptionsLoading) {
-        await loadGisExportOptions()
-      }
-      const result = await request<{ path?: string; paths?: string[]; error?: string }>('dialog.openFile', {
-        initialPath: gisFilePaths[0] ?? '',
-        title: $t('Import.Source.Gis.Title', 'Local GIS files')
-      })
-      if (result?.error) {
-        error = result.error
-      } else {
-        const selected = (result?.paths?.length ? result.paths : result?.path ? [result.path] : [])
-          .filter((p): p is string => !!p)
-        if (selected.length > 0) {
-          setGisSelection(selected)
-        }
-      }
-    } catch (err: any) {
-      error = err.message || 'Failed to open file dialog'
-    }
-  }
-
-  function clearGisSelection() {
-    gisFilePaths = []
-    gisFileAssignments = []
-    gisSelectedAssignmentPaths = new Set()
-    gisAssignmentsModalOpen = false
-    gisBasemapName = ''
-  }
-
-  async function browseGisOutputFolder() {
-    try {
-      const result = await request('dialog.openFolder', {
-        initialPath: gisOutputFolder,
-        title: 'DXF Output Folder'
-      })
-      if (result?.path) gisOutputFolder = result.path
-    } catch (err: any) {
-      error = err.message || 'Failed to open folder dialog'
-    }
-  }
-
-  function setGisCategoryColor(category: GisExportCategory, value: string) {
-    const next = {
-      ...gisCategoryColors,
-      [category]: normalizeHexColor(value, defaultGisCategoryColors[category])
-    }
-    gisCategoryColors = next
-    saveGisCategoryColors(next)
-  }
-
-  function resetGisCategoryColors() {
-    const next = { ...defaultGisCategoryColors }
-    gisCategoryColors = next
-    saveGisCategoryColors(next)
-  }
-
-  function fileNameFromPath(path: string): string {
-    return path.split(/[\\/]/).pop() || path
-  }
-
-  function fileStemFromPath(path: string): string {
-    const fileName = fileNameFromPath(path)
-    const dot = fileName.lastIndexOf('.')
-    return dot > 0 ? fileName.slice(0, dot) : fileName
-  }
-
-  function inferGisCategory(path: string): GisExportCategory {
-    const stem = fileStemFromPath(path).toLowerCase()
-    if (stem.includes('opening')) return 'opening'
-    if (stem.includes('unit')) return 'unit'
-    if (stem.includes('level')) return 'level'
-    if (stem.includes('detail')) return 'detail'
-    return 'detail'
-  }
-
-  function normalizeGisCategory(value: string): GisExportCategory {
-    return value === 'opening' || value === 'unit' || value === 'level' || value === 'detail'
-      ? value
-      : 'detail'
-  }
-
-  function levelName(levelId: number | null): string {
-    if (levelId === null) return 'No level'
-    return gisLevels.find(level => level.id === levelId)?.name ?? String(levelId)
-  }
-
-  function levelLabel(level: GisLevelOption): string {
-    return `${level.name} (${(level.elevationFeet * 0.3048).toFixed(2)} m)`
-  }
-
-  function setGisAssignmentLevel(path: string, value: string) {
-    const levelId = value ? Number(value) : null
-    gisFileAssignments = gisFileAssignments.map(assignment =>
-      assignment.path === path ? { ...assignment, levelId } : assignment
-    )
-  }
-
-  function setGisAssignmentCategory(path: string, value: string) {
-    const category = normalizeGisCategory(value)
-    gisFileAssignments = gisFileAssignments.map(assignment =>
-      assignment.path === path ? { ...assignment, category } : assignment
-    )
-  }
-
-  function gisCategoryLabel(category: GisExportCategory): string {
-    return gisCategoryOptions.find(option => option.id === category)?.label ?? category
-  }
-
-  function openGisAssignmentsModal() {
-    gisAssignmentsModalOpen = true
-  }
-
-  function closeGisAssignmentsModal() {
-    gisAssignmentsModalOpen = false
-  }
-
-  function handleGlobalKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && gisAssignmentsModalOpen) {
-      closeGisAssignmentsModal()
-    }
-  }
-
-  function toggleGisAssignmentSelection(path: string) {
-    const next = new Set(gisSelectedAssignmentPaths)
-    if (next.has(path)) next.delete(path)
-    else next.add(path)
-    gisSelectedAssignmentPaths = next
-  }
-
-  function selectVisibleGisAssignments() {
-    const next = new Set(gisSelectedAssignmentPaths)
-    for (const assignment of gisFilteredAssignments) next.add(assignment.path)
-    gisSelectedAssignmentPaths = next
-  }
-
-  function clearGisAssignmentSelection() {
-    gisSelectedAssignmentPaths = new Set()
-  }
-
-  function bulkSetGisCategory(value: string) {
-    if (value && gisSelectedAssignmentPaths.size > 0) {
-      const category = normalizeGisCategory(value)
-      gisFileAssignments = gisFileAssignments.map(assignment =>
-        gisSelectedAssignmentPaths.has(assignment.path) ? { ...assignment, category } : assignment
-      )
-    }
-    gisBulkCategoryValue = ''
-  }
-
-  function bulkSetGisLevel(value: string) {
-    if (value && gisSelectedAssignmentPaths.size > 0) {
-      const levelId = Number(value)
-      gisFileAssignments = gisFileAssignments.map(assignment =>
-        gisSelectedAssignmentPaths.has(assignment.path) ? { ...assignment, levelId } : assignment
-      )
-    }
-    gisBulkLevelValue = ''
-  }
-
-  async function startGisExport() {
-    if (gisFileAssignments.length === 0) {
-      error = 'Please select at least one GIS file first'
-      return
-    }
-    if (!gisBasemapName.trim()) {
-      error = 'Enter a basemap name'
-      return
-    }
-    if (!gisOutputFolder.trim()) {
-      error = 'Choose an output folder for the DXF files'
-      return
-    }
-    exporting = true
-    error = null
-    exportProgress = null
-    step = 'export'
-
-    const job = startJob<any>('gis.export', {
-      path: gisFilePaths[0],
-      paths: gisFilePaths,
-      basemapName: gisBasemapName.trim(),
-      outputFolder: gisOutputFolder.trim(),
-      fileAssignments: gisFileAssignments.map(assignment => ({
-        path: assignment.path,
-        levelId: assignment.levelId,
-        category: assignment.category
-      })),
-      categoryColors: gisCategoryOptions.map(opt => ({
-        category: opt.id,
-        color: normalizeHexColor(gisCategoryColors[opt.id], defaultGisCategoryColors[opt.id])
-      }))
-    }, {
-      onProgress: (p) => { exportProgress = p }
-    })
-    gisExportCancel = job.cancel
-
-    try {
-      const result = await job.result
-      exportProgress = { ...exportProgress, complete: true, ...result }
-      exporting = false
-    } catch (err: any) {
-      error = err.message || 'GIS export failed'
-      exporting = false
-      step = 'gis-options'
-    } finally {
-      gisExportCancel = null
-    }
-  }
-
   function goBack() {
     if (step === 'preflight') {
       step = 'format'
@@ -1003,8 +620,6 @@
       step = 'plateau-source'
     } else if (step === 'plateau-select') {
       step = 'plateau-source'
-    } else if (step === 'gis-options') {
-      step = 'preflight'
     } else if (step === 'scope') {
       step = preflightNeedsAttention ? 'preflight' : 'format'
     } else if (step === 'options') {
@@ -1012,12 +627,12 @@
     } else if (step === 'review') {
       step = 'options'
     } else if (step === 'export') {
-      step = format === 'gis' ? 'gis-options' : 'review'
+      step = 'review'
     }
   }
 
   function continueToScope() {
-    step = format === 'plateau' ? 'plateau-source' : format === 'gis' ? 'gis-options' : 'scope'
+    step = format === 'plateau' ? 'plateau-source' : 'scope'
   }
 
   function continueToOptions() {
@@ -1029,7 +644,6 @@
     format === 'plateau' ? $t('Export.Format.Plateau', 'PLATEAU Context') :
     format === 'tiles3d' ? $t('Export.Format.Tiles3d', '3D Tiles') :
     format === 'citygml' ? $t('Export.Format.CityGml', 'CityGML') :
-    format === 'gis' ? $t('Import.Source.Gis.Title', 'Local GIS Files') :
     $t('Export.Title', 'Export')
   )
 
@@ -1069,9 +683,7 @@
         {exportProgress}
         {exporting}
         {fmt}
-        {format}
         {formatLabel}
-        {gisExportCancel}
         {resetExport}
       />
     {/if}
@@ -1125,30 +737,6 @@
         {plateauTiles}
         {selectedPlateauSize}
         {selectedPlateauTileCount}
-      />
-    {:else if step === 'gis-options'}
-      <GisOptions
-        {browseGisFiles}
-        {browseGisOutputFolder}
-        {canExportGis}
-        {clearGisSelection}
-        {error}
-        bind:gisBasemapName
-        {gisCategoryColors}
-        {gisCategoryOptions}
-        {gisFileAssignments}
-        {gisFileDisplay}
-        {gisFilePaths}
-        {gisFilesNeedingLevel}
-        {gisLevels}
-        {gisOptionsLoading}
-        {gisOutputFolder}
-        {gisOutputPreview}
-        {goBack}
-        {openGisAssignmentsModal}
-        {resetGisCategoryColors}
-        {setGisCategoryColor}
-        {startGisExport}
       />
     {:else if step === 'scope'}
       <ScopeStep {continueToOptions} {goBack} {scope} {setScope} />
@@ -1258,32 +846,6 @@
     {/if}
   </aside>
 </div>
-
-<svelte:window onkeydown={handleGlobalKeydown} />
-
-{#if gisAssignmentsModalOpen}
-  <GisAssignmentsModal
-    {bulkSetGisCategory}
-    {bulkSetGisLevel}
-    {clearGisAssignmentSelection}
-    {closeGisAssignmentsModal}
-    {fileNameFromPath}
-    bind:gisAssignmentSearch
-    bind:gisBulkCategoryValue
-    bind:gisBulkLevelValue
-    {gisCategoryOptions}
-    {gisFileAssignments}
-    {gisFilesNeedingLevel}
-    {gisFilteredAssignments}
-    {gisLevels}
-    {gisSelectedAssignmentPaths}
-    {levelLabel}
-    {selectVisibleGisAssignments}
-    {setGisAssignmentCategory}
-    {setGisAssignmentLevel}
-    {toggleGisAssignmentSelection}
-  />
-{/if}
 
 {#if cesiumOpen}
   <CesiumModal
