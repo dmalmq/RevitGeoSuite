@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
-  import { strings } from '$lib/i18n'
+  import { t } from '$lib/i18n'
 
   export let type: 'error' | 'warning' | 'info' = 'info'
   export let title: string
@@ -70,7 +70,7 @@
           <h3 class="text-sm font-semibold {color.title}">{title}</h3>
           {#if blocking}
             <span class="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded {color.bg} {color.border} border {color.title}">
-              {$strings['Readiness.Banner.Blocking'] ?? 'Blocking'}
+              {$t('Readiness.Banner.Blocking', 'Blocking')}
             </span>
           {/if}
         </div>
@@ -81,7 +81,7 @@
         <button
           class="flex-shrink-0 {color.icon} hover:opacity-70 transition-opacity"
           onclick={handleDismiss}
-          aria-label={$strings['Common.Dismiss'] ?? 'Dismiss'}
+          aria-label={$t('Common.Dismiss', 'Dismiss')}
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

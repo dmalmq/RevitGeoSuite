@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { strings } from '$lib/i18n'
+  import { t } from '$lib/i18n'
 
   export let steps: Array<{ id: string; label: string; completed: boolean }>
   export let visible: boolean = true
@@ -13,8 +13,8 @@
   <div class="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-sm border border-neutral-200 rounded-lg shadow-2xl p-6 max-w-md w-full mx-4 dark:bg-neutral-900/95 dark:border-neutral-700">
     <div class="flex items-start justify-between mb-4">
       <div>
-        <h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">{$strings['Onboarding.GetStarted'] ?? 'Onboarding.GetStarted'}</h3>
-        <p class="text-sm text-neutral-500 dark:text-neutral-400">{$strings['Onboarding.Subtitle'] ?? 'Onboarding.Subtitle'}</p>
+        <h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">{$t('Onboarding.GetStarted', 'Onboarding.GetStarted')}</h3>
+        <p class="text-sm text-neutral-500 dark:text-neutral-400">{$t('Onboarding.Subtitle', 'Onboarding.Subtitle')}</p>
       </div>
       <div class="flex-shrink-0 w-12 h-12 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center dark:bg-teal-900/30 dark:border-teal-700">
         <span class="text-sm font-semibold text-teal-700 dark:text-teal-300">{completedCount}/{totalCount}</span>
@@ -47,7 +47,7 @@
     {#if completedCount > 0}
       <div class="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800">
         <div class="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-500">
-          <span>Progress</span>
+          <span>{$t('Onboarding.ProgressLabel', 'Progress')}</span>
           <span>{Math.round((completedCount / totalCount) * 100)}%</span>
         </div>
         <div class="mt-2 h-1.5 bg-neutral-200 rounded-full overflow-hidden dark:bg-neutral-800">

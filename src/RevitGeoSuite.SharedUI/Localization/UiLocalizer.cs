@@ -103,6 +103,9 @@ public sealed class UiLocalizer : INotifyPropertyChanged
                 ["Common.Done"] = "Done",
                 ["Common.Continue"] = "Continue",
                 ["Common.PercentComplete"] = "complete",
+                ["Common.LatShort"] = "Lat",
+                ["Common.LonShort"] = "Lon",
+                ["Onboarding.ProgressLabel"] = "Progress",
 
                 ["Export.Title"] = "Export",
                 ["Export.ChooseFormat"] = "Choose Export Format",
@@ -958,6 +961,9 @@ public sealed class UiLocalizer : INotifyPropertyChanged
                 ["Common.Done"] = "完了",
                 ["Common.Continue"] = "続行",
                 ["Common.PercentComplete"] = "完了",
+                ["Common.LatShort"] = "緯度",
+                ["Common.LonShort"] = "経度",
+                ["Onboarding.ProgressLabel"] = "進捗",
 
                 ["Export.Title"] = "エクスポート",
                 ["Export.ChooseFormat"] = "エクスポート形式を選択",
