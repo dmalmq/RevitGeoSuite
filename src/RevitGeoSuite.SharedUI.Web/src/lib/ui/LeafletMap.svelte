@@ -153,25 +153,15 @@
     }
   }
 
+  // Survey Point is pine (primary) and Project Base Point is info blue, matching the dots on the
+  // inspector's point cards. A white ring keeps both readable on aerial tiles.
   function getReferenceMarkerStyle(kind?: string): L.CircleMarkerOptions {
     if (kind === 'survey') {
-      return {
-        radius: 8,
-        color: '#1f6ca8',
-        weight: 2,
-        fillColor: '#6fb2ea',
-        fillOpacity: 0.92
-      }
+      return { radius: 8, color: '#ffffff', weight: 2, fillColor: '#1d5e51', fillOpacity: 1 }
     }
 
     if (kind === 'projectBasePoint') {
-      return {
-        radius: 8,
-        color: '#b7641b',
-        weight: 2,
-        fillColor: '#f0ae63',
-        fillOpacity: 0.92
-      }
+      return { radius: 8, color: '#ffffff', weight: 2, fillColor: '#2f6db5', fillOpacity: 1 }
     }
 
     return {

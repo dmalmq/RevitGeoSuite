@@ -1,7 +1,8 @@
-<!-- Part of GeoreferenceRoute.svelte; split out with no change to its markup. -->
+<!-- Part of GeoreferenceRoute.svelte. -->
 <script lang="ts">
   import type { GeoreferenceBasePointResponse, GeoreferenceCurrentStateResponse } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
+  import { Button, Result } from '$lib/kit'
 
   interface Props {
     applyGeoreference: (...args: any[]) => any
@@ -22,30 +23,22 @@
   let { applyGeoreference, applyResult, applying, basePoint, basePointSource, currentState, currentStep = $bindable(), fmt, isConfirmExistingSetupMode, reset, selectedCrsName, selectedMeshCodes, surveyOrigin }: Props = $props()
 </script>
 
-<h2 class="text-lg font-semibold text-foreground mb-4">
-  {isConfirmExistingSetupMode ? $t('Georef.Wizard.SaveMetadata', 'Save Metadata') : $t('Georef.Wizard.ApplyGeoreference', 'Apply Georeference')}
-</h2>
-
-{#if applyResult}
-  <div class="bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-700 rounded-lg p-4">
-    <div class="flex items-center gap-2 mb-2">
-      <span class="text-green-600 dark:text-green-400 text-xl">✓</span>
-      <span class="text-sm font-medium text-green-700 dark:text-green-300">
-        {isConfirmExistingSetupMode ? $t('Georef.Wizard.MetadataSaved', 'Metadata saved') : $t('Georef.Wizard.Applied', 'Applied')}
-      </span>
-    </div>
-    <p class="text-xs text-muted-foreground">{applyResult.message}</p>
-  </div>
-  <button
-    class="mt-4 w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
-    onclick={reset}
-  >
-    {$t('Georef.Wizard.StartOver', 'Start Over')}
-  </button>
-{:else if isConfirmExistingSetupMode}
-  <div class="bg-card border border-border rounded-lg p-4 mb-4">
-    <p class="text-sm text-muted-foreground mb-2">{$t('Georef.Wizard.SaveMetaIntro', 'This will save the following shared metadata for the existing setup:')}</p>
-    <ul class="text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+<div class="flex flex-col gap-3">
+  {#if applyResult}
+    <Result
+      tone={applyResult.success ? 'success' : 'danger'}
+      title={applyResult.success
+        ? (isConfirmExistingSetupMode ? $t('Georef.Wizard.MetadataSaved', 'Metadata saved') : $t('Georef.Wizard.Applied', 'Applied'))
+        : $t('Georef.Wizard.ApplyFailed', 'Could not apply')}
+    >
+      <p class="text-body text-muted-foreground">{applyResult.message}</p>
+      {#snippet actions()}
+        <Button icon="rotate-ccw" onclick={reset}>{$t('Georef.Wizard.StartOver', 'Start Over')}</Button>
+      {/snippet}
+    </Result>
+  {:else if isConfirmExistingSetupMode}
+    <p class="text-body text-muted-foreground">{$t('Georef.Wizard.SaveMetaIntro', 'This will save the following shared metadata for the existing setup:')}</p>
+    <ul class="ml-4 list-disc space-y-1 text-body text-foreground">
       <li>{fmt($t('Georef.Wizard.CrsLine', 'CRS: {0}'), selectedCrsName)}</li>
       {#if currentState?.surveyPoint.estimatedLatitudeDegrees != null && currentState?.surveyPoint.estimatedLongitudeDegrees != null}
         <li>{fmt($t('Georef.Wizard.SurveyAt', 'Survey Point at ({0}, {1})'), currentState.surveyPoint.estimatedLatitudeDegrees.toFixed(6), currentState.surveyPoint.estimatedLongitudeDegrees.toFixed(6))}</li>
@@ -55,31 +48,20 @@
       {/if}
       <li>{fmt($t('Georef.Wizard.WorkingPbp', 'Working Project Base Point: {0}'), currentState?.projectBasePoint.sharedEastWestFeet != null && currentState?.projectBasePoint.sharedNorthSouthFeet != null ? `E ${(currentState.projectBasePoint.sharedEastWestFeet * 0.3048).toFixed(3)} m, N ${(currentState.projectBasePoint.sharedNorthSouthFeet * 0.3048).toFixed(3)} m` : $t('Georef.Wizard.WorkingPbpFallback', 'current Revit shared coordinates'))}</li>
     </ul>
-    <p class="text-xs text-muted-foreground mt-3">
+    <p class="text-small text-muted-foreground">
       {$t('Georef.Wizard.NoModifyPre', "Revit's")} <code>ProjectPosition</code> {$t('Georef.Wizard.NoModifyPost', 'and base points are not modified.')}
     </p>
-  </div>
-
-  <div class="space-y-2">
-    <button
-      class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      onclick={applyGeoreference}
-      disabled={applying}
-    >
-      {applying ? $t('Georef.Wizard.Saving', 'Saving…') : $t('Georef.Wizard.SaveMetadata', 'Save Metadata')}
-    </button>
-    <button
-      class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
-      onclick={() => currentStep = 'confirm'}
-      disabled={applying}
-    >
-      {$t('Georef.Wizard.BackToConfirmBtn', 'Back to Confirm')}
-    </button>
-  </div>
-{:else}
-  <div class="bg-card border border-border rounded-lg p-4 mb-4">
-    <p class="text-sm text-muted-foreground mb-2">{$t('Georef.Wizard.ApplyIntro', 'This will apply the following to your Revit project:')}</p>
-    <ul class="text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+    <div class="flex flex-col gap-2">
+      <Button variant="primary" size="lg" class="w-full" onclick={applyGeoreference} busy={applying}>
+        {applying ? $t('Georef.Wizard.Saving', 'Saving…') : $t('Georef.Wizard.SaveMetadata', 'Save Metadata')}
+      </Button>
+      <Button class="w-full" icon="arrow-left" onclick={() => (currentStep = 'confirm')} disabled={applying}>
+        {$t('Georef.Wizard.BackToConfirmBtn', 'Back to Confirm')}
+      </Button>
+    </div>
+  {:else}
+    <p class="text-body text-muted-foreground">{$t('Georef.Wizard.ApplyIntro', 'This will apply the following to your Revit project:')}</p>
+    <ul class="ml-4 list-disc space-y-1 text-body text-foreground">
       <li>{fmt($t('Georef.Wizard.SetCrsTo', 'Set CRS to {0}'), selectedCrsName)}</li>
       {#if surveyOrigin}
         <li>{fmt($t('Georef.Wizard.SurveyAtOrigin', 'Survey Point at CRS origin ({0}, {1})'), surveyOrigin.lat.toFixed(6), surveyOrigin.lon.toFixed(6))}</li>
@@ -93,22 +75,13 @@
         <li>{fmt($t('Georef.Wizard.GridsSelectedCount', '{0} PLATEAU grid(s) selected'), selectedMeshCodes.length)}</li>
       {/if}
     </ul>
-  </div>
-
-  <div class="space-y-2">
-    <button
-      class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      onclick={applyGeoreference}
-      disabled={applying}
-    >
-      {applying ? $t('Georef.Wizard.Applying', 'Applying…') : $t('Georef.Wizard.ConfirmApply', 'Confirm Apply')}
-    </button>
-    <button
-      class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
-      onclick={() => currentStep = 'preview'}
-      disabled={applying}
-    >
-      {$t('Georef.Wizard.BackToPreview', 'Back to Preview')}
-    </button>
-  </div>
-{/if}
+    <div class="flex flex-col gap-2">
+      <Button variant="primary" size="lg" class="w-full" onclick={applyGeoreference} busy={applying}>
+        {applying ? $t('Georef.Wizard.Applying', 'Applying…') : $t('Georef.Wizard.ConfirmApply', 'Confirm Apply')}
+      </Button>
+      <Button class="w-full" icon="arrow-left" onclick={() => (currentStep = 'preview')} disabled={applying}>
+        {$t('Georef.Wizard.BackToPreview', 'Back to Preview')}
+      </Button>
+    </div>
+  {/if}
+</div>

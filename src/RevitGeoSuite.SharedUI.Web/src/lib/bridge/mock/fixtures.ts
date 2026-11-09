@@ -244,6 +244,15 @@ export function responses(scenario: MockScenario): Record<string, unknown | ((pa
     'georeference.getCrsOrigin': { lat: 36, lon: 139.8333 },
     'georeference.getGridCandidates': gridCandidates,
     'georeference.hasUndoSnapshot': undo,
+    // Tokyo Station, so the preview and apply steps can be walked in a browser.
+    'georeference.resolveGridBasePoint': (p: { selectedMeshCodes?: string[] }) => ({
+      easting: -6000.123, northing: -35000.456, lat: 35.6795, lon: 139.7625, selectedMeshCodes: p?.selectedMeshCodes ?? []
+    }),
+    'georeference.resolveManualBasePoint': (p: { projectBasePoint?: { easting: number; northing: number } }) => ({
+      easting: p?.projectBasePoint?.easting ?? 0, northing: p?.projectBasePoint?.northing ?? 0, lat: 35.6812, lon: 139.7671, selectedMeshCodes: []
+    }),
+    'georeference.apply': { success: true, message: 'Georeference applied to TokyoStation_Concourse.rvt.' },
+    'plateau.areaLocation': (p: { areaCode?: string }) => ({ areaCode: p?.areaCode ?? '', latitude: 35.6938, longitude: 139.7034, zoom: 12 }),
     'mesh.getOverlay': mesh,
     'readiness.getStatus': readiness,
     'floorplan.getInitialState': floorPlanState,
@@ -264,6 +273,16 @@ export function responses(scenario: MockScenario): Record<string, unknown | ((pa
 
 /** Long-running jobs: the method replies `{ jobId }`, then progress and the result arrive as events. */
 export const jobResults: Record<string, unknown> = {
+  'plateau.onlineCatalog': {
+    areaCount: 2,
+    datasetCount: 2,
+    dracoAvailable: true,
+    dracoMessage: '',
+    areas: [
+      { aliases: ['Shinjuku', '新宿'], city: '新宿区', code: '13104', codeLabel: '13104', displayLabel: '東京都 新宿区 (Shinjuku)', hasBuildings: true, label: '新宿区', latitude: 35.6938, longitude: 139.7034, prefecture: '東京都', searchTokens: 'shinjuku 新宿 13104', ward: '新宿区' },
+      { aliases: ['Chiyoda', '千代田'], city: '千代田区', code: '13101', codeLabel: '13101', displayLabel: '東京都 千代田区 (Chiyoda)', hasBuildings: true, label: '千代田区', latitude: 35.694, longitude: 139.7536, prefecture: '東京都', searchTokens: 'chiyoda 千代田 13101', ward: '千代田区' }
+    ]
+  },
   'plateau.scanFolder': {
     tiles: [
       { id: '53394611', featureCount: 812, lod: 2, fileSize: 18_400_000 },

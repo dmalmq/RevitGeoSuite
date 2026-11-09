@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { startJob } from '$lib/bridge/jobs'
   import { request } from '$lib/bridge/rpc'
   import { parseManualCoordinate } from '$lib/georeference/manualCoordinate'
@@ -17,7 +17,8 @@
   import { t } from '$lib/i18n'
   import { filterPlateauAreas, hasPlateauAreaCoordinates } from '$lib/search/plateauAreaSearch'
   import { notifyProjectContextChanged } from '$lib/projectContext'
-  import Stepper from '$lib/ui/Stepper.svelte'
+  import { Banner, Button } from '$lib/kit'
+  import { StepBar, narrow, stepNumber, workflow } from '$lib/shell'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import type { AreaInputMode, CrsGroup } from './steps/types'
   import ReviewStep from './steps/ReviewStep.svelte'
@@ -596,15 +597,35 @@
       limit: 30
     })
   )
+  // The sidebar lists the steps under Georeference; a step opens only once it is reached or done,
+  // the same rule the old step column used.
+  function openStep(stepId: string) {
+    const currentIndex = steps.findIndex((s) => s.id === currentStep)
+    const index = steps.findIndex((s) => s.id === stepId)
+    if (index < 0) return
+    if (index <= currentIndex || completedSteps.has(stepId)) handleStepClick(stepId)
+  }
+
+  $effect(() => {
+    workflow.set({
+      route: '/georeference',
+      steps: steps.map(({ id, label }) => ({ id, label })),
+      current: currentStep,
+      completed: completedSteps,
+      onStep: openStep
+    })
+  })
+  onDestroy(() => workflow.set(null))
+
+  const activeStep = $derived(steps.find((s) => s.id === currentStep) ?? steps[0])
+  const activeStepNumber = $derived(stepNumber({ steps, current: currentStep }))
+
+  // Below the fold width the inspector floats over the map and can be tucked away.
+  let inspectorOpen = $state(true)
 </script>
 
-<div class="flex h-full">
-  <div class="w-64 bg-muted border-r border-border p-4 overflow-y-auto">
-    <h2 class="text-sm font-semibold text-foreground uppercase tracking-wide mb-4">{$t('Georef.Wizard.SetupSteps', 'Setup Steps')}</h2>
-    <Stepper {steps} {currentStep} {completedSteps} onStepClick={handleStepClick} />
-  </div>
-
-  <div class="flex-1 relative">
+<div class="relative flex h-full min-h-0">
+  <div class="relative min-w-0 flex-1">
     <LeafletMap
       bind:this={mapRef}
       on:pointSelected={handleMapClick}
@@ -612,134 +633,147 @@
       on:overlayRectangleSelect={handleRectangleSelect}
     />
 
-    {#if currentStep === 'area' && inputMode === 'map'}
-      <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-accent/90 backdrop-blur-sm border border-primary/40 rounded-lg px-4 py-2">
-        <p class="text-sm text-primary">{$t('Georef.Wizard.MapHint.Area', 'Click on the map to choose your project area')}</p>
+    {#if (currentStep === 'area' && inputMode === 'map') || currentStep === 'grids'}
+      <div class="pointer-events-none absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded-control border border-border bg-card/95 px-3 py-1 text-small text-foreground shadow-sm">
+        {currentStep === 'grids'
+          ? $t('Georef.Wizard.MapHint.Grids', 'Click grids to toggle · Shift+drag to select an area')
+          : $t('Georef.Wizard.MapHint.Area', 'Click on the map to choose your project area')}
       </div>
     {/if}
 
-    {#if currentStep === 'grids'}
-      <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-card/90 dark:bg-blue-900/90 backdrop-blur-sm border border-blue-700 rounded-lg px-4 py-2">
-        <p class="text-sm text-blue-700 dark:text-blue-200">{$t('Georef.Wizard.MapHint.Grids', 'Click grids to toggle · Shift+drag to select an area')}</p>
+    {#if $narrow && !inspectorOpen}
+      <div class="absolute right-3 top-3 z-[1100]">
+        <Button icon="panel-right-open" onclick={() => (inspectorOpen = true)}>{activeStep.label}</Button>
       </div>
     {/if}
   </div>
 
-  <aside class="w-96 bg-muted border-l border-border p-6 overflow-y-auto">
-    {#if currentStep === 'review'}
-      <ReviewStep
-        {currentState}
-        {currentStateError}
-        {currentStateLoading}
-        bind:currentStep
-        {findingTitle}
-        {hasUndoSnapshot}
-        bind:overrideExistingSetup
-        {readinessError}
-        {readinessStatus}
-        {revertGeoreference}
-        {reverting}
-        {treatAsExistingSetup}
-        {undoSummary}
-      />
-    {:else if currentStep === 'crs'}
-      <CrsStep
-        {confirmCrs}
-        {confirmingCrs}
-        {crsGroups}
-        {crsLoading}
-        bind:selectedCrs
-      />
-    {:else if currentStep === 'confirm'}
-      <ConfirmStep
-        {crsGroups}
-        {crsLoading}
-        {currentState}
-        bind:currentStep
-        {markComplete}
-        bind:selectedCrs
-      />
-    {:else if currentStep === 'area'}
-      <AreaStep
-        {areaSearchCatalog}
-        {areaSearchCatalogCancel}
-        {areaSearchCatalogLoading}
-        {areaSearchCatalogProgress}
-        {areaSearchLocationLoading}
-        {areaSearchResults}
-        {areaSearchText}
-        {basePoint}
-        {basePointSource}
-        {fmt}
-        {handleAreaSearchInput}
-        {inputMode}
-        {loadAreaSearchCatalog}
-        {loadGridsFromSearch}
-        bind:manualEasting
-        bind:manualNorthing
-        {resolveManualBasePoint}
-        {selectAreaSearchArea}
-        {selectedAreaSearchArea}
-        {selectedAreaSearchLocation}
-        {selectedCrsName}
-        {setInputMode}
-        {surveyOrigin}
-      />
-    {:else if currentStep === 'grids'}
-      <GridsStep
-        {basePoint}
-        {candidates}
-        {clearGrids}
-        {fmt}
-        {goToPreview}
-        {selectAllGrids}
-        {selectedGrids}
-        {toggleGrid}
-      />
-    {:else if currentStep === 'preview'}
-      <PreviewStep
-        {basePoint}
-        {basePointSource}
-        bind:currentStep
-        {fmt}
-        {hasStoredCrs}
-        {selectedCrs}
-        {selectedMeshCodes}
-        {surveyOrigin}
-      />
-    {:else if currentStep === 'apply'}
-      <ApplyStep
-        {applyGeoreference}
-        {applyResult}
-        {applying}
-        {basePoint}
-        {basePointSource}
-        {currentState}
-        bind:currentStep
-        {fmt}
-        {isConfirmExistingSetupMode}
-        {reset}
-        {selectedCrsName}
-        {selectedMeshCodes}
-        {surveyOrigin}
-      />
-    {/if}
+  {#if !$narrow || inspectorOpen}
+    <aside
+      class="flex w-[300px] shrink-0 flex-col border-l border-border bg-card {$narrow ? 'absolute inset-y-0 right-0 z-[1100] shadow-lg' : ''}"
+      aria-label={$t('Georef.Wizard.SetupSteps', 'Setup Steps')}
+    >
+      {#if $narrow}
+        <StepBar title={activeStep.label} step={activeStepNumber} of={steps.length} promise={activeStep.description}>
+          {#snippet actions()}
+            <Button variant="ghost" size="sm" icon="x" aria-label={$t('Common.Hide', 'Hide')} onclick={() => (inspectorOpen = false)} />
+          {/snippet}
+        </StepBar>
+      {:else}
+        <StepBar title={activeStep.label} step={activeStepNumber} of={steps.length} promise={activeStep.description} />
+      {/if}
 
-    {#if error}
-      <div class="mt-4 p-3 bg-red-50 border border-red-200 dark:bg-red-900/30 dark:border-red-700 rounded-lg">
-        <div class="text-sm text-red-700 dark:text-red-300">{error}</div>
-      </div>
-    {/if}
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5">
+        {#if error}
+          <Banner tone="danger">{error}</Banner>
+        {/if}
 
-    {#if currentStep !== 'review' && currentStep !== 'apply'}
-      <div class="mt-6 pt-6 border-t border-border">
-        <button
-          class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          onclick={reset}
-        >
-          {$t('Georef.Wizard.Reset', 'Reset')}
-        </button>
+        {#if currentStep === 'review'}
+          <ReviewStep
+            {currentState}
+            {currentStateError}
+            {currentStateLoading}
+            bind:currentStep
+            {findingTitle}
+            {hasUndoSnapshot}
+            bind:overrideExistingSetup
+            {readinessError}
+            {readinessStatus}
+            {revertGeoreference}
+            {reverting}
+            {treatAsExistingSetup}
+            {undoSummary}
+          />
+        {:else if currentStep === 'crs'}
+          <CrsStep
+            {confirmCrs}
+            {confirmingCrs}
+            {crsGroups}
+            {crsLoading}
+            bind:selectedCrs
+          />
+        {:else if currentStep === 'confirm'}
+          <ConfirmStep
+            {crsGroups}
+            {crsLoading}
+            {currentState}
+            bind:currentStep
+            {markComplete}
+            bind:selectedCrs
+          />
+        {:else if currentStep === 'area'}
+          <AreaStep
+            {areaSearchCatalog}
+            {areaSearchCatalogCancel}
+            {areaSearchCatalogLoading}
+            {areaSearchCatalogProgress}
+            {areaSearchLocationLoading}
+            {areaSearchResults}
+            {areaSearchText}
+            {basePoint}
+            {basePointSource}
+            {fmt}
+            {handleAreaSearchInput}
+            {inputMode}
+            {loadAreaSearchCatalog}
+            {loadGridsFromSearch}
+            bind:manualEasting
+            bind:manualNorthing
+            {resolveManualBasePoint}
+            {selectAreaSearchArea}
+            {selectedAreaSearchArea}
+            {selectedAreaSearchLocation}
+            {selectedCrsName}
+            {setInputMode}
+            {surveyOrigin}
+          />
+        {:else if currentStep === 'grids'}
+          <GridsStep
+            {basePoint}
+            {candidates}
+            {clearGrids}
+            {fmt}
+            {goToPreview}
+            {selectAllGrids}
+            {selectedGrids}
+            {toggleGrid}
+          />
+        {:else if currentStep === 'preview'}
+          <PreviewStep
+            {basePoint}
+            {basePointSource}
+            {currentState}
+            bind:currentStep
+            {fmt}
+            {hasStoredCrs}
+            {selectedCrs}
+            {selectedMeshCodes}
+            {surveyOrigin}
+          />
+        {:else if currentStep === 'apply'}
+          <ApplyStep
+            {applyGeoreference}
+            {applyResult}
+            {applying}
+            {basePoint}
+            {basePointSource}
+            {currentState}
+            bind:currentStep
+            {fmt}
+            {isConfirmExistingSetupMode}
+            {reset}
+            {selectedCrsName}
+            {selectedMeshCodes}
+            {surveyOrigin}
+          />
+        {/if}
       </div>
-    {/if}
-  </aside>
+
+      {#if currentStep !== 'review' && currentStep !== 'apply'}
+        <div class="shrink-0 border-t border-border px-5 py-2">
+          <Button variant="ghost" size="sm" icon="rotate-ccw" onclick={reset}>{$t('Georef.Wizard.Reset', 'Reset')}</Button>
+        </div>
+      {/if}
+    </aside>
+  {/if}
 </div>
