@@ -1,0 +1,15 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    Test projects build into their own folders, not the shared bin\Deploy payload. The shared
+    folder turns copy-local off (UseCommonOutputDirectory), so xunit.core and
+    xunit.execution.desktop never landed beside the test dlls and the xUnit adapter skipped
+    every assembly: "No test is available". Each test folder gets its own copies instead, and
+    the test dlls stay out of what the installer ships.
+  -->
+  <PropertyGroup>
+    <OutputPath>$(RepositoryRoot)bin\Tests\$(MSBuildProjectName)\</OutputPath>
+    <UseCommonOutputDirectory>false</UseCommonOutputDirectory>
+  </PropertyGroup>
+</Project>
