@@ -21,8 +21,8 @@ public sealed class PlateauFolderScanServiceTests
         Assert.Equal(5, result.CityModels.Count);
         Assert.Equal(6, result.CityModels.SelectMany(model => model.Features).Count());
         Assert.Equal(new[] { "53394536", "53394537", "54394536" }, result.CityModels.SelectMany(model => model.Features).Select(feature => feature.TileId).Distinct().OrderBy(tileId => tileId).ToArray());
-        Assert.DoesNotContain(result.CityModels, model => model.SourcePath.Contains("Nested", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(result.WarningMessages, warning => warning.Contains("unsupported_notes.xml", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.CityModels, model => model.SourcePath.IndexOf("Nested", StringComparison.OrdinalIgnoreCase) >= 0);
+        Assert.Contains(result.WarningMessages, warning => warning.IndexOf("unsupported_notes.xml", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     [Fact]
@@ -61,9 +61,9 @@ public sealed class PlateauFolderScanServiceTests
         Assert.Equal(5, result.SupportedFilePaths.Count);
         Assert.Equal(5, result.CityModels.Count);
         Assert.Equal(6, result.CityModels.SelectMany(model => model.Features).Count());
-        Assert.Contains(result.SupportedFilePaths, path => path.Contains("udx\\bldg\\53394536_bldg_sample.gml", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(result.SupportedFilePaths, path => path.Contains("udx\\brid\\54394536_brid_sample.gml", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.SupportedFilePaths, path => path.Contains("metadata", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.SupportedFilePaths, path => path.IndexOf("udx\\bldg\\53394536_bldg_sample.gml", StringComparison.OrdinalIgnoreCase) >= 0);
+        Assert.Contains(result.SupportedFilePaths, path => path.IndexOf("udx\\brid\\54394536_brid_sample.gml", StringComparison.OrdinalIgnoreCase) >= 0);
+        Assert.DoesNotContain(result.SupportedFilePaths, path => path.IndexOf("metadata", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     [Fact]
