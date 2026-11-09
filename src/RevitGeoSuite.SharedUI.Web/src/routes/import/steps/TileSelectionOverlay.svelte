@@ -1,7 +1,8 @@
-<!-- Part of ImportRoute.svelte; split out with no change to its markup. -->
+<!-- Part of ImportRoute.svelte. -->
 <script lang="ts">
   import type { SourceType } from './types'
   import { t } from '$lib/i18n'
+  import { Button } from '$lib/kit'
 
   interface Props {
     fmt: (...args: any[]) => any
@@ -15,32 +16,18 @@
   let { fmt, selectAll, selectNone, selectedCount, source, tiles }: Props = $props()
 </script>
 
-<div class="absolute top-4 right-4 bg-card/90 backdrop-blur-sm border border-border rounded-lg p-4 max-w-xs">
-  <div class="flex items-center justify-between mb-3">
-    <h3 class="text-sm font-semibold text-foreground">
-      {source === 'online' ? $t('Import.Online.GridSelectionTitle', 'Grid Selection') : $t('Import.TileSelection.Title', 'Tile Selection')}
-    </h3>
-    <div class="flex gap-2">
-      <button
-        class="text-xs text-primary hover:text-primary transition-colors"
-        onclick={selectAll}
-      >
-        {$t('Import.TileSelection.All', 'All')}
-      </button>
-      <button
-        class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-        onclick={selectNone}
-      >
-        {$t('Import.TileSelection.None', 'None')}
-      </button>
+<!-- Floats over the map, above Leaflet's panes. -->
+<div class="absolute left-14 top-3 z-[500] flex max-w-xs flex-col gap-1 rounded-card border border-border bg-card/95 px-3 py-2 shadow-sm">
+  <div class="flex items-center justify-between gap-3">
+    <span class="font-mono text-small tabular-nums text-foreground">
+      {source === 'online'
+        ? fmt($t('Import.Online.GridCountFormat', '{0} of {1} grids selected'), selectedCount, tiles.length)
+        : fmt($t('Plateau.Map.TileCountFormat', '{0} of {1} tiles selected'), selectedCount, tiles.length)}
+    </span>
+    <div class="flex gap-0.5">
+      <Button variant="ghost" size="sm" onclick={selectAll}>{$t('Import.TileSelection.All', 'All')}</Button>
+      <Button variant="ghost" size="sm" onclick={selectNone}>{$t('Import.TileSelection.None', 'None')}</Button>
     </div>
   </div>
-  <p class="text-xs text-muted-foreground mb-2">
-    {$t('Import.TileSelection.Hint', 'Click tiles to toggle, or Shift+drag to select an area')}
-  </p>
-  <div class="text-xs text-muted-foreground">
-    {source === 'online'
-      ? fmt($t('Import.Online.GridCountFormat', '{0} of {1} grids selected'), selectedCount, tiles.length)
-      : fmt($t('Plateau.Map.TileCountFormat', '{0} of {1} tiles selected'), selectedCount, tiles.length)}
-  </div>
+  <p class="text-caption text-muted-foreground">{$t('Import.TileSelection.Hint', 'Click tiles to toggle, or Shift+drag to select an area')}</p>
 </div>

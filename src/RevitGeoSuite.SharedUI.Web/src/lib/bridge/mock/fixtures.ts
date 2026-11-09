@@ -288,5 +288,11 @@ export const jobResults: Record<string, unknown> = {
       { id: '53394611', featureCount: 812, lod: 2, fileSize: 18_400_000 },
       { id: '53394612', featureCount: 784, lod: 2, fileSize: 17_100_000 }
     ]
+  },
+  'plateau.importTiles': { tilesImported: 2, importedElements: 1596, groups: 2, mode: 'solids', warnings: [] },
+  'gis.export': {
+    outputs: [{ dxfPath: 'C:\\Exports\\DXF\\concourse_units.dxf' }],
+    summary: '1 file, 412 features, 4 layers',
+    warnings: []
   }
 }

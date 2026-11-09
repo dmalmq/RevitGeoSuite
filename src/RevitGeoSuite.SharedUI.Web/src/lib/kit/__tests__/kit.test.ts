@@ -6,6 +6,7 @@ import Banner from '../Banner.svelte'
 import Dialog from '../Dialog.svelte'
 import Icon from '../Icon.svelte'
 import Progress from '../Progress.svelte'
+import ProgressCard from '../ProgressCard.svelte'
 import Segmented from '../Segmented.svelte'
 import { ICONS } from '../icons'
 import { toasts } from '../toast'
@@ -137,5 +138,21 @@ describe('toasts', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('ProgressCard', () => {
+  it('shows the job, its percent and a cancel button only when the job can be stopped', () => {
+    const oncancel = vi.fn()
+    const running = render(ProgressCard, { title: 'Importing tiles', message: 'Tile 1 of 2', percent: 50, oncancel, cancelLabel: 'Cancel import' })
+    expect(running.querySelector('h3')?.textContent).toBe('Importing tiles')
+    expect(running.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('50')
+    const cancel = Array.from(running.querySelectorAll('button')).find((b) => b.textContent?.includes('Cancel import'))
+    cancel?.click()
+    expect(oncancel).toHaveBeenCalledOnce()
+
+    const unstoppable = render(ProgressCard, { title: 'Scanning folder' })
+    expect(unstoppable.querySelector('button')).toBeNull()
+    expect(unstoppable.querySelector('[role="progressbar"]')?.hasAttribute('aria-valuenow')).toBe(false)
   })
 })

@@ -100,24 +100,6 @@
           </div>
         </div>
       </button>
-
-      <button
-        class="w-full p-4 bg-card border border-border rounded-lg hover:border-primary transition-colors text-left"
-        onclick={() => selectFormat('gis')}
-      >
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 bg-emerald-50 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v15m6-12v15" />
-            </svg>
-          </div>
-          <div>
-            <div class="text-sm font-medium text-foreground">{$t('Import.Source.Gis.Title', 'Local GIS Files')}</div>
-            <div class="text-xs text-muted-foreground">Convert Shapefile / GeoPackage to georeferenced DXF</div>
-          </div>
-        </div>
-      </button>
     </div>
   </div>
 </div>
