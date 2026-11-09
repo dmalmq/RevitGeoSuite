@@ -99,6 +99,8 @@ public sealed class Tiles3DGlbWriterTests
         Assert.NotNull(structuralMetadata?["propertyTables"]?[0]?["properties"]?["levelUniqueId"]?["stringOffsets"]);
         Assert.NotNull(structuralMetadata?["propertyTables"]?[0]?["properties"]?["heightMeters"]?["values"]);
         Assert.NotNull(structuralMetadata?["propertyTables"]?[0]?["properties"]?["levelName"]?["stringOffsets"]);
+        Assert.NotNull(structuralMetadata?["schema"]?["classes"]?["element"]?["properties"]?["sourceLinkInstanceUniqueId"]);
+        Assert.NotNull(structuralMetadata?["propertyTables"]?[0]?["properties"]?["sourceLinkInstanceUniqueId"]?["stringOffsets"]);
     }
 
     [Fact]

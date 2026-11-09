@@ -355,7 +355,8 @@ public sealed class Tiles3DGlbWriter
             ["minZMeters"] = AddFloat32Property(binary, bufferViews, metadata.Select(item => item.MinZMeters)),
             ["maxZMeters"] = AddFloat32Property(binary, bufferViews, metadata.Select(item => item.MaxZMeters)),
             ["sourceDocument"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.SourceDocument)),
-            ["sourceLinkName"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.SourceLinkName))
+            ["sourceLinkName"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.SourceLinkName)),
+            ["sourceLinkInstanceUniqueId"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.SourceLinkInstanceUniqueId))
         };
 
         Dictionary<string, object> propertyTable = new Dictionary<string, object>
@@ -389,7 +390,10 @@ public sealed class Tiles3DGlbWriter
                             ["minZMeters"] = Float32PropertySchema(),
                             ["maxZMeters"] = Float32PropertySchema(),
                             ["sourceDocument"] = StringPropertySchema(),
-                            ["sourceLinkName"] = StringPropertySchema()
+                            ["sourceLinkName"] = StringPropertySchema(),
+                            // With sourceDocument and revitUniqueId, the key of the element in
+                            // elements.json: one linked file placed twice repeats its UniqueIds.
+                            ["sourceLinkInstanceUniqueId"] = StringPropertySchema()
                         }
                     }
                 }
