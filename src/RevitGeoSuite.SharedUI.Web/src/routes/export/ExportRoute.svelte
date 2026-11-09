@@ -16,9 +16,8 @@
   import { onDestroy, onMount } from 'svelte'
   import { t } from '$lib/i18n'
   import { Banner, Button, Field, Input } from '$lib/kit'
-  import { StepBar, narrow, stepNumber, workflow } from '$lib/shell'
+  import { BlockedNotice, StepBar, blocked, narrow, readiness, refreshReadiness, stepNumber, workflow } from '$lib/shell'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
-  import ReadinessPreflight from '$lib/ui/ReadinessPreflight.svelte'
   import type { ExportFormat, ExportState, ScopeMode, PlateauTile, ExportJobResult, ExportPreview } from './steps/types'
   import FormatChooser from './steps/FormatChooser.svelte'
   import PlateauSelectOverlay from './steps/PlateauSelectOverlay.svelte'
@@ -60,8 +59,6 @@
   let exportProgress = $state<any>(null)
   let exportPreview = $state<ExportPreview | null>(null)
   let error = $state<string | null>(null)
-  let preflightReady = $state(false)
-  let preflightNeedsAttention = $state(false)
   let plateauFolderPath = $state<string>('')
   let plateauKibanFolderPath = $state<string>('')
   let plateauScanning = $state(false)
@@ -223,33 +220,21 @@
       localStorage.setItem('export.lastFormat', f)
     }
     exportPreview = null
-    preflightReady = false
-    preflightNeedsAttention = false
     if (f === 'tiles3d') {
       void loadTiles3dExportOptions()
     }
+    // The tool waits on 'preflight' only while readiness is blocked; see the effect below.
     step = 'preflight'
+    void refreshReadiness()
   }
+
+  $effect(() => {
+    if (step === 'preflight' && $readiness.loaded && !$blocked) continueToScope()
+  })
 
   function openFloorPlanExport() {
     localStorage.setItem('export.lastFormat', 'geopackage')
     window.location.hash = '/export/geopackage'
-  }
-
-  function onPreflightReady() {
-    preflightReady = true
-    preflightNeedsAttention = false
-    continueToScope()
-  }
-
-  function onPreflightNeedsAttention() {
-    preflightReady = true
-    preflightNeedsAttention = true
-  }
-
-  function onPreflightBlocked() {
-    preflightReady = false
-    preflightNeedsAttention = false
   }
 
   function setScope(mode: ScopeMode) {
@@ -616,13 +601,13 @@
       step = 'format'
       format = null
     } else if (step === 'plateau-source') {
-      step = preflightNeedsAttention ? 'preflight' : 'format'
+      step = 'format'
     } else if (step === 'plateau-scan') {
       step = 'plateau-source'
     } else if (step === 'plateau-select') {
       step = 'plateau-source'
     } else if (step === 'scope') {
-      step = preflightNeedsAttention ? 'preflight' : 'format'
+      step = 'format'
     } else if (step === 'options') {
       step = format === 'plateau' ? 'plateau-select' : 'scope'
     } else if (step === 'review') {
@@ -724,10 +709,7 @@
   {/if}
 
   {#if step === 'preflight'}
-    <ReadinessPreflight onReady={onPreflightReady} onNeedsAttention={onPreflightNeedsAttention} onBlocked={onPreflightBlocked} />
-    {#if preflightReady && preflightNeedsAttention}
-      <Button variant="primary" class="w-full" onclick={continueToScope}>{$t('Common.Continue', 'Continue')}</Button>
-    {/if}
+    {#if $blocked}<BlockedNotice />{/if}
   {:else if step === 'plateau-source'}
     <PlateauSourcePanel {browsePlateauFolder} bind:plateauFolderPath {startPlateauScan} />
   {:else if step === 'plateau-scan'}
@@ -831,7 +813,7 @@
         class="flex w-[300px] shrink-0 flex-col border-l border-border bg-card {$narrow ? 'absolute inset-y-0 right-0 z-[1100] shadow-lg' : ''}"
         aria-label={formatLabel}
       >
-        <StepBar title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={formatLabel}>
+        <StepBar compact={showMap} title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={formatLabel}>
           {#snippet actions()}
             {#if $narrow}
               <Button variant="ghost" size="sm" icon="x" aria-label={$t('Common.Hide', 'Hide')} onclick={() => (inspectorOpen = false)} />
@@ -848,7 +830,7 @@
 {:else}
   <!-- No map: the tool takes a readable column on the sheet. -->
   <section class="flex h-full min-h-0 flex-col">
-    <StepBar title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={formatLabel} />
+    <StepBar compact={showMap} title={flowStep.label} step={stepNumber({ steps: flowSteps, current: flowCurrent })} of={flowSteps.length} promise={formatLabel} />
     <div class="min-h-0 flex-1 overflow-auto px-5 pb-5">
       <div class="flex max-w-[560px] flex-col gap-3">
         {@render panel()}

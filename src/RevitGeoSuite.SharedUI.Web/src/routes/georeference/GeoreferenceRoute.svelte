@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { startJob } from '$lib/bridge/jobs'
   import { request } from '$lib/bridge/rpc'
   import { parseManualCoordinate } from '$lib/georeference/manualCoordinate'
@@ -11,14 +11,13 @@
     GeoreferenceManualProjectBasePoint,
     PlateauAreaLocationResponse,
     PlateauOnlineArea,
-    PlateauOnlineCatalogResponse,
-    ReadinessStatusResponse
+    PlateauOnlineCatalogResponse
   } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
   import { filterPlateauAreas, hasPlateauAreaCoordinates } from '$lib/search/plateauAreaSearch'
   import { notifyProjectContextChanged } from '$lib/projectContext'
   import { Banner, Button } from '$lib/kit'
-  import { StepBar, narrow, stepNumber, workflow } from '$lib/shell'
+  import { StepBar, focusRequest, narrow, readiness, refreshReadiness, stepNumber, takeFocusRequest, workflow, type ProblemTarget } from '$lib/shell'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
   import type { AreaInputMode, CrsGroup } from './steps/types'
   import ReviewStep from './steps/ReviewStep.svelte'
@@ -32,15 +31,6 @@
   // Fills {0}/{1} placeholders in a localized template (keeps language-specific word order).
   function fmt(template: string, ...args: (string | number)[]): string {
     return template.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)] ?? ''))
-  }
-
-  function prettifyFindingCode(code: string): string {
-    const text = code.replace(/[-_.]+/g, ' ').trim()
-    return text ? text.charAt(0).toUpperCase() + text.slice(1) : code
-  }
-
-  function findingTitle(code: string): string {
-    return $t(`Georef.Finding.${code}`, prettifyFindingCode(code))
   }
 
   // Corrected workflow restored from the original WPF window:
@@ -96,9 +86,7 @@
   let basePoint = $state<GeoreferenceBasePointResponse | null>(null)
   let basePointSource = $state<'grid' | 'manual' | null>(null)
 
-  let readinessStatus = $state<ReadinessStatusResponse | null>(null)
-  let readinessError = $state<string | null>(null)
-  let hasStoredCrs = $state(false)
+  const hasStoredCrs = $derived($readiness.loaded && !$readiness.findings.some((f) => f.code === 'missing-crs'))
 
   let currentState = $state<GeoreferenceCurrentStateResponse | null>(null)
   let currentStateError = $state<string | null>(null)
@@ -126,7 +114,7 @@
   )
 
   onMount(async () => {
-    await Promise.all([loadReadinessStatus(), loadCurrentState(), loadAvailableCrs(), loadUndoState()])
+    await Promise.all([refreshReadiness(), loadCurrentState(), loadAvailableCrs(), loadUndoState()])
   })
 
   async function loadAvailableCrs() {
@@ -160,23 +148,13 @@
       if (result.success) {
         hasUndoSnapshot = false
         undoSummary = ''
-        await Promise.all([loadReadinessStatus(), loadCurrentState()])
+        await Promise.all([refreshReadiness(), loadCurrentState()])
+        notifyProjectContextChanged()
       }
     } catch (err: any) {
       error = err.message || $t('Georef.Revert.Error', 'Failed to revert georeference')
     } finally {
       reverting = false
-    }
-  }
-
-  async function loadReadinessStatus() {
-    try {
-      const result = await request('readiness.getStatus', {})
-      readinessStatus = result
-      readinessError = null
-      hasStoredCrs = !(result.findings ?? []).some(f => f.code === 'missing-crs')
-    } catch (err: any) {
-      readinessError = err.message || $t('Georef.Wizard.Error.Readiness', 'Failed to load readiness status')
     }
   }
 
@@ -516,7 +494,7 @@
         confirmExistingSetup: isConfirmExistingSetupMode
       })
       markComplete('apply')
-      await Promise.all([loadReadinessStatus(), loadCurrentState()])
+      await Promise.all([refreshReadiness(), loadCurrentState()])
       notifyProjectContextChanged()
     } catch (err: any) {
       error = err.message || $t('Georef.Wizard.Error.Apply', 'Failed to apply georeference')
@@ -617,6 +595,31 @@
   })
   onDestroy(() => workflow.set(null))
 
+  // "Next problem" lands here from anywhere: open the step that fixes it (the CRS step is the
+  // confirm step when an existing setup is being kept) and focus its field.
+  const FIELD_IDS: Record<string, string> = { crs: 'crs-select', confirm: 'confirm-crs-select' }
+
+  async function openProblem(target: ProblemTarget) {
+    let stepId = target.step
+    if (stepId === 'crs' && isConfirmExistingSetupMode) stepId = 'confirm'
+    if (!steps.some((s) => s.id === stepId)) stepId = 'review'
+    currentStep = stepId
+    inspectorOpen = true
+    await tick()
+    const id = target.field ? FIELD_IDS[stepId] : undefined
+    const element = id ? document.getElementById(id) : document.querySelector<HTMLElement>('[data-georef-panel] h1')
+    if (element) {
+      if (!id) element.setAttribute('tabindex', '-1')
+      element.focus()
+    }
+  }
+
+  $effect(() => {
+    if ($focusRequest?.route !== '/georeference' || currentStateLoading || (!currentState && !currentStateError)) return
+    const target = takeFocusRequest('/georeference')
+    if (target) void openProblem(target)
+  })
+
   const activeStep = $derived(steps.find((s) => s.id === currentStep) ?? steps[0])
   const activeStepNumber = $derived(stepNumber({ steps, current: currentStep }))
 
@@ -652,15 +655,16 @@
     <aside
       class="flex w-[300px] shrink-0 flex-col border-l border-border bg-card {$narrow ? 'absolute inset-y-0 right-0 z-[1100] shadow-lg' : ''}"
       aria-label={$t('Georef.Wizard.SetupSteps', 'Setup Steps')}
+      data-georef-panel
     >
       {#if $narrow}
-        <StepBar title={activeStep.label} step={activeStepNumber} of={steps.length} promise={activeStep.description}>
+        <StepBar compact title={activeStep.label} step={activeStepNumber} of={steps.length} promise={activeStep.description}>
           {#snippet actions()}
             <Button variant="ghost" size="sm" icon="x" aria-label={$t('Common.Hide', 'Hide')} onclick={() => (inspectorOpen = false)} />
           {/snippet}
         </StepBar>
       {:else}
-        <StepBar title={activeStep.label} step={activeStepNumber} of={steps.length} promise={activeStep.description} />
+        <StepBar compact title={activeStep.label} step={activeStepNumber} of={steps.length} promise={activeStep.description} />
       {/if}
 
       <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5">
@@ -674,11 +678,8 @@
             {currentStateError}
             {currentStateLoading}
             bind:currentStep
-            {findingTitle}
             {hasUndoSnapshot}
             bind:overrideExistingSetup
-            {readinessError}
-            {readinessStatus}
             {revertGeoreference}
             {reverting}
             {treatAsExistingSetup}

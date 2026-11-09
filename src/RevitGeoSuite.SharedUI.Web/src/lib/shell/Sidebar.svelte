@@ -2,7 +2,8 @@
   import { t } from '$lib/i18n'
   import { Icon } from '$lib/kit'
   import { narrow } from './layout'
-  import { NAV, entryFor } from './nav'
+  import { NAV, entryFor, format } from './nav'
+  import { marksFor, problems, readiness } from './readiness'
   import { workflow } from './workflow'
   import SettingsDialog from './SettingsDialog.svelte'
 
@@ -12,6 +13,20 @@
 
   let settingsOpen = $state(false)
   const active = $derived(entryFor(currentRoute))
+
+  // Marks come from readiness: a red count where errors are fixed, an amber dot for warnings, a
+  // pine dot once Georeference is clean, and a hollow ring on tools that wait for it.
+  type Mark = { kind: 'errors' | 'warnings' | 'clean' | 'waiting'; count: number; label: string }
+
+  function markFor(route: string): Mark | null {
+    if (!$readiness.loaded || $readiness.status === 'unknown') return null
+    const { errors, warnings } = marksFor($problems, route)
+    if (errors > 0) return { kind: 'errors', count: errors, label: format($t('Nav.Mark.Errors', '{0} error(s) to fix here'), errors) }
+    if (warnings > 0) return { kind: 'warnings', count: warnings, label: format($t('Nav.Mark.Warnings', '{0} warning(s) to check here'), warnings) }
+    if (route === '/georeference') return { kind: 'clean', count: 0, label: $t('Nav.Mark.Clean', 'No problems') }
+    if ($readiness.status === 'blocked') return { kind: 'waiting', count: 0, label: $t('Nav.Mark.Waiting', 'Set up Georeference first') }
+    return null
+  }
 
   function navigate(route: string) {
     if (route !== currentRoute) window.location.hash = route
@@ -31,12 +46,13 @@
         {#each group.entries as entry (entry.route)}
           {@const isActive = active?.route === entry.route}
           {@const label = $t(entry.labelKey, entry.fallback)}
+          {@const mark = markFor(entry.route)}
           <button
             type="button"
             aria-current={isActive ? 'page' : undefined}
-            title={$narrow ? label : undefined}
-            aria-label={$narrow ? label : undefined}
-            class="flex items-center gap-2 rounded-control text-left text-body transition-colors {$narrow
+            title={$narrow ? (mark ? `${label} · ${mark.label}` : label) : undefined}
+            aria-label={$narrow ? (mark ? `${label} · ${mark.label}` : label) : undefined}
+            class="relative flex items-center gap-2 rounded-control text-left text-body transition-colors {$narrow
               ? 'h-9 w-9 justify-center'
               : 'h-7 px-2'} {isActive
               ? 'bg-card font-medium text-foreground shadow-[0_0_0_1px_hsl(var(--border))]'
@@ -44,7 +60,24 @@
             onclick={() => navigate(entry.route)}
           >
             <Icon name={entry.icon} size={16} class={isActive ? 'text-primary-text' : ''} />
-            {#if !$narrow}<span class="truncate">{label}</span>{/if}
+            {#if !$narrow}<span class="min-w-0 flex-1 truncate">{label}</span>{/if}
+            {#if mark}
+              <span
+                class="flex shrink-0 items-center justify-center {$narrow ? 'absolute right-0.5 top-0.5' : ''}"
+                title={$narrow ? undefined : mark.label}
+              >
+                {#if mark.kind === 'errors'}
+                  <span class="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 font-mono text-[10px] font-semibold leading-none text-destructive-foreground tabular-nums">{mark.count}</span>
+                {:else if mark.kind === 'warnings'}
+                  <span class="h-2 w-2 rounded-full bg-warning"></span>
+                {:else if mark.kind === 'clean'}
+                  <span class="h-2 w-2 rounded-full bg-success"></span>
+                {:else}
+                  <span class="h-2 w-2 rounded-full border border-muted-foreground"></span>
+                {/if}
+                {#if !$narrow}<span class="sr-only">{mark.label}</span>{/if}
+              </span>
+            {/if}
           </button>
 
           {#if isActive && !$narrow && $workflow?.route === entry.route && $workflow.steps.length > 0}
