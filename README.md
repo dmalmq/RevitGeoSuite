@@ -128,6 +128,12 @@ msbuild RevitGeoSuite.sln /p:Configuration=Release
 
 The solution build regenerates the TypeScript RPC contracts and runs the web build (`npm ci` + `vite build`) before compiling the WebView2 host, then embeds the bundle. Use `-p:SkipWebBuild=true` to reuse the committed `dist/` bundle when Node.js is unavailable. All output DLLs are written to `bin/Deploy/`.
 
+### Working on the UI without Revit
+
+`npm run dev` in `src/RevitGeoSuite.SharedUI.Web` serves the UI in a normal browser. Outside WebView2 a mock bridge (`src/lib/bridge/mock/`) answers the RPC calls with a sample project and reads its English and Japanese text from `UiLocalizer.cs`. The bundle that ships in Revit never contains the mock. Set `localStorage.mockLanguage` to `japanese` or `localStorage.mockScenario` to `fresh` (a project with no georeference yet) and reload.
+
+`npm run capture -- <outDir>` screenshots every route in light and dark, English and Japanese, both scenarios, at 1280 and 1024 px, and saves the screens reached through each route's buttons. `npm run capture -- compare <before> <after>` lists the screens whose pixels or DOM differ. It needs Playwright: `npm i --no-save playwright && npx playwright install chromium`.
+
 ## Install
 
 ### Installer EXE
