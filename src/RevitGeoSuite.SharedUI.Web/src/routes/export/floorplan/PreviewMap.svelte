@@ -1,8 +1,8 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
+<!-- Part of FloorPlanExportRoute.svelte: the floor strip beside the plan preview, with its controls over it. -->
 <script lang="ts">
   import type { PreviewFeaturePayload, PreviewInitialStateResponse, PreviewViewPayload } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
-  import { Button, Input, Select } from '$lib/kit'
+  import { Button, Chip, Icon, Input, Select } from '$lib/kit'
 
   export let assignSelectedFeature: (...args: any[]) => any
   export let busy: any
@@ -44,164 +44,181 @@
   export let warningsOnly: any
   export let zoomIn: (...args: any[]) => any
   export let zoomOut: (...args: any[]) => any
+  /** Revit level name per plan view id, for the floor strip. */
+  export let levelNames: Map<number, string>
 </script>
 
-<div class="map-container">
-  <div class="map-overlay-left" class:collapsed={leftPanelCollapsed}>
-    {#if leftPanelCollapsed}
-      <button class="panel-toggle" type="button" on:click={() => leftPanelCollapsed = false} aria-label="Expand panel">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
-      </button>
-    {:else}
-      <div class="panel-header">
-        <span class="panel-title">{$t('Preview.Controls', 'Controls')}</span>
-        <button class="panel-toggle" type="button" on:click={() => leftPanelCollapsed = true} aria-label="Collapse panel">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2L4 7l5 5"/></svg>
-        </button>
-      </div>
-
-      <div class="panel-section">
-        <span class="panel-label">{$t('Preview.Views', 'Views')}</span>
-        <Select value={previewView.viewId} onchange={(event) => loadPreviewView(Number(event.currentTarget.value))}>
-          {#each previewState.views as item}
-            <option value={item.id}>{item.displayName}</option>
-          {/each}
-        </Select>
-      </div>
-
-      <div class="panel-section">
-        <span class="panel-label">{$t('Preview.Search', 'Search')}</span>
-        <Input bind:value={previewSearch}/>
-      </div>
-
-      <div class="panel-section">
-        <span class="panel-label">{$t('Preview.Layers', 'Layers')}</span>
-        <div class="chip-group">
-          <label class="chip" class:active={showUnit}><input type="checkbox" bind:checked={showUnit} />unit</label>
-          <label class="chip" class:active={showOpening}><input type="checkbox" bind:checked={showOpening} />opening</label>
-          <label class="chip" class:active={showDetail}><input type="checkbox" bind:checked={showDetail} />detail</label>
-          <label class="chip" class:active={showLevel}><input type="checkbox" bind:checked={showLevel} />level</label>
-          <label class="chip" class:active={showFixture}><input type="checkbox" bind:checked={showFixture} />fixture</label>
-        </div>
-      </div>
-
-      <div class="panel-section">
-        <span class="panel-label">{$t('Preview.Filters', 'Filters')}</span>
-        <div class="chip-group">
-          <label class="chip" class:active={warningsOnly}><input type="checkbox" bind:checked={warningsOnly} />{$t('Preview.WarningsOnly', 'Warnings')}</label>
-          <label class="chip" class:active={unassignedOnly}><input type="checkbox" bind:checked={unassignedOnly} />{$t('Preview.UnassignedOnly', 'Unassigned')}</label>
-          <label class="chip" class:active={overridesOnly}><input type="checkbox" bind:checked={overridesOnly} />{$t('Preview.OverridesOnly', 'Overrides')}</label>
-        </div>
-      </div>
-    {/if}
-  </div>
-
-  <div class="map-overlay-pill">
-    {filteredFeatures.length}/{previewView.features.length}
-  </div>
-
-  {#if previewView.legend.length > 0}
-    <div class="map-overlay-legend">
-      {#each previewView.legend as entry}
-        <div class="legend-row">
-          <span class="legend-swatch" style={`background:${entry.fillColor}`}></span>
-          <span>{entry.label}</span>
-          <span class="legend-count">{entry.count}</span>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <!-- Pan/zoom pointer gestures are a mouse-only enhancement; the SVG features inside remain keyboard-operable buttons. -->
-  <div
-    class="map-canvas"
-    class:dragging={isDragging}
-    on:wheel|preventDefault={handleWheel}
-    on:pointerdown={handlePointerDown}
-    on:pointermove={handlePointerMove}
-    on:pointerup={handlePointerUp}
-    on:dblclick={handleDoubleClick}
-  >
-    {#if filteredFeatures.length === 0}
-      <div class="flex h-full items-center justify-center text-sm text-muted-foreground">{$t('Preview.NoFeatures', 'No preview features match the current filters.')}</div>
-    {:else}
-      <svg class="h-auto w-full" viewBox={viewBox} role="img" aria-label={previewView.viewName}>
-        <rect x={viewBoxX} y={viewBoxY} width={viewBoxW} height={viewBoxH} fill="rgb(250 250 250)" />
-        {#each filteredFeatures as feature}
-          {#if feature.geometryType === 'polygon'}
-            <path
-              d={pathFor(feature)}
-              fill={feature.fillColor}
-              fill-opacity={selectedFeature?.index === feature.index ? 0.82 : 0.52}
-              fill-rule="evenodd"
-              stroke={feature.strokeColor}
-              stroke-width={selectedFeature?.index === feature.index ? 3 : 1.2}
-              vector-effect="non-scaling-stroke"
-              class="cursor-pointer"
-              role="button"
-              tabindex="0"
-              aria-label={featureLabel(feature)}
-              on:click|stopPropagation={() => { if (!didDrag) selectFeature(feature) }}
-              on:keydown={(event) => selectFeatureFromKeyboard(event, feature)}
-            />
-          {:else if feature.geometryType === 'line'}
-            <polyline
-              points={points(feature.points)}
-              fill="none"
-              stroke={feature.strokeColor}
-              stroke-width={selectedFeature?.index === feature.index ? 4 : 2}
-              vector-effect="non-scaling-stroke"
-              class="cursor-pointer"
-              role="button"
-              tabindex="0"
-              aria-label={featureLabel(feature)}
-              on:click|stopPropagation={() => { if (!didDrag) selectFeature(feature) }}
-              on:keydown={(event) => selectFeatureFromKeyboard(event, feature)}
-            />
-          {/if}
-        {/each}
-      </svg>
-    {/if}
-  </div>
-
-  {#if selectedFeature}
-    <div class="map-overlay-details">
-      <div class="details-header">
-        <span class="details-title">{$t('Preview.Details', 'Details')}</span>
-        <button class="details-close" type="button" on:click={() => { selectedFeature = null; selectedFloorTypes = [] }} aria-label="Close">×</button>
-      </div>
-      <dl class="details-grid">
-        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.FeatureType', 'Feature type')}</dt><dd>{selectedFeature.featureType}</dd></div>
-        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.Category', 'Category')}</dt><dd>{selectedFeature.category || '-'}</dd></div>
-        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.Name', 'Name')}</dt><dd>{selectedFeature.name || '-'}</dd></div>
-        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.ExportId', 'Export ID')}</dt><dd>{selectedFeature.exportId || '-'}</dd></div>
-        <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.Source', 'Source')}</dt><dd>{selectedFeature.sourceLabel || '-'}</dd></div>
-        {#if selectedFeature.floorTypeName}
-          <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.FloorType', 'Floor type')}</dt><dd>{selectedFeature.floorTypeName}</dd></div>
-          <div><dt class="text-small font-medium text-muted-foreground">{$t('Preview.ParsedCandidate', 'Parsed candidate')}</dt><dd>{selectedFeature.parsedZoneCandidate || '-'}</dd></div>
+<div class="flex min-h-0 flex-1 overflow-hidden rounded-card border border-border bg-card">
+  <!-- Floor strip: one button per previewed plan view, like Kanizu's floor strip. -->
+  <nav data-floor-strip class="flex w-[72px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-card p-1.5" aria-label={$t('Preview.Floors', 'Floors')}>
+    <span class="px-1 pb-1 text-caption font-medium text-muted-foreground">{$t('Preview.Floors', 'Floors')}</span>
+    {#each previewState.views as item (item.id)}
+      {@const active = item.id === previewView.viewId}
+      <button
+        type="button"
+        class="flex h-9 flex-col items-center justify-center rounded-control px-1 text-center transition-colors {active ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'}"
+        aria-current={active ? 'true' : undefined}
+        title={item.displayName}
+        disabled={busy && !active}
+        on:click={() => { if (!active) loadPreviewView(item.id) }}
+      >
+        <span class="max-w-full truncate font-mono text-body font-semibold leading-none">{levelNames.get(item.id) || item.name}</span>
+        {#if levelNames.get(item.id)}
+          <span class="mt-0.5 max-w-full truncate text-[10px] leading-none {active ? 'text-primary-foreground/80' : 'text-muted-foreground'}">{item.displayName}</span>
         {/if}
-      </dl>
-      {#if selectedFeature.supportsFloorCategoryAssignment}
-        <div class="details-assign">
-          <Select class="flex-1" bind:value={selectedCategory} disabled={previewState.supportedCategories.length === 0}>
-            {#each categoryOptions(selectedCategory) as category}
-              <option value={category}>{category}</option>
-            {/each}
-          </Select>
-          <Button variant="primary" size="sm" onclick={assignSelectedFeature} disabled={busy || selectedFloorTypes.length === 0 || !selectedCategory}>
-            {$t('Preview.Assign', 'Assign')}
-          </Button>
+      </button>
+    {/each}
+  </nav>
+
+  <div class="relative min-w-0 flex-1 bg-muted">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- Pan/zoom pointer gestures are a mouse-only enhancement; the SVG features inside remain keyboard-operable buttons. -->
+    <div
+      class="absolute inset-0 touch-none select-none overflow-hidden {isDragging ? 'cursor-grabbing' : 'cursor-grab'}"
+      on:wheel|preventDefault={handleWheel}
+      on:pointerdown={handlePointerDown}
+      on:pointermove={handlePointerMove}
+      on:pointerup={handlePointerUp}
+      on:dblclick={handleDoubleClick}
+    >
+      {#if filteredFeatures.length === 0}
+        <div class="flex h-full items-center justify-center text-body text-muted-foreground">{$t('Preview.NoFeatures', 'No preview features match the current filters.')}</div>
+      {:else}
+        <svg class="h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" role="img" aria-label={previewView.viewName}>
+          <rect x={viewBoxX} y={viewBoxY} width={viewBoxW} height={viewBoxH} fill="hsl(var(--muted))" />
+          {#each filteredFeatures as feature}
+            {#if feature.geometryType === 'polygon'}
+              <path
+                d={pathFor(feature)}
+                fill={feature.fillColor}
+                fill-opacity={selectedFeature?.index === feature.index ? 0.82 : 0.52}
+                fill-rule="evenodd"
+                stroke={selectedFeature?.index === feature.index ? 'hsl(var(--primary))' : feature.strokeColor}
+                stroke-width={selectedFeature?.index === feature.index ? 3 : 1.2}
+                vector-effect="non-scaling-stroke"
+                class="cursor-pointer outline-none focus-visible:stroke-[3]"
+                role="button"
+                tabindex="0"
+                aria-label={featureLabel(feature)}
+                on:click|stopPropagation={() => { if (!didDrag) selectFeature(feature) }}
+                on:keydown={(event) => selectFeatureFromKeyboard(event, feature)}
+              />
+            {:else if feature.geometryType === 'line'}
+              <polyline
+                points={points(feature.points)}
+                fill="none"
+                stroke={selectedFeature?.index === feature.index ? 'hsl(var(--primary))' : feature.strokeColor}
+                stroke-width={selectedFeature?.index === feature.index ? 4 : 2}
+                vector-effect="non-scaling-stroke"
+                class="cursor-pointer outline-none"
+                role="button"
+                tabindex="0"
+                aria-label={featureLabel(feature)}
+                on:click|stopPropagation={() => { if (!didDrag) selectFeature(feature) }}
+                on:keydown={(event) => selectFeatureFromKeyboard(event, feature)}
+              />
+            {/if}
+          {/each}
+        </svg>
+      {/if}
+    </div>
+
+    <!-- Controls, top left. -->
+    <div class="absolute left-3 top-3 z-10 flex max-w-[240px] flex-col rounded-card border border-border bg-card/95 shadow-sm">
+      <div class="flex h-8 items-center justify-between gap-2 pl-2.5 pr-1 {leftPanelCollapsed ? '' : 'border-b border-border'}">
+        <span class="text-small font-semibold text-foreground">{$t('Preview.Controls', 'Controls')}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={leftPanelCollapsed ? 'chevron-down' : 'chevron-up'}
+          aria-label={leftPanelCollapsed ? $t('Preview.ShowControls', 'Show controls') : $t('Preview.HideControls', 'Hide controls')}
+          aria-expanded={!leftPanelCollapsed}
+          onclick={() => (leftPanelCollapsed = !leftPanelCollapsed)}
+        />
+      </div>
+      {#if !leftPanelCollapsed}
+        <div class="flex flex-col gap-2.5 p-2.5">
+          <Input type="search" bind:value={previewSearch} aria-label={$t('Preview.Search', 'Search')} placeholder={$t('Preview.Search', 'Search')} />
+          <div class="flex flex-col gap-1">
+            <span class="text-caption font-medium text-muted-foreground">{$t('Preview.Layers', 'Layers')}</span>
+            <div class="flex flex-wrap gap-1">
+              <Chip selected={showUnit} onclick={() => (showUnit = !showUnit)}>{$t('Exporter.Unit', 'unit')}</Chip>
+              <Chip selected={showOpening} onclick={() => (showOpening = !showOpening)}>{$t('Exporter.Opening', 'opening')}</Chip>
+              <Chip selected={showDetail} onclick={() => (showDetail = !showDetail)}>{$t('Exporter.Detail', 'detail')}</Chip>
+              <Chip selected={showLevel} onclick={() => (showLevel = !showLevel)}>{$t('Exporter.Level', 'level')}</Chip>
+              <Chip selected={showFixture} onclick={() => (showFixture = !showFixture)}>{$t('Exporter.Fixture', 'fixture')}</Chip>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-caption font-medium text-muted-foreground">{$t('Preview.Filters', 'Filters')}</span>
+            <div class="flex flex-wrap gap-1">
+              <Chip selected={warningsOnly} onclick={() => (warningsOnly = !warningsOnly)}>{$t('Preview.WarningsOnly', 'Warnings')}</Chip>
+              <Chip selected={unassignedOnly} onclick={() => (unassignedOnly = !unassignedOnly)}>{$t('Preview.UnassignedOnly', 'Unassigned')}</Chip>
+              <Chip selected={overridesOnly} onclick={() => (overridesOnly = !overridesOnly)}>{$t('Preview.OverridesOnly', 'Overrides')}</Chip>
+            </div>
+          </div>
         </div>
       {/if}
     </div>
-  {/if}
 
-  <div class="map-overlay-caption">{previewView.quickSummary} · {previewState.coordinateSummary}</div>
+    <!-- Count, top centre. -->
+    <div class="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-chip border border-border bg-card/95 px-2 py-0.5 font-mono text-small tabular-nums text-foreground shadow-sm">
+      {filteredFeatures.length} / {previewView.features.length}
+    </div>
 
-  <div class="map-overlay-zoom">
-    <button class="zoom-btn" type="button" on:click={zoomIn} aria-label="Zoom in">+</button>
-    <button class="zoom-btn" type="button" on:click={zoomOut} aria-label="Zoom out">−</button>
-    <button class="zoom-btn" type="button" on:click={resetZoom} aria-label="Reset zoom">⟳</button>
+    <!-- Legend or the picked feature, top right. -->
+    {#if selectedFeature}
+      <div class="absolute right-3 top-3 z-10 flex w-[260px] flex-col rounded-card border border-border bg-card shadow-sm">
+        <div class="flex h-8 items-center justify-between gap-2 border-b border-border pl-2.5 pr-1">
+          <span class="truncate text-small font-semibold text-foreground">{featureLabel(selectedFeature)}</span>
+          <Button variant="ghost" size="sm" icon="x" aria-label={$t('Common.Close', 'Close')} onclick={() => { selectedFeature = null; selectedFloorTypes = [] }} />
+        </div>
+        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-2.5 text-small">
+          <dt class="text-muted-foreground">{$t('Preview.FeatureType', 'Feature type')}</dt><dd class="truncate text-foreground">{selectedFeature.featureType}</dd>
+          <dt class="text-muted-foreground">{$t('Preview.Category', 'Category')}</dt><dd class="truncate text-foreground">{selectedFeature.category || '-'}</dd>
+          <dt class="text-muted-foreground">{$t('Preview.Name', 'Name')}</dt><dd class="truncate text-foreground">{selectedFeature.name || '-'}</dd>
+          <dt class="text-muted-foreground">{$t('Preview.ExportId', 'Export ID')}</dt><dd class="truncate font-mono text-foreground">{selectedFeature.exportId || '-'}</dd>
+          <dt class="text-muted-foreground">{$t('Preview.Source', 'Source')}</dt><dd class="truncate text-foreground">{selectedFeature.sourceLabel || '-'}</dd>
+          {#if selectedFeature.floorTypeName}
+            <dt class="text-muted-foreground">{$t('Preview.FloorType', 'Floor type')}</dt><dd class="truncate font-mono text-foreground">{selectedFeature.floorTypeName}</dd>
+            <dt class="text-muted-foreground">{$t('Preview.ParsedCandidate', 'Parsed candidate')}</dt><dd class="truncate text-foreground">{selectedFeature.parsedZoneCandidate || '-'}</dd>
+          {/if}
+        </dl>
+        {#if selectedFeature.supportsFloorCategoryAssignment}
+          <div class="flex gap-1.5 border-t border-border p-2.5">
+            <Select
+              class="min-w-0 flex-1"
+              bind:value={selectedCategory}
+              aria-label={$t('Preview.Category', 'Category')}
+              disabled={previewState.supportedCategories.length === 0}
+              options={categoryOptions(selectedCategory).map((category: string) => ({ value: category, label: category }))}
+            />
+            <Button variant="primary" onclick={assignSelectedFeature} disabled={busy || selectedFloorTypes.length === 0 || !selectedCategory}>
+              {$t('Preview.Assign', 'Assign')}
+            </Button>
+          </div>
+        {/if}
+      </div>
+    {:else if previewView.legend.length > 0}
+      <div class="absolute right-3 top-3 z-10 flex flex-col gap-0.5 rounded-card border border-border bg-card/95 px-2.5 py-2 shadow-sm">
+        {#each previewView.legend as entry}
+          <div class="flex items-center gap-2 text-small text-foreground">
+            <span class="h-2.5 w-2.5 shrink-0 rounded-[3px] border border-black/10" style={`background:${entry.fillColor}`}></span>
+            <span class="flex-1">{entry.label}</span>
+            <span class="font-mono tabular-nums text-muted-foreground">{entry.count}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- Summary, bottom left; zoom, bottom right. -->
+    <div class="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[60%] truncate rounded-chip border border-border bg-card/95 px-2 py-0.5 text-small text-muted-foreground shadow-sm">
+      {previewView.quickSummary} · <span class="font-mono">{previewState.coordinateSummary}</span>
+    </div>
+    <div class="absolute bottom-3 right-3 z-10 flex flex-col overflow-hidden rounded-control border border-border bg-card shadow-sm">
+      <button type="button" class="flex h-7 w-7 items-center justify-center text-foreground hover:bg-accent" on:click={zoomIn} aria-label={$t('Preview.ZoomIn', 'Zoom in')}><Icon name="plus" size={14} /></button>
+      <button type="button" class="flex h-7 w-7 items-center justify-center border-t border-border text-foreground hover:bg-accent" on:click={zoomOut} aria-label={$t('Preview.ZoomOut', 'Zoom out')}><Icon name="minus" size={14} /></button>
+      <button type="button" class="flex h-7 w-7 items-center justify-center border-t border-border text-foreground hover:bg-accent" on:click={resetZoom} aria-label={$t('Preview.ResetZoom', 'Reset zoom')}><Icon name="rotate-ccw" size={14} /></button>
+    </div>
   </div>
 </div>

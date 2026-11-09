@@ -1,15 +1,15 @@
-<!-- Part of FloorPlanExportRoute.svelte; split out of it. -->
+<!-- Part of FloorPlanExportRoute.svelte: floor type to category assignments, in a kit dialog. -->
 <script lang="ts">
   import type { PreviewInitialStateResponse, PreviewViewPayload } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
-  import { Button, Input, Select } from '$lib/kit'
+  import { Button, Dialog, Field, Input, Select, Table } from '$lib/kit'
 
   export let assignFloorTypes: (...args: any[]) => any
   export let assignNewAssignment: (...args: any[]) => any
   export let assignmentRows: any
   export let assignmentSearch: any
   export let assignmentSummary: any
-  export let assignmentsOpen: any
+  export let assignmentsOpen: boolean
   export let busy: any
   export let categoryOptions: (...args: any[]) => any
   export let clearFloorTypes: (...args: any[]) => any
@@ -22,108 +22,88 @@
   export let previewView: PreviewViewPayload
 </script>
 
-{#if assignmentsOpen && assignmentSummary}
-  <div class="assignment-modal-backdrop">
-    <dialog open class="assignment-modal" aria-modal="true" aria-labelledby="category-assignments-title">
-      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border p-4">
-        <div>
-          <h3 id="category-assignments-title" class="text-base font-semibold text-foreground">
-            {$t('Preview.CategoryAssignments', 'Category assignments')}
-          </h3>
-          <p class="mt-1 text-sm text-muted-foreground">
-            {assignmentSummary.sourceLabel || previewView.assignmentSourceLabel} · {formatNumber(assignmentSummary.floorTypeCount)} {$t('Preview.FloorTypes', 'floor types')}
-          </p>
-          {#if assignmentSummary.pendingMessage}
-            <p class="mt-1 text-xs text-muted-foreground">{assignmentSummary.pendingMessage}</p>
-          {/if}
-        </div>
-        <Button onclick={closeAssignments}>{$t('Common.Close', 'Close')}</Button>
+{#if assignmentSummary}
+  <Dialog
+    open={assignmentsOpen}
+    size="lg"
+    title={$t('Preview.CategoryAssignments', 'Category assignments')}
+    description={`${assignmentSummary.sourceLabel || previewView.assignmentSourceLabel} · ${formatNumber(assignmentSummary.floorTypeCount)} ${$t('Preview.FloorTypes', 'floor types')}`}
+    closeLabel={$t('Common.Close', 'Close')}
+    onclose={closeAssignments}
+  >
+    <div class="flex flex-col gap-3">
+      {#if assignmentSummary.pendingMessage}
+        <p class="text-small text-muted-foreground">{assignmentSummary.pendingMessage}</p>
+      {/if}
+
+      <div class="grid items-end gap-2 rounded-control bg-muted p-2.5 sm:grid-cols-[minmax(0,1fr)_180px_auto]">
+        <Field label={$t('Preview.FloorType', 'Floor type')} id="assign-floor-type">
+          <Select
+            id="assign-floor-type"
+            bind:value={newAssignmentFloorTypeName}
+            disabled={busy || assignmentRows.length === 0}
+            options={assignmentRows.map((row: any) => ({ value: row.floorTypeName, label: row.floorTypeName }))}
+          />
+        </Field>
+        <Field label={$t('Preview.Category', 'Category')} id="assign-category">
+          <Select
+            id="assign-category"
+            bind:value={newAssignmentCategory}
+            disabled={busy || previewState.supportedCategories.length === 0}
+            options={previewState.supportedCategories.map((category) => ({ value: category, label: category }))}
+          />
+        </Field>
+        <Button variant="primary" icon="plus" onclick={assignNewAssignment} disabled={busy || !newAssignmentFloorTypeName || !newAssignmentCategory}>
+          {$t('Preview.AddAssignment', 'Add assignment')}
+        </Button>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-auto p-4">
-        <div class="grid gap-3 border border-border bg-muted p-3 lg:grid-cols-[minmax(220px,1fr)_220px_auto]">
-          <label class="flex flex-col gap-1">
-            <span class="text-small font-medium text-muted-foreground">{$t('Preview.FloorType', 'Floor type')}</span>
-            <Select bind:value={newAssignmentFloorTypeName} disabled={busy || assignmentRows.length === 0}>
-              {#each assignmentRows as row}
-                <option value={row.floorTypeName}>{row.floorTypeName}</option>
-              {/each}
-            </Select>
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class="text-small font-medium text-muted-foreground">{$t('Preview.Category', 'Category')}</span>
-            <Select bind:value={newAssignmentCategory} disabled={busy || previewState.supportedCategories.length === 0}>
-              {#each previewState.supportedCategories as category}
-                <option value={category}>{category}</option>
-              {/each}
-            </Select>
-          </label>
-          <Button
-            variant="primary"
-            icon="plus"
-            class="self-end"
-            onclick={assignNewAssignment}
-            disabled={busy || !newAssignmentFloorTypeName || !newAssignmentCategory}
-          >
-            {$t('Preview.AddAssignment', 'Add assignment')}
-          </Button>
-        </div>
-
-        <div class="mt-4 flex flex-wrap items-end justify-between gap-3">
-          <label class="min-w-[260px] flex-1">
-            <span class="text-small font-medium text-muted-foreground">{$t('Preview.SearchAssignments', 'Search assignments')}</span>
-            <Input bind:value={assignmentSearch}/>
-          </label>
-          <div class="text-sm text-muted-foreground">
-            {formatNumber(filteredAssignmentRows.length)} / {formatNumber(assignmentRows.length)}
-          </div>
-        </div>
-
-        <div class="assignment-table-wrap mt-3">
-          <table class="assignment-table">
-            <thead>
-              <tr>
-                <th>{$t('Preview.FloorType', 'Floor type')}</th>
-                <th>{$t('Preview.Category', 'Category')}</th>
-                <th>{$t('Preview.Actions', 'Actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#if filteredAssignmentRows.length === 0}
-                <tr>
-                  <td colspan="3" class="empty-cell">{$t('Preview.NoAssignments', 'No assignment rows match the current search.')}</td>
-                </tr>
-              {:else}
-                {#each filteredAssignmentRows as row}
-                  <tr>
-                    <td>
-                      <strong>{row.floorTypeName}</strong>
-                    </td>
-                    <td>
-                      <Select
-                        class="w-[8.5rem]"
-                        value={row.category}
-                        aria-label={`${$t('Preview.Category', 'Category')}: ${row.floorTypeName}`}
-                        disabled={busy || previewState.supportedCategories.length === 0}
-                        onchange={(event) => assignFloorTypes([row.floorTypeName], event.currentTarget.value)}
-                      >
-                        {#each categoryOptions(row.category) as category}
-                          <option value={category}>{category}</option>
-                        {/each}
-                      </Select>
-                    </td>
-                    <td>
-                      <Button size="sm" onclick={() => clearFloorTypes([row.floorTypeName])} disabled={busy || !row.usesOverride}>
-                        {$t('Preview.ClearOverride', 'Clear')}
-                      </Button>
-                    </td>
-                  </tr>
-                {/each}
-              {/if}
-            </tbody>
-          </table>
-        </div>
+      <div class="flex items-center gap-3">
+        <Input
+          type="search"
+          class="min-w-0 flex-1"
+          bind:value={assignmentSearch}
+          aria-label={$t('Preview.SearchAssignments', 'Search assignments')}
+          placeholder={$t('Preview.SearchAssignments', 'Search assignments')}
+        />
+        <span class="font-mono text-small tabular-nums text-muted-foreground">{formatNumber(filteredAssignmentRows.length)} / {formatNumber(assignmentRows.length)}</span>
       </div>
-    </dialog>
-  </div>
+
+      <Table maxHeight="45vh">
+        <thead>
+          <tr>
+            <th>{$t('Preview.FloorType', 'Floor type')}</th>
+            <th>{$t('Preview.Category', 'Category')}</th>
+            <th class="w-20"><span class="sr-only">{$t('Preview.Actions', 'Actions')}</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each filteredAssignmentRows as row (row.floorTypeName)}
+            <tr>
+              <td class="font-mono font-medium">{row.floorTypeName}</td>
+              <td>
+                <Select
+                  class="w-[9rem]"
+                  value={row.category}
+                  aria-label={`${$t('Preview.Category', 'Category')}: ${row.floorTypeName}`}
+                  disabled={busy || previewState.supportedCategories.length === 0}
+                  onchange={(event) => assignFloorTypes([row.floorTypeName], event.currentTarget.value)}
+                  options={categoryOptions(row.category).map((category: string) => ({ value: category, label: category }))}
+                />
+              </td>
+              <td>
+                <Button size="sm" variant="ghost" onclick={() => clearFloorTypes([row.floorTypeName])} disabled={busy || !row.usesOverride}>
+                  {$t('Preview.ClearOverride', 'Clear')}
+                </Button>
+              </td>
+            </tr>
+          {:else}
+            <tr>
+              <td colspan="3" class="text-center text-muted-foreground">{$t('Preview.NoAssignments', 'No assignment rows match the current search.')}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </Table>
+    </div>
+  </Dialog>
 {/if}
