@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Dev-only code (mock bridge fixtures, capture script) must not add classes to the bundle. */
+@source not "./lib/bridge/mock";
+@source not "./dev-main.ts";
+@source not "../tools";
+
 /* Enable class-based dark mode (Tailwind v4 CSS-first config). Without this, the `dark:`
    variant is never generated and the theme.ts module's add/remove `dark` class is a no-op. */
 @custom-variant dark (&:where(.dark, .dark *));
