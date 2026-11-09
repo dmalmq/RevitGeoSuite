@@ -68,7 +68,7 @@
         <span class="text-sm text-foreground">{ckanCatalogProgress?.message || $t('Import.Download.LoadingCatalog', 'Loading geospatial.jp catalog…')}</span>
       </div>
       {#if ckanCatalogProgress?.percent !== undefined}
-        <div class="w-full bg-secondary rounded-full h-2">
+        <div class="w-full bg-border rounded-full h-2">
           <div class="bg-primary h-2 rounded-full transition-all" style="width: {ckanCatalogProgress.percent}%"></div>
         </div>
       {/if}
@@ -252,7 +252,7 @@
           <div class="space-y-2">
             <div class="text-xs text-muted-foreground truncate">{ckanDownloadProgress?.message || $t('Import.Download.Downloading', 'Downloading…')}</div>
             {#if ckanDownloadProgress?.percent !== undefined}
-              <div class="w-full bg-secondary rounded-full h-2">
+              <div class="w-full bg-border rounded-full h-2">
                 <div class="bg-primary h-2 rounded-full transition-all" style="width: {ckanDownloadProgress.percent}%"></div>
               </div>
             {/if}

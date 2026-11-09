@@ -26,7 +26,7 @@
 <div class="bg-card border border-border rounded-lg p-4">
   <div class="text-sm text-foreground mb-2">{$t('Export.Scan.ReadingSource', 'Reading PLATEAU source files')}</div>
   {#if plateauScanProgress?.percent !== undefined}
-    <div class="w-full bg-secondary rounded-full h-2">
+    <div class="w-full bg-border rounded-full h-2">
       <div class="bg-primary h-2 rounded-full transition-all" style="width: {plateauScanProgress.percent}%"></div>
     </div>
   {/if}

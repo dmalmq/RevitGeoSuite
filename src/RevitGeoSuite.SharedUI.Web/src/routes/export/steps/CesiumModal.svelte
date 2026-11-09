@@ -143,7 +143,7 @@
             {cesiumProgress?.message ?? $t('Export.Cesium.Running', 'Exporting…')}
           </div>
           {#if cesiumProgress?.percent != null}
-            <div class="h-1.5 overflow-hidden rounded bg-secondary">
+            <div class="h-1.5 overflow-hidden rounded bg-border">
               <div class="h-full bg-primary transition-all" style="width: {cesiumProgress.percent}%"></div>
             </div>
           {/if}

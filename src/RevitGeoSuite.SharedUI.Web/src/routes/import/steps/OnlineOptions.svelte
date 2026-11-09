@@ -36,7 +36,7 @@
         <div class="space-y-2 text-xs text-muted-foreground">
           <div>{onlineCatalogProgress.message || $t('Import.Online.Indexing', 'Indexing municipalities...')}</div>
           {#if onlineCatalogProgress.percent !== undefined}
-            <div class="w-full bg-secondary rounded-full h-2">
+            <div class="w-full bg-border rounded-full h-2">
               <div class="bg-primary h-2 rounded-full transition-all" style="width: {onlineCatalogProgress.percent}%"></div>
             </div>
           {/if}

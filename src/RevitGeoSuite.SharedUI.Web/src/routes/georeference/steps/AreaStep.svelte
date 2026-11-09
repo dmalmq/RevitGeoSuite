@@ -134,7 +134,7 @@
           <span>{areaSearchCatalogProgress?.message || $t('Georef.Wizard.AreaSearch.Loading', 'Loading searchable areas...')}</span>
         </div>
         {#if areaSearchCatalogProgress?.percent !== undefined}
-          <div class="mt-2 h-2 w-full rounded-full bg-secondary">
+          <div class="mt-2 h-2 w-full rounded-full bg-border">
             <div class="h-2 rounded-full bg-primary transition-all" style="width: {areaSearchCatalogProgress.percent}%"></div>
           </div>
         {/if}
@@ -147,7 +147,7 @@
       </div>
     {:else if areaSearchCatalog.length === 0}
       <button
-        class="w-full bg-secondary hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
+        class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
         onclick={() => void loadAreaSearchCatalog()}
       >
         {$t('Georef.Wizard.AreaSearch.LoadCatalog', 'Load Searchable Locations')}

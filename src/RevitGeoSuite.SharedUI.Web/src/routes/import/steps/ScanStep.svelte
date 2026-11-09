@@ -45,7 +45,7 @@
       <div class="space-y-2 text-xs text-muted-foreground">
         <div>{onlineGridProgress.message || $t('Import.Online.BuildingGridOverlay', 'Building selectable grid overlay...')}</div>
         {#if onlineGridProgress.percent !== undefined}
-          <div class="w-full bg-secondary rounded-full h-2">
+          <div class="w-full bg-border rounded-full h-2">
             <div class="bg-primary h-2 rounded-full transition-all" style="width: {onlineGridProgress.percent}%"></div>
           </div>
         {/if}

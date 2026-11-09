@@ -33,7 +33,7 @@
               {exportProgress.message || $t('Export.Progress.Preparing', 'Preparing...')}
             </div>
             {#if exportProgress.percent !== undefined}
-              <div class="w-full bg-secondary rounded-full h-2">
+              <div class="w-full bg-border rounded-full h-2">
                 <div
                   class="bg-primary h-2 rounded-full transition-all"
                   style="width: {exportProgress.percent}%"

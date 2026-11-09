@@ -32,7 +32,7 @@
           {importProgress.message || $t('Import.Preparing', 'Preparing...')}
         </div>
         {#if importProgress.percent !== undefined}
-          <div class="w-full bg-secondary rounded-full h-2">
+          <div class="w-full bg-border rounded-full h-2">
             <div
               class="bg-primary h-2 rounded-full transition-all"
               style="width: {importProgress.percent}%"

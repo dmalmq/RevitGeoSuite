@@ -50,7 +50,7 @@
       <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold
         {status === 'completed' ? 'bg-primary text-primary-foreground' : ''}
         {status === 'current' ? 'bg-primary text-primary-foreground' : ''}
-        {status === 'upcoming' ? 'bg-secondary text-muted-foreground' : ''}
+        {status === 'upcoming' ? 'bg-border text-muted-foreground' : ''}
         {status === 'locked' ? 'bg-muted text-muted-foreground' : ''}
       ">
         {#if status === 'completed'}
@@ -86,7 +86,7 @@
 
     {#if index < steps.length - 1}
       <div class="ml-4 h-4 w-px
-        {completedSteps.has(step.id) ? 'bg-primary' : 'bg-secondary'}
+        {completedSteps.has(step.id) ? 'bg-primary' : 'bg-border'}
       "></div>
     {/if}
   {/each}

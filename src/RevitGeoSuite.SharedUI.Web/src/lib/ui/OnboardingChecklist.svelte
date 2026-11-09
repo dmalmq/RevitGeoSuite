@@ -25,7 +25,7 @@
       {#each steps as step, index}
         <div class="flex items-center gap-3">
           <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center
-            {step.completed ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'}
+            {step.completed ? 'bg-primary text-primary-foreground' : 'bg-border text-muted-foreground'}
           ">
             {#if step.completed}
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,7 +50,7 @@
           <span>{$t('Onboarding.ProgressLabel', 'Progress')}</span>
           <span>{Math.round((completedCount / totalCount) * 100)}%</span>
         </div>
-        <div class="mt-2 h-1.5 bg-secondary rounded-full overflow-hidden">
+        <div class="mt-2 h-1.5 bg-border rounded-full overflow-hidden">
           <div
             class="h-full bg-primary transition-all duration-300"
             style="width: {(completedCount / totalCount) * 100}%"

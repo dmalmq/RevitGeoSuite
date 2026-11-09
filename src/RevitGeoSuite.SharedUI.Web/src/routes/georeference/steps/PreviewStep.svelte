@@ -52,7 +52,7 @@
     {$t('Georef.Wizard.ApplyChanges', 'Apply Changes')}
   </button>
   <button
-    class="w-full bg-secondary hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
+    class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
     onclick={() => currentStep = basePointSource === 'manual' ? 'area' : 'grids'}
   >
     {basePointSource === 'manual' ? $t('Georef.Wizard.BackToCoordinates', 'Back to Coordinates') : $t('Georef.Wizard.BackToGrids', 'Back to Grids')}

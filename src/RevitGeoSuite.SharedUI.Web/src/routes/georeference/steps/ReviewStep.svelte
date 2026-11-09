@@ -110,7 +110,7 @@
       {/if}
 
       <button
-        class="w-full bg-secondary hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
+        class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
         onclick={() => { overrideExistingSetup = true; currentStep = 'crs' }}
       >
         {overrideExistingSetup ? $t('Georef.Wizard.OverrideActive', 'Setting up new coordinates') : $t('Georef.Wizard.OverrideBtn', 'Override and set new coordinates')}

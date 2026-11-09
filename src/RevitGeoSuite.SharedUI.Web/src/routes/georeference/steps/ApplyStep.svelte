@@ -37,7 +37,7 @@
     <p class="text-xs text-muted-foreground">{applyResult.message}</p>
   </div>
   <button
-    class="mt-4 w-full bg-secondary hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
+    class="mt-4 w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
     onclick={reset}
   >
     {$t('Georef.Wizard.StartOver', 'Start Over')}
@@ -69,7 +69,7 @@
       {applying ? $t('Georef.Wizard.Saving', 'Saving…') : $t('Georef.Wizard.SaveMetadata', 'Save Metadata')}
     </button>
     <button
-      class="w-full bg-secondary hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
+      class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
       onclick={() => currentStep = 'confirm'}
       disabled={applying}
     >
@@ -104,7 +104,7 @@
       {applying ? $t('Georef.Wizard.Applying', 'Applying…') : $t('Georef.Wizard.ConfirmApply', 'Confirm Apply')}
     </button>
     <button
-      class="w-full bg-secondary hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
+      class="w-full bg-card border border-input hover:bg-accent text-foreground font-medium py-2 px-4 rounded-md transition-colors"
       onclick={() => currentStep = 'preview'}
       disabled={applying}
     >

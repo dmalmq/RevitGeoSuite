@@ -24,7 +24,7 @@
           <div class="space-y-2">
             <div class="text-xs text-muted-foreground truncate">{plateauScanProgress.message || $t('Export.Scan.ReadingFiles', 'Reading files...')}</div>
             {#if plateauScanProgress.percent !== undefined}
-              <div class="w-full bg-secondary rounded-full h-2">
+              <div class="w-full bg-border rounded-full h-2">
                 <div class="bg-primary h-2 rounded-full transition-all" style="width: {plateauScanProgress.percent}%"></div>
               </div>
               <div class="text-xs text-muted-foreground">{plateauScanProgress.percent}% {$t('Common.PercentComplete', 'complete')}</div>
