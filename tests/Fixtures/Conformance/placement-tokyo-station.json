@@ -1,0 +1,176 @@
+{
+  "description": "Exact placement of plane-grid vertices into the anchor's east-north-up frame. Shared by RevitGeoSuite and Kanizu; both must match within 1 cm.",
+  "oracle": "pyproj 3.8.0, PROJ 9.8.1",
+  "projectEpsg": 6677,
+  "anchor": {
+    "easting": -5995.185,
+    "northing": -35367.23,
+    "latitude": 35.6812000012,
+    "longitude": 139.7671000018,
+    "orthometricHeight": 3.3,
+    "geoidOffset": 36.7,
+    "ellipsoidalHeight": 40.0
+  },
+  "vertices": [
+    {
+      "gridOffset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "latitude": 35.6812000012,
+      "longitude": 139.7671000018,
+      "ellipsoidalHeight": 40.0,
+      "ecef": [
+        -3959690.8026,
+        3350097.5003,
+        3699540.1248
+      ],
+      "enu": [
+        -0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "gridOffset": [
+        300.0,
+        0.0,
+        0.0
+      ],
+      "latitude": 35.6812017789,
+      "longitude": 139.7704143263,
+      "ellipsoidalHeight": 40.0,
+      "ecef": [
+        -3959884.4975,
+        3349868.3686,
+        3699540.285
+      ],
+      "enu": [
+        300.0317,
+        0.2023,
+        -0.007
+      ]
+    },
+    {
+      "gridOffset": [
+        0.0,
+        300.0,
+        0.0
+      ],
+      "latitude": 35.6839041143,
+      "longitude": 139.767097767,
+      "ellipsoidalHeight": 40.0,
+      "ecef": [
+        -3959557.0674,
+        3349984.6186,
+        3699783.8289
+      ],
+      "enu": [
+        -0.2023,
+        300.0317,
+        -0.0071
+      ]
+    },
+    {
+      "gridOffset": [
+        -300.0,
+        -300.0,
+        0.0
+      ],
+      "latitude": 35.6784940182,
+      "longitude": 139.763788024,
+      "ellipsoidalHeight": 40.0,
+      "ecef": [
+        -3959630.8254,
+        3350439.4988,
+        3699296.244
+      ],
+      "enu": [
+        -299.8294,
+        -300.234,
+        -0.0141
+      ]
+    },
+    {
+      "gridOffset": [
+        -250.0,
+        180.0,
+        12.5
+      ],
+      "latitude": 35.682820918,
+      "longitude": 139.7643366682,
+      "ellipsoidalHeight": 52.5,
+      "ecef": [
+        -3959456.8944,
+        3350227.2679,
+        3699693.4997
+      ],
+      "enu": [
+        -250.1483,
+        179.8508,
+        12.4926
+      ]
+    },
+    {
+      "gridOffset": [
+        150.0,
+        -220.0,
+        -15.0
+      ],
+      "latitude": 35.6792178843,
+      "longitude": 139.7687587617,
+      "ellipsoidalHeight": 25.0,
+      "ecef": [
+        -3959876.4159,
+        3350057.8409,
+        3699352.7356
+      ],
+      "enu": [
+        150.1638,
+        -219.9216,
+        -15.0056
+      ]
+    },
+    {
+      "gridOffset": [
+        300.0,
+        300.0,
+        40.0
+      ],
+      "latitude": 35.6839058921,
+      "longitude": 139.7704122033,
+      "ellipsoidalHeight": 80.0,
+      "ecef": [
+        -3959775.5671,
+        3349776.4706,
+        3699807.3216
+      ],
+      "enu": [
+        299.8313,
+        300.2359,
+        39.9859
+      ]
+    },
+    {
+      "gridOffset": [
+        12.345,
+        -6.789,
+        3.21
+      ],
+      "latitude": 35.6811388821,
+      "longitude": 139.7672364367,
+      "ellipsoidalHeight": 43.21,
+      "ecef": [
+        -3959703.7902,
+        3350092.3102,
+        3699536.4887
+      ],
+      "enu": [
+        12.3509,
+        -6.7814,
+        3.21
+      ]
+    }
+  ]
+}

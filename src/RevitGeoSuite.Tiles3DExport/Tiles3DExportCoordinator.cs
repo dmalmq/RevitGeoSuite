@@ -16,6 +16,7 @@ public sealed class Tiles3DExportCoordinator
     private readonly Tiles3DExportStateService stateService;
     private readonly Tiles3DLevelGrouper levelGrouper;
     private readonly Tiles3DPreciseCrsAnchorRebaser? preciseCrsRebaser;
+    private readonly Tiles3DExactPlacement? exactPlacement;
 
     public Tiles3DExportCoordinator(
         Tiles3DGeometryExtractor? geometryExtractor = null,
@@ -32,6 +33,9 @@ public sealed class Tiles3DExportCoordinator
         this.levelGrouper = levelGrouper ?? new Tiles3DLevelGrouper();
         preciseCrsRebaser = coordinateTransformer is not null
             ? new Tiles3DPreciseCrsAnchorRebaser(coordinateTransformer)
+            : null;
+        exactPlacement = coordinateTransformer is not null
+            ? new Tiles3DExactPlacement(coordinateTransformer)
             : null;
     }
 
@@ -83,6 +87,12 @@ public sealed class Tiles3DExportCoordinator
         if (usePreciseCrsProjection && preciseCrsRebaser is not null)
         {
             preciseCrsRebaser.Rebase(package);
+            if (exactPlacement is not null)
+            {
+                // elements.json hashes plane-grid vertices, so it is taken before they move.
+                package.ElementIndex = new Tiles3DElementIndexWriter().Build(package);
+                exactPlacement.Place(package);
+            }
         }
 
         return new Tiles3DExportPreparationResult
@@ -360,6 +370,7 @@ public sealed class Tiles3DExportCoordinator
             new DetailRow("Geometric Error", package.GeometricError.ToString("F3")),
             new DetailRow("Geoid Offset", FormatGeoidOffset(package.GeoidHeightOffsetMeters)),
             new DetailRow("Precise CRS", package.UsedPreciseCrsProjection ? "Enabled" : "Disabled"),
+            new DetailRow("Exact placement", package.UsedExactPlacement ? "Every vertex unprojected" : "Grid metres as east-north-up"),
             new DetailRow("Tileset File", "tileset.json"),
             new DetailRow("Content File", package.ContentFileName),
             new DetailRow("Level Manifest", package.LevelManifestFileName)

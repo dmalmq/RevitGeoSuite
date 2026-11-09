@@ -36,6 +36,22 @@ public sealed class Tiles3DElementIndexWriter
             throw new ArgumentNullException(nameof(package));
         }
 
+        return Serialize(package.ElementIndex ?? Build(package));
+    }
+
+    /// <summary>Builds the index from the package's vertices, which must still be plane-grid metres.</summary>
+    public Tiles3DElementIndex Build(Tiles3DExportPackage package)
+    {
+        if (package is null)
+        {
+            throw new ArgumentNullException(nameof(package));
+        }
+
+        if (package.UsedExactPlacement)
+        {
+            throw new InvalidOperationException("The element index must be built before exact placement moves the vertices.");
+        }
+
         double originEasting = package.ReferenceContext.AnchorProjectedCoordinate.Easting;
         double originNorthing = package.ReferenceContext.AnchorProjectedCoordinate.Northing;
         double originHeight = package.ReferenceContext.AnchorElevationMeters - package.GeoidHeightOffsetMeters;
@@ -48,7 +64,7 @@ public sealed class Tiles3DElementIndexWriter
             .ThenBy(entry => entry.UniqueId, StringComparer.Ordinal)
             .ToList();
 
-        var document = new Tiles3DElementIndex
+        return new Tiles3DElementIndex
         {
             Version = FormatVersion,
             Frame = "projected-grid-orthometric",
@@ -56,7 +72,10 @@ public sealed class Tiles3DElementIndexWriter
             LevelOfDetail = package.LevelOfDetail.ToString().ToLowerInvariant(),
             Elements = elements,
         };
+    }
 
+    private static string Serialize(Tiles3DElementIndex document)
+    {
         return JsonConvert.SerializeObject(document, Formatting.None, new JsonSerializerSettings
         {
             ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver(),
