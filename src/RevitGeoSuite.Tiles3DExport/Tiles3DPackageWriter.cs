@@ -9,6 +9,7 @@ public sealed class Tiles3DPackageWriter
     private readonly TilesetJsonWriter tilesetJsonWriter;
     private readonly Tiles3DLevelManifestWriter levelManifestWriter;
     private readonly Tiles3DElementIndexWriter elementIndexWriter;
+    private readonly Tiles3DRoomIndexWriter roomIndexWriter = new Tiles3DRoomIndexWriter();
 
     public Tiles3DPackageWriter(
         Tiles3DGlbWriter? glbWriter = null,
@@ -42,6 +43,7 @@ public sealed class Tiles3DPackageWriter
         File.WriteAllText(tilesetPath, tilesetJsonWriter.BuildJson(package));
         File.WriteAllText(Path.Combine(outputDirectory, package.LevelManifestFileName), levelManifestWriter.BuildJson(package));
         elementIndexWriter.Write(outputDirectory, package);
+        roomIndexWriter.Write(outputDirectory, package);
         return (tilesetPath, contentPath);
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 
@@ -61,6 +62,158 @@ public sealed class Tiles3DGeometryExtractor
         }
 
         return meshes;
+    }
+
+    /// <summary>
+    /// Every placed room in the host and in the selected linked models, with its finish-face
+    /// footprint in plane-grid easting and northing. Rooms have no geometry in a 3D view, so the
+    /// scope's view does not filter them; its linked models do.
+    /// </summary>
+    public IReadOnlyList<Tiles3DRoomFootprint> ExtractRooms(
+        Document document,
+        Tiles3DExportReferenceContext referenceContext,
+        Tiles3DExportScopeSelection scope,
+        ICollection<string>? warnings = null)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        if (referenceContext is null)
+        {
+            throw new ArgumentNullException(nameof(referenceContext));
+        }
+
+        if (scope is null)
+        {
+            throw new ArgumentNullException(nameof(scope));
+        }
+
+        GeometryExtractionFrame frame = GeometryExtractionFrame.Create(document.ActiveProjectLocation, referenceContext);
+        var rooms = new List<Tiles3DRoomFootprint>();
+        AppendRooms(document, Transform.Identity, frame, referenceContext, document.Title, string.Empty, string.Empty, rooms, warnings);
+
+        foreach (Tiles3DExportLinkOption linkOption in scope.SelectedLinkedModels)
+        {
+            if (linkOption.LinkInstanceId <= 0
+                || document.GetElement(ToElementId(linkOption.LinkInstanceId)) is not RevitLinkInstance linkInstance
+                || linkInstance.GetLinkDocument() is not Document linkDocument)
+            {
+                // The mesh pass already warned about a link it could not open.
+                continue;
+            }
+
+            AppendRooms(
+                linkDocument,
+                linkInstance.GetTotalTransform(),
+                frame,
+                referenceContext,
+                linkDocument.Title,
+                linkOption.Title,
+                linkInstance.UniqueId ?? string.Empty,
+                rooms,
+                warnings);
+        }
+
+        return rooms;
+    }
+
+    private static void AppendRooms(
+        Document document,
+        Transform transform,
+        GeometryExtractionFrame frame,
+        Tiles3DExportReferenceContext referenceContext,
+        string sourceDocument,
+        string sourceLinkName,
+        string sourceLinkInstanceUniqueId,
+        List<Tiles3DRoomFootprint> rooms,
+        ICollection<string>? warnings)
+    {
+        var options = new SpatialElementBoundaryOptions
+        {
+            SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish,
+            StoreFreeBoundaryFaces = false,
+        };
+        double originEasting = referenceContext.AnchorProjectedCoordinate.Easting;
+        double originNorthing = referenceContext.AnchorProjectedCoordinate.Northing;
+
+        IEnumerable<Room> placed = new FilteredElementCollector(document)
+            .OfCategory(BuiltInCategory.OST_Rooms)
+            .WhereElementIsNotElementType()
+            .OfType<Room>()
+            .Where(room => room.Location is not null && room.Area > 0d);
+        foreach (Room room in placed)
+        {
+            try
+            {
+                IList<IList<BoundarySegment>>? loops = room.GetBoundarySegments(options);
+                if (loops is null || loops.Count == 0)
+                {
+                    continue;
+                }
+
+                var rings = new List<List<double[]>>();
+                foreach (IList<BoundarySegment> loop in loops)
+                {
+                    var ring = new List<double[]>();
+                    foreach (BoundarySegment segment in loop)
+                    {
+                        Curve? curve = segment.GetCurve();
+                        IList<XYZ>? points = curve?.Tessellate();
+                        if (points is null)
+                        {
+                            continue;
+                        }
+
+                        // Each curve starts where the last one ended.
+                        for (int i = ring.Count == 0 ? 0 : 1; i < points.Count; i++)
+                        {
+                            Tiles3DPoint local = frame.ToLocalMeters(transform.OfPoint(points[i]));
+                            ring.Add(new[] { originEasting + local.X, originNorthing + local.Y });
+                        }
+                    }
+
+                    if (ring.Count >= 3)
+                    {
+                        rings.Add(ring);
+                    }
+                }
+
+                if (rings.Count == 0)
+                {
+                    continue;
+                }
+
+                var footprint = new Tiles3DRoomFootprint
+                {
+                    UniqueId = room.UniqueId ?? string.Empty,
+                    ElementId = room.Id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    SourceDocument = sourceDocument,
+                    SourceLinkName = sourceLinkName,
+                    SourceLinkInstanceUniqueId = sourceLinkInstanceUniqueId,
+                    Name = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? string.Empty,
+                    Number = room.Number ?? string.Empty,
+                    AreaSquareMeters = room.Area * FeetToMeters * FeetToMeters,
+                    Rings = rings,
+                };
+                if (document.GetElement(room.LevelId) is Level level)
+                {
+                    footprint.LevelUniqueId = level.UniqueId ?? string.Empty;
+                    footprint.LevelName = level.Name;
+                    // As for element levels: ProjectElevation through the link's transform, in
+                    // the anchor's height datum.
+                    XYZ levelInHost = transform.OfPoint(new XYZ(0, 0, level.ProjectElevation));
+                    footprint.ElevationMeters = referenceContext.AnchorElevationMeters + frame.ToLocalMeters(levelInHost).Z;
+                }
+
+                rooms.Add(footprint);
+            }
+            catch (Exception ex)
+            {
+                warnings?.Add($"Skipped room {FormatElementLabel(room)}{(sourceLinkName.Length == 0 ? string.Empty : $" from '{sourceLinkName}'")}: {ex.Message}");
+            }
+        }
     }
 
     private static View3D? ResolveSelectedView(Document document, Tiles3DExportScopeSelection scope)
