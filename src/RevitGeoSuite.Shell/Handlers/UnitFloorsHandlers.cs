@@ -466,12 +466,8 @@ internal static class UnitFloorsWork
                     }
                 }
 
-                // A top face's loops are its outline and its openings: the largest is the outline.
-                rings.Sort((a, b) => Math.Abs(Area(b)).CompareTo(Math.Abs(Area(a))));
-                if (rings.Count > 0)
-                {
-                    parts.Add(factory.CreatePolygon(rings[0], rings.Skip(1).ToArray()));
-                }
+                // One top face can hold several separate regions, each with its own openings.
+                parts.AddRange(UnitFloorPlanner.PolygonsFromRings(rings, factory));
             }
 
             if (parts.Count == 0)
@@ -486,11 +482,6 @@ internal static class UnitFloorsWork
         }
 
         return hosts;
-    }
-
-    private static double Area(LinearRing ring)
-    {
-        return NetTopologySuite.Algorithm.Area.OfRingSigned(ring.CoordinateSequence);
     }
 
     /// <summary>Model coordinates (feet) to the project CRS (metres): the inverse of <see cref="PlateauReferenceFrame.ToLocalFeet"/>.</summary>

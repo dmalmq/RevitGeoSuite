@@ -243,6 +243,76 @@ public static class UnitFloorPlanner
         return new UnitFloorPlan(planned, coverage);
     }
 
+    /// <summary>
+    /// Polygons from the loops of one face. A Revit face can hold several separate regions, each
+    /// with its own holes, so a loop is a shell when an even number of the other loops contain it
+    /// and a hole of the smallest loop around it otherwise. Orientation is not trusted.
+    /// </summary>
+    public static IReadOnlyList<Polygon> PolygonsFromRings(IReadOnlyList<LinearRing> rings, GeometryFactory? factory = null)
+    {
+        if (rings is null)
+        {
+            throw new ArgumentNullException(nameof(rings));
+        }
+
+        factory ??= rings.Count > 0 ? rings[0].Factory : new GeometryFactory();
+        List<(LinearRing Ring, Polygon Area)> sorted = rings
+            .Where(ring => ring is not null && !ring.IsEmpty)
+            .Select(ring => (Ring: ring, Area: factory.CreatePolygon(ring)))
+            .OrderByDescending(item => item.Area.Area)
+            .ToList();
+
+        // For each loop, the larger loops that contain it, largest first.
+        List<int> parent = new(sorted.Count);
+        List<int> depth = new(sorted.Count);
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            Coordinate probe = sorted[i].Ring.GetCoordinateN(0);
+            int found = -1;
+            int count = 0;
+            for (int j = 0; j < i; j++)
+            {
+                if (sorted[j].Area.EnvelopeInternal.Covers(sorted[i].Area.EnvelopeInternal) && Contains(sorted[j].Area, sorted[i].Area, probe))
+                {
+                    count++;
+                    found = j;
+                }
+            }
+
+            parent.Add(found);
+            depth.Add(count);
+        }
+
+        List<Polygon> polygons = new();
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            if (depth[i] % 2 != 0)
+            {
+                continue;
+            }
+
+            LinearRing[] holes = Enumerable.Range(0, sorted.Count)
+                .Where(k => depth[k] % 2 != 0 && parent[k] == i)
+                .Select(k => sorted[k].Ring)
+                .ToArray();
+            polygons.Add(factory.CreatePolygon(sorted[i].Ring, holes));
+        }
+
+        return polygons;
+    }
+
+    private static bool Contains(Polygon outer, Polygon inner, Coordinate probe)
+    {
+        try
+        {
+            return outer.Covers(inner);
+        }
+        catch (TopologyException)
+        {
+            return outer.Covers(outer.Factory.CreatePoint(probe));
+        }
+    }
+
     /// <summary>The polygon parts of a geometry, made valid, with slivers dropped.</summary>
     public static IReadOnlyList<Polygon> Polygons(NtsGeometry? geometry, double minPartArea)
     {
