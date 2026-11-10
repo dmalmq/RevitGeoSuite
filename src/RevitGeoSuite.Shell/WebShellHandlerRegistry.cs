@@ -47,6 +47,9 @@ internal static class WebShellHandlerRegistry
         // Export route
         bridge.RegisterHandler(new GisExportOptionsHandler());
         bridge.RegisterHandler(new GisExportHandler(jobs));
+        bridge.RegisterHandler(new UnitFloorsInspectHandler());
+        bridge.RegisterHandler(new UnitFloorsPreviewHandler());
+        bridge.RegisterHandler(new UnitFloorsCreateHandler());
         bridge.RegisterHandler(new PlateauExportContextPrepareHandler(jobs));
         bridge.RegisterHandler(new PlateauExportContextHandler(jobs));
         bridge.RegisterHandler(new Tiles3DExportOptionsHandler());
