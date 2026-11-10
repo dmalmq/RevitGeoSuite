@@ -1011,6 +1011,69 @@ export interface Tiles3DViewOption {
   viewId: number
 }
 
+export interface UnitFloorsFloorType {
+  id: number
+  name: string
+}
+
+export interface UnitFloorsHost {
+  coveredShare: number
+  elementId: number
+  replaceable: boolean
+  typeName: string
+  unitCount: number
+}
+
+export interface UnitFloorsInspectRequest {
+  path: string
+}
+
+export interface UnitFloorsInspectResponse {
+  defaultLevelId?: number
+  floorTypes: UnitFloorsFloorType[]
+  levels: GisLevelOption[]
+  tables: UnitFloorsTable[]
+}
+
+export interface UnitFloorsRequest {
+  deleteReplaced: boolean
+  fallbackTypeId?: number
+  filterColumn: string
+  filterValue: string
+  keyColumn: string
+  levelId: number
+  path: string
+  table: string
+}
+
+export interface UnitFloorsResponse {
+  created: number
+  deleted: number
+  duplicateKey: number
+  failed: number
+  hosts: UnitFloorsHost[]
+  linkFile?: string
+  matched: number
+  noHost: number
+  notPolygon: number
+  units: number
+  unplaced: UnitFloorsUnit[]
+  warnings: string[]
+}
+
+export interface UnitFloorsTable {
+  columns: string[]
+  epsg?: number
+  featureCount: number
+  name: string
+}
+
+export interface UnitFloorsUnit {
+  areaSquareMetres: number
+  key: string
+  status: string
+}
+
 export interface RpcMethods {
   'cesium.export.getState': { request: CesiumExportStateRequest; response: CesiumExportStateResponse }
   'cesium.export.run': { request: CesiumExportRunRequest; response: JobStarted }
@@ -1064,6 +1127,9 @@ export interface RpcMethods {
   'tiles3d.export': { request: Tiles3DExportRequest; response: JobStarted }
   'tiles3d.export.prepare': { request: Tiles3DExportPrepareRequest; response: Tiles3DExportPrepareResponse }
   'tiles3d.exportOptions': { request: Tiles3DExportOptionsRequest; response: Tiles3DExportOptionsResponse }
+  'unitFloors.create': { request: UnitFloorsRequest; response: UnitFloorsResponse }
+  'unitFloors.inspect': { request: UnitFloorsInspectRequest; response: UnitFloorsInspectResponse }
+  'unitFloors.preview': { request: UnitFloorsRequest; response: UnitFloorsResponse }
   'window.navigate': { request: NavigateRequest; response: void }
 }
 
