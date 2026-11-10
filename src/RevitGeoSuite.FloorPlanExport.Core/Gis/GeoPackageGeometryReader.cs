@@ -68,7 +68,7 @@ public sealed class GeoPackageGeometryReader
         return new GisDataset(layers, sourceEpsg, sourceWkt, warnings);
     }
 
-    private static IEnumerable<(string TableName, string GeometryColumn, int SrsId)> ReadFeatureTables(SqliteConnection connection)
+    internal static IEnumerable<(string TableName, string GeometryColumn, int SrsId)> ReadFeatureTables(SqliteConnection connection)
     {
         List<(string, string, int)> tables = new();
         using SqliteCommand command = connection.CreateCommand();
@@ -139,7 +139,7 @@ public sealed class GeoPackageGeometryReader
     /// magic "GP" (2) + version (1) + flags (1) + srs_id (4) + envelope (0/32/48/64 by flag bits 1-3).
     /// Returns null when the blob is not a recognizable GeoPackage geometry.
     /// </summary>
-    private static byte[]? TryStripGeoPackageHeader(byte[] blob)
+    internal static byte[]? TryStripGeoPackageHeader(byte[] blob)
     {
         if (blob is null || blob.Length < 8 || blob[0] != (byte)'G' || blob[1] != (byte)'P')
         {
@@ -174,7 +174,7 @@ public sealed class GeoPackageGeometryReader
         return wkb;
     }
 
-    private static (int? Epsg, string? Wkt) ReadSourceCrs(SqliteConnection connection, int srsId)
+    internal static (int? Epsg, string? Wkt) ReadSourceCrs(SqliteConnection connection, int srsId)
     {
         if (srsId == -1 || srsId == 0)
         {
@@ -209,7 +209,7 @@ public sealed class GeoPackageGeometryReader
         return (epsg, wkt);
     }
 
-    private static string QuoteIdentifier(string identifier)
+    internal static string QuoteIdentifier(string identifier)
     {
         return "\"" + identifier.Replace("\"", "\"\"") + "\"";
     }
