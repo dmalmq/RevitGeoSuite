@@ -34,6 +34,12 @@
       icon: 'layers',
       title: $t('Import.Source.Gis.Title', 'Local GIS files'),
       description: $t('Import.Source.Gis.Description', 'Import Shapefiles or GeoPackages as DXF')
+    },
+    {
+      id: 'unitfloors',
+      icon: 'grid-3x3',
+      title: $t('Import.Source.UnitFloors.Title', 'Unit floors from GIS'),
+      description: $t('Import.Source.UnitFloors.Description', 'Make one Revit floor per GeoPackage unit, typed from the floor under it')
     }
   ])
 </script>

@@ -8,6 +8,8 @@
   import { BlockedNotice, StepBar, blocked, narrow, refreshReadiness, stepNumber, workflow } from '$lib/shell'
   import LocalGisTool from './gis/LocalGisTool.svelte'
   import type { GisPhase } from './gis/types'
+  import UnitFloorsTool from './unitfloors/UnitFloorsTool.svelte'
+  import type { UnitFloorsPhase } from './unitfloors/types'
   import type {
     PlateauOnlineArea,
     PlateauOnlineAreaGridSelection,
@@ -115,7 +117,7 @@
 
   onMount(async () => {
     const lastSource = localStorage.getItem('import.lastSource')
-    if (lastSource === 'local' || lastSource === 'online' || lastSource === 'osm' || lastSource === 'gis') {
+    if (lastSource === 'local' || lastSource === 'online' || lastSource === 'osm' || lastSource === 'gis' || lastSource === 'unitfloors') {
       source = lastSource
     }
     ckanDownloadFolder = localStorage.getItem('import.ckanDownloadFolder') ?? ''
@@ -147,6 +149,7 @@
     if (source === 'local') return $t('Import.Step.Preflight', 'Local Folder')
     if (source === 'osm') return $t('Import.Source.OsmBuildings.Title', 'OSM Buildings')
     if (source === 'gis') return $t('Import.Source.Gis.Title', 'Local GIS files')
+    if (source === 'unitfloors') return $t('Import.Source.UnitFloors.Title', 'Unit floors from GIS')
     return $t('Import.Source.OnlineApi.Title', 'PLATEAU Online / API')
   }
 
@@ -969,11 +972,19 @@
   })
   // ─── Frame: steps in the sidebar, map or sheet ──────────────────────────────
   let gisPhase = $state<GisPhase>('options')
+  let floorsPhase = $state<UnitFloorsPhase>('options')
+  // GIS and unit floors are self-contained tools: one options step, then their job.
+  const isTool = $derived(source === 'gis' || source === 'unitfloors')
+  const toolPhase = $derived(source === 'unitfloors' ? floorsPhase : gisPhase)
 
   const flowSteps = $derived.by(() => {
     if (source === 'gis') return [
       { id: 'preflight', label: $t('Import.Flow.Files', 'Choose files') },
       { id: 'import', label: $t('Import.Flow.Convert', 'Convert') }
+    ]
+    if (source === 'unitfloors') return [
+      { id: 'preflight', label: $t('Import.Flow.Preview', 'Preview') },
+      { id: 'import', label: $t('Import.Flow.CreateFloors', 'Create floors') }
     ]
     if (source === 'osm') return [
       { id: 'preflight', label: $t('Import.Flow.Options', 'Options') },
@@ -989,7 +1000,7 @@
 
   // OSM and GIS run from their options step; show their job under the last step.
   const flowCurrent = $derived(
-    source === 'gis' ? (gisPhase === 'options' ? 'preflight' : 'import')
+    isTool ? (toolPhase === 'options' ? 'preflight' : 'import')
       : source === 'osm' ? (osmImporting || osmImportProgress?.complete ? 'import' : 'preflight')
       : step
   )
@@ -997,16 +1008,16 @@
   const flowCompleted = $derived.by(() => {
     const index = flowSteps.findIndex((s) => s.id === flowCurrent)
     const done = new Set(flowSteps.slice(0, Math.max(0, index)).map((s) => s.id))
-    const finished = source === 'gis' ? gisPhase === 'done' : source === 'osm' ? !!osmImportProgress?.complete : !!importProgress?.complete
+    const finished = isTool ? toolPhase === 'done' : source === 'osm' ? !!osmImportProgress?.complete : !!importProgress?.complete
     if (finished) done.add('import')
     return done
   })
   const flowStep = $derived(flowSteps.find((s) => s.id === flowCurrent) ?? flowSteps[0])
-  const busy = $derived(scanning || importing || onlineGridLoading || osmImporting || gisPhase === 'running')
+  const busy = $derived(scanning || importing || onlineGridLoading || osmImporting || gisPhase === 'running' || floorsPhase === 'running')
 
   // Only steps already passed can be opened from the sidebar, and not while a job runs.
   function openStep(id: string) {
-    if (busy || source === 'gis' || source === 'osm') return
+    if (busy || isTool || source === 'osm') return
     const target = flowSteps.findIndex((s) => s.id === id)
     const current = flowSteps.findIndex((s) => s.id === step)
     if (target < 0 || target >= current) return
@@ -1033,12 +1044,12 @@
     (source === 'local' && (step === 'scan' || step === 'select' || step === 'import'))
       || (source === 'online' && onlineAreas.length > 0 && (step === 'preflight' || step === 'scan' || step === 'select' || step === 'import'))
   )
-  const canGoBack = $derived(step !== 'source' && step !== 'import' && !importing && !(source === 'gis' && gisPhase !== 'options') && !osmImporting)
+  const canGoBack = $derived(step !== 'source' && step !== 'import' && !importing && !(isTool && toolPhase !== 'options') && !osmImporting)
   let inspectorOpen = $state(true)
 </script>
 
 {#snippet panel()}
-  {#if error && step !== 'import' && source !== 'gis'}
+  {#if error && step !== 'import' && !isTool}
     <Banner tone="danger" onclose={() => (error = null)} closeLabel={$t('Common.Dismiss', 'Dismiss')}>{error}</Banner>
   {/if}
 
@@ -1100,6 +1111,8 @@
         />
       {:else if source === 'gis'}
         <LocalGisTool bind:phase={gisPhase} onhome={resetImport} />
+      {:else if source === 'unitfloors'}
+        <UnitFloorsTool bind:phase={floorsPhase} onhome={resetImport} />
       {:else}
         <OnlineOptions
           {activeOnlineAreas}
