@@ -120,6 +120,35 @@ public sealed class UnitFloorPlannerTests
         Assert.All(planned.Polygons, polygon => Assert.True(polygon.IsValid));
     }
 
+    [Fact]
+    public void AFaceWithSeparateRegionsBecomesOnePolygonPerRegion()
+    {
+        // As Revit gives a floor whose one top face has two regions: the larger one with an
+        // opening, and an island inside that opening.
+        LinearRing[] rings =
+        {
+            Box(0, 0, 20, 20).Shell,
+            Box(30, 0, 40, 10).Shell,
+            Box(5, 5, 15, 15).Shell,
+            Box(8, 8, 12, 12).Shell,
+        };
+
+        IReadOnlyList<Polygon> polygons = UnitFloorPlanner.PolygonsFromRings(rings, Factory);
+
+        Assert.Equal(3, polygons.Count);
+        Assert.Equal(400 - 100, polygons[0].Area, 6);
+        Assert.Equal(100, polygons[1].Area, 6);
+        Assert.Equal(16, polygons[2].Area, 6);
+
+        // A unit in the second region takes this floor's type; one in the opening does not.
+        HostFloorOutline shops = Host("shops", "j 店舗_床", Factory.CreateMultiPolygon(polygons.ToArray()));
+        UnitFloorPlan plan = UnitFloorPlanner.Plan(
+            new[] { new UnitFloorSource("in-second", Box(31, 1, 39, 9)), new UnitFloorSource("in-opening", Box(5.5, 5.5, 7.5, 14.5)) },
+            new[] { shops });
+        Assert.Equal(UnitFloorStatus.Matched, plan.Units[0].Status);
+        Assert.Equal(UnitFloorStatus.NoHost, plan.Units[1].Status);
+    }
+
     private static HostFloorOutline Host(string uniqueId, string typeName, NtsGeometry outline)
     {
         return new HostFloorOutline(uniqueId, uniqueId.Length, 1, typeName, outline);
