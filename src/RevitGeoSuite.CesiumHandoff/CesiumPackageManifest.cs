@@ -142,6 +142,12 @@ public sealed class CesiumPackageTiles
     /// viewer push payload or <c>contentHash</c>; it is derived from the same geometry as the GLB.
     /// </summary>
     public string? Elements { get; set; }
+
+    /// <summary>
+    /// Room footprints (<c>tiles/rooms.json</c>), which Kanizu pairs with the GDB's units. Not part
+    /// of the viewer push payload or <c>contentHash</c>.
+    /// </summary>
+    public string? Rooms { get; set; }
 }
 
 public sealed class CesiumPackageGis

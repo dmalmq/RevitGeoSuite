@@ -25,6 +25,15 @@ public sealed class Tiles3DExportPackage
     /// <summary>Per-element hashes and fingerprints; see <see cref="Tiles3DElementIndexWriter"/>.</summary>
     public string ElementIndexFileName { get; set; } = "elements.json";
 
+    /// <summary>Room footprints; see <see cref="Tiles3DRoomIndexWriter"/>.</summary>
+    public string RoomIndexFileName { get; set; } = "rooms.json";
+
+    /// <summary>
+    /// Every placed room in the host and the exported links, in plane-grid coordinates, which
+    /// placement does not move. Null writes no <c>rooms.json</c>.
+    /// </summary>
+    public List<Tiles3DRoomFootprint>? Rooms { get; set; }
+
     public bool UsedPreciseCrsProjection { get; set; }
 
     /// <summary>

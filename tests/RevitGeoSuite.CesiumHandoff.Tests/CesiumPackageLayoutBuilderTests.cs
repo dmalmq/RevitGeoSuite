@@ -167,6 +167,7 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
         File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
         File.WriteAllText(Path.Combine(layout.TilesDirectory, "content.glb"), "glb");
         File.WriteAllText(Path.Combine(layout.TilesDirectory, "levels.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "rooms.json"), "{}");
         File.WriteAllText(Path.Combine(layout.GisDirectory, "tower.gpkg"), "gpkg");
 
         CesiumPackageManifest manifest = builder.WriteManifest(layout, CreateInputs());
@@ -174,6 +175,8 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
         Assert.True(File.Exists(layout.ManifestPath));
         Assert.Equal("tiles/tileset.json", manifest.Tiles!.Tileset);
         Assert.Equal("tiles/levels.json", manifest.Tiles!.Levels);
+        Assert.Equal("tiles/rooms.json", manifest.Tiles!.Rooms);
+        Assert.Null(manifest.Tiles!.Elements);
         CesiumPackageGisArtifact artifact = Assert.Single(manifest.Gis!.Artifacts!);
         Assert.Equal("gis/tower.gpkg", artifact.Path);
         Assert.Equal("geopackage", manifest.Gis!.Format);

@@ -317,11 +317,13 @@ public sealed class CesiumPackageLayoutBuilder
 
         bool hasLevels = File.Exists(Path.Combine(layout.TilesDirectory, "levels.json"));
         bool hasElements = File.Exists(Path.Combine(layout.TilesDirectory, "elements.json"));
+        bool hasRooms = File.Exists(Path.Combine(layout.TilesDirectory, "rooms.json"));
         return new CesiumPackageTiles
         {
             Tileset = "tiles/tileset.json",
             Levels = hasLevels ? "tiles/levels.json" : null,
             Elements = hasElements ? "tiles/elements.json" : null,
+            Rooms = hasRooms ? "tiles/rooms.json" : null,
         };
     }
 

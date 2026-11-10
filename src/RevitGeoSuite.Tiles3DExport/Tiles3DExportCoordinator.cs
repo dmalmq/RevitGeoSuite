@@ -83,6 +83,9 @@ public sealed class Tiles3DExportCoordinator
         IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(meshList);
         Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, resolvedGeoidHeightOffsetMeters);
         package.GeoidModel = resolvedGeoidModel;
+        // Rooms are in plane-grid coordinates from the start, so rebasing and exact placement
+        // leave them alone.
+        package.Rooms = geometryExtractor.ExtractRooms(revitDocument, referenceContext, scope, extractionWarnings).ToList();
 
         if (usePreciseCrsProjection && preciseCrsRebaser is not null)
         {
