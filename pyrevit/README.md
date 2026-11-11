@@ -1,6 +1,6 @@
 # KanizuGIS pyRevit extension
 
-Five buttons that bring a Revit model to the Kanizu GIS standard, check it and export it, so the GDB export needs less hand work in ArcGIS Pro. The standard itself (shared parameters with fixed GUIDs, floor types and theme colours) is in [`../standards`](../standards/README.md); RevitGeoSuite and these tools read the same files.
+Six buttons that bring a Revit model to the Kanizu GIS standard, check it and export it, so the GDB export needs less hand work in ArcGIS Pro. The standard itself (shared parameters with fixed GUIDs, floor types and theme colours) is in [`../standards`](../standards/README.md); RevitGeoSuite and these tools read the same files.
 
 | Button | What it does | Changes the model |
 |---|---|---|
@@ -9,6 +9,7 @@ Five buttons that bring a Revit model to the Kanizu GIS standard, check it and e
 | Fix floor types | For each floor type in use that is not a standard type and has no usable `gis_category`, proposes the standard type it matches by name (`j 改札内コンコース_床` is `j ラチ内コンコース_床`; `ラチ内店舗` keeps `rachi_nai`). Accepted rows get the standard `gis_category`, `gis_restriction` and material written onto their own type. Types that match nothing are listed for a person to decide. | Yes, the rows you accept |
 | Export | Runs Audit, asks before going on when it finds errors, then opens RevitGeoSuite's Export. The export reads the model's `gis-model.json` in the station folder and preselects its views (else the `GIS_` views), so every PC exports the same. | No |
 | Parameters | Writes the GIS parameters of every floor, placed room, stair, escalator-like family and level to a CSV for Excel (UTF-8 with a byte order mark), and reads an edited CSV back (UTF-8 or the CP932 that Japanese Excel saves). Rows are tied to elements by `element_id`, so they can be sorted, filtered or deleted. Only the cells that changed are written, only in the columns that kind of element owns (`name`, `short_name`, `category`, `gis_direction` on floors, rooms, stairs and families; `short_name` and `ordinal` on levels), and only values the standard accepts. Each change is listed first and nothing is written until you accept. | Yes, the changes you accept |
+| Review GDB edits | Reads the drift file Kanizu writes into the station folder (`gis-drift/<model id>.gis-drift.json`) each time it applies this model's GIS export: the values someone changed in the GDB for fields this model owns. Finds the file from the model's station folder, or asks you to pick one. Each row is matched to its element by `UniqueId` and to its parameter (a station field's own, or `name`, `short_name`, `category`, `gis_direction`, the type's `gis_restriction`, `ordinal` for core fields). Rows the model already agrees with are left out, fields no parameter holds are listed to change by hand, and rows changed in Revit too since the last apply start unticked. Accepted values are written in one transaction, so the next export keeps the GDB edit. | Yes, the rows you accept |
 
 ## Rules the tools keep
 

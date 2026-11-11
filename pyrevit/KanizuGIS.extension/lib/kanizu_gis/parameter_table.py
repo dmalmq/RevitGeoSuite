@@ -136,7 +136,7 @@ def diff(current_rows, edited_rows, standard):
             if column not in EDITABLE.get(kind, []):
                 problems.append(u"Line %d: %s cannot be set on a %s here." % (number, column, kind))
                 continue
-            value, problem = _check(column, new, standard)
+            value, problem = check_value(column, new, standard)
             if problem:
                 problems.append(u"Line %d: %s" % (number, problem))
                 continue
@@ -145,7 +145,8 @@ def diff(current_rows, edited_rows, standard):
     return changes, problems
 
 
-def _check(column, value, standard):
+def check_value(column, value, standard):
+    """The value to write for a cell, or a problem when the standard does not accept it."""
     if column == "category" and value and not standard.is_known_category(value):
         return None, u"'%s' is not a unit category." % value
     if column == "gis_direction" and value:
