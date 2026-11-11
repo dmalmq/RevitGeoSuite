@@ -1,0 +1,5 @@
+title: "Export"
+tooltip: >-
+  Checks the model with Audit, then opens RevitGeoSuite's Export. The export reads the model's
+  gis-model.json in the station folder and preselects its views (else the GIS_ views), so every
+  PC exports the same. Asks before going on when the audit finds errors.

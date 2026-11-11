@@ -1,0 +1,5 @@
+title: "Parameters"
+tooltip: >-
+  Writes the GIS parameters of every floor, room, stair, escalator-like family and level to a CSV
+  for Excel, and reads an edited CSV back. Reading shows each change first, writes only the cells
+  that changed in the columns that element owns, and changes nothing until you accept.

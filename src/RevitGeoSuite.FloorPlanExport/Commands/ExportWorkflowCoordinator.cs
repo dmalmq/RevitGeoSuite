@@ -125,7 +125,8 @@ public sealed class ExportWorkflowCoordinator
         Action<ExportProgressUpdate>? progressCallback = null,
         CancellationToken cancellationToken = default,
         string? baselineKeyOverride = null,
-        bool persistBaseline = true)
+        bool persistBaseline = true,
+        bool recordViewsInGisModel = false)
     {
         FloorGeoPackageExporter exporter = new(_document);
         ExportValidationSnapshotBuilder snapshotBuilder = new();
@@ -176,12 +177,13 @@ public sealed class ExportWorkflowCoordinator
         ExportValidationResult validationResult = validationService.Validate(snapshotBuilder.Build(session));
         FloorGeoPackageExportResult result = CompleteExport(session, validationResult, request, progressCallback, cancellationToken, persistBaseline);
 
-        // The model's gis-model.json on the share remembers what this export used, so the next
-        // export from any PC starts from the same views.
+        // The model's gis-model.json on the share remembers what this export used. Only the
+        // station export (headless) records its views, so a one-off dialog export of a single
+        // view does not change what every PC exports next.
         List<string> gisModelWarnings = new();
         GisModelSettings.RecordExport(
             _document,
-            request.SelectedViews,
+            recordViewsInGisModel ? request.SelectedViews : Array.Empty<ViewPlan>(),
             request.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs ? request.TargetEpsg : coordinateInfo.ResolvedSourceEpsg,
             gisModelWarnings);
         result.AddWarnings(gisModelWarnings);
