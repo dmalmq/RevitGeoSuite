@@ -122,13 +122,15 @@ public sealed class FloorCategoryResolver
 
     /// <summary>
     /// Exports before the Kanizu GIS standard wrote the resolved category back into every floor's own
-    /// <c>category</c>. A value that equals what the type name and per-PC override give is taken as
-    /// that echo, not as a deliberate override, when the type has its own <c>gis_category</c>;
-    /// otherwise those models could never pick up their type parameters.
+    /// <c>category</c>. In a model not yet set up with the standard, a value that equals what the type
+    /// name and per-PC override give is taken as that echo, not as a deliberate override, when the type
+    /// has its own <c>gis_category</c>; otherwise those models could never pick up their type parameters.
+    /// Once the model is set up (Set up model clears the echoes), every value counts.
     /// </summary>
     private static bool IsLegacyExportEcho(ZoneInfo instance, ResolvedFloorCategory byName, FloorStandardParameters parameters)
     {
-        return !byName.IsUnassigned &&
+        return !parameters.ModelSetUpWithStandard &&
+               !byName.IsUnassigned &&
                !string.IsNullOrWhiteSpace(parameters.TypeCategory) &&
                string.Equals(instance.Category, byName.ZoneInfo.Category, StringComparison.OrdinalIgnoreCase);
     }

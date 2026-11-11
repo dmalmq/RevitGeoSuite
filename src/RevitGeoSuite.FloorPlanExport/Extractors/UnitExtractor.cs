@@ -103,10 +103,14 @@ public sealed class UnitExtractor
     private FloorStandardParameters ReadFloorStandardParameters(Floor floor)
     {
         Element? floorType = floor.Document.GetElement(floor.GetTypeId());
+        Autodesk.Revit.DB.ProjectInfo? projectInfo = floor.Document.ProjectInformation;
+        bool setUpWithStandard = projectInfo != null &&
+            !string.IsNullOrWhiteSpace(_metadataProvider.GetOptionalStringParameter(projectInfo, GisSharedParameters.GisStandardVersion));
         return new FloorStandardParameters(
             _metadataProvider.GetOptionalStringParameter(floor, GisSharedParameters.Category),
             floorType == null ? null : _metadataProvider.GetOptionalStringParameter(floorType, GisSharedParameters.GisCategory),
-            floorType == null ? null : _metadataProvider.GetOptionalStringParameter(floorType, GisSharedParameters.GisRestriction));
+            floorType == null ? null : _metadataProvider.GetOptionalStringParameter(floorType, GisSharedParameters.GisRestriction),
+            setUpWithStandard);
     }
 
     public bool TryCreateFloorUnits(

@@ -35,7 +35,7 @@ The first six names are the ones RevitGeoSuite has always used. Earlier versions
 3. A per-PC override chosen in the export dialog.
 4. The floor type name, `j <zone>_床`, looked up in the zone catalog.
 
-The export no longer writes the resolved category back into a floor's `category` (rooms still get it), so a value there is always one somebody set. Exports before this standard wrote it into every floor, so a floor's `category` that only repeats what steps 3 and 4 give is read as that old echo and does not override a type that has its own `gis_category`.
+The export no longer writes the resolved category back into a floor's `category` (rooms still get it), so a value there is always one somebody set. Exports before this standard wrote it into every floor, so until a model is set up with the standard (Project Information has `gis_standard_version`), a floor's `category` that only repeats what steps 3 and 4 give is read as that old echo and does not override a type that has its own `gis_category`. Set up model clears those echoes when it stamps the version; from then on every floor `category` counts.
 
 ## Changing the standard
 

@@ -99,6 +99,20 @@ public sealed class FloorStandardParameterResolutionTests
     }
 
     [Fact]
+    public void InstanceCategoryMatchingTheName_Overrides_OnceTheModelIsSetUp()
+    {
+        FloorCategoryResolver resolver = new(ZoneCatalog.CreateDefault());
+
+        ResolvedFloorCategory resolved = resolver.Resolve(
+            "j ラチ内コンコース_床",
+            "ラチ内コンコース",
+            new FloorStandardParameters("walkway", "nonpublic", null, modelSetUpWithStandard: true));
+
+        Assert.Equal(FloorCategoryResolutionSource.InstanceParameter, resolved.ResolutionSource);
+        Assert.Equal("walkway", resolved.ZoneInfo.Category);
+    }
+
+    [Fact]
     public void InstanceCategoryEchoingTheName_StillCounts_WithoutATypeParameter()
     {
         FloorCategoryResolver resolver = new(ZoneCatalog.CreateDefault());
