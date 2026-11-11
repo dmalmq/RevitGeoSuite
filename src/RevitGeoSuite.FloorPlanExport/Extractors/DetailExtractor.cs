@@ -301,7 +301,12 @@ public sealed class DetailExtractor
             IReadOnlyDictionary<string, object?>? stairVisibilityAttributes = stairVisibility?.BuildDebugAttributes();
             string? stairKey = RevitKey.Create(_modelKey, stair.UniqueId);
 
-            if (stairVisibility?.SourceKind == VerticalCirculationVisibilitySourceKind.DrawingRule &&
+            // A linked stair has no visibility result here, but its unit follows the drawing rule
+            // on the host view's level, so its step lines must too.
+            bool linkedUnderHostView = stairVisibility == null &&
+                                       view != null &&
+                                       !ReferenceEquals(view.Document, _document);
+            if ((stairVisibility?.SourceKind == VerticalCirculationVisibilitySourceKind.DrawingRule || linkedUnderHostView) &&
                 TryBuildDrawingRuleStepLines(
                     stair,
                     view,

@@ -1409,7 +1409,9 @@ public sealed class FloorExportDataPreparer
                          linkedSource.Stairs,
                          geometryRepair,
                          warnings,
-                         view: null,
+                         // The host view only picks the stair drawing rule's floor; every other
+                         // use of the view checks that it belongs to the linked document.
+                         view: context.View,
                          viewName: context.View.Name,
                          stairVisibilityResults: null,
                          skipLevelFilter: true))
