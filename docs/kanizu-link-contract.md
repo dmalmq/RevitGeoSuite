@@ -9,6 +9,8 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
   kanizu-link.json              Kanizu writes; RevitGeoSuite never reads it
   gis-models/                   RevitGeoSuite writes and reads; Kanizu does not read it yet
     <model id>.gis-model.json     one model's GIS export settings
+  gis-drift/                    Kanizu writes; RevitGeoSuite's pyRevit tools read
+    <model id>.gis-drift.json     GDB edits to fields this model owns
   revit/                        RevitGeoSuite writes; Kanizu reads, and removes old versions
     <model folder>/
       <yyyyMMddTHHmmssZ>-<hash8>/   one version per export
@@ -93,6 +95,18 @@ The field list the export used, written beside the GeoPackage: schema `revitgeos
 - `owner` is `revit` (every export writes the value) or `gdb` (the export never writes it; Kanizu keeps the GDB's value and carries it across by `revit_key`).
 
 Kanizu creates a missing field with its alias and pick list and fills the Revit-owned ones. A station adds a field by copying `standards/fields.json` to the share, adding a row, and naming the copy in the model's `gis-model.json` `fields`. RevitGeoSuite then binds the row's parameter and exports its column, with no code change. The standard's `core` rows always win over a station copy.
+
+## `gis-drift/<model id>.gis-drift.json` (version 1)
+
+Kanizu's record of the GDB values that differ from a model's export, written whole every time Kanizu applies that model's GIS export to the GDB (through a temporary file and a rename). The file name is the model id in lower case (or the document key without one), with characters other than ASCII letters, digits and `-` turned into `_`. Kanizu keeps the GDB's value when an apply meets such an edit; the pyRevit **Review GDB edits** button reads the file, and accepting a row writes the GDB's value into the Revit parameter so the next export agrees.
+
+| Field | Meaning |
+|---|---|
+| `schema`, `version` | `kanizu.gis-drift` and `1` |
+| `model`, `appliedVersion` | The model key, and the version applied (relative to the station folder) |
+| `rows[]` | `revitKey`, `uniqueId` (from the key), `layer`, `field` (the GDB field), `parameter`, `guid` and `binding` (from `gis-fields.json`; empty for a core field), `label` (the feature's name), `revit` (this export's value), `gdb` (the GDB's), `base` (the last applied export's) and `conflict` (both sides changed since the last apply) |
+
+A core field maps to its parameter by name: unit and fixture `name` to `name`, `alt_name` to `short_name`, unit `category` to `category`, `direction` to `gis_direction`, `restrict` to the type's `gis_restriction`, and level `ordinal` to `ordinal`. Other core fields have no parameter and are listed for a change by hand. The button leaves out rows the model already agrees with and leaves conflicts unticked.
 
 ## GIS exports: `revit_key`
 

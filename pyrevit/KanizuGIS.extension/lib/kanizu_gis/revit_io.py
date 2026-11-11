@@ -417,3 +417,91 @@ def apply_proposals(doc, standard, proposals, log, echo_floor_ids=None):
         if transaction.HasStarted() and not transaction.HasEnded():
             transaction.RollBack()
         raise
+
+
+# ---------------------------------------------------------------- GDB edits
+
+# RevitGeoSuite keeps GeoProjectInfo (the model id and station folder) as JSON on Project
+# Information, in this extensible storage schema (GeoProjectInfoStorage).
+GEO_PROJECT_INFO_SCHEMA = "1AA3F739-27A4-4426-B9A6-B0A6D7088F8D"
+
+
+def read_geo_project_info(doc):
+    """RevitGeoSuite's GeoProjectInfo as a dictionary, or None when the model has none."""
+    import json
+    schema = DB.ExtensibleStorage.Schema.Lookup(System.Guid(GEO_PROJECT_INFO_SCHEMA))
+    if schema is None:
+        return None
+    entity = doc.ProjectInformation.GetEntity(schema)
+    if entity is None or not entity.IsValid():
+        return None
+    payload = entity.Get[System.String](schema.GetField("PayloadJson"))
+    if not payload:
+        return None
+    try:
+        return json.loads(payload)
+    except ValueError:
+        return None
+
+
+def _drift_parameter(doc, unique_id, name, binding):
+    element = doc.GetElement(unique_id)
+    if element is None:
+        return None
+    if binding == "type":
+        type_id = element.GetTypeId()
+        element = doc.GetElement(type_id) if type_id != DB.ElementId.InvalidElementId else None
+        if element is None:
+            return None
+    return element.LookupParameter(name)
+
+
+def drift_current_value(doc, unique_id, name, binding):
+    """A parameter's value as text for drift.plan, or None when the element or parameter is missing."""
+    parameter = _drift_parameter(doc, unique_id, name, binding)
+    if parameter is None:
+        return None
+    if parameter.StorageType == DB.StorageType.Integer:
+        return u"" if not parameter.HasValue else u"%d" % parameter.AsInteger()
+    if parameter.StorageType == DB.StorageType.String:
+        return normalize(parameter.AsString())
+    return None
+
+
+def apply_drift_changes(doc, changes, log):
+    """Writes the accepted GDB values in one transaction. A parameter that went missing or is
+    read-only is skipped and logged; the rest still apply."""
+    transaction = DB.Transaction(doc, "Kanizu GIS: Review GDB edits")
+    transaction.Start()
+    try:
+        written = 0
+        # Several rows can reach one type parameter through different instances. The first
+        # accepted value wins; a later, different one is skipped rather than silently overwriting it.
+        set_values = {}
+        for change in changes:
+            parameter = _drift_parameter(doc, change.unique_id, change.parameter, change.binding)
+            if parameter is None or parameter.IsReadOnly:
+                log(u"Skipped %s: the parameter is missing or read-only" % change.label())
+                continue
+            target = (id_value(parameter.Element.Id), change.parameter)
+            if target in set_values:
+                if set_values[target] != change.new:
+                    log(u"Skipped %s: another accepted row already set this type parameter to %s"
+                        % (change.label(), set_values[target] or u"(empty)"))
+                continue
+            if parameter.StorageType == DB.StorageType.Integer:
+                try:
+                    parameter.Set(int(change.new))
+                except ValueError:
+                    log(u"Skipped %s: the parameter takes a whole number" % change.label())
+                    continue
+            else:
+                parameter.Set(change.new)
+            set_values[target] = change.new
+            written += 1
+        transaction.Commit()
+        return written
+    except Exception:
+        if transaction.HasStarted() and not transaction.HasEnded():
+            transaction.RollBack()
+        raise

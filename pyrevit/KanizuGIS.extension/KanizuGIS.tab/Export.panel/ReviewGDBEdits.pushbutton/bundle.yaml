@@ -1,0 +1,5 @@
+title: "Review\nGDB edits"
+tooltip: >-
+  Lists the values someone changed in the station's GDB for fields this model owns, as Kanizu
+  recorded them when it last applied this model's export. Accepting a row writes the GDB's value
+  into the Revit parameter, so the next export keeps the edit. Changes nothing until you accept.
