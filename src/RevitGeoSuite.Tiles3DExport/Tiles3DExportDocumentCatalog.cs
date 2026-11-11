@@ -56,6 +56,7 @@ public static class Tiles3DExportDocumentCatalog
                     LinkInstanceId = instance.Id.Value,
                     UniqueId = instance.UniqueId,
                     Title = string.IsNullOrWhiteSpace(linkDocument.Title) ? instance.Name : linkDocument.Title,
+                    InstanceName = instance.Name ?? string.Empty,
                     Description = $"Linked model '{linkDocument.Title}' through instance '{instance.Name}'. Visible geometry follows the selected scope and is exported when checked."
                 };
             })

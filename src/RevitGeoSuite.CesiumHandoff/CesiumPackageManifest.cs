@@ -40,6 +40,12 @@ public sealed class CesiumPackageManifest
 
     public List<CesiumPackageLevelMapEntry>? LevelMap { get; set; }
 
+    /// <summary>
+    /// What the 3D Tiles export covered and how: two packages compare element by element only when
+    /// these match. Absent on packages from before it was written.
+    /// </summary>
+    public CesiumPackageExport? Export { get; set; }
+
     /// <summary>SHA-256 over the payload files; lets the viewer skip unchanged re-pushes.</summary>
     public string? ContentHash { get; set; }
 }
@@ -148,6 +154,49 @@ public sealed class CesiumPackageTiles
     /// of the viewer push payload or <c>contentHash</c>.
     /// </summary>
     public string? Rooms { get; set; }
+}
+
+/// <summary>
+/// The settings a 3D Tiles export ran with. See <c>docs/kanizu-link-contract.md</c>.
+/// </summary>
+public sealed class CesiumPackageExport
+{
+    /// <summary>"whole" for the whole model, "view" for the elements one 3D view shows.</summary>
+    public string Scope { get; set; } = CesiumExportScopes.Whole;
+
+    /// <summary>The 3D view a "view" export used; absent for "whole".</summary>
+    public CesiumPackageExportItem? View { get; set; }
+
+    /// <summary>
+    /// The link instances whose elements were exported, by the UniqueId of the instance in the
+    /// host. Empty when only the host model was exported.
+    /// </summary>
+    public List<CesiumPackageExportItem> Links { get; set; } = new();
+
+    /// <summary>"coarse", "medium" or "fine".</summary>
+    public string LevelOfDetail { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when every vertex was unprojected from the project CRS (exact placement); false when
+    /// plane-grid metres were used as east-north-up around the anchor.
+    /// </summary>
+    public bool ExactPlacement { get; set; }
+}
+
+public sealed class CesiumPackageExportItem
+{
+    public string UniqueId { get; set; } = string.Empty;
+
+    /// <summary>For display only.</summary>
+    public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>The scope names written to <see cref="CesiumPackageExport.Scope"/>.</summary>
+public static class CesiumExportScopes
+{
+    public const string Whole = "whole";
+
+    public const string View = "view";
 }
 
 public sealed class CesiumPackageGis

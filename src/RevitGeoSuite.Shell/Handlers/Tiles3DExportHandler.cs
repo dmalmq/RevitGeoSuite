@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Autodesk.Revit.DB;
 using Newtonsoft.Json.Linq;
+using RevitGeoSuite.CesiumHandoff;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Web.Contracts;
@@ -63,6 +64,24 @@ internal static class Tiles3DExportSupport
         scope.SelectedLinkedModels = Tiles3DExportDocumentCatalog.CreateLinkOptions(document)
             .Where(l => selectedSet.Contains(l.UniqueId))
             .ToArray();
+    }
+
+    /// <summary>The manifest's <c>export</c> section for an export run with these settings.</summary>
+    public static CesiumPackageExport DescribeExport(
+        Tiles3DExportScopeSelection scope,
+        Tiles3DLevelOfDetail levelOfDetail,
+        bool exactPlacement)
+    {
+        return CesiumPackageExportDescriber.Describe(
+            scope.ScopeMode == Tiles3DExportScopeMode.Selected3DView,
+            scope.SelectedView?.UniqueId,
+            scope.SelectedView?.Title,
+            // The instance name tells two placements of one linked file apart; the title does not.
+            scope.SelectedLinkedModels.Select(link => (
+                link.UniqueId,
+                string.IsNullOrWhiteSpace(link.InstanceName) ? link.Title : link.InstanceName)),
+            levelOfDetail.ToString(),
+            exactPlacement);
     }
 
     public static string[] ScopeWarnings(string scope)
