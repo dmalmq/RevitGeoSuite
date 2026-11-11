@@ -475,15 +475,29 @@ def apply_drift_changes(doc, changes, log):
     transaction.Start()
     try:
         written = 0
+        # Several rows can reach one type parameter through different instances. The first
+        # accepted value wins; a later, different one is skipped rather than silently overwriting it.
+        set_values = {}
         for change in changes:
             parameter = _drift_parameter(doc, change.unique_id, change.parameter, change.binding)
             if parameter is None or parameter.IsReadOnly:
                 log(u"Skipped %s: the parameter is missing or read-only" % change.label())
                 continue
+            target = (id_value(parameter.Element.Id), change.parameter)
+            if target in set_values:
+                if set_values[target] != change.new:
+                    log(u"Skipped %s: another accepted row already set this type parameter to %s"
+                        % (change.label(), set_values[target] or u"(empty)"))
+                continue
             if parameter.StorageType == DB.StorageType.Integer:
-                parameter.Set(int(change.new))
+                try:
+                    parameter.Set(int(change.new))
+                except ValueError:
+                    log(u"Skipped %s: the parameter takes a whole number" % change.label())
+                    continue
             else:
                 parameter.Set(change.new)
+            set_values[target] = change.new
             written += 1
         transaction.Commit()
         return written
