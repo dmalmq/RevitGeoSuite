@@ -7,6 +7,7 @@ using Autodesk.Revit.UI;
 using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.Validation;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.FloorPlanExport.UI;
@@ -142,11 +143,24 @@ public sealed class FloorPlanHeadlessExporter
     private IReadOnlyList<ViewPlan> ResolveSelectedViews(IReadOnlyList<long>? selectedViewIds)
     {
         IReadOnlyList<ViewPlan> views = new ViewCollector().GetExportablePlanViews(_document);
+
+        // The views the model's gis-model.json lists come first, so every PC exports the same
+        // views whatever its own profile holds.
+        GisModelFile? gisModel = GisModelSettings.Load(_document, warnings: null).File;
+        if (gisModel != null)
+        {
+            IReadOnlyList<ViewPlan> listed = gisModel.MatchViews(views, view => view.UniqueId, view => view.Name ?? string.Empty);
+            if (listed.Count > 0)
+            {
+                return listed;
+            }
+        }
+
         var selectedIds = new HashSet<long>(selectedViewIds ?? (IReadOnlyList<long>)Array.Empty<long>());
         if (selectedIds.Count == 0)
         {
-            // A profile without stored views means "everything" for the one-click flow.
-            return views;
+            // A profile without stored views takes the GIS_ views, or everything when there are none.
+            return GisModelFile.ChooseDefaultViews(views, view => view.UniqueId, view => view.Name ?? string.Empty, null);
         }
 
         return views.Where(view => selectedIds.Contains(view.Id.Value)).ToList();

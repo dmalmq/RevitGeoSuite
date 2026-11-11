@@ -31,6 +31,8 @@ public static class GisStandardFiles
 
     public static string ReadSharedParameterFile() => Read(GisSharedParameters.FileName);
 
+    public static string ReadGisModelTemplate() => Read(GisModelFile.TemplateFileName);
+
     private static string Read(string fileName)
     {
         Assembly assembly = typeof(GisStandardFiles).Assembly;

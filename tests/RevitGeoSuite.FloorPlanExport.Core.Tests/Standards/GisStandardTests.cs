@@ -41,6 +41,15 @@ public sealed class GisStandardTests
     }
 
     [Fact]
+    public void GisModelTemplate_HoldsTheDefaults()
+    {
+        string expected = GisModelFile.CreateDefault().ToJson();
+
+        AssertShippedFile(GisModelFile.TemplateFileName, expected);
+        Assert.Equal(expected, GisStandardFiles.ReadGisModelTemplate());
+    }
+
+    [Fact]
     public void SharedParameters_HaveTheTwelveStandardNamesWithUniqueGuids()
     {
         Assert.Equal(

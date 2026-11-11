@@ -38,6 +38,9 @@ public sealed class FloorExportPreparationOptions
 
     public bool SimplifyEscalatorUnits { get; set; }
 
+    /// <summary>The stair drawing rule's numbers, from the model's <c>gis-model.json</c>. Null uses the standard's.</summary>
+    public StairDrawingSettings? StairDrawingSettings { get; set; }
+
     /// <summary>
     /// Include list of unit categories to export. Empty or null exports every category.
     /// Applied to the final unit layer only; openings and level boundaries still see all units.

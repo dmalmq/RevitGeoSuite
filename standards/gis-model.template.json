@@ -1,0 +1,25 @@
+{
+  "schema": "revitgeosuite.gis-model",
+  "version": 1,
+  "identity": {
+    "modelId": "",
+    "station": "",
+    "building": "",
+    "crsEpsg": null
+  },
+  "levels": [],
+  "views": [],
+  "drawingRules": {
+    "stairs": {
+      "stepSpacingMeters": 0.6,
+      "stopBeforeMiddleMeters": 1.1,
+      "overlapMeters": 1.8
+    }
+  },
+  "fields": "standard",
+  "versions": {
+    "standard": null,
+    "lastExportRevitGeoSuite": "",
+    "lastExportUtc": ""
+  }
+}

@@ -29,6 +29,7 @@ public sealed class FloorExportDataPreparer
     private readonly SharedCoordinateValidator _coordinateValidator;
     private readonly ZoneCatalog _zoneCatalog;
     private readonly ViewExportContextProvider _contextProvider;
+    private StairDrawingSettings _stairDrawingSettings = StairDrawingSettings.Default;
 
     public FloorExportDataPreparer(
         Document document,
@@ -134,6 +135,9 @@ public sealed class FloorExportDataPreparer
             activeSchemaProfile,
             simplifyEscalatorUnits: options?.SimplifyEscalatorUnits == true);
         DetailExtractor detailExtractor = new(_document, geometryRepairOptions, hostSourceDescriptor, activeSchemaProfile);
+        _stairDrawingSettings = options?.StairDrawingSettings ?? StairDrawingSettings.Default;
+        unitExtractor.StairDrawingSettings = _stairDrawingSettings;
+        detailExtractor.StairDrawingSettings = _stairDrawingSettings;
         OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog, geometryRepairOptions, hostSourceDescriptor, activeSchemaProfile);
         LevelBoundaryBuilder levelBoundaryBuilder = new();
 
@@ -1318,7 +1322,10 @@ public sealed class FloorExportDataPreparer
                 familyCategoryOverrides,
                 sourceDescriptor,
                 activeSchemaProfile,
-                simplifyEscalatorUnits: simplifyEscalatorUnits);
+                simplifyEscalatorUnits: simplifyEscalatorUnits)
+            {
+                StairDrawingSettings = _stairDrawingSettings,
+            };
 
             if (roomUnitLayer != null)
             {
@@ -1401,7 +1408,10 @@ public sealed class FloorExportDataPreparer
                 linkedSource.LinkedDocument,
                 geometryRepairOptions,
                 ExportSourceDescriptor.CreateLinked(_document, linkedSource),
-                activeSchemaProfile);
+                activeSchemaProfile)
+            {
+                StairDrawingSettings = _stairDrawingSettings,
+            };
             foreach (ExportLineString detailFeature in linkedDetailExtractor.ExtractForLevel(
                          context.Level,
                          levelId,

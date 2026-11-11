@@ -162,6 +162,7 @@ public sealed class FloorGeoPackageExporter
         AcceptedOpeningFamilyStore acceptedOpeningFamilyStore = new();
         var acceptedOpeningLoad = acceptedOpeningFamilyStore.LoadWithDiagnostics(projectKey);
         setupWarnings.AddRange(acceptedOpeningLoad.Warnings);
+        GisModelSettings gisModelSettings = GisModelSettings.Load(_document, setupWarnings);
         GeometryRepairOptions effectiveGeometryRepairOptions =
             (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         ExportPackageOptions effectivePackageOptions = packageOptions ?? new ExportPackageOptions();
@@ -207,6 +208,7 @@ public sealed class FloorGeoPackageExporter
                 ActiveValidationPolicyProfile = effectiveValidationPolicyProfile,
                 SimplifyStairUnits = simplifyStairUnits,
                 SimplifyEscalatorUnits = simplifyEscalatorUnits,
+                StairDrawingSettings = gisModelSettings.StairDrawingSettings,
                 UnitCategories = unitCategories,
                 ViewContexts = contexts,
             });

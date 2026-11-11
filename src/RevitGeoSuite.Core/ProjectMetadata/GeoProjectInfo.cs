@@ -29,4 +29,11 @@ public sealed class GeoProjectInfo
     /// Unlike a hash of the file path, it never changes. Empty until first needed.
     /// </summary>
     public string? ModelId { get; set; }
+
+    /// <summary>
+    /// The station folder on the share this model was last exported into, where its
+    /// <c>gis-models/&lt;model id&gt;.gis-model.json</c> settings file lives. Recorded by the Cesium
+    /// export into a station folder; empty until then.
+    /// </summary>
+    public string? GisStationFolder { get; set; }
 }

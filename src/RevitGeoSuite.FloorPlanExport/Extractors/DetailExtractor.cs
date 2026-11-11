@@ -60,6 +60,12 @@ public sealed class DetailExtractor
             point => _sourceDescriptor.TransformToHost.OfPoint(point));
     }
 
+    /// <summary>The stair drawing rule's numbers this extractor draws with.</summary>
+    internal StairDrawingSettings StairDrawingSettings
+    {
+        set => _stairVisibilityResolver.DrawingSettings = value ?? StairDrawingSettings.Default;
+    }
+
     internal IReadOnlyList<ExportLineString> ExtractForLevel(
         Level level,
         string levelId,

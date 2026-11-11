@@ -30,6 +30,7 @@ public sealed class ExportPreviewService
     private readonly PreviewCategoryAssignmentSession _floorAssignmentSession;
     private readonly PreviewCategoryAssignmentSession _roomAssignmentSession;
     private readonly IReadOnlyList<string> _loadWarnings;
+    private readonly StairDrawingSettings _stairDrawingSettings;
     private readonly string _projectKey;
     private readonly IReadOnlyList<string> _supportedCategories;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
@@ -103,10 +104,13 @@ public sealed class ExportPreviewService
         _roomAssignmentSession = new PreviewCategoryAssignmentSession(roomOverrideLoad.Value);
         _familyCategoryOverrides = familyOverrideLoad.Value;
         _acceptedOpeningFamilies = acceptedOpeningLoad.Value;
+        List<string> gisModelWarnings = new();
+        _stairDrawingSettings = GisModelSettings.Load(document, gisModelWarnings).StairDrawingSettings;
         _loadWarnings = floorOverrideLoad.Warnings
             .Concat(roomOverrideLoad.Warnings)
             .Concat(familyOverrideLoad.Warnings)
             .Concat(acceptedOpeningLoad.Warnings)
+            .Concat(gisModelWarnings)
             .ToList();
         _preparer = new FloorExportDataPreparer(document, zoneCatalog);
         _contextProvider = new ViewExportContextProvider(document);
@@ -243,6 +247,7 @@ public sealed class ExportPreviewService
                     ActiveSchemaProfile = _activeSchemaProfile,
                     SimplifyStairUnits = _simplifyStairUnits,
                     SimplifyEscalatorUnits = _simplifyEscalatorUnits,
+                    StairDrawingSettings = _stairDrawingSettings,
                     UnitCategories = _unitCategories,
                     ViewContexts = prebuiltContexts,
                 });
