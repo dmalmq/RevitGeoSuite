@@ -27,11 +27,19 @@ public sealed class SourceEncodingTests
         ".gitignore", ".gitattributes",
     };
 
-    // Fallback walk only: generated output, local caches and tool folders the repo ignores.
-    private static readonly HashSet<string> SkippedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    // Fallback walk only: folders .gitignore ignores at any depth.
+    private static readonly HashSet<string> SkippedDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
     {
         ".git", ".vs", ".claude", ".cursor", ".dotnet", "bin", "obj", "node_modules", "dist",
-        "packages", "TestResults", "build", "output", "web-contracts", "web-contracts-generator",
+        "packages", "TestResults",
+    };
+
+    // Fallback walk only: folders .gitignore ignores at one path. A bare "build" name is not
+    // skipped, because src/RevitGeoSuite.SharedUI/build holds tracked MSBuild targets.
+    private static readonly HashSet<string> SkippedDirectoryPaths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "native/build", "install/output", "install/dist",
+        "src/RevitGeoSuite.SharedUI/web-contracts", "src/RevitGeoSuite.SharedUI/web-contracts-generator",
     };
 
     [Fact]
@@ -87,7 +95,7 @@ public sealed class SourceEncodingTests
                 .Where(File.Exists);
         }
 
-        return WalkTree(repoRoot);
+        return WalkTree(repoRoot, repoRoot);
     }
 
     private static IReadOnlyList<string>? TryListTrackedFiles(string repoRoot)
@@ -124,7 +132,7 @@ public sealed class SourceEncodingTests
         }
     }
 
-    private static IEnumerable<string> WalkTree(string directory)
+    private static IEnumerable<string> WalkTree(string repoRoot, string directory)
     {
         foreach (string file in Directory.EnumerateFiles(directory))
         {
@@ -133,12 +141,15 @@ public sealed class SourceEncodingTests
 
         foreach (string child in Directory.EnumerateDirectories(directory))
         {
-            if (SkippedDirectories.Contains(Path.GetFileName(child)))
+            string relative = child.Substring(repoRoot.Length)
+                .TrimStart(Path.DirectorySeparatorChar)
+                .Replace(Path.DirectorySeparatorChar, '/');
+            if (SkippedDirectoryNames.Contains(Path.GetFileName(child)) || SkippedDirectoryPaths.Contains(relative))
             {
                 continue;
             }
 
-            foreach (string file in WalkTree(child))
+            foreach (string file in WalkTree(repoRoot, child))
             {
                 yield return file;
             }
