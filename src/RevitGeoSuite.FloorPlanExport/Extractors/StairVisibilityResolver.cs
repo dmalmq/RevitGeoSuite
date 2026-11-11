@@ -40,6 +40,12 @@ internal sealed class StairVisibilityResolver
 
     internal View3D? CurrentGeometryView { get; set; }
 
+    /// <summary>
+    /// The stair drawing rule's settings. On the stair's base and top levels the rule decides the
+    /// polygon; on other levels, and when this is null, the view's own visibility does.
+    /// </summary>
+    internal StairDrawingSettings? DrawingSettings { get; set; } = StairDrawingSettings.Default;
+
     public StairVisibilityResolver(
         Document document,
         Func<XYZ, Point2D> projectPoint,
@@ -79,6 +85,11 @@ internal sealed class StairVisibilityResolver
         }
 
         bool useSectionBoxClipOnly = CurrentGeometryView != null;
+        if (!useSectionBoxClipOnly && TryResolveByDrawingRule(stairs, view, out result))
+        {
+            return true;
+        }
+
         VerticalCirculationVisibilityEvidence evidence = useSectionBoxClipOnly
             ? VerticalCirculationVisibilityEvidence.Empty
             : ExtractEvidence(stairs, view);
@@ -127,6 +138,58 @@ internal sealed class StairVisibilityResolver
             best.Geometry,
             evidence,
             best.OverCoverageArea);
+        return true;
+    }
+
+    /// <summary>The floor of the stair a view shows under the drawing rule, or null where the rule does not apply.</summary>
+    internal StairFloorSide? ResolveDrawingRuleSide(Stairs stairs, ViewPlan? view)
+    {
+        return DrawingSettings == null || CurrentGeometryView != null
+            ? null
+            : StairDrawingPieces.ResolveSide(stairs, view, _transformPointToHost);
+    }
+
+    private bool TryResolveByDrawingRule(
+        Stairs stairs,
+        ViewPlan? view,
+        out VerticalCirculationVisibilityResult result)
+    {
+        result = null!;
+        StairFloorSide? side = ResolveDrawingRuleSide(stairs, view);
+        if (side == null ||
+            !StairDrawingPieces.TryRead(stairs, _projectPoint, out IReadOnlyList<StairPathPiece> pieces))
+        {
+            return false;
+        }
+
+        StairDrawingRule rule = new(pieces);
+        IReadOnlyList<Polygon2D> polygons = rule.BuildFloorPolygons(side.Value, DrawingSettings!);
+        List<Geometry> geometries = polygons
+            .Select(ToNtsGeometry)
+            .Where(geometry => geometry != null && !geometry.IsEmpty)
+            .Cast<Geometry>()
+            .ToList();
+        if (geometries.Count == 0)
+        {
+            return false;
+        }
+
+        Geometry geometry = geometries.Count == 1
+            ? geometries[0]
+            : GeometryFactory.BuildGeometry(geometries);
+        result = new VerticalCirculationVisibilityResult(
+            polygons,
+            VerticalCirculationVisibilitySourceKind.DrawingRule,
+            geometry.Area,
+            0,
+            0,
+            0d,
+            1,
+            maskApplied: false,
+            null,
+            geometry,
+            VerticalCirculationVisibilityEvidence.Empty,
+            0d);
         return true;
     }
 

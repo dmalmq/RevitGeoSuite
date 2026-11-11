@@ -630,7 +630,9 @@ public sealed class FloorExportDataPreparer
                 occlusionContext.OcclusionMask,
                 warnings);
 
-            if (simplifyStairUnits)
+            // The drawing rule already gives the stair its final shape, so simplifying is for stairs
+            // on other levels only.
+            if (simplifyStairUnits && finalVisibility.SourceKind != VerticalCirculationVisibilitySourceKind.DrawingRule)
             {
                 List<Polygon2D>? simplified = extractor.TrySimplifyStairPolygons(
                     stair,
@@ -796,11 +798,13 @@ public sealed class FloorExportDataPreparer
                     continue;
                 }
 
-                List<Polygon2D>? simplified = extractor.TrySimplifyStairPolygons(
-                    stair,
-                    view.GenLevel,
-                    visibility.VisiblePolygons,
-                    warnings);
+                List<Polygon2D>? simplified = visibility.SourceKind == VerticalCirculationVisibilitySourceKind.DrawingRule
+                    ? visibility.VisiblePolygons.ToList()
+                    : extractor.TrySimplifyStairPolygons(
+                        stair,
+                        view.GenLevel,
+                        visibility.VisiblePolygons,
+                        warnings);
                 if (simplified == null || simplified.Count == 0)
                 {
                     continue;

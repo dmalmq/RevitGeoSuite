@@ -301,6 +301,22 @@ public sealed class DetailExtractor
             IReadOnlyDictionary<string, object?>? stairVisibilityAttributes = stairVisibility?.BuildDebugAttributes();
             string? stairKey = RevitKey.Create(_modelKey, stair.UniqueId);
 
+            if (stairVisibility?.SourceKind == VerticalCirculationVisibilitySourceKind.DrawingRule &&
+                TryBuildDrawingRuleStepLines(
+                    stair,
+                    view,
+                    levelId,
+                    stairKey,
+                    visibleFootprintMask,
+                    geometryRepair,
+                    viewName,
+                    warnings,
+                    stairVisibilityAttributes,
+                    features))
+            {
+                continue;
+            }
+
             foreach (ElementId runId in stair.GetStairsRuns())
             {
                 if (_document.GetElement(runId) is not StairsRun run)
@@ -341,6 +357,71 @@ public sealed class DetailExtractor
         }
 
         return features;
+    }
+
+    /// <summary>
+    /// Step lines by the stair drawing rule: every 0.60 m on one grid for the whole stair, wall to
+    /// wall, stopping short of the middle on each floor, none on landings.
+    /// </summary>
+    private bool TryBuildDrawingRuleStepLines(
+        Stairs stair,
+        ViewPlan? view,
+        string levelId,
+        string? stairKey,
+        Geometry? visibleFootprintMask,
+        GeometryRepairResult geometryRepair,
+        string? viewName,
+        ICollection<string> warnings,
+        IReadOnlyDictionary<string, object?>? stairVisibilityAttributes,
+        List<ExportLineString> features)
+    {
+        StairFloorSide? side = _stairVisibilityResolver.ResolveDrawingRuleSide(stair, view);
+        if (side == null ||
+            _stairVisibilityResolver.DrawingSettings == null ||
+            !StairDrawingPieces.TryRead(stair, ProjectPoint, out IReadOnlyList<StairPathPiece> pieces))
+        {
+            return false;
+        }
+
+        StairDrawingRule rule = new(pieces);
+        foreach (IGrouping<StairPathPiece, StairStepLine> runLines in rule
+                     .BuildStepLines(side.Value, _stairVisibilityResolver.DrawingSettings)
+                     .GroupBy(line => line.Run))
+        {
+            if (runLines.Key.Key == null || _document.GetElement(runLines.Key.Key) is not StairsRun run)
+            {
+                continue;
+            }
+
+            if (!TryClipRunStepLines(
+                    runLines.Select(line => line.Line).ToList(),
+                    visibleFootprintMask,
+                    geometryRepair,
+                    out List<LineString2D> clipped))
+            {
+                continue;
+            }
+
+            for (int i = 0; i < clipped.Count; i++)
+            {
+                long syntheticElementId = (run.Id.Value * 1000L) + (i + 1);
+                features.Add(
+                    CreateFeature(
+                        run,
+                        clipped[i],
+                        BuildSyntheticId("detail.stair.step", syntheticElementId, levelId),
+                        levelId,
+                        "stair-step",
+                        RevitKey.Create(_modelKey, run.UniqueId, i),
+                        DetailCategory.Steps,
+                        stairKey,
+                        viewName,
+                        warnings,
+                        stairVisibilityAttributes));
+            }
+        }
+
+        return true;
     }
 
     private bool TryBuildRunStepLines(
