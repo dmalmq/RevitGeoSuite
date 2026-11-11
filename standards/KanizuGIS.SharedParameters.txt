@@ -15,5 +15,5 @@ PARAM	d4ed1842-369c-4064-97fd-93fab33f0a87	gis_category	TEXT		1	1	Unit category 
 PARAM	6df45ec8-c9ee-4b56-a038-c8c125b3ae1e	gis_restriction	TEXT		1	1	Restriction of every element of this type, such as rachi_nai. Empty means by location.	1	0
 PARAM	ff63e172-c407-4265-b075-4e1d5e9822b8	gis_kind	TEXT		1	1	What a family is in the GIS: escalator, moving_walkway, elevator or ticket_gate.	1	0
 PARAM	343f3126-afff-422c-99c1-0d1d4f1b1c95	gis_direction	TEXT		1	1	Travel direction of an escalator or moving walkway: up, down or both.	1	0
-PARAM	0816cab3-3717-4632-854f-c6c7c11e0881	gis_key	TEXT		1	1	revit_key of the element in the last export. Written by the export.	0	0
+PARAM	0816cab3-3717-4632-854f-c6c7c11e0881	gis_key	TEXT		1	1	revit_key of the first feature (part 0) this element made in the last export. Written by the export.	0	0
 PARAM	a5edd0e8-7877-4498-91c6-29691a6a01f5	gis_standard_version	TEXT		1	1	Version of the Kanizu GIS standard the model was set up with.	0	0

@@ -23,7 +23,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | `gis_restriction` | type | floors, generic models, specialty equipment; empty means by location |
 | `gis_kind` | type | generic models, specialty equipment (escalator, moving_walkway, elevator, ticket_gate) |
 | `gis_direction` | instance | stairs, generic models, specialty equipment (up, down, both) |
-| `gis_key` | instance, not user editable | floors, rooms, stairs, generic models, specialty equipment; the export writes `revit_key` here |
+| `gis_key` | instance, not user editable | floors, rooms, stairs, generic models, specialty equipment; the export writes the element's first `revit_key` (part 0) here |
 | `gis_standard_version` | instance, not user editable | project information; the version of this standard the model was set up with |
 
 The first six names are the ones RevitGeoSuite has always used. Earlier versions created them from a separate file on each PC, so an existing model may hold them under other GUIDs. The export keeps those definitions, adds any missing categories to their binding, and lists them in a warning. It never rebinds a parameter that already holds values.
@@ -36,6 +36,8 @@ The first six names are the ones RevitGeoSuite has always used. Earlier versions
 4. The floor type name, `j <zone>_床`, looked up in the zone catalog.
 
 The export no longer writes the resolved category back into a floor's `category` (rooms still get it), so a value there is always one somebody set. Exports before this standard wrote it into every floor, so until a model is set up with the standard (Project Information has `gis_standard_version`), a floor's `category` that only repeats what steps 3 and 4 give is read as that old echo and does not override a type that has its own `gis_category`. Set up model clears those echoes when it stamps the version; from then on every floor `category` counts.
+
+A generic model or specialty equipment family gets its unit category the same way: `gis_kind` first, then its own `category`, then its type's `gis_category` with `gis_restriction`, then the per-PC override and the family name catalog. A family with a category from these parameters is exported as a unit even when its name is not in the catalog.
 
 ## Changing the standard
 

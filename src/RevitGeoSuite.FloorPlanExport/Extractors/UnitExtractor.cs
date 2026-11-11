@@ -772,7 +772,63 @@ public sealed class UnitExtractor
             return true;
         }
 
+        if (TryResolveStandardFamilyZoneInfo(familyInstance, out zoneInfo))
+        {
+            return true;
+        }
+
         return TryResolveFamilyZoneInfo(familyName, out zoneInfo);
+    }
+
+    /// <summary>
+    /// The family's own <c>category</c>, then its type's <c>gis_category</c>, with the type's
+    /// <c>gis_restriction</c>. They come after <c>gis_kind</c> and before the per-PC override and the
+    /// family name catalog, as for floors. A value that is not a known unit category is ignored.
+    /// </summary>
+    private bool TryResolveStandardFamilyZoneInfo(FamilyInstance familyInstance, out ZoneInfo zoneInfo)
+    {
+        string? restriction = ReadTypeStringParameter(familyInstance, GisSharedParameters.GisRestriction);
+        foreach (string? candidate in new[]
+                 {
+                     ReadInstanceStringParameter(familyInstance, GisSharedParameters.Category),
+                     ReadTypeStringParameter(familyInstance, GisSharedParameters.GisCategory),
+                 })
+        {
+            if (candidate != null &&
+                !string.Equals(candidate, "unspecified", StringComparison.OrdinalIgnoreCase) &&
+                _zoneCatalog.TryGetCategoryInfo(candidate, out ZoneInfo known))
+            {
+                zoneInfo = new ZoneInfo(known.Category, known.FillColor, restriction ?? known.Restriction).Normalized();
+                return true;
+            }
+        }
+
+        zoneInfo = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the family sets a unit category through the standard parameters (its own
+    /// <c>category</c> or its type's <c>gis_category</c>), so the export collects it as a family unit.
+    /// </summary>
+    public static bool HasStandardCategory(FamilyInstance familyInstance)
+    {
+        return ReadInstanceStringParameter(familyInstance, GisSharedParameters.Category) != null ||
+               ReadTypeStringParameter(familyInstance, GisSharedParameters.GisCategory) != null;
+    }
+
+    private static string? ReadInstanceStringParameter(FamilyInstance familyInstance, string parameterName)
+    {
+        Parameter? parameter = familyInstance?.LookupParameter(parameterName);
+        string? value = parameter != null && parameter.StorageType == StorageType.String ? parameter.AsString() : null;
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
+    }
+
+    private static string? ReadTypeStringParameter(FamilyInstance familyInstance, string parameterName)
+    {
+        Parameter? parameter = familyInstance?.Symbol?.LookupParameter(parameterName);
+        string? value = parameter != null && parameter.StorageType == StorageType.String ? parameter.AsString() : null;
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
     }
 
     internal bool TryCreateEscalatorUnit(

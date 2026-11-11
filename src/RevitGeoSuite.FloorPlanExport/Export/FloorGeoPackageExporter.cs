@@ -959,6 +959,7 @@ public sealed class FloorGeoPackageExporter
         ICollection<string> warnings)
     {
         Dictionary<long, (string? Category, int Ordinal, string LevelId)> pending = new();
+        Dictionary<long, string> gisKeys = new();
         foreach (PreparedViewExportData view in prepared.Views)
         {
             ExportLayer? unitLayer = view.UnitLayer;
@@ -978,14 +979,23 @@ public sealed class FloorGeoPackageExporter
                     continue;
                 }
 
-                bool isFloorDerived = TryGetBoolAttribute(attributes, "is_floor_derived", out bool floorFlag) && floorFlag;
-                bool isRoomDerived = TryGetBoolAttribute(attributes, "is_room_derived", out bool roomFlag) && roomFlag;
-                if (!isFloorDerived && !isRoomDerived)
+                if (!TryGetLongAttribute(attributes, "source_element_id", out long sourceElementId))
                 {
                     continue;
                 }
 
-                if (!TryGetLongAttribute(attributes, "source_element_id", out long sourceElementId))
+                // gis_key holds the element's first revit_key (part 0), for every unit the model makes.
+                if (attributes.TryGetValue(RevitKey.AttributeName, out object? keyValue) &&
+                    keyValue is string revitKey &&
+                    !string.IsNullOrWhiteSpace(revitKey) &&
+                    (!gisKeys.TryGetValue(sourceElementId, out string? knownKey) || IsFirstPartKey(revitKey) && !IsFirstPartKey(knownKey)))
+                {
+                    gisKeys[sourceElementId] = revitKey;
+                }
+
+                bool isFloorDerived = TryGetBoolAttribute(attributes, "is_floor_derived", out bool floorFlag) && floorFlag;
+                bool isRoomDerived = TryGetBoolAttribute(attributes, "is_room_derived", out bool roomFlag) && roomFlag;
+                if (!isFloorDerived && !isRoomDerived)
                 {
                     continue;
                 }
@@ -1004,7 +1014,7 @@ public sealed class FloorGeoPackageExporter
             }
         }
 
-        if (pending.Count == 0)
+        if (pending.Count == 0 && gisKeys.Count == 0)
         {
             return;
         }
@@ -1029,7 +1039,21 @@ public sealed class FloorGeoPackageExporter
             manager.WriteLevelId(element, entry.Value.LevelId, warnings);
         }
 
+        foreach (KeyValuePair<long, string> entry in gisKeys)
+        {
+            Element? element = manager.Document.GetElement(new ElementId(entry.Key));
+            if (element != null)
+            {
+                manager.WriteGisKey(element, entry.Value, warnings);
+            }
+        }
+
         transaction.Commit();
+    }
+
+    private static bool IsFirstPartKey(string revitKey)
+    {
+        return revitKey.EndsWith(RevitKey.Separator + "0", StringComparison.Ordinal);
     }
 
     private static bool TryGetBoolAttribute(IReadOnlyDictionary<string, object?> attributes, string key, out bool value)

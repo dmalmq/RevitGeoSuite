@@ -167,6 +167,7 @@ public sealed class ViewExportContextProvider
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
                 return UnitExtractor.HasMappedGisKind(instance) ||
+                       UnitExtractor.HasStandardCategory(instance) ||
                        zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
                        overrides.ContainsKey(familyName);
             })
@@ -193,6 +194,7 @@ public sealed class ViewExportContextProvider
                 // CollectFamilyUnitsInView; the existing mapping wins to avoid double export.
                 string familyName = UnitExtractor.GetFamilyName(instance);
                 return !UnitExtractor.HasMappedGisKind(instance) &&
+                       !UnitExtractor.HasStandardCategory(instance) &&
                        !zoneCatalog.TryGetFamilyInfo(familyName, out _) &&
                        !overrides.ContainsKey(familyName);
             })
@@ -357,6 +359,7 @@ public sealed class ViewExportContextProvider
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
                 return UnitExtractor.HasMappedGisKind(instance) ||
+                       UnitExtractor.HasStandardCategory(instance) ||
                        zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
                        overrides.ContainsKey(familyName);
             })
@@ -383,6 +386,7 @@ public sealed class ViewExportContextProvider
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
                 return !UnitExtractor.HasMappedGisKind(instance) &&
+                       !UnitExtractor.HasStandardCategory(instance) &&
                        !zoneCatalog.TryGetFamilyInfo(familyName, out _) &&
                        !overrides.ContainsKey(familyName);
             })

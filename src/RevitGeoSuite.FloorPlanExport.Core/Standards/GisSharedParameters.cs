@@ -176,7 +176,7 @@ public static class GisSharedParameters
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
             UnitCategories,
-            "revit_key of the element in the last export. Written by the export.",
+            "revit_key of the first feature (part 0) this element made in the last export. Written by the export.",
             userModifiable: false),
         new GisParameterDefinition(
             GisStandardVersion,

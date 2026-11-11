@@ -285,6 +285,41 @@ public sealed class SharedParameterManager
         return TrySetStringParameter(element, ImdfCategoryParameterName, category, warnings);
     }
 
+    /// <summary>
+    /// Writes the element's first <c>revit_key</c> into <c>gis_key</c>. An element whose category has
+    /// no <c>gis_key</c> binding is skipped without a warning.
+    /// </summary>
+    public bool WriteGisKey(Element element, string revitKey, ICollection<string> warnings)
+    {
+        if (element is null)
+        {
+            throw new ArgumentNullException(nameof(element));
+        }
+
+        if (warnings is null)
+        {
+            throw new ArgumentNullException(nameof(warnings));
+        }
+
+        Parameter? parameter = GisSharedParameters.TryGet(GisSharedParameters.GisKey, out GisParameterDefinition definition)
+            ? element.get_Parameter(definition.Guid)
+            : null;
+        if (parameter == null || parameter.IsReadOnly || parameter.StorageType != StorageType.String ||
+            string.IsNullOrWhiteSpace(revitKey) ||
+            string.Equals(parameter.AsString(), revitKey, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!parameter.Set(revitKey))
+        {
+            warnings.Add($"Failed to update parameter '{GisSharedParameters.GisKey}' for element {element.Id.Value}.");
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>Writes the embedded standard file to app data, where Revit can open it, and returns its path.</summary>
     private static string WriteShippedSharedParameterFile()
     {
