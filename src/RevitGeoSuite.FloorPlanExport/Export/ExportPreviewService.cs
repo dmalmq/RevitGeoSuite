@@ -502,8 +502,11 @@ public sealed class ExportPreviewService
         List<PreviewFeatureData> reprojected = new(features.Count);
         foreach (PreviewFeatureData feature in features)
         {
+            // A category from the model's own parameters does not depend on per-PC overrides.
             if (feature.FeatureType != ExportFeatureType.Unit ||
-                string.IsNullOrWhiteSpace(feature.AssignmentMappingKey))
+                string.IsNullOrWhiteSpace(feature.AssignmentMappingKey) ||
+                feature.CategoryResolutionSource == FloorCategoryResolutionSource.TypeParameter ||
+                feature.CategoryResolutionSource == FloorCategoryResolutionSource.InstanceParameter)
             {
                 reprojected.Add(feature);
                 continue;

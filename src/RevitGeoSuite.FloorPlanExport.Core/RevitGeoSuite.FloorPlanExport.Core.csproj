@@ -13,6 +13,13 @@
     <PackageReference Include="ProjNet" Version="2.1.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The Kanizu GIS standard, shipped inside the assembly. See standards/README.md. -->
+    <EmbeddedResource Include="..\..\standards\color_theme.json" LogicalName="RevitGeoSuite.Standards.color_theme.json" />
+    <EmbeddedResource Include="..\..\standards\floor-types.json" LogicalName="RevitGeoSuite.Standards.floor-types.json" />
+    <EmbeddedResource Include="..\..\standards\KanizuGIS.SharedParameters.txt" LogicalName="RevitGeoSuite.Standards.KanizuGIS.SharedParameters.txt" />
+  </ItemGroup>
+
   <Target Name="CopyReferenceAssembliesToCommonOutput" AfterTargets="Build">
     <Copy
       SourceFiles="@(ReferenceCopyLocalPaths)"

@@ -17,6 +17,7 @@ using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Preview;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 
 namespace RevitGeoSuite.FloorPlanExport.Extractors;
@@ -95,6 +96,23 @@ public sealed class UnitExtractor
             point => _sourceDescriptor.TransformToHost.OfPoint(point));
     }
 
+    /// <summary>
+    /// The floor's own <c>category</c> and its type's <c>gis_category</c> and <c>gis_restriction</c>,
+    /// which decide its category before the type name is parsed.
+    /// </summary>
+    private FloorStandardParameters ReadFloorStandardParameters(Floor floor)
+    {
+        Element? floorType = floor.Document.GetElement(floor.GetTypeId());
+        Autodesk.Revit.DB.ProjectInfo? projectInfo = floor.Document.ProjectInformation;
+        bool setUpWithStandard = projectInfo != null &&
+            !string.IsNullOrWhiteSpace(_metadataProvider.GetOptionalStringParameter(projectInfo, GisSharedParameters.GisStandardVersion));
+        return new FloorStandardParameters(
+            _metadataProvider.GetOptionalStringParameter(floor, GisSharedParameters.Category),
+            floorType == null ? null : _metadataProvider.GetOptionalStringParameter(floorType, GisSharedParameters.GisCategory),
+            floorType == null ? null : _metadataProvider.GetOptionalStringParameter(floorType, GisSharedParameters.GisRestriction),
+            setUpWithStandard);
+    }
+
     public bool TryCreateFloorUnits(
         Floor floor,
         string levelId,
@@ -112,19 +130,20 @@ public sealed class UnitExtractor
         string typeName = GetElementTypeName(floor);
         string rawFloorTypeName = string.IsNullOrWhiteSpace(typeName) ? $"<floor-{elementId}>" : typeName.Trim();
         string zoneName;
+        List<string> nameWarnings = new();
         if (TryResolveFloorZoneName(typeName, out string parsedZoneName, out bool prefixMatched))
         {
             zoneName = parsedZoneName;
             if (!prefixMatched)
             {
-                warnings.Add(
+                nameWarnings.Add(
                     $"Floor {elementId} type '{typeName}' is missing the expected '{ZoneNameParser.DefaultPrefix}' prefix. Parsed zone '{zoneName}' using suffix matching.");
             }
         }
         else
         {
             zoneName = rawFloorTypeName;
-            warnings.Add(
+            nameWarnings.Add(
                 $"Floor {elementId} type '{typeName}' does not match the expected floor naming convention. Using full type name '{zoneName}' for zone lookup.");
         }
 
@@ -158,7 +177,21 @@ public sealed class UnitExtractor
             return false;
         }
 
-        ResolvedFloorCategory resolvedFloorCategory = _floorCategoryResolver.Resolve(rawFloorTypeName, zoneName);
+        ResolvedFloorCategory resolvedFloorCategory = _floorCategoryResolver.Resolve(
+            rawFloorTypeName,
+            zoneName,
+            ReadFloorStandardParameters(floor),
+            warnings);
+        if (resolvedFloorCategory.ResolutionSource != FloorCategoryResolutionSource.TypeParameter &&
+            resolvedFloorCategory.ResolutionSource != FloorCategoryResolutionSource.InstanceParameter)
+        {
+            // The name only matters when the standard parameters did not decide the category.
+            foreach (string nameWarning in nameWarnings)
+            {
+                warnings.Add(nameWarning);
+            }
+        }
+
         ResolvedMappingCategory resolvedCategory = new(
             "floor",
             resolvedFloorCategory.FloorTypeName,
@@ -739,7 +772,78 @@ public sealed class UnitExtractor
             return true;
         }
 
+        if (TryResolveStandardFamilyZoneInfo(familyInstance, out zoneInfo))
+        {
+            return true;
+        }
+
         return TryResolveFamilyZoneInfo(familyName, out zoneInfo);
+    }
+
+    /// <summary>
+    /// The family's own <c>category</c>, then its type's <c>gis_category</c>, with the type's
+    /// <c>gis_restriction</c>. They come after <c>gis_kind</c> and before the per-PC override and the
+    /// family name catalog, as for floors. A value that is not a known unit category is ignored.
+    /// </summary>
+    private bool TryResolveStandardFamilyZoneInfo(FamilyInstance familyInstance, out ZoneInfo zoneInfo)
+    {
+        if (!TryGetStandardCategoryInfo(familyInstance, _zoneCatalog, out ZoneInfo known))
+        {
+            zoneInfo = null!;
+            return false;
+        }
+
+        string? restriction = ReadTypeStringParameter(familyInstance, GisSharedParameters.GisRestriction);
+        zoneInfo = new ZoneInfo(known.Category, known.FillColor, restriction ?? known.Restriction).Normalized();
+        return true;
+    }
+
+    /// <summary>
+    /// The catalog entry of the unit category the family sets through its own <c>category</c> or its
+    /// type's <c>gis_category</c>, the first that is a known unit category. Validation counts with it too.
+    /// </summary>
+    public static bool TryGetStandardCategoryInfo(FamilyInstance familyInstance, ZoneCatalog zoneCatalog, out ZoneInfo zoneInfo)
+    {
+        foreach (string? candidate in new[]
+                 {
+                     ReadInstanceStringParameter(familyInstance, GisSharedParameters.Category),
+                     ReadTypeStringParameter(familyInstance, GisSharedParameters.GisCategory),
+                 })
+        {
+            if (candidate != null &&
+                !string.Equals(candidate, "unspecified", StringComparison.OrdinalIgnoreCase) &&
+                zoneCatalog.TryGetCategoryInfo(candidate, out zoneInfo))
+            {
+                return true;
+            }
+        }
+
+        zoneInfo = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the family sets a unit category through the standard parameters (its own
+    /// <c>category</c> or its type's <c>gis_category</c>), so the export collects it as a family unit.
+    /// </summary>
+    public static bool HasStandardCategory(FamilyInstance familyInstance)
+    {
+        return ReadInstanceStringParameter(familyInstance, GisSharedParameters.Category) != null ||
+               ReadTypeStringParameter(familyInstance, GisSharedParameters.GisCategory) != null;
+    }
+
+    private static string? ReadInstanceStringParameter(FamilyInstance familyInstance, string parameterName)
+    {
+        Parameter? parameter = familyInstance?.LookupParameter(parameterName);
+        string? value = parameter != null && parameter.StorageType == StorageType.String ? parameter.AsString() : null;
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
+    }
+
+    private static string? ReadTypeStringParameter(FamilyInstance familyInstance, string parameterName)
+    {
+        Parameter? parameter = familyInstance?.Symbol?.LookupParameter(parameterName);
+        string? value = parameter != null && parameter.StorageType == StorageType.String ? parameter.AsString() : null;
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
     }
 
     internal bool TryCreateEscalatorUnit(

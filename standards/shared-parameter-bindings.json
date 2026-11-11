@@ -1,0 +1,164 @@
+{
+  "note": "Generated from GisSharedParameters.cs. Do not edit by hand; see standards/README.md.",
+  "group": "RevitGeoSuite FloorPlanExport",
+  "parameters": [
+    {
+      "name": "id",
+      "guid": "64e7d743-c3ae-4831-a208-33c2762ac50a",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_Floors",
+        "OST_Rooms",
+        "OST_Stairs",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_Doors",
+        "OST_Windows",
+        "OST_Columns",
+        "OST_StructuralColumns"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "level_id",
+      "guid": "84f1637a-1421-4c6c-9670-c000206ffea0",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_Levels",
+        "OST_Floors",
+        "OST_Rooms"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "name",
+      "guid": "47b8db20-e756-4280-a842-f570dc847db5",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_Floors",
+        "OST_Rooms",
+        "OST_Stairs",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "short_name",
+      "guid": "03f1849b-ac06-42c8-aff7-51a973f0a730",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_Floors",
+        "OST_Rooms",
+        "OST_Stairs",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_Levels"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "category",
+      "guid": "7fb0aa6b-c570-437d-a86a-f25f02537165",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_Floors",
+        "OST_Rooms",
+        "OST_Stairs",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "ordinal",
+      "guid": "6724ae86-07fe-44ba-b29b-1e9298bc3c8a",
+      "data_type": "integer",
+      "binding": "instance",
+      "categories": [
+        "OST_Levels",
+        "OST_Floors",
+        "OST_Rooms"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_category",
+      "guid": "d4ed1842-369c-4064-97fd-93fab33f0a87",
+      "data_type": "text",
+      "binding": "type",
+      "categories": [
+        "OST_Floors",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_restriction",
+      "guid": "6df45ec8-c9ee-4b56-a038-c8c125b3ae1e",
+      "data_type": "text",
+      "binding": "type",
+      "categories": [
+        "OST_Floors",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_kind",
+      "guid": "ff63e172-c407-4265-b075-4e1d5e9822b8",
+      "data_type": "text",
+      "binding": "type",
+      "categories": [
+        "OST_GenericModel",
+        "OST_SpecialityEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_direction",
+      "guid": "343f3126-afff-422c-99c1-0d1d4f1b1c95",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_Stairs",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_key",
+      "guid": "0816cab3-3717-4632-854f-c6c7c11e0881",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_Floors",
+        "OST_Rooms",
+        "OST_Stairs",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_Columns",
+        "OST_StructuralColumns"
+      ],
+      "user_modifiable": false
+    },
+    {
+      "name": "gis_standard_version",
+      "guid": "a5edd0e8-7877-4498-91c6-29691a6a01f5",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_ProjectInformation"
+      ],
+      "user_modifiable": false
+    }
+  ]
+}

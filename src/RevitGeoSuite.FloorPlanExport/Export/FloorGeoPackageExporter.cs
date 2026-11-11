@@ -958,9 +958,20 @@ public sealed class FloorGeoPackageExporter
         FloorExportPreparationResult prepared,
         ICollection<string> warnings)
     {
-        Dictionary<long, (string Category, int Ordinal, string LevelId)> pending = new();
+        Dictionary<long, (string? Category, int Ordinal, string LevelId)> pending = new();
+        Dictionary<long, string> gisKeys = new();
         foreach (PreparedViewExportData view in prepared.Views)
         {
+            // Families that resolve to fixtures leave the unit layer; they still get their gis_key.
+            foreach (IExportFeature fixture in view.FixtureLayer?.Features ?? Enumerable.Empty<IExportFeature>())
+            {
+                if (!(TryGetBoolAttribute(fixture.Attributes, "is_linked_source", out bool isLinkedFixture) && isLinkedFixture) &&
+                    TryGetLongAttribute(fixture.Attributes, "source_element_id", out long fixtureElementId))
+                {
+                    CollectGisKey(gisKeys, fixtureElementId, fixture.Attributes);
+                }
+            }
+
             ExportLayer? unitLayer = view.UnitLayer;
             if (unitLayer == null)
             {
@@ -978,14 +989,16 @@ public sealed class FloorGeoPackageExporter
                     continue;
                 }
 
-                bool isFloorDerived = TryGetBoolAttribute(attributes, "is_floor_derived", out bool floorFlag) && floorFlag;
-                bool isRoomDerived = TryGetBoolAttribute(attributes, "is_room_derived", out bool roomFlag) && roomFlag;
-                if (!isFloorDerived && !isRoomDerived)
+                if (!TryGetLongAttribute(attributes, "source_element_id", out long sourceElementId))
                 {
                     continue;
                 }
 
-                if (!TryGetLongAttribute(attributes, "source_element_id", out long sourceElementId))
+                CollectGisKey(gisKeys, sourceElementId, attributes);
+
+                bool isFloorDerived = TryGetBoolAttribute(attributes, "is_floor_derived", out bool floorFlag) && floorFlag;
+                bool isRoomDerived = TryGetBoolAttribute(attributes, "is_room_derived", out bool roomFlag) && roomFlag;
+                if (!isFloorDerived && !isRoomDerived)
                 {
                     continue;
                 }
@@ -997,12 +1010,14 @@ public sealed class FloorGeoPackageExporter
 
                 if (!pending.ContainsKey(sourceElementId))
                 {
-                    pending[sourceElementId] = (category, viewOrdinal, viewLevelId);
+                    // A floor's own `category` is an override the next export reads before its type's
+                    // gis_category, so writing the resolved value back would freeze it. Rooms keep it.
+                    pending[sourceElementId] = (isFloorDerived ? null : category, viewOrdinal, viewLevelId);
                 }
             }
         }
 
-        if (pending.Count == 0)
+        if (pending.Count == 0 && gisKeys.Count == 0)
         {
             return;
         }
@@ -1010,7 +1025,7 @@ public sealed class FloorGeoPackageExporter
         using Transaction transaction = new(manager.Document, "IMDF Export - Write Unit Metadata");
         transaction.Start();
 
-        foreach (KeyValuePair<long, (string Category, int Ordinal, string LevelId)> entry in pending)
+        foreach (KeyValuePair<long, (string? Category, int Ordinal, string LevelId)> entry in pending)
         {
             Element? element = manager.Document.GetElement(new ElementId(entry.Key));
             if (element == null)
@@ -1018,12 +1033,42 @@ public sealed class FloorGeoPackageExporter
                 continue;
             }
 
-            manager.WriteCategory(element, entry.Value.Category, warnings);
+            if (entry.Value.Category != null)
+            {
+                manager.WriteCategory(element, entry.Value.Category, warnings);
+            }
+
             manager.WriteOrdinal(element, entry.Value.Ordinal, warnings);
             manager.WriteLevelId(element, entry.Value.LevelId, warnings);
         }
 
+        foreach (KeyValuePair<long, string> entry in gisKeys)
+        {
+            Element? element = manager.Document.GetElement(new ElementId(entry.Key));
+            if (element != null)
+            {
+                manager.WriteGisKey(element, entry.Value, warnings);
+            }
+        }
+
         transaction.Commit();
+    }
+
+    /// <summary>gis_key holds the element's first revit_key (part 0), for every unit or fixture the model makes.</summary>
+    private static void CollectGisKey(Dictionary<long, string> gisKeys, long sourceElementId, IReadOnlyDictionary<string, object?> attributes)
+    {
+        if (attributes.TryGetValue(RevitKey.AttributeName, out object? keyValue) &&
+            keyValue is string revitKey &&
+            !string.IsNullOrWhiteSpace(revitKey) &&
+            (!gisKeys.TryGetValue(sourceElementId, out string? knownKey) || IsFirstPartKey(revitKey) && !IsFirstPartKey(knownKey)))
+        {
+            gisKeys[sourceElementId] = revitKey;
+        }
+    }
+
+    private static bool IsFirstPartKey(string revitKey)
+    {
+        return revitKey.EndsWith(RevitKey.Separator + "0", StringComparison.Ordinal);
     }
 
     private static bool TryGetBoolAttribute(IReadOnlyDictionary<string, object?> attributes, string key, out bool value)

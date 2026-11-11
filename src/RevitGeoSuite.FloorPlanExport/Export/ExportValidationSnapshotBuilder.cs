@@ -145,11 +145,15 @@ public sealed class ExportValidationSnapshotBuilder
         {
             FamilyInstance unit = familyUnits[i];
 
-            // gis_kind wins over the family name, as it does in the export.
+            // gis_kind, then the standard category parameters, win over the family name, as in the export.
             string unitCategory;
             if (VerticalCirculation.TryMapGisKind(Extractors.UnitExtractor.GetGisKind(unit), out string gisCategory))
             {
                 unitCategory = gisCategory;
+            }
+            else if (Extractors.UnitExtractor.TryGetStandardCategoryInfo(unit, _zoneCatalog, out ZoneInfo standardInfo))
+            {
+                unitCategory = standardInfo.Category;
             }
             else if (_zoneCatalog.TryGetFamilyInfo(Extractors.UnitExtractor.GetFamilyName(unit), out ZoneInfo zoneInfo))
             {
