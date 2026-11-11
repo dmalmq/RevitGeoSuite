@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RevitGeoSuite.FloorPlanExport.Core\RevitGeoSuite.FloorPlanExport.Core.csproj" />
+    <ProjectReference Include="..\RevitGeoSuite.RevitInterop\RevitGeoSuite.RevitInterop.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.SharedUI\RevitGeoSuite.SharedUI.csproj" />
     <ProjectReference Include="..\RevitGeoSuite.SharedUI.Web.Contracts\RevitGeoSuite.SharedUI.Web.Contracts.csproj" />
   </ItemGroup>

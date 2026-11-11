@@ -153,6 +153,7 @@ public sealed class LevelBoundaryBuilder
         Dictionary<string, object?> attributes = new()
         {
             ["id"] = levelId,
+            [RevitKey.AttributeName] = RevitKey.Create(RevitModelKeyResolver.Resolve(level.Document), level.UniqueId),
             ["level_name"] = level.Name,
             ["ordinal"] = ordinal,
             ["elevation_m"] = level.Elevation * FeetToMeters,

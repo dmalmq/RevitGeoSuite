@@ -48,6 +48,7 @@ public sealed class UnitExtractor
     private readonly RoomCategoryResolver _roomCategoryResolver;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly string _source;
+    private readonly string _modelKey;
     private readonly SchemaProfile _schemaProfile;
     private readonly PreviewPaletteResolver _paletteResolver = new();
     private readonly StairVisibilityResolver _stairVisibilityResolver;
@@ -74,6 +75,7 @@ public sealed class UnitExtractor
         bool simplifyEscalatorUnits = false)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
+        _modelKey = RevitModelKeyResolver.Resolve(_document);
         _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
         _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
@@ -224,7 +226,8 @@ public sealed class UnitExtractor
                     floorMetadata,
                     resolvedCategory,
                     rawFloorTypeName,
-                    viewName));
+                    viewName,
+                    partIndex: i));
         }
 
         features = created;
@@ -1379,7 +1382,8 @@ public sealed class UnitExtractor
         ResolvedMappingCategory? resolvedCategory = null,
         string? sourceLabel = null,
         string? viewName = null,
-        ICollection<string>? warnings = null)
+        ICollection<string>? warnings = null,
+        int partIndex = 0)
     {
         Point2D centroid = DisplayPointCalculator.CalculateCentroid(polygon);
         string displayPoint = DisplayPointCalculator.ToWktPoint(centroid);
@@ -1387,6 +1391,7 @@ public sealed class UnitExtractor
         Dictionary<string, object?> attributes = new()
         {
             ["id"] = id,
+            [RevitKey.AttributeName] = RevitKey.Create(_modelKey, sourceElement?.UniqueId, partIndex),
             ["category"] = zoneInfo.Category,
             ["restrict"] = ImdfRestrictionNormalizer.NormalizeUnitRestriction(zoneInfo.Restriction),
             ["name"] = name,
@@ -1424,7 +1429,8 @@ public sealed class UnitExtractor
         ResolvedMappingCategory? resolvedCategory = null,
         string? sourceLabel = null,
         string? viewName = null,
-        ICollection<string>? warnings = null)
+        ICollection<string>? warnings = null,
+        int partIndex = 0)
     {
         if (polygons == null || polygons.Count == 0)
         {
@@ -1440,6 +1446,7 @@ public sealed class UnitExtractor
         Dictionary<string, object?> attributes = new()
         {
             ["id"] = id,
+            [RevitKey.AttributeName] = RevitKey.Create(_modelKey, sourceElement?.UniqueId, partIndex),
             ["category"] = zoneInfo.Category,
             ["restrict"] = ImdfRestrictionNormalizer.NormalizeUnitRestriction(zoneInfo.Restriction),
             ["name"] = name,

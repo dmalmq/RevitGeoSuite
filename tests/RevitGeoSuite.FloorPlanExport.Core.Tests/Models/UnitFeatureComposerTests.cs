@@ -21,6 +21,7 @@ public sealed class UnitFeatureComposerTests
             extraAttributes: new Dictionary<string, object?>
             {
                 ["custom_code"] = "F-01",
+                [RevitKey.AttributeName] = "model|floor-uid|0",
             });
         ExportPolygon roomFeature = CreateFeature(
             minX: 1,
@@ -34,6 +35,7 @@ public sealed class UnitFeatureComposerTests
             extraAttributes: new Dictionary<string, object?>
             {
                 ["custom_code"] = "R-01",
+                [RevitKey.AttributeName] = "model|room-uid|0",
             });
 
         IReadOnlyList<ExportPolygon> composed = UnitFeatureComposer.Compose(
@@ -44,6 +46,7 @@ public sealed class UnitFeatureComposerTests
 
         ExportPolygon result = Assert.Single(composed);
         Assert.Equal("floor-1", result.Attributes["id"]);
+        Assert.Equal("model|floor-uid|0", result.Attributes[RevitKey.AttributeName]);
         Assert.Equal(1001L, result.Attributes["source_element_id"]);
         Assert.Equal("room-category", result.Attributes["category"]);
         Assert.Equal("Room Unit", result.Attributes["name"]);

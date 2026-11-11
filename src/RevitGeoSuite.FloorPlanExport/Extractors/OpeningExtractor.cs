@@ -22,6 +22,7 @@ public sealed class OpeningExtractor
     private readonly GeometryRepairOptions _geometryRepairOptions;
     private readonly ExportSourceDescriptor _sourceDescriptor;
     private readonly SchemaProfile _schemaProfile;
+    private readonly string _modelKey;
 
     public OpeningExtractor(
         Document document,
@@ -32,6 +33,7 @@ public sealed class OpeningExtractor
         SchemaProfile? schemaProfile = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
+        _modelKey = RevitModelKeyResolver.Resolve(_document);
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
         _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
@@ -347,6 +349,7 @@ public sealed class OpeningExtractor
         Dictionary<string, object?> attributes = new()
         {
             ["id"] = metadata.ExportId,
+            [RevitKey.AttributeName] = RevitKey.Create(_modelKey, sourceElement.UniqueId),
             ["category"] = category,
             ["level_id"] = levelId,
             ["element_id"] = sourceElement.Id.Value,
