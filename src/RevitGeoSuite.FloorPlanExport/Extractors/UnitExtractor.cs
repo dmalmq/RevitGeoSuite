@@ -75,8 +75,8 @@ public sealed class UnitExtractor
         bool simplifyEscalatorUnits = false)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
-        _modelKey = RevitModelKeyResolver.Resolve(_document);
         _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
+        _modelKey = RevitModelKeyResolver.Resolve(_document, _sourceDescriptor);
         _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));

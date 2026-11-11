@@ -52,7 +52,7 @@ public sealed class DetailExtractor
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         _sourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
         _sourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
-        _modelKey = RevitModelKeyResolver.Resolve(_document);
+        _modelKey = RevitModelKeyResolver.Resolve(_document, _sourceDescriptor);
         _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         _stairVisibilityResolver = new StairVisibilityResolver(
             _document,

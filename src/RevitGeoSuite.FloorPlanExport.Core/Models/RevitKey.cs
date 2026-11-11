@@ -17,6 +17,9 @@ namespace RevitGeoSuite.FloorPlanExport.Core.Models;
 /// Save As. <c>part</c> counts the features one element makes on a floor: 0 for the only or
 /// first one, then 1, 2 and so on. A key is unique within one layer of one floor; the same stair
 /// exported on two floors carries the same key on both, and <c>level_id</c> tells them apart.
+/// A feature from a linked model carries <c>model@LinkUniqueId</c> as its model part, where
+/// <c>LinkUniqueId</c> is the UniqueId of the link instance in the host, so a model linked twice
+/// keys each copy apart and a step line's <c>parent_key</c> names the stair of its own copy.
 /// </remarks>
 public static class RevitKey
 {
@@ -26,6 +29,9 @@ public static class RevitKey
     public const string ParentAttributeName = "parent_key";
 
     public const char Separator = '|';
+
+    /// <summary>Joins a linked model's key and the UniqueId of the link instance it is placed by.</summary>
+    public const char LinkSeparator = '@';
 
     private const string DocumentKeyPrefix = "doc:";
 
@@ -38,6 +44,22 @@ public static class RevitKey
         }
 
         return DocumentKeyPrefix + (documentKey ?? string.Empty).Trim();
+    }
+
+    /// <summary>
+    /// The model part for features of a linked model placed by the link instance
+    /// <paramref name="linkInstanceUniqueId"/>, or <paramref name="modelKey"/> itself without one.
+    /// </summary>
+    public static string QualifyForLinkInstance(string modelKey, string? linkInstanceUniqueId)
+    {
+        if (modelKey is null)
+        {
+            throw new ArgumentNullException(nameof(modelKey));
+        }
+
+        return string.IsNullOrWhiteSpace(linkInstanceUniqueId)
+            ? modelKey
+            : string.Concat(modelKey, LinkSeparator.ToString(), linkInstanceUniqueId!.Trim());
     }
 
     /// <summary>True when <paramref name="modelKey"/> falls back to the document key.</summary>

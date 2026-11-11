@@ -50,6 +50,18 @@ public static class RevitModelKeyResolver
     }
 
     /// <summary>
+    /// The model key for features read through <paramref name="source"/>: a linked model's key
+    /// also names the link instance, so two placements of one link get different keys.
+    /// </summary>
+    public static string Resolve(Document document, ExportSourceDescriptor? source)
+    {
+        string key = Resolve(document);
+        return source?.IsLinkedSource == true
+            ? RevitKey.QualifyForLinkInstance(key, source.LinkInstanceUniqueId)
+            : key;
+    }
+
+    /// <summary>
     /// Gives the host model a stable id when it has none, the same id the Cesium export writes,
     /// so that keys do not change between PCs. When the id cannot be saved the export goes on
     /// with document keys, and a warning says why.

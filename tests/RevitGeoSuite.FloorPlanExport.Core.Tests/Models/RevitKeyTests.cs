@@ -37,6 +37,18 @@ public sealed class RevitKeyTests
     }
 
     [Fact]
+    public void LinkedModelKey_NamesTheLinkInstance()
+    {
+        string modelKey = RevitKey.CreateModelKey(ModelId, null);
+
+        Assert.Equal("3f2504e0-4f89-11d3-9a0c-0305e82c3301@link-a", RevitKey.QualifyForLinkInstance(modelKey, " link-a "));
+        Assert.Equal(modelKey, RevitKey.QualifyForLinkInstance(modelKey, null));
+        Assert.NotEqual(
+            RevitKey.Create(RevitKey.QualifyForLinkInstance(modelKey, "link-a"), UniqueId),
+            RevitKey.Create(RevitKey.QualifyForLinkInstance(modelKey, "link-b"), UniqueId));
+    }
+
+    [Fact]
     public void Key_IsNullWithoutAUniqueId()
     {
         Assert.Null(RevitKey.Create("model", null));

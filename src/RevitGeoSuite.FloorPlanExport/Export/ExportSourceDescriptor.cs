@@ -10,13 +10,15 @@ public sealed class ExportSourceDescriptor
         Transform transformToHost,
         bool isLinkedSource,
         long? linkInstanceId = null,
-        string? linkInstanceName = null)
+        string? linkInstanceName = null,
+        string? linkInstanceUniqueId = null)
     {
         ProjectionProjectLocation = projectionProjectLocation ?? throw new ArgumentNullException(nameof(projectionProjectLocation));
         TransformToHost = transformToHost ?? throw new ArgumentNullException(nameof(transformToHost));
         IsLinkedSource = isLinkedSource;
         LinkInstanceId = linkInstanceId;
         LinkInstanceName = string.IsNullOrWhiteSpace(linkInstanceName) ? null : linkInstanceName.Trim();
+        LinkInstanceUniqueId = string.IsNullOrWhiteSpace(linkInstanceUniqueId) ? null : linkInstanceUniqueId.Trim();
     }
 
     public ProjectLocation ProjectionProjectLocation { get; }
@@ -28,6 +30,9 @@ public sealed class ExportSourceDescriptor
     public long? LinkInstanceId { get; }
 
     public string? LinkInstanceName { get; }
+
+    /// <summary>The UniqueId of the link instance in the host, which stays the same between exports.</summary>
+    public string? LinkInstanceUniqueId { get; }
 
     public static ExportSourceDescriptor CreateHost(Document hostDocument)
     {
@@ -66,6 +71,7 @@ public sealed class ExportSourceDescriptor
             linkedSource.TransformToHost,
             isLinkedSource: true,
             linkedSource.LinkInstance.Id.Value,
-            linkedSource.LinkInstance.Name);
+            linkedSource.LinkInstance.Name,
+            linkedSource.LinkInstance.UniqueId);
     }
 }

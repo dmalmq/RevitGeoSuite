@@ -117,7 +117,6 @@ public sealed class FloorExportDataPreparer
             options?.UnitSource ?? UnitSource.Floors,
             unitGeometrySource,
             options?.UnitAttributeSource ?? UnitAttributeSource.Unset);
-        RevitModelKeyResolver.EnsureHostModelId(_document, warnings);
         string hostSourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
         string hostSourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
 

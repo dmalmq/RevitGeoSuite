@@ -182,6 +182,8 @@ public sealed class FloorGeoPackageExporter
             threeDViewScope);
         EnsureSharedParameters(parameterManager, setupWarnings);
         EnsureStableIds(parameterManager, contexts, setupWarnings);
+        // Before any extractor reads the model key, and only here: the preview never writes the model.
+        RevitModelKeyResolver.EnsureHostModelId(_document, setupWarnings);
 
         PersistentExportMetadataProvider metadataProvider = new(parameterManager);
         FloorExportDataPreparer preparer = new(_document, zoneCatalog, contextProvider);

@@ -33,10 +33,10 @@ public sealed class OpeningExtractor
         SchemaProfile? schemaProfile = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
-        _modelKey = RevitModelKeyResolver.Resolve(_document);
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
         _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
+        _modelKey = RevitModelKeyResolver.Resolve(_document, _sourceDescriptor);
         _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
