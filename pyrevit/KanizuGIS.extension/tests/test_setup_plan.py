@@ -69,5 +69,39 @@ class SetupPlanTests(unittest.TestCase):
         self.assertEqual([(setup_plan.UPDATE, materials[0].name)], [(step.action, step.name) for step in plan.materials])
 
 
+    def test_standard_guid_with_the_wrong_binding_kind_is_left_alone(self):
+        standard_kind = self.standard.parameter("gis_kind")
+        wrong = snapshot.BoundParameter("gis_kind", standard_kind.guid, "instance", standard_kind.categories)
+        model = helpers.model_on_standard(
+            self.standard,
+            bound_parameters=helpers.bound_as_standard(self.standard, skip=("gis_kind",)) + [wrong])
+        step = [entry for entry in setup_plan.plan_setup(model, self.standard).parameters if entry.name == "gis_kind"][0]
+        self.assertEqual(setup_plan.BINDING_MISMATCH, step.action)
+
+    def test_clears_category_echoes_when_the_version_is_first_stamped(self):
+        floor_types = helpers.floor_types_as_standard(self.standard) + [
+            snapshot.FloorTypeInfo(1, u"j 改札内コンコース_床", "", "", "", [11, 12, 13]),
+        ]
+        concourse = floor_types[1]  # j ラチ内コンコース_床, walkway
+        floors = [
+            snapshot.FloorInfo(21, concourse.element_id, "walkway"),    # echo of the type
+            snapshot.FloorInfo(22, concourse.element_id, "nonpublic"),  # a real override
+            snapshot.FloorInfo(11, 1, "Walkway"),                        # echo of the name
+            snapshot.FloorInfo(12, 1, "retail"),                         # a real override
+        ]
+        plan = setup_plan.plan_setup(
+            helpers.model_on_standard(self.standard, floor_types=floor_types, floors=floors, standard_version=""),
+            self.standard)
+        self.assertEqual([21, 11], plan.echo_floor_ids)
+        self.assertIn("Clear the category of 2 floors that only repeats their type (written by an older export)",
+                      setup_plan.describe(plan))
+
+    def test_leaves_floor_categories_alone_once_the_version_is_set(self):
+        concourse = helpers.floor_types_as_standard(self.standard)[1]
+        model = helpers.model_on_standard(
+            self.standard, floors=[snapshot.FloorInfo(21, concourse.element_id, "walkway")])
+        self.assertEqual([], setup_plan.plan_setup(model, self.standard).echo_floor_ids)
+
+
 if __name__ == "__main__":
     unittest.main()

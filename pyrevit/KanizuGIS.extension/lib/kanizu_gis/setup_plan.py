@@ -45,12 +45,16 @@ class FloorTypeStep(object):
 
 
 class SetupPlan(object):
-    def __init__(self, parameters, materials, floor_types, version_from, version_to):
+    def __init__(self, parameters, materials, floor_types, version_from, version_to, echo_floor_ids=None):
         self.parameters = parameters
         self.materials = materials
         self.floor_types = floor_types
         self.version_from = version_from
         self.version_to = version_to
+        # Floors whose own category only repeats what an older export wrote back into them.
+        # They are cleared when the version is stamped, because from then on RevitGeoSuite
+        # counts every floor category as a deliberate override of the type.
+        self.echo_floor_ids = list(echo_floor_ids or [])
 
     @property
     def sets_version(self):
@@ -61,7 +65,8 @@ class SetupPlan(object):
         return (not self.sets_version and
                 all(step.action in (OK, KEEP_LEGACY, BINDING_MISMATCH) for step in self.parameters) and
                 not self.materials and
-                not self.floor_types)
+                not self.floor_types and
+                not self.echo_floor_ids)
 
 
 def plan_setup(snapshot, standard):
@@ -91,7 +96,40 @@ def plan_setup(snapshot, standard):
         if changes:
             floor_types.append(FloorTypeStep(floor_type.name, UPDATE, floor_type, existing.element_id, changes))
 
-    return SetupPlan(parameters, materials, floor_types, snapshot.standard_version, str(standard.version))
+    version_to = str(standard.version)
+    echoes = find_category_echoes(snapshot, standard) if snapshot.standard_version != version_to else []
+    return SetupPlan(parameters, materials, floor_types, snapshot.standard_version, version_to, echoes)
+
+
+def find_category_echoes(snapshot, standard):
+    """Floors whose own category equals the category their type gives, either the type's
+    gis_category after setup or the category its name stands for. Older exports wrote that
+    value back into every floor; left in place it would override the type for good."""
+    types = dict((floor_type.element_id, floor_type) for floor_type in snapshot.floor_types)
+    echoes = []
+    for floor in snapshot.floors:
+        floor_type = types.get(floor.type_id)
+        if floor_type is None or not floor.category:
+            continue
+        category = floor.category.strip().lower()
+        if category in _categories_of_type(floor_type, standard):
+            echoes.append(floor.element_id)
+    return echoes
+
+
+def _categories_of_type(floor_type, standard):
+    from kanizu_gis import floor_type_match
+
+    categories = set()
+    standard_type = standard.floor_type(floor_type.name)
+    if standard_type is not None:
+        categories.add(standard_type.gis_category)
+    if floor_type.gis_category:
+        categories.add(floor_type.gis_category.strip().lower())
+    proposal = floor_type_match.propose_one(floor_type, standard)
+    if proposal is not None:
+        categories.add(proposal.gis_category)
+    return categories
 
 
 def _plan_parameter(snapshot, parameter):
@@ -99,12 +137,12 @@ def _plan_parameter(snapshot, parameter):
     if bound is None:
         return ParameterStep(parameter.name, BIND, parameter.categories)
     missing = [category for category in parameter.categories if category not in bound.categories]
-    if bound.guid == parameter.guid:
-        return ParameterStep(parameter.name, EXTEND if missing else OK, missing)
     if bound.binding != parameter.binding:
         return ParameterStep(
             parameter.name, BINDING_MISMATCH,
             detail="bound as %s parameter, the standard binds it as %s" % (bound.binding, parameter.binding))
+    if bound.guid == parameter.guid:
+        return ParameterStep(parameter.name, EXTEND if missing else OK, missing)
     return ParameterStep(parameter.name, EXTEND_LEGACY if missing else KEEP_LEGACY, missing,
                          detail="kept under its own GUID %s" % (bound.guid or "(project parameter)"))
 
@@ -138,6 +176,9 @@ def describe(plan):
             lines.append("Update floor type %s: %s" % (
                 step.name,
                 "; ".join("%s %s to %s" % (field, old or "(empty)", new or "(empty)") for field, old, new in step.changes)))
+    if plan.echo_floor_ids:
+        lines.append("Clear the category of %d floors that only repeats their type (written by an older export)"
+                     % len(plan.echo_floor_ids))
     if plan.sets_version:
         lines.append("Set gis_standard_version %s to %s" % (plan.version_from or "(none)", plan.version_to))
     return lines

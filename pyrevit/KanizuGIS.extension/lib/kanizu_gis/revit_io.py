@@ -264,6 +264,13 @@ def ensure_floor_types(doc, plan, material_ids, log):
                         material_ids.get(standard_type.material))
 
 
+def clear_floor_categories(doc, floor_ids):
+    for value in floor_ids:
+        parameter = doc.GetElement(to_element_id(value)).LookupParameter("category")
+        if parameter is not None and not parameter.IsReadOnly:
+            parameter.Set("")
+
+
 def set_standard_version(doc, version):
     parameter = doc.ProjectInformation.LookupParameter("gis_standard_version")
     if parameter is None:
@@ -280,6 +287,9 @@ def apply_setup(doc, standard, plan, log):
         doc.Regenerate()
         material_ids = ensure_materials(doc, standard, plan, log)
         ensure_floor_types(doc, plan, material_ids, log)
+        if plan.echo_floor_ids:
+            clear_floor_categories(doc, plan.echo_floor_ids)
+            log("Cleared the repeated category of %d floors" % len(plan.echo_floor_ids))
         if plan.sets_version:
             set_standard_version(doc, plan.version_to)
             log("gis_standard_version = %s" % plan.version_to)
