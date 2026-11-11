@@ -116,6 +116,29 @@ public sealed class GisFieldListTests
         Assert.Contains("appears twice", problems[1]);
     }
 
+    [Theory]
+    [InlineData("{\"layer\":\"unit\",\"name\":\"a\",\"type\":\"double\",\"source\":{\"kind\":\"none\"}}")]
+    [InlineData("{\"layer\":\"unit\",\"name\":\"a\",\"owner\":\"nobody\",\"source\":{\"kind\":\"none\"}}")]
+    [InlineData("{\"layer\":\"unit\",\"name\":\"a\",\"source\":{\"kind\":\"parameter\",\"parameter\":\"gis_a\",\"guid\":\"not-a-guid\",\"categories\":[\"OST_Floors\"]}}")]
+    [InlineData("{\"layer\":\"unit\",\"name\":\"a\",\"values\":\"x\",\"source\":{\"kind\":\"none\"}}")]
+    [InlineData("\"just text\"")]
+    public void ARowTheModelCannotReadIsLeftOutNotThrown(string row)
+    {
+        List<string> problems = new();
+        string good = "{\"layer\":\"unit\",\"name\":\"checked_by\",\"source\":{\"kind\":\"none\"},\"owner\":\"gdb\"}";
+
+        GisFieldList list = GisFieldList.Parse(StationList(row + "," + good), "station", problems);
+
+        Assert.Equal("checked_by", Assert.Single(list.Fields).Name);
+        Assert.Contains("row 1", Assert.Single(problems));
+    }
+
+    [Fact]
+    public void AVersionThatIsNotANumberIsRefused()
+    {
+        Assert.Throws<InvalidDataException>(() => GisFieldList.Parse("{\"schema\":\"revitgeosuite.gis-fields\",\"version\":\"one\",\"fields\":[]}", "station"));
+    }
+
     [Fact]
     public void WithoutAProblemListABadRowThrows()
     {

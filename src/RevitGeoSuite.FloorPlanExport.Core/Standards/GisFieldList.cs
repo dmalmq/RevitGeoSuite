@@ -147,7 +147,7 @@ public sealed class GisFieldList
             throw new InvalidDataException($"{sourceLabel} is not a GIS field list (schema '{root.Value<string>("schema")}').");
         }
 
-        int version = root.Value<int?>("version") ?? 0;
+        int version = root["version"]?.Type == JTokenType.Integer ? root.Value<int>("version") : 0;
         if (version < 1 || version > CurrentVersion)
         {
             throw new InvalidDataException($"{sourceLabel} has version {version}; this RevitGeoSuite reads version {CurrentVersion}. Update RevitGeoSuite.");
@@ -156,10 +156,25 @@ public sealed class GisFieldList
         List<GisField> fields = new();
         HashSet<string> keys = new(StringComparer.Ordinal);
         Dictionary<string, Guid> parameterGuids = new(StringComparer.Ordinal);
+        int row = 0;
         foreach (JToken token in root["fields"] as JArray ?? new JArray())
         {
-            GisField? field = token.ToObject<GisField>();
-            string? problem = field == null ? "an empty row" : Validate(field, parameterGuids);
+            row++;
+            GisField? field = null;
+            string? problem;
+            try
+            {
+                // A hand-edited row can hold a value the model cannot take (an unknown type or
+                // owner, a malformed GUID, a string where an object belongs): report it like any
+                // other bad row instead of failing the whole list.
+                field = token.Type == JTokenType.Object ? token.ToObject<GisField>() : null;
+                problem = field == null ? $"row {row} is not a field object" : Validate(field, parameterGuids);
+            }
+            catch (Exception ex) when (ex is JsonException || ex is FormatException || ex is ArgumentException || ex is InvalidCastException)
+            {
+                problem = $"row {row} ({token["layer"] ?? "?"}.{token["name"] ?? "?"}) could not be read: {ex.Message}";
+            }
+
             if (problem == null && !keys.Add(field!.Key))
             {
                 problem = $"{field.Key} appears twice";

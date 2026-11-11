@@ -56,7 +56,7 @@ public sealed class GisModelSettings
 
             return list;
         }
-        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException || ex is ArgumentException)
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException || ex is ArgumentException || ex is NotSupportedException || ex is Newtonsoft.Json.JsonException)
         {
             warnings?.Add($"The field list {listPath} that gis-model.json names could not be read ({ex.Message}). The export uses the standard field list.");
             return GisFieldList.LoadStandard();
