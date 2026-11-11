@@ -79,4 +79,66 @@ public sealed class ModelIdentityService
 
         return info.ModelId;
     }
+
+    /// <summary>
+    /// Records <paramref name="stationFolder"/> as the model's station folder
+    /// (<see cref="GeoProjectInfo.GisStationFolder"/>), so later exports find its
+    /// <c>gis-model.json</c>. Returns false, with a warning, when it could not be saved.
+    /// </summary>
+    public bool RecordStationFolder(Document document, string stationFolder, ICollection<string> warnings)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        if (string.IsNullOrWhiteSpace(stationFolder))
+        {
+            return false;
+        }
+
+        string folder = stationFolder.Trim();
+        var handle = new RevitDocumentHandle(document);
+        GeoProjectInfo? info = storage.Load(handle);
+        if (info is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(info.GisStationFolder, folder, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (document.IsReadOnly || document.IsModifiable)
+        {
+            warnings?.Add("The station folder could not be saved in the model because it is read-only or busy.");
+            return false;
+        }
+
+        info.GisStationFolder = folder;
+        using Transaction transaction = new Transaction(document, "Save Station Folder");
+        try
+        {
+            transaction.Start();
+            storage.Save(handle, info);
+            if (transaction.Commit() == TransactionStatus.Committed)
+            {
+                return true;
+            }
+
+            warnings?.Add("Revit did not commit the station folder.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            if (transaction.GetStatus() == TransactionStatus.Started)
+            {
+                transaction.RollBack();
+            }
+
+            warnings?.Add($"The station folder could not be saved in the model ({ex.Message}).");
+            return false;
+        }
+    }
 }

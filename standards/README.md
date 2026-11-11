@@ -7,6 +7,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | `color_theme.json` | Kanizu's area colour table (StaNavi map design), copied unchanged from Kanizu `crates/kanizu-core/src/recolor/color_theme.json` (dev `de67c3c`) | No, copy it again from Kanizu |
 | `floor-types.json` | The 12 standard floor types with `gis_category`, `gis_restriction`, a `GIS_<area>` material and its theme colour, plus one material per theme area, `GIS_unlisted` (#E5E5E5) and the list of unit categories the export accepts | No, generated |
 | `KanizuGIS.SharedParameters.txt` | The shared parameter file, with fixed GUIDs | No, generated |
+| `gis-model.template.json` | The start of a model's `gis-model.json` in the station folder: the standard's stair drawing numbers and empty identity, levels and views ([contract](../docs/kanizu-link-contract.md)) | No, generated |
 | `shared-parameter-bindings.json` | The same parameters with their binding (type or instance) and categories, for the pyRevit tools | No, generated |
 
 ## Shared parameters

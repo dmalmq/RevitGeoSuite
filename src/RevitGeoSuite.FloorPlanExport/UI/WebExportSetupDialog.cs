@@ -192,7 +192,7 @@ internal sealed class WebExportSetupDialog : IDisposable
         UnitAttributeSource attributeSource = UnitExportSettingsResolver.ResolveAttributeSource(settings.UnitSource, geometrySource, settings.UnitAttributeSource);
         LinkExportOptions linkOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
         List<long> selectedViewIds = (settings.SelectedViewIds == null || settings.SelectedViewIds.Count == 0)
-            ? _views.Select(view => view.Id.Value).ToList()
+            ? GisModelSettings.ChooseDefaultViews(_views).Select(view => view.Id.Value).ToList()
             : settings.SelectedViewIds.Distinct().ToList();
         string outputDirectory = string.IsNullOrWhiteSpace(settings.OutputDirectory)
             ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)

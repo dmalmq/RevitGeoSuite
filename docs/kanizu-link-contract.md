@@ -7,6 +7,8 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
 ```text
 <station>/
   kanizu-link.json              Kanizu writes; RevitGeoSuite never reads it
+  gis-models/                   RevitGeoSuite writes and reads; Kanizu does not read it yet
+    <model id>.gis-model.json     one model's GIS export settings
   revit/                        RevitGeoSuite writes; Kanizu reads, and removes old versions
     <model folder>/
       <yyyyMMddTHHmmssZ>-<hash8>/   one version per export
@@ -67,6 +69,22 @@ Every placed room's finish-face footprint, for pairing the GDB's units with Revi
 
 Kanizu's own file: for each model (by `modelId`, or `documentKey` without one) the Kanizu building it is, the version applied last, its level pairs (`Level.UniqueId` to Kanizu floor key) and its unit-to-room pairs. RevitGeoSuite never reads or writes it.
 
+## `gis-models/<model id>.gis-model.json` (version 1)
+
+One model's GIS export settings, kept on the share so every PC exports the model the same way. The file name is the model id (`GeoProjectInfo.ModelId`) in lower case, so a building rename or Save As keeps the file. The model remembers its station folder (`GeoProjectInfo.GisStationFolder`) from the first Cesium export into it, and from then on every floor plan export of the model, from the dialog or the Cesium export, reads the file before it starts and writes it when it ends. A model with no station folder or model id has no file and exports with the standard's settings. The format is [`GisModelFile`](../src/RevitGeoSuite.FloorPlanExport.Core/Standards/GisModelFile.cs), and a new file starts from `standards/gis-model.template.json`.
+
+| Field | Meaning |
+|---|---|
+| `schema`, `version` | `revitgeosuite.gis-model` and `1` |
+| `identity` | `modelId`, `station` (the station folder's name), `building` (for display), `crsEpsg` of the last GIS export |
+| `levels` | The levels with a GIS `level_id`, and those of the exported views: `uniqueId`, `name`, `levelId`, `ordinal`, `shortName`. Their pairing with Kanizu floors stays in `kanizu-link.json`. |
+| `views` | The plan views of the last export, `uniqueId` and `name`. The Cesium export takes these before the profile's own views, and the export dialog preselects them when its profile stores none; without a list, both take the `GIS_` views. |
+| `drawingRules.stairs` | `stepSpacingMeters` (0.60), `stopBeforeMiddleMeters` (1.10), `overlapMeters` (1.80, 0 tiles the two floors exactly). A missing number takes the standard's. Edited by hand on the share; the export never changes them. |
+| `fields` | `standard`: the field list shipped with the standard. |
+| `versions` | `standard` (the model's `gis_standard_version` at the last export), `lastExportRevitGeoSuite`, `lastExportUtc` |
+
+RevitGeoSuite writes it through a temporary file and a rename, and keeps fields it does not know, so a file written by a newer RevitGeoSuite keeps them through an export from an older one.
+
 ## GIS exports: `revit_key`
 
 The floor plan export (GeoPackage, and the GDB built from it) carries `revit_key` on every feature, `parent_key` and `category` on detail lines. `revit_key` reads `model|UniqueId|part`, with `model@LinkUniqueId` for a feature read through a link. The rules are defined once, in the remarks on [`RevitKey`](../src/RevitGeoSuite.FloorPlanExport.Core/Models/RevitKey.cs); a reader follows those rather than a copy here. It is written only in the GIS export, not in the Cesium package's tiles.
@@ -80,5 +98,6 @@ The floor plan export (GeoPackage, and the GDB built from it) carries `revit_key
 | `elements.json` | 1 | as above |
 | `rooms.json` | 1 | as above |
 | `kanizu-link.json` | 1 | Kanizu changes it; RevitGeoSuite does not read it |
+| `gis-model.json` | 1 | an older RevitGeoSuite would misread it |
 
 A reader refuses a file newer than it knows, naming the file and both versions, and reads a file without a version as it is.

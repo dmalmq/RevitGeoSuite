@@ -96,6 +96,12 @@ public sealed class UnitExtractor
             point => _sourceDescriptor.TransformToHost.OfPoint(point));
     }
 
+    /// <summary>The stair drawing rule's numbers this extractor draws with.</summary>
+    internal StairDrawingSettings StairDrawingSettings
+    {
+        set => _stairVisibilityResolver.DrawingSettings = value ?? StairDrawingSettings.Default;
+    }
+
     /// <summary>
     /// The floor's own <c>category</c> and its type's <c>gis_category</c> and <c>gis_restriction</c>,
     /// which decide its category before the type name is parsed.

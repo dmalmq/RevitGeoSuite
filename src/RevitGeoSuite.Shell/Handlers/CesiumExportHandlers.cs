@@ -358,6 +358,13 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             ?? throw new InvalidOperationException(
                 $"Floor plan profile '{request.FloorPlanProfileName}' was not found for this project.");
 
+        if (request.KeepVersions)
+        {
+            // The station folder holds the model's gis-model.json; remember it so every later
+            // export of this model, from the dialog too, reads and updates the same file.
+            new ModelIdentityService().RecordStationFolder(document, request.OutputFolder, warnings);
+        }
+
         ModelCoordinateInfo coordinateInfo = new ModelCoordinateInfoReader().Read(document);
         var exporter = new FloorPlanHeadlessExporter(document, uiDocument: null);
         FloorGeoPackageExportResult result = exporter.Export(

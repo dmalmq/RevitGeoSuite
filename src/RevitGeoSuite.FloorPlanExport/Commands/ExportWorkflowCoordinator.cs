@@ -174,7 +174,18 @@ public sealed class ExportWorkflowCoordinator
         // Validation feeds diagnostics only. The wizard surfaces readiness inline at Preview,
         // so there are no blocking readiness/validation dialogs in this core path.
         ExportValidationResult validationResult = validationService.Validate(snapshotBuilder.Build(session));
-        return CompleteExport(session, validationResult, request, progressCallback, cancellationToken, persistBaseline);
+        FloorGeoPackageExportResult result = CompleteExport(session, validationResult, request, progressCallback, cancellationToken, persistBaseline);
+
+        // The model's gis-model.json on the share remembers what this export used, so the next
+        // export from any PC starts from the same views.
+        List<string> gisModelWarnings = new();
+        GisModelSettings.RecordExport(
+            _document,
+            request.SelectedViews,
+            request.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs ? request.TargetEpsg : coordinateInfo.ResolvedSourceEpsg,
+            gisModelWarnings);
+        result.AddWarnings(gisModelWarnings);
+        return result;
     }
 
     private FloorGeoPackageExportResult CompleteExport(
