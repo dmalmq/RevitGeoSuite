@@ -166,7 +166,8 @@ public sealed class ViewExportContextProvider
             .Where(instance =>
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
-                return zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
+                return UnitExtractor.HasMappedGisKind(instance) ||
+                       zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
                        overrides.ContainsKey(familyName);
             })
             .Where(element => IsElementInClipRegion(element, clipRegion))
@@ -191,7 +192,8 @@ public sealed class ViewExportContextProvider
                 // A column family already mapped as a family unit is collected by
                 // CollectFamilyUnitsInView; the existing mapping wins to avoid double export.
                 string familyName = UnitExtractor.GetFamilyName(instance);
-                return !zoneCatalog.TryGetFamilyInfo(familyName, out _) &&
+                return !UnitExtractor.HasMappedGisKind(instance) &&
+                       !zoneCatalog.TryGetFamilyInfo(familyName, out _) &&
                        !overrides.ContainsKey(familyName);
             })
             .Where(element => IsElementInClipRegion(element, clipRegion))
@@ -354,7 +356,8 @@ public sealed class ViewExportContextProvider
             .Where(instance =>
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
-                return zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
+                return UnitExtractor.HasMappedGisKind(instance) ||
+                       zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
                        overrides.ContainsKey(familyName);
             })
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
@@ -379,7 +382,8 @@ public sealed class ViewExportContextProvider
             .Where(instance =>
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
-                return !zoneCatalog.TryGetFamilyInfo(familyName, out _) &&
+                return !UnitExtractor.HasMappedGisKind(instance) &&
+                       !zoneCatalog.TryGetFamilyInfo(familyName, out _) &&
                        !overrides.ContainsKey(familyName);
             })
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))

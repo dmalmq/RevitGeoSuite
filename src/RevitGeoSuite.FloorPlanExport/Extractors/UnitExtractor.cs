@@ -52,7 +52,6 @@ public sealed class UnitExtractor
     private readonly SchemaProfile _schemaProfile;
     private readonly PreviewPaletteResolver _paletteResolver = new();
     private readonly StairVisibilityResolver _stairVisibilityResolver;
-    private readonly bool _simplifyEscalatorUnits;
 
     internal View3D? CurrentGeometryView { get; private set; }
 
@@ -88,7 +87,8 @@ public sealed class UnitExtractor
             new Dictionary<string, string>(StringComparer.Ordinal);
         _source = string.IsNullOrWhiteSpace(source) ? "unknown" : source.Trim();
         _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
-        _simplifyEscalatorUnits = simplifyEscalatorUnits;
+        // simplifyEscalatorUnits is kept for callers; escalators now always follow the
+        // drawing rule (half rectangle per floor), which is what the option used to switch on.
         _stairVisibilityResolver = new StairVisibilityResolver(
             _document,
             ProjectPoint,
@@ -585,6 +585,7 @@ public sealed class UnitExtractor
             sourceLabel: "stairs",
             viewName: viewName,
             warnings: warnings);
+        feature = WithDirection(feature, VerticalCirculation.Both, ResolveStairsToLevel(stairs, levelId, warnings));
         return true;
     }
 
@@ -638,7 +639,7 @@ public sealed class UnitExtractor
 
         resolvedCategory = zoneInfo.Category;
 
-        if (string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase))
+        if (VerticalCirculation.IsMovingCirculation(zoneInfo.Category))
         {
             if (TryResolveEscalatorVisibility(
                     familyInstance,
@@ -732,6 +733,12 @@ public sealed class UnitExtractor
         out ZoneInfo zoneInfo)
     {
         familyName = GetFamilyName(familyInstance);
+        if (VerticalCirculation.TryMapGisKind(GetGisKind(familyInstance), out string gisCategory) &&
+            _zoneCatalog.TryGetCategoryInfo(gisCategory, out zoneInfo))
+        {
+            return true;
+        }
+
         return TryResolveFamilyZoneInfo(familyName, out zoneInfo);
     }
 
@@ -752,22 +759,27 @@ public sealed class UnitExtractor
         }
 
         if (!TryResolveFamilyUnitZoneInfo(escalator, out string familyName, out ZoneInfo zoneInfo) ||
-            !string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase))
+            !VerticalCirculation.IsMovingCirculation(zoneInfo.Category))
         {
             return false;
         }
 
+        bool isEscalator = string.Equals(zoneInfo.Category, VerticalCirculation.EscalatorCategory, StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<Polygon2D> effectivePolygons = polygons;
-        if (CurrentGeometryView != null)
+        if (CurrentGeometryView != null || !isEscalator)
         {
+            // 3D exports, and moving walkways, which stay on one floor: one plain rectangle.
             Polygon2D? rect = TryCreateEscalatorBoundingRectangle(polygons);
             if (rect != null)
             {
                 effectivePolygons = new List<Polygon2D> { rect };
             }
         }
-        else if (_simplifyEscalatorUnits)
+        else
         {
+            // The escalator drawing rule: the smallest rectangle around the escalator, split at
+            // half the run. Each floor shows its own half, so the pair abuts with no overlap,
+            // as in the reference GDBs.
             double viewLevelElevation = (view?.GenLevel?.Elevation ?? 0d) - (linkZOffset ?? 0d);
             Polygon2D? simplified = TryCreateEscalatorHalfRectangle(escalator, polygons, viewLevelElevation);
             if (simplified != null)
@@ -790,8 +802,83 @@ public sealed class UnitExtractor
             sourceLabel: familyName,
             viewName: viewName,
             warnings: warnings);
+        feature = WithDirection(
+            feature,
+            VerticalCirculation.NormalizeDirection(ReadStringParameter(escalator, VerticalCirculation.GisDirectionParameterName)),
+            isEscalator ? ResolveEscalatorToLevel(escalator, levelId, warnings) : null);
         return true;
     }
+
+    private static ExportPolygon WithDirection(ExportPolygon feature, string? direction, string? toLevel)
+    {
+        Dictionary<string, object?> attributes = new(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, object?> entry in feature.Attributes)
+        {
+            attributes[entry.Key] = entry.Value;
+        }
+
+        attributes[VerticalCirculation.DirectionAttributeName] = direction;
+        attributes[VerticalCirculation.ToLevelAttributeName] = toLevel;
+        return new ExportPolygon(feature.Polygons, attributes);
+    }
+
+    /// <summary>
+    /// The escalator's other floor. The bottom is the level the escalator is placed on; the top is
+    /// the next level up nearest the top of its geometry, which sits under the upper floor's slab.
+    /// </summary>
+    private string? ResolveEscalatorToLevel(FamilyInstance escalator, string levelId, ICollection<string> warnings)
+    {
+        if (_document.GetElement(escalator.LevelId) is not Level bottomLevel)
+        {
+            return null;
+        }
+
+        List<(Point2D Projected, double Z)> vertices = CollectEscalator3DVertices(escalator);
+        if (vertices.Count == 0)
+        {
+            return null;
+        }
+
+        double topZ = vertices.Max(vertex => vertex.Z);
+        const double MinimumRiseFeet = 1.0d / FeetToMetersForLevels;
+        const double ToleranceFeet = 2.5d / FeetToMetersForLevels;
+        Level? topLevel = new FilteredElementCollector(_document)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .Where(level => level.ProjectElevation > bottomLevel.ProjectElevation + MinimumRiseFeet)
+            .OrderBy(level => Math.Abs(level.ProjectElevation - topZ))
+            .FirstOrDefault();
+        if (topLevel != null && Math.Abs(topLevel.ProjectElevation - topZ) > ToleranceFeet)
+        {
+            topLevel = null;
+        }
+
+        return VerticalCirculation.ResolveToLevel(
+            levelId,
+            GetLevelExportId(bottomLevel.Id, warnings),
+            GetLevelExportId(topLevel?.Id, warnings));
+    }
+
+    private string? ResolveStairsToLevel(Stairs stairs, string levelId, ICollection<string> warnings)
+    {
+        return VerticalCirculation.ResolveToLevel(
+            levelId,
+            GetLevelExportId(GetStairsBaseLevelId(stairs), warnings),
+            GetLevelExportId(GetStairsTopLevelId(stairs), warnings));
+    }
+
+    private string? GetLevelExportId(ElementId? levelId, ICollection<string> warnings)
+    {
+        if (levelId == null || levelId == ElementId.InvalidElementId || _document.GetElement(levelId) is not Level level)
+        {
+            return null;
+        }
+
+        string exportId = _metadataProvider.GetLevelMetadata(level, warnings).ExportId;
+        return string.IsNullOrWhiteSpace(exportId) ? null : exportId;
+    }
+
+    private const double FeetToMetersForLevels = 0.3048d;
 
     private Polygon2D? TryCreateEscalatorBoundingRectangle(IReadOnlyList<Polygon2D> polygons)
     {
@@ -2848,6 +2935,31 @@ public sealed class UnitExtractor
         }
 
         return string.IsNullOrWhiteSpace(familyName) ? "<unknown-family>" : familyName!.Trim();
+    }
+
+    /// <summary>
+    /// The family's <c>gis_kind</c> (instance first, then type), which the Revit standard sets on
+    /// escalators, moving walkways, elevators and ticket gates, or null.
+    /// </summary>
+    public static string? GetGisKind(FamilyInstance familyInstance)
+    {
+        return ReadStringParameter(familyInstance, VerticalCirculation.GisKindParameterName);
+    }
+
+    public static bool HasMappedGisKind(FamilyInstance familyInstance)
+    {
+        return VerticalCirculation.TryMapGisKind(GetGisKind(familyInstance), out _);
+    }
+
+    private static string? ReadStringParameter(FamilyInstance familyInstance, string parameterName)
+    {
+        string? value = familyInstance?.LookupParameter(parameterName)?.AsString();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            value = familyInstance?.Symbol?.LookupParameter(parameterName)?.AsString();
+        }
+
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
     }
 
     private bool TryResolveFamilyZoneInfo(string familyName, out ZoneInfo zoneInfo)

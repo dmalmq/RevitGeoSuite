@@ -32,6 +32,15 @@ public sealed class LayerDefinitionTests
     }
 
     [Fact]
+    public void UnitLayer_HasDirectionFields()
+    {
+        ExportLayer unit = LayerDefinition.CreateUnitLayer();
+
+        Assert.Contains(unit.Attributes, attribute => attribute.Name == "direction");
+        Assert.Contains(unit.Attributes, attribute => attribute.Name == "to_level");
+    }
+
+    [Fact]
     public void DetailLayer_WritesCategoryAndParentKey()
     {
         ExportLayer detail = LayerDefinition.CreateDetailLayer();

@@ -698,7 +698,7 @@ public sealed class FloorExportDataPreparer
         foreach (FamilyInstance familyUnit in familyUnits)
         {
             if (!extractor.TryResolveFamilyUnitZoneInfo(familyUnit, out _, out ZoneInfo zoneInfo) ||
-                !string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+                !VerticalCirculation.IsMovingCirculation(zoneInfo.Category) ||
                 !extractor.TryResolveEscalatorVisibility(familyUnit, view, warnings, out VerticalCirculationVisibilityResult? visibility))
             {
                 continue;
@@ -737,7 +737,7 @@ public sealed class FloorExportDataPreparer
         foreach (FamilyInstance familyUnit in familyUnits)
         {
             if (!extractor.TryResolveFamilyUnitZoneInfo(familyUnit, out _, out ZoneInfo zoneInfo) ||
-                !string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+                !VerticalCirculation.IsMovingCirculation(zoneInfo.Category) ||
                 !extractor.TryResolveEscalatorVisibility(familyUnit, view, warnings, out VerticalCirculationVisibilityResult? visibility) ||
                 !extractor.TryCreateEscalatorUnit(
                     familyUnit,
@@ -2076,7 +2076,7 @@ public sealed class FloorExportDataPreparer
     private static bool IsVerticalFillCategory(string category)
     {
         return string.Equals(category, "stairs", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(category, VerticalCirculation.EscalatorCategory, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(category, "column", StringComparison.OrdinalIgnoreCase);
     }
