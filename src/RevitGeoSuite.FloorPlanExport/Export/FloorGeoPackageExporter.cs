@@ -958,7 +958,7 @@ public sealed class FloorGeoPackageExporter
         FloorExportPreparationResult prepared,
         ICollection<string> warnings)
     {
-        Dictionary<long, (string Category, int Ordinal, string LevelId)> pending = new();
+        Dictionary<long, (string? Category, int Ordinal, string LevelId)> pending = new();
         foreach (PreparedViewExportData view in prepared.Views)
         {
             ExportLayer? unitLayer = view.UnitLayer;
@@ -997,7 +997,9 @@ public sealed class FloorGeoPackageExporter
 
                 if (!pending.ContainsKey(sourceElementId))
                 {
-                    pending[sourceElementId] = (category, viewOrdinal, viewLevelId);
+                    // A floor's own `category` is an override the next export reads before its type's
+                    // gis_category, so writing the resolved value back would freeze it. Rooms keep it.
+                    pending[sourceElementId] = (isFloorDerived ? null : category, viewOrdinal, viewLevelId);
                 }
             }
         }
@@ -1010,7 +1012,7 @@ public sealed class FloorGeoPackageExporter
         using Transaction transaction = new(manager.Document, "IMDF Export - Write Unit Metadata");
         transaction.Start();
 
-        foreach (KeyValuePair<long, (string Category, int Ordinal, string LevelId)> entry in pending)
+        foreach (KeyValuePair<long, (string? Category, int Ordinal, string LevelId)> entry in pending)
         {
             Element? element = manager.Document.GetElement(new ElementId(entry.Key));
             if (element == null)
@@ -1018,7 +1020,11 @@ public sealed class FloorGeoPackageExporter
                 continue;
             }
 
-            manager.WriteCategory(element, entry.Value.Category, warnings);
+            if (entry.Value.Category != null)
+            {
+                manager.WriteCategory(element, entry.Value.Category, warnings);
+            }
+
             manager.WriteOrdinal(element, entry.Value.Ordinal, warnings);
             manager.WriteLevelId(element, entry.Value.LevelId, warnings);
         }

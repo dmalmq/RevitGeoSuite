@@ -35,6 +35,8 @@ The first six names are the ones RevitGeoSuite has always used. Earlier versions
 3. A per-PC override chosen in the export dialog.
 4. The floor type name, `j <zone>_床`, looked up in the zone catalog.
 
+The export no longer writes the resolved category back into a floor's `category` (rooms still get it), so a value there is always one somebody set. Exports before this standard wrote it into every floor, so a floor's `category` that only repeats what steps 3 and 4 give is read as that old echo and does not override a type that has its own `gis_category`.
+
 ## Changing the standard
 
 1. Edit `GisSharedParameters.cs` or `FloorTypeStandard.cs` under `src/RevitGeoSuite.FloorPlanExport.Core/Standards/`, or copy a new `color_theme.json` from Kanizu.

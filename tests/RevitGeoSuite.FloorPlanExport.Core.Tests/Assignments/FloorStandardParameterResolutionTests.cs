@@ -68,6 +68,52 @@ public sealed class FloorStandardParameterResolutionTests
     }
 
     [Fact]
+    public void InstanceCategoryEchoingTheName_DoesNotHideTheTypeParameter()
+    {
+        // Older exports wrote the name's category back into every floor.
+        FloorCategoryResolver resolver = new(ZoneCatalog.CreateDefault());
+
+        ResolvedFloorCategory resolved = resolver.Resolve(
+            "j ラチ内コンコース_床",
+            "ラチ内コンコース",
+            new FloorStandardParameters("walkway", "nonpublic", null));
+
+        Assert.Equal(FloorCategoryResolutionSource.TypeParameter, resolved.ResolutionSource);
+        Assert.Equal("nonpublic", resolved.ZoneInfo.Category);
+    }
+
+    [Fact]
+    public void InstanceCategoryEchoingAnOverride_DoesNotHideTheTypeParameter()
+    {
+        FloorCategoryResolver resolver = new(
+            ZoneCatalog.CreateDefault(),
+            new Dictionary<string, string> { ["Custom floor"] = "retail" });
+
+        ResolvedFloorCategory resolved = resolver.Resolve(
+            "Custom floor",
+            "Custom floor",
+            new FloorStandardParameters("retail", "platform", "rachi_nai"));
+
+        Assert.Equal(FloorCategoryResolutionSource.TypeParameter, resolved.ResolutionSource);
+        Assert.Equal("platform", resolved.ZoneInfo.Category);
+    }
+
+    [Fact]
+    public void InstanceCategoryEchoingTheName_StillCounts_WithoutATypeParameter()
+    {
+        FloorCategoryResolver resolver = new(ZoneCatalog.CreateDefault());
+
+        ResolvedFloorCategory resolved = resolver.Resolve(
+            "j ラチ内コンコース_床",
+            "ラチ内コンコース",
+            new FloorStandardParameters("walkway", null, null));
+
+        Assert.Equal(FloorCategoryResolutionSource.InstanceParameter, resolved.ResolutionSource);
+        Assert.Equal("walkway", resolved.ZoneInfo.Category);
+        Assert.Equal("rachi_nai", resolved.ZoneInfo.Restriction);
+    }
+
+    [Fact]
     public void TypeParameters_WinOverPerPcOverrides()
     {
         FloorCategoryResolver resolver = new(
