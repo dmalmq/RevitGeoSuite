@@ -53,6 +53,23 @@ public sealed class FloorStandardParameterResolutionTests
     }
 
     [Fact]
+    public void EmptyTypeRestriction_ComesFromTheName_NotFromAPerPcOverride()
+    {
+        FloorCategoryResolver resolver = new(
+            ZoneCatalog.CreateDefault(),
+            new Dictionary<string, string> { ["j ラチ外店舗_床"] = "nonpublic" });
+
+        ResolvedFloorCategory resolved = resolver.Resolve(
+            "j ラチ外店舗_床",
+            "ラチ外店舗",
+            new FloorStandardParameters(null, "retail", null));
+
+        Assert.Equal(FloorCategoryResolutionSource.TypeParameter, resolved.ResolutionSource);
+        Assert.Equal("retail", resolved.ZoneInfo.Category);
+        Assert.Equal("rachi_gai", resolved.ZoneInfo.Restriction);
+    }
+
+    [Fact]
     public void InstanceCategory_OverridesTheType()
     {
         FloorCategoryResolver resolver = new(ZoneCatalog.CreateDefault());

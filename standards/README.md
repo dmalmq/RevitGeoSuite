@@ -23,7 +23,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | `gis_restriction` | type | floors, generic models, specialty equipment; empty means by location |
 | `gis_kind` | type | generic models, specialty equipment (escalator, moving_walkway, elevator, ticket_gate) |
 | `gis_direction` | instance | stairs, generic models, specialty equipment (up, down, both) |
-| `gis_key` | instance, not user editable | floors, rooms, stairs, generic models, specialty equipment; the export writes the element's first `revit_key` (part 0) here |
+| `gis_key` | instance, not user editable | floors, rooms, stairs, generic models, specialty equipment, columns; the export writes the element's first `revit_key` (part 0) here |
 | `gis_standard_version` | instance, not user editable | project information; the version of this standard the model was set up with |
 
 The first six names are the ones RevitGeoSuite has always used. Earlier versions created them from a separate file on each PC, so an existing model may hold them under other GUIDs. The export keeps those definitions, adds any missing categories to their binding, and lists them in a warning. It never rebinds a parameter that already holds values.

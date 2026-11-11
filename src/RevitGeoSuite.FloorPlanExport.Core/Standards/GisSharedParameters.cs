@@ -98,6 +98,10 @@ public static class GisSharedParameters
 
     private static readonly string[] FamilyCategories = { GenericModel, SpecialtyEquipment };
 
+    /// <summary>Every category the export makes units of, columns included, so each can hold its gis_key.</summary>
+    private static readonly string[] KeyedCategories =
+        { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, "OST_Columns", "OST_StructuralColumns" };
+
     public static IReadOnlyList<GisParameterDefinition> All { get; } = new[]
     {
         new GisParameterDefinition(
@@ -175,7 +179,7 @@ public static class GisSharedParameters
             new Guid("0816cab3-3717-4632-854f-c6c7c11e0881"),
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
-            UnitCategories,
+            KeyedCategories,
             "revit_key of the first feature (part 0) this element made in the last export. Written by the export.",
             userModifiable: false),
         new GisParameterDefinition(

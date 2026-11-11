@@ -144,7 +144,9 @@
         "OST_Rooms",
         "OST_Stairs",
         "OST_GenericModel",
-        "OST_SpecialityEquipment"
+        "OST_SpecialityEquipment",
+        "OST_Columns",
+        "OST_StructuralColumns"
       ],
       "user_modifiable": false
     },

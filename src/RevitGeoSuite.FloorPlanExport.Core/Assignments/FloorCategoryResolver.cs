@@ -105,12 +105,19 @@ public sealed class FloorCategoryResolver
             return byName;
         }
 
+        // The restriction and fill a parameter category inherits come from the parsed name alone; a
+        // per-PC override ranks below the parameters, so it must not change them.
         string category = categoryInfo!.Category;
-        bool nameAgrees = !byName.IsUnassigned &&
-                          string.Equals(byName.ZoneInfo.Category, category, StringComparison.OrdinalIgnoreCase);
-        string? restriction = NormalizeOptional(parameters.TypeRestriction) ??
-                              (nameAgrees ? byName.ZoneInfo.Restriction : null);
-        string fillColor = nameAgrees ? byName.ZoneInfo.FillColor : categoryInfo.FillColor;
+        string parsedName = NormalizeFloorTypeName(parsedZoneCandidate);
+        ZoneInfo? nameInfo = null;
+        if (parsedName.Length > 0 && _zoneCatalog.TryGetZoneInfo(parsedName, out ZoneInfo catalogInfo) &&
+            string.Equals(catalogInfo.Category, category, StringComparison.OrdinalIgnoreCase))
+        {
+            nameInfo = catalogInfo;
+        }
+
+        string? restriction = NormalizeOptional(parameters.TypeRestriction) ?? nameInfo?.Restriction;
+        string fillColor = nameInfo?.FillColor ?? categoryInfo.FillColor;
 
         return new ResolvedFloorCategory(
             byName.FloorTypeName,
