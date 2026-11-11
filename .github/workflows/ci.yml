@@ -55,6 +55,9 @@ jobs:
     - name: Run .NET tests
       run: dotnet test --no-build --configuration Release --verbosity normal
 
+    - name: Run pyRevit extension tests
+      run: python -m unittest discover -s pyrevit/KanizuGIS.extension/tests
+
     - name: Run web tests
       working-directory: src/RevitGeoSuite.SharedUI.Web
       run: npm test

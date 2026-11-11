@@ -1,0 +1,5 @@
+title: "Fix floor\ntypes"
+tooltip: >-
+  Proposes a standard floor type for each floor type in use that has no gis_category, by its name.
+  Accepted rows get the standard gis_category, gis_restriction and material on their type.
+  Floors keep their type, so geometry and keys do not change.
