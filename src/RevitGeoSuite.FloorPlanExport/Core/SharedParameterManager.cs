@@ -286,8 +286,8 @@ public sealed class SharedParameterManager
     }
 
     /// <summary>
-    /// Writes the element's first <c>revit_key</c> into <c>gis_key</c>. An element whose category has
-    /// no <c>gis_key</c> binding is skipped without a warning.
+    /// Writes the element's first <c>revit_key</c> into <c>gis_key</c>, by the standard GUID or, for a
+    /// definition the model kept, by name. An element without <c>gis_key</c> is skipped without a warning.
     /// </summary>
     public bool WriteGisKey(Element element, string revitKey, ICollection<string> warnings)
     {
@@ -301,9 +301,11 @@ public sealed class SharedParameterManager
             throw new ArgumentNullException(nameof(warnings));
         }
 
+        // The standard GUID first; a model that kept its own gis_key definition is found by name.
         Parameter? parameter = GisSharedParameters.TryGet(GisSharedParameters.GisKey, out GisParameterDefinition definition)
             ? element.get_Parameter(definition.Guid)
             : null;
+        parameter ??= element.LookupParameter(GisSharedParameters.GisKey);
         if (parameter == null || parameter.IsReadOnly || parameter.StorageType != StorageType.String ||
             string.IsNullOrWhiteSpace(revitKey) ||
             string.Equals(parameter.AsString(), revitKey, StringComparison.Ordinal))

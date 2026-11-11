@@ -962,6 +962,16 @@ public sealed class FloorGeoPackageExporter
         Dictionary<long, string> gisKeys = new();
         foreach (PreparedViewExportData view in prepared.Views)
         {
+            // Families that resolve to fixtures leave the unit layer; they still get their gis_key.
+            foreach (IExportFeature fixture in view.FixtureLayer?.Features ?? Enumerable.Empty<IExportFeature>())
+            {
+                if (!(TryGetBoolAttribute(fixture.Attributes, "is_linked_source", out bool isLinkedFixture) && isLinkedFixture) &&
+                    TryGetLongAttribute(fixture.Attributes, "source_element_id", out long fixtureElementId))
+                {
+                    CollectGisKey(gisKeys, fixtureElementId, fixture.Attributes);
+                }
+            }
+
             ExportLayer? unitLayer = view.UnitLayer;
             if (unitLayer == null)
             {
@@ -984,14 +994,7 @@ public sealed class FloorGeoPackageExporter
                     continue;
                 }
 
-                // gis_key holds the element's first revit_key (part 0), for every unit the model makes.
-                if (attributes.TryGetValue(RevitKey.AttributeName, out object? keyValue) &&
-                    keyValue is string revitKey &&
-                    !string.IsNullOrWhiteSpace(revitKey) &&
-                    (!gisKeys.TryGetValue(sourceElementId, out string? knownKey) || IsFirstPartKey(revitKey) && !IsFirstPartKey(knownKey)))
-                {
-                    gisKeys[sourceElementId] = revitKey;
-                }
+                CollectGisKey(gisKeys, sourceElementId, attributes);
 
                 bool isFloorDerived = TryGetBoolAttribute(attributes, "is_floor_derived", out bool floorFlag) && floorFlag;
                 bool isRoomDerived = TryGetBoolAttribute(attributes, "is_room_derived", out bool roomFlag) && roomFlag;
@@ -1049,6 +1052,18 @@ public sealed class FloorGeoPackageExporter
         }
 
         transaction.Commit();
+    }
+
+    /// <summary>gis_key holds the element's first revit_key (part 0), for every unit or fixture the model makes.</summary>
+    private static void CollectGisKey(Dictionary<long, string> gisKeys, long sourceElementId, IReadOnlyDictionary<string, object?> attributes)
+    {
+        if (attributes.TryGetValue(RevitKey.AttributeName, out object? keyValue) &&
+            keyValue is string revitKey &&
+            !string.IsNullOrWhiteSpace(revitKey) &&
+            (!gisKeys.TryGetValue(sourceElementId, out string? knownKey) || IsFirstPartKey(revitKey) && !IsFirstPartKey(knownKey)))
+        {
+            gisKeys[sourceElementId] = revitKey;
+        }
     }
 
     private static bool IsFirstPartKey(string revitKey)
