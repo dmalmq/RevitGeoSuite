@@ -330,6 +330,11 @@ public sealed class SharedParameterManager
         BoundParameter? existing,
         ICollection<string> warnings)
     {
+        if (existing != null && !HasStandardBindingKind(existing, standard, warnings))
+        {
+            return;
+        }
+
         CategorySet categories = BuildCategorySet(standard, existing?.Binding, warnings);
         if (categories.Size == 0)
         {
@@ -355,14 +360,12 @@ public sealed class SharedParameterManager
     /// <summary>Adds the standard's categories to a binding the model already had, keeping the binding itself.</summary>
     private void ExtendExistingBinding(BoundParameter existing, GisParameterDefinition standard, ICollection<string> warnings)
     {
-        bool isType = existing.Binding is TypeBinding;
-        if (isType != (standard.Binding == GisParameterBinding.Type))
+        if (!HasStandardBindingKind(existing, standard, warnings))
         {
-            warnings.Add(
-                $"Parameter '{standard.Name}' is bound as a {(isType ? "type" : "instance")} parameter in this model; the standard binds it to the {(isType ? "instance" : "type")}. It was left as it is.");
             return;
         }
 
+        bool isType = existing.Binding is TypeBinding;
         CategorySet categories = BuildCategorySet(standard, existing.Binding, warnings);
         if (CoversAll(existing.Binding, categories))
         {
@@ -373,6 +376,27 @@ public sealed class SharedParameterManager
             ? _application.Create.NewTypeBinding(categories)
             : _application.Create.NewInstanceBinding(categories);
         _document.ParameterBindings.ReInsert(existing.Definition, binding, existing.Definition.GetGroupTypeId());
+    }
+
+    /// <summary>
+    /// Whether the model binds the parameter the way the standard does (type or instance). Rebinding it
+    /// as the other kind would drop the values it holds, so a mismatch is only reported: the export
+    /// reads the parameter where the standard puts it and does not see values held on the other side.
+    /// </summary>
+    private static bool HasStandardBindingKind(BoundParameter existing, GisParameterDefinition standard, ICollection<string> warnings)
+    {
+        bool isType = existing.Binding is TypeBinding;
+        if (isType == (standard.Binding == GisParameterBinding.Type))
+        {
+            return true;
+        }
+
+        string actual = isType ? "type" : "instance";
+        string expected = isType ? "instance" : "type";
+        warnings.Add(
+            $"Parameter '{standard.Name}' is bound as a {actual} parameter in this model; the standard binds it to the {expected}. " +
+            $"It was left as it is, and the export reads '{standard.Name}' only from the {expected}, so its values are not used.");
+        return false;
     }
 
     /// <summary>The standard's categories plus every category the binding already covers, so nothing is unbound.</summary>
