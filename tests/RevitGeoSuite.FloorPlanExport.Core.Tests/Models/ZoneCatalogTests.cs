@@ -20,6 +20,36 @@ public sealed class ZoneCatalogTests
         Assert.Equal("rachi_nai", info.Restriction);
     }
 
+    [Theory]
+    [InlineData("ラチ外コンコース", "walkway", "FFFFFF")]
+    [InlineData("ラチ内コンコース", "walkway", "FEFEF2")]
+    [InlineData("改札内コンコース", "walkway", "FEFEF2")]
+    [InlineData("ラチ内コンコース(JR東新幹線)", "walkway", "EFFAED")]
+    [InlineData("ラチ内コンコース(JR東日本新幹線)", "walkway", "EFFAED")]
+    [InlineData("改札内コンコース(JR東海新幹線)", "walkway", "FFF4E0")]
+    [InlineData("ラチ内店舗", "retail", "E1F3F9")]
+    [InlineData("改札内店舗", "retail", "E1F3F9")]
+    [InlineData("ラチ外店舗", "retail", "F3FCFF")]
+    [InlineData("改札外店舗", "retail", "F3FCFF")]
+    [InlineData("新幹線ホーム", "platform", "F9E8E1")]
+    [InlineData("在来線ホーム", "platform", "FFF6F3")]
+    [InlineData("案内所", "information", "EFEFF9")]
+    [InlineData("案内", "information", "EFEFF9")]
+    [InlineData("みどりの窓口", "ticketing", "A3CA7F")]
+    [InlineData("緑の窓口", "ticketing", "A3CA7F")]
+    [InlineData("多目的トイレ", "restroom.unisex", "D9FFD9")]
+    [InlineData("待合室", "waitingroom", "BABABA")]
+    public void JapaneseZoneNames_ResolveToTheirCategory(string zoneName, string category, string color)
+    {
+        ZoneCatalog catalog = ZoneCatalog.CreateDefault();
+
+        bool found = catalog.TryGetZoneInfo(zoneName, out ZoneInfo info);
+
+        Assert.True(found, zoneName);
+        Assert.Equal(category, info.Category);
+        Assert.Equal(color, info.FillColor);
+    }
+
     [Fact]
     public void UnknownZone_ReturnsDefaultInfo()
     {
