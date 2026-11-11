@@ -2078,7 +2078,7 @@ public sealed class FloorExportDataPreparer
     private static bool IsVerticalFillCategory(string category)
     {
         return string.Equals(category, "stairs", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(category, VerticalCirculation.EscalatorCategory, StringComparison.OrdinalIgnoreCase) ||
+               VerticalCirculation.IsMovingCirculation(category) ||
                string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(category, "column", StringComparison.OrdinalIgnoreCase);
     }

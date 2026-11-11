@@ -874,11 +874,39 @@ public sealed class UnitExtractor
             return null;
         }
 
-        string exportId = _metadataProvider.GetLevelMetadata(level, warnings).ExportId;
+        // Features from a link carry the host view's level id, so a linked stair's or escalator's
+        // ends must name the host levels at the same elevation. This also keeps the export from
+        // trying to give the linked document's levels ids of their own.
+        Level? exportedLevel = _sourceDescriptor.IsLinkedSource ? FindHostLevelAtElevationOf(level) : level;
+        if (exportedLevel == null)
+        {
+            return null;
+        }
+
+        string exportId = _metadataProvider.GetLevelMetadata(exportedLevel, warnings).ExportId;
         return string.IsNullOrWhiteSpace(exportId) ? null : exportId;
     }
 
     private const double FeetToMetersForLevels = 0.3048d;
+
+    private const double HostLevelToleranceFeet = 0.1d;
+
+    private Level? FindHostLevelAtElevationOf(Level linkedLevel)
+    {
+        Document? hostDocument = _sourceDescriptor.ProjectionProjectLocation.Document;
+        if (hostDocument == null)
+        {
+            return null;
+        }
+
+        double hostElevation = _sourceDescriptor.TransformToHost.OfPoint(new XYZ(0d, 0d, linkedLevel.ProjectElevation)).Z;
+        return new FilteredElementCollector(hostDocument)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .Where(level => Math.Abs(level.ProjectElevation - hostElevation) <= HostLevelToleranceFeet)
+            .OrderBy(level => Math.Abs(level.ProjectElevation - hostElevation))
+            .FirstOrDefault();
+    }
 
     private Polygon2D? TryCreateEscalatorBoundingRectangle(IReadOnlyList<Polygon2D> polygons)
     {
