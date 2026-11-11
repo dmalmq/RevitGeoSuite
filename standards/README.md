@@ -7,6 +7,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | `color_theme.json` | Kanizu's area colour table (StaNavi map design), copied unchanged from Kanizu `crates/kanizu-core/src/recolor/color_theme.json` (dev `de67c3c`) | No, copy it again from Kanizu |
 | `floor-types.json` | The 12 standard floor types with `gis_category`, `gis_restriction`, a `GIS_<area>` material and its theme colour, plus one material per theme area, `GIS_unlisted` (#E5E5E5) and the list of unit categories the export accepts | No, generated |
 | `KanizuGIS.SharedParameters.txt` | The shared parameter file, with fixed GUIDs | No, generated |
+| `fields.json` | The field list: one row per GIS field with its layer, GDB name, Japanese alias, type, pick list, Revit source and owner ([contract](../docs/kanizu-link-contract.md)) | No, generated; a station copy gets rows added by hand |
 | `gis-model.template.json` | The start of a model's `gis-model.json` in the station folder: the standard's stair drawing numbers and empty identity, levels and views ([contract](../docs/kanizu-link-contract.md)) | No, generated |
 | `shared-parameter-bindings.json` | The same parameters with their binding (type or instance) and categories, for the pyRevit tools | No, generated |
 
@@ -56,3 +57,19 @@ RevitGeoSuite checks a model against this standard itself (`GisStandardCheck`), 
 - **On the ribbon.** The GIS standard button on the Geo Suite panel shows the active model's state (Current, Update available, Update needed, Update add-in, Not set up, Needs fixing). Clicking it lists every issue.
 - **At export.** The export and the preview carry the state line and the warnings into the report. The export is blocked, and says why, only when the output would be wrong: a model below the oldest supported version, or a `gis_` parameter bound under a GUID other than the shipped one (or as a project parameter). The six older parameters keep their own GUIDs with a warning, because the export reads them by name and Set up model never rebinds them. The Cesium export applies the same rule.
 - **In pyRevit.** Audit prints RevitGeoSuite's verdict at the top when RevitGeoSuite is loaded, and Export stops before opening RevitGeoSuite's export when that verdict blocks it.
+
+## Field list
+
+`fields.json` lists every field the export writes (`source.kind` `core`), with the alias and pick list Kanizu gives the GDB field. To add a field for a station, copy it to the station folder, add a row, and set `fields` in the model's `gis-model.json` to the copy's name. For example, an operator name kept in a new instance parameter:
+
+```json
+{
+  "layer": "unit", "name": "operator", "aliasJa": "事業者", "type": "text", "length": 50,
+  "values": ["JR東日本", "東京メトロ"], "owner": "revit",
+  "source": { "kind": "parameter", "parameter": "gis_operator", "guid": "<a new GUID>",
+              "binding": "instance", "categories": ["OST_Floors", "OST_Rooms"] }
+}
+```
+
+The next export binds `gis_operator` with that GUID to floors and rooms, and writes an `operator` column on units. A row with `"owner": "gdb"` and `"source": { "kind": "none" }` is a GDB-only field, which the export never writes. A row with `"kind": "derived"` exports a value the export works out, such as `ViewName`. Rows that break a rule (unknown layer, bad field name, a new parameter without a GUID or categories, a GUID used twice) are left out with a warning in the export report. A station copy cannot change the standard's `core` rows.
+

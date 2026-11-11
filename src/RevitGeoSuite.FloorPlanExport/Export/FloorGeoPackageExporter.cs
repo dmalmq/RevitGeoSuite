@@ -175,11 +175,14 @@ public sealed class FloorGeoPackageExporter
         var acceptedOpeningLoad = acceptedOpeningFamilyStore.LoadWithDiagnostics(projectKey);
         setupWarnings.AddRange(acceptedOpeningLoad.Warnings);
         GisModelSettings gisModelSettings = GisModelSettings.Load(_document, setupWarnings);
+        GisFieldList fieldList = gisModelSettings.LoadFieldList(setupWarnings);
+        WriteFieldList(outputDirectory, fieldList, setupWarnings);
         GeometryRepairOptions effectiveGeometryRepairOptions =
             (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         ExportPackageOptions effectivePackageOptions = packageOptions ?? new ExportPackageOptions();
         LinkExportOptions effectiveLinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
-        SchemaProfile effectiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        // The field list's parameter and derived rows become columns, beside the profile's own.
+        SchemaProfile effectiveSchemaProfile = fieldList.ApplyTo(activeSchemaProfile);
         ValidationPolicyProfile effectiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
 
         using Temp3DViewScope? threeDViewScope = use3DSectionBoxExport
@@ -193,7 +196,7 @@ public sealed class FloorGeoPackageExporter
             acceptedOpeningLoad.Value,
             effectiveLinkExportOptions,
             threeDViewScope);
-        EnsureSharedParameters(parameterManager, setupWarnings);
+        EnsureSharedParameters(parameterManager, setupWarnings, fieldList.ExtraParameters());
         EnsureStableIds(parameterManager, contexts, setupWarnings);
         // Before any extractor reads the model key, and only here: the preview never writes the model.
         RevitModelKeyResolver.EnsureHostModelId(_document, setupWarnings);
@@ -955,13 +958,35 @@ public sealed class FloorGeoPackageExporter
         };
     }
 
-    private static void EnsureSharedParameters(SharedParameterManager manager, ICollection<string> warnings)
+    private static void EnsureSharedParameters(
+        SharedParameterManager manager,
+        ICollection<string> warnings,
+        IReadOnlyList<GisParameterDefinition> extraParameters)
     {
         using Transaction transaction = new(manager.Document, "IMDF Export - Ensure Shared Parameters");
         transaction.Start();
-        manager.EnsureParameters(warnings);
+        manager.EnsureParameters(warnings, extraParameters);
         transaction.Commit();
     }
+
+    /// <summary>
+    /// <c>gis-fields.json</c> beside the GeoPackage: the field list this export used, so Kanizu
+    /// creates each field with its alias and pick list.
+    /// </summary>
+    private static void WriteFieldList(string outputDirectory, GisFieldList fieldList, ICollection<string> warnings)
+    {
+        string path = Path.Combine(outputDirectory, ExportedFieldListFileName);
+        try
+        {
+            File.WriteAllText(path, fieldList.ToJson(), new System.Text.UTF8Encoding(false));
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            warnings.Add($"The field list could not be written to {path} ({ex.Message}).");
+        }
+    }
+
+    public const string ExportedFieldListFileName = "gis-fields.json";
 
     private static void EnsureStableIds(
         SharedParameterManager manager,

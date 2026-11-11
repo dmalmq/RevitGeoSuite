@@ -30,6 +30,39 @@ public sealed class GisModelSettings
     /// <summary>The file as read, or null when there is none (or it could not be read).</summary>
     public GisModelFile? File { get; }
 
+    /// <summary>
+    /// The field list this model exports with: the standard's, or the station's own list that
+    /// <c>fields</c> names (a path, relative to the station folder or absolute). Never throws; a list
+    /// that cannot be read falls back to the standard with a warning, and bad rows are left out.
+    /// </summary>
+    public GisFieldList LoadFieldList(ICollection<string>? warnings)
+    {
+        string pointer = (File?.Fields ?? GisModelFile.StandardFields).Trim();
+        if (pointer.Length == 0 || string.Equals(pointer, GisModelFile.StandardFields, StringComparison.OrdinalIgnoreCase))
+        {
+            return GisFieldList.LoadStandard();
+        }
+
+        string stationFolder = Path == null ? string.Empty : System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(Path) ?? string.Empty) ?? string.Empty;
+        string listPath = System.IO.Path.IsPathRooted(pointer) ? pointer : System.IO.Path.Combine(stationFolder, pointer);
+        try
+        {
+            List<string> problems = new();
+            GisFieldList list = GisFieldList.LoadStation(listPath, problems);
+            foreach (string problem in problems)
+            {
+                warnings?.Add($"Field list: {problem}");
+            }
+
+            return list;
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException || ex is ArgumentException)
+        {
+            warnings?.Add($"The field list {listPath} that gis-model.json names could not be read ({ex.Message}). The export uses the standard field list.");
+            return GisFieldList.LoadStandard();
+        }
+    }
+
     public StairDrawingSettings StairDrawingSettings =>
         (File ?? GisModelFile.CreateDefault()).ToStairDrawingSettings();
 
