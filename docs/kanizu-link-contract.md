@@ -77,7 +77,7 @@ One model's GIS export settings, kept on the share so every PC exports the model
 |---|---|
 | `schema`, `version` | `revitgeosuite.gis-model` and `1` |
 | `identity` | `modelId`, `station` (the station folder's name), `building` (for display), `crsEpsg` of the last GIS export |
-| `levels` | The levels with a GIS `level_id`, and those of the exported views: `uniqueId`, `name`, `levelId`, `ordinal`, `shortName`. Their pairing with Kanizu floors stays in `kanizu-link.json`. |
+| `levels` | The levels with a GIS `level_id`, and those of the listed views: `uniqueId`, `name`, `levelId`, `ordinal`, `shortName`. Their pairing with Kanizu floors stays in `kanizu-link.json`. |
 | `views` | The plan views of the last Cesium export, `uniqueId` and `name`. Only that export writes them, so a one-off dialog export does not change them. The Cesium export takes these before the profile's own views, and warns when some no longer exist; the export dialog preselects them when its profile stores none. Without a list, both take the `GIS_` views. |
 | `drawingRules.stairs` | `stepSpacingMeters` (0.60), `stopBeforeMiddleMeters` (1.10), `overlapMeters` (1.80, 0 tiles the two floors exactly). A missing number takes the standard's. Edited by hand on the share; the export never changes them. |
 | `fields` | `standard`: the field list shipped with the standard. |

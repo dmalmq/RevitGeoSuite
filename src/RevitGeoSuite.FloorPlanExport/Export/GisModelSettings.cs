@@ -152,10 +152,23 @@ public sealed class GisModelSettings
                 .ToList();
         }
 
-        file.Levels = ReadLevels(document, views);
+        // Without views of its own (a one-off dialog export) the levels follow the views the
+        // file already lists, so such an export does not drop the station export's levels.
+        IReadOnlyList<ViewPlan> levelViews = views.Count > 0 ? views : ListedViews(document, file);
+        file.Levels = ReadLevels(document, levelViews);
         file.Versions.Standard = ReadStandardVersion(document);
         file.Versions.LastExportRevitGeoSuite = typeof(GisModelSettings).Assembly.GetName().Version?.ToString() ?? string.Empty;
         file.Versions.LastExportUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+    }
+
+    private static List<ViewPlan> ListedViews(Document document, GisModelFile file)
+    {
+        return (file.Views ?? new List<GisModelView>())
+            .Where(view => !string.IsNullOrEmpty(view.UniqueId))
+            .Select(view => document.GetElement(view.UniqueId) as ViewPlan)
+            .Where(view => view != null)
+            .Select(view => view!)
+            .ToList();
     }
 
     /// <summary>The levels with a GIS <c>level_id</c>, and the levels of the exported views, by elevation.</summary>
