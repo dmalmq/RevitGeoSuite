@@ -119,6 +119,21 @@ public sealed class StairDrawingRuleTests
         Assert.DoesNotContain(stations, station => station > 3d + Tolerance && station < 5d - Tolerance);
     }
 
+    [Fact]
+    public void RunEndOnTheGrid_GetsNoClosingLine()
+    {
+        // The first run ends at 3.0 m, a multiple of 0.60 m, where the landing starts.
+        StairPathPiece first = new(StairPieceKind.Run, new[] { new Point2D(0, 0), new Point2D(3, 0) }, Rect(0, -1, 3, 1));
+        StairPathPiece landing = new(StairPieceKind.Landing, new[] { new Point2D(3, 0), new Point2D(5, 0) }, Rect(3, -1, 5, 1));
+        StairPathPiece second = new(StairPieceKind.Run, new[] { new Point2D(5, 0), new Point2D(8, 0) }, Rect(5, -1, 8, 1));
+        StairDrawingRule rule = new(new[] { first, landing, second });
+        StairDrawingSettings settings = new() { LineGapBeforeMiddleMeters = 0d };
+
+        double[] lower = rule.GetStepStations(StairFloorSide.Lower, settings).ToArray();
+
+        Assert.Equal(new[] { 0.6, 1.2, 1.8, 2.4 }, lower.Select(value => Math.Round(value, 6)));
+    }
+
     private static StairPathPiece StraightRun(double length, double width = 2d)
     {
         return new StairPathPiece(

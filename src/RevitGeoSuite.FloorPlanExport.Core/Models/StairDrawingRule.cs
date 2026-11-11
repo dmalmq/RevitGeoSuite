@@ -103,6 +103,7 @@ public sealed class StairDrawingRule
     private const double FarDistanceMeters = 10_000d;
     private const double MinimumPieceAreaSquareMeters = 1e-4d;
     private const double MinimumLineLengthMeters = 0.05d;
+    private const double RunEndToleranceMeters = 1e-6d;
 
     private static readonly GeometryFactory Factory = new();
 
@@ -225,10 +226,12 @@ public sealed class StairDrawingRule
     {
         foreach ((StairPathPiece Piece, double Start, double End) entry in _pieces)
         {
+            // Strictly inside the run: a station on a run's end is the edge of the landing or
+            // the stair's end, and a line there would be the closing line the rule leaves out.
             if (entry.Piece.Kind == StairPieceKind.Run &&
                 entry.End > entry.Start &&
-                station >= entry.Start - 1e-9d &&
-                station <= entry.End + 1e-9d)
+                station > entry.Start + RunEndToleranceMeters &&
+                station < entry.End - RunEndToleranceMeters)
             {
                 run = entry;
                 return true;
