@@ -731,39 +731,45 @@ public sealed class FloorGeoPackageExporter
         ExportFeatureType featureTypes,
         IReadOnlyList<PreparedViewExportData> views)
     {
-        List<ArtifactLayerPlan> layers = new();
-        foreach (string layerName in GetSelectedLayerNames(featureTypes))
+        // Two views of one floor can both show an element, so keys are made unique again per
+        // floor. View by view, unit before detail, so that a stair renamed in one view takes the
+        // parent_key of that view's step lines with it.
+        IReadOnlyList<string> layerNames = GetSelectedLayerNames(featureTypes);
+        Dictionary<string, ExportLayer> merged = new(StringComparer.Ordinal);
+        Dictionary<string, RevitKeyMerger> mergers = new(StringComparer.Ordinal);
+        foreach (PreparedViewExportData view in views)
         {
-            List<ExportLayer> sourceLayers = views
-                .Select(view => GetLayerByName(view, layerName))
-                .Where(layer => layer != null)
-                .Cast<ExportLayer>()
-                .ToList();
-            if (sourceLayers.Count == 0)
+            IReadOnlyDictionary<string, string>? unitRenames = null;
+            foreach (string layerName in layerNames)
             {
-                continue;
-            }
+                ExportLayer? layer = GetLayerByName(view, layerName);
+                if (layer == null)
+                {
+                    continue;
+                }
 
-            // Two views of one floor can both show an element, so keys are made unique again per floor.
-            layers.Add(new ArtifactLayerPlan(layerName, RevitKey.EnsureUnique(MergeLayers(sourceLayers))));
+                if (!merged.TryGetValue(layerName, out ExportLayer? target))
+                {
+                    target = new ExportLayer(layer.Name, layer.GeometryType, layer.Attributes);
+                    merged[layerName] = target;
+                    mergers[layerName] = new RevitKeyMerger();
+                }
+
+                IReadOnlyDictionary<string, string> renames = mergers[layerName].Append(
+                    target,
+                    layer,
+                    layerName == "detail" ? unitRenames : null);
+                if (layerName == "unit")
+                {
+                    unitRenames = renames;
+                }
+            }
         }
 
-        return layers;
-    }
-
-    private static ExportLayer MergeLayers(IReadOnlyList<ExportLayer> sourceLayers)
-    {
-        ExportLayer first = sourceLayers[0];
-        ExportLayer merged = new(first.Name, first.GeometryType, first.Attributes);
-        foreach (ExportLayer layer in sourceLayers)
-        {
-            foreach (IExportFeature feature in layer.Features)
-            {
-                merged.AddFeature(feature);
-            }
-        }
-
-        return merged;
+        return layerNames
+            .Where(merged.ContainsKey)
+            .Select(layerName => new ArtifactLayerPlan(layerName, merged[layerName]))
+            .ToList();
     }
 
     private static IEnumerable<(string LayerName, ExportLayer Layer)> GetLayerEntries(

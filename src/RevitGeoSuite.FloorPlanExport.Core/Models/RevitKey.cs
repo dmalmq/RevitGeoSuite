@@ -143,19 +143,19 @@ public static class RevitKey
         return unique;
     }
 
-    private static string ReadScope(IExportFeature feature)
+    internal static string ReadScope(IExportFeature feature)
     {
         return feature.Attributes.TryGetValue("level_id", out object? value) && value != null
             ? Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
             : string.Empty;
     }
 
-    private static string Scoped(string scope, string key)
+    internal static string Scoped(string scope, string key)
     {
         return string.Concat(scope, "\u001f", key);
     }
 
-    private static string? ReadKey(IExportFeature feature)
+    internal static string? ReadKey(IExportFeature feature)
     {
         return feature.Attributes.TryGetValue(AttributeName, out object? value) &&
                value is string key &&
@@ -164,7 +164,7 @@ public static class RevitKey
             : null;
     }
 
-    private static string NextFreeKey(string key, string scope, HashSet<string> taken)
+    internal static string NextFreeKey(string key, string scope, HashSet<string> taken)
     {
         int split = key.LastIndexOf(Separator);
         string stem = split >= 0 ? key.Substring(0, split) : key;
@@ -184,7 +184,7 @@ public static class RevitKey
         return candidate;
     }
 
-    private static IExportFeature WithAttribute(IExportFeature feature, string name, object? value)
+    internal static IExportFeature WithAttribute(IExportFeature feature, string name, object? value)
     {
         Dictionary<string, object?> attributes = new(StringComparer.Ordinal);
         foreach (KeyValuePair<string, object?> entry in feature.Attributes)
