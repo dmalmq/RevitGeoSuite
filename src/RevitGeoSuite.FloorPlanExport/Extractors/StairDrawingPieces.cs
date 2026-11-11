@@ -81,6 +81,17 @@ internal static class StairDrawingPieces
             return byElevation != 0 ? byElevation : left.Order.CompareTo(right.Order);
         });
 
+        // The rule needs one walking path from bottom to top. A stair that branches into runs
+        // side by side at the same height has no single path, so it keeps the view-based result.
+        bool hasParallelRuns = ordered
+            .Where(entry => entry.Element is StairsRun)
+            .GroupBy(entry => Math.Round(entry.Elevation / ElevationGridFeet))
+            .Any(group => group.Count() > 1);
+        if (hasParallelRuns)
+        {
+            return false;
+        }
+
         Dictionary<ElementId, IReadOnlyList<Point2D>> runPaths = new();
         foreach ((_, _, Element element) in ordered)
         {
