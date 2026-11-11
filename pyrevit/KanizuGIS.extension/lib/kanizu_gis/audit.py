@@ -33,7 +33,7 @@ def audit(snapshot, standard):
     findings.extend(_audit_floor_types(snapshot, standard))
     findings.extend(_audit_floors(snapshot, standard))
     findings.extend(_audit_levels(snapshot))
-    findings.extend(_audit_families(snapshot))
+    findings.extend(_audit_families(snapshot, standard))
     order = {ERROR: 0, WARNING: 1, INFO: 2}
     return sorted(findings, key=lambda finding: order[finding.severity])
 
@@ -117,7 +117,7 @@ def _audit_levels(snapshot):
     return findings
 
 
-def _audit_families(snapshot):
+def _audit_families(snapshot, standard):
     findings = []
     for family_type in snapshot.family_types:
         kind = normalize(family_type.gis_kind).lower()
@@ -128,6 +128,9 @@ def _audit_families(snapshot):
                     ERROR, "families",
                     u"%s has gis_kind '%s'. Use one of %s." % (name, family_type.gis_kind, ", ".join(GIS_KINDS)),
                     family_type.instance_ids))
+            continue
+        if standard.is_known_category(family_type.gis_category):
+            # The export maps a family by its category or gis_category as well as by gis_kind.
             continue
         suggested = suggest_kind(family_type.family_name + u" " + family_type.type_name)
         if suggested:

@@ -119,7 +119,9 @@ def read_snapshot(doc):
             key = id_value(symbol.Id)
             if key not in family_types:
                 kind = read_string(instance, "gis_kind") or read_string(symbol, "gis_kind")
-                family_types[key] = snapshot.FamilyTypeInfo(key, symbol.FamilyName, element_name(symbol), kind)
+                category = read_string(instance, "category") or read_string(symbol, "gis_category")
+                family_types[key] = snapshot.FamilyTypeInfo(
+                    key, symbol.FamilyName, element_name(symbol), kind, gis_category=category)
             family_types[key].instance_ids.append(id_value(instance.Id))
 
     return snapshot.ModelSnapshot(

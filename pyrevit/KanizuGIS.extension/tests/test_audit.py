@@ -60,6 +60,7 @@ class AuditTests(unittest.TestCase):
             snapshot.FamilyTypeInfo(3, u"j エスカレーター-lightweight", u"S1000", "escalator", [23]),
             snapshot.FamilyTypeInfo(4, u"Bench", u"1800", "", [24]),
             snapshot.FamilyTypeInfo(5, u"Lift", u"A", "lift", [25]),
+            snapshot.FamilyTypeInfo(6, u"j エスカレータ-other", u"S800", "", [26], gis_category="escalator"),
         ])
         self.assertEqual([(audit.ERROR, [25]), (audit.WARNING, [21]), (audit.WARNING, [22])],
                          [(finding.severity, finding.element_ids) for finding in findings])

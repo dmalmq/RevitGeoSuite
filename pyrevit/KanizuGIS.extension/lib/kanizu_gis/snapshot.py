@@ -54,11 +54,12 @@ class LevelInfo(object):
 class FamilyTypeInfo(object):
     """A family type of the generic model or specialty equipment category placed in the model."""
 
-    def __init__(self, element_id, family_name, type_name, gis_kind="", instance_ids=None):
+    def __init__(self, element_id, family_name, type_name, gis_kind="", instance_ids=None, gis_category=""):
         self.element_id = element_id
         self.family_name = family_name
         self.type_name = type_name
         self.gis_kind = gis_kind or ""
+        self.gis_category = gis_category or ""
         self.instance_ids = list(instance_ids or [])
 
 
