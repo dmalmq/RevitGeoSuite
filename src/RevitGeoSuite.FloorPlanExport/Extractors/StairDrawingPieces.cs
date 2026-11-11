@@ -14,6 +14,7 @@ namespace RevitGeoSuite.FloorPlanExport.Extractors;
 internal static class StairDrawingPieces
 {
     private const double LevelToleranceFeet = 0.05d;
+    private const double ElevationGridFeet = 0.01d;
 
     /// <summary>
     /// <see cref="StairFloorSide.Lower"/> when the view is on the stair's base level,
@@ -71,10 +72,12 @@ internal static class StairDrawingPieces
         }
 
         // A landing sits at the top elevation of the run below it, which is the base of the run
-        // above, so it sorts between the two.
+        // above, so it sorts between the two. Elevations are compared on a 0.01 ft grid so a
+        // landing a hair above the next run's base still sorts before that run.
         ordered.Sort((left, right) =>
         {
-            int byElevation = left.Elevation.CompareTo(right.Elevation);
+            int byElevation = Math.Round(left.Elevation / ElevationGridFeet)
+                .CompareTo(Math.Round(right.Elevation / ElevationGridFeet));
             return byElevation != 0 ? byElevation : left.Order.CompareTo(right.Order);
         });
 
