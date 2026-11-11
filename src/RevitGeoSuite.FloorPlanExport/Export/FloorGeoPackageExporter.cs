@@ -264,10 +264,13 @@ public sealed class FloorGeoPackageExporter
             BuildIncludedLinks(contexts));
     }
 
-    /// <summary>The standards check's state line and warnings, for a model that is a GIS model.</summary>
+    /// <summary>
+    /// The standards check's state line and issues, for a GIS model or one the check blocks. The
+    /// preview shows a blocking issue so the reason is visible before the export stops on it.
+    /// </summary>
     internal static IEnumerable<string> GisStandardWarnings(GisStandardStatus status)
     {
-        if (!status.AppliesToModel)
+        if (!status.AppliesToModel && !status.BlocksExport)
         {
             yield break;
         }
@@ -275,7 +278,11 @@ public sealed class FloorGeoPackageExporter
         yield return status.Summary;
         foreach (GisStandardIssue issue in status.Issues)
         {
-            if (!issue.BlocksExport && !string.Equals(issue.Message, status.Summary, StringComparison.Ordinal))
+            if (issue.BlocksExport)
+            {
+                yield return "Blocks export: " + issue.Message;
+            }
+            else if (!string.Equals(issue.Message, status.Summary, StringComparison.Ordinal))
             {
                 yield return issue.Message;
             }

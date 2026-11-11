@@ -123,9 +123,10 @@ public sealed class GisStandardStatus
     /// <summary>A short label for the ribbon button: current, update available, or not set up.</summary>
     public string ShortLabel => State switch
     {
-        GisStandardState.Current => BlocksExport ? "Needs fixing" : "Current",
-        GisStandardState.UpdateAvailable => "Update available",
         GisStandardState.Unsupported => "Update needed",
+        _ when BlocksExport => "Needs fixing",
+        GisStandardState.Current => "Current",
+        GisStandardState.UpdateAvailable => "Update available",
         GisStandardState.NewerThanTools => "Update add-in",
         GisStandardState.Unreadable => "Check version",
         _ => "Not set up",
@@ -242,12 +243,13 @@ public static class GisStandardCheck
                 continue;
             }
 
+            // The binding kind and the GUID are checked apart: a gis_ parameter from another file
+            // blocks the export whichever kind it is bound as.
             if (existing.Binding != standard.Binding)
             {
                 issues.Add(new GisStandardIssue(
                     GisStandardIssueSeverity.Warning,
                     $"Parameter {standard.Name} is bound as {WithArticle(existing.Binding)} parameter; the standard binds it as {Label(standard.Binding)}, so the export cannot read it where the standard puts it."));
-                continue;
             }
 
             if (existing.Guid == standard.Guid)

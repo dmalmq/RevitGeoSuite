@@ -101,6 +101,38 @@ public sealed class GisStandardCheckTests
         Assert.Contains(status.Issues, issue => issue.Message.Contains("bound as an instance parameter"));
     }
 
+    [Fact]
+    public void AGisParameterUnderAnotherGuidBlocksEvenWhenBoundAsTheWrongKind()
+    {
+        List<GisBoundParameterState> parameters = AllStandard(GisSharedParameters.GisRestriction);
+        parameters.Add(new GisBoundParameterState(GisSharedParameters.GisRestriction, Guid.NewGuid(), GisParameterBinding.Instance));
+        GisStandardModelState model = SetUpModel();
+        model.BoundParameters = parameters;
+
+        GisStandardStatus status = GisStandardCheck.Check(model);
+
+        Assert.True(status.BlocksExport);
+        Assert.Contains(status.Issues, issue => issue.Message.Contains("bound as an instance parameter"));
+    }
+
+    [Fact]
+    public void ABlockedModelThatIsNotSetUpSaysItNeedsFixing()
+    {
+        GisStandardModelState model = new()
+        {
+            BoundParameters = new List<GisBoundParameterState>
+            {
+                new(GisSharedParameters.GisKind, null, GisParameterBinding.Type),
+            },
+        };
+
+        GisStandardStatus status = GisStandardCheck.Check(model);
+
+        Assert.Equal(GisStandardState.NotSetUp, status.State);
+        Assert.True(status.BlocksExport);
+        Assert.Equal("Needs fixing", status.ShortLabel);
+    }
+
     [Theory]
     [InlineData("0", GisStandardState.Unsupported, true)]
     [InlineData("2", GisStandardState.NewerThanTools, false)]
