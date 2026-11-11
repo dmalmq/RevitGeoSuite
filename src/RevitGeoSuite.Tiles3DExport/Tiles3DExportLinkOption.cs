@@ -14,6 +14,9 @@ public sealed class Tiles3DExportLinkOption : INotifyPropertyChanged
 
     public string Title { get; set; } = string.Empty;
 
+    /// <summary>The link instance's own name, such as <c>Platform.rvt : 1</c>; differs per placement.</summary>
+    public string InstanceName { get; set; } = string.Empty;
+
     public string Description { get; set; } = string.Empty;
 
     public bool IsSelected

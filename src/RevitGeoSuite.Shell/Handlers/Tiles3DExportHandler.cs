@@ -76,7 +76,10 @@ internal static class Tiles3DExportSupport
             scope.ScopeMode == Tiles3DExportScopeMode.Selected3DView,
             scope.SelectedView?.UniqueId,
             scope.SelectedView?.Title,
-            scope.SelectedLinkedModels.Select(link => (link.UniqueId, link.Title)),
+            // The instance name tells two placements of one linked file apart; the title does not.
+            scope.SelectedLinkedModels.Select(link => (
+                link.UniqueId,
+                string.IsNullOrWhiteSpace(link.InstanceName) ? link.Title : link.InstanceName)),
             levelOfDetail.ToString(),
             exactPlacement);
     }

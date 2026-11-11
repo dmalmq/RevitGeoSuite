@@ -35,7 +35,7 @@ Every file has one writer, so two people on the share never overwrite each other
 | `crs.projectEpsg` | The project CRS of every plane-grid coordinate in the package. |
 | `anchor` | Where the tileset's east-north-up frame sits: `lat`, `lon`, `elevationMeters` (ellipsoidal), `geoidOffsetMeters`, `geoidModel` (`EGM2008` or `typed`), `orthometricHeightMeters`, `heightDatum` (`TP` or `unknown`), and the plane `easting`, `northing`. A reader places the model from these source numbers, with its own geoid if it has a better one, rather than trusting the tileset's transform. |
 | `tiles.levels`, `tiles.elements`, `tiles.rooms` | Paths of the index files below, relative to the version folder. Absent when the export did not write them. A path never leaves the version folder. |
-| `export` | What the 3D Tiles export covered and how, below. Absent on packages from before it was written. |
+| `export` | What the 3D Tiles export covered and how, below. Absent on packages from before it was written, and on packages that "Send to Cesium viewer" (`cesium.push`) wraps around an existing export folder later, because that step cannot know which settings made the folder. A reader treats a missing `export` as unknown settings. |
 
 ### `export`
 
@@ -45,7 +45,7 @@ Two versions compare element by element only when their `export` sections match.
 |---|---|
 | `scope` | `whole` for the whole model, `view` for the elements one 3D view shows. |
 | `view` | For `view`: the view's `uniqueId` and `name`. |
-| `links` | The link instances whose elements were exported, each its `uniqueId` (the UniqueId of the link instance in the host) and `name`. Empty when only the host was exported. |
+| `links` | The link instances whose elements were exported, each its `uniqueId` (the UniqueId of the link instance in the host) and `name` (the instance's name, such as `Platform.rvt : 1`, for display). Empty when only the host was exported. |
 | `levelOfDetail` | `coarse`, `medium` or `fine`. |
 | `exactPlacement` | `true` when every vertex was unprojected from the project CRS into the anchor's frame, `false` when plane-grid metres were used as east-north-up (a twist of about 0.04° at Tokyo). |
 
