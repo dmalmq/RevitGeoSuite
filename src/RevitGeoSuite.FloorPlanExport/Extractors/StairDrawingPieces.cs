@@ -105,6 +105,12 @@ internal static class StairDrawingPieces
                 List<Point2D> path = ProjectLoop(run.GetStairsPath(), project);
                 if (path.Count >= 2)
                 {
+                    // A spiral or S-shaped run can't be cut straight across; keep the view's result.
+                    if (!StairDrawingRule.CanCutAcross(path))
+                    {
+                        return false;
+                    }
+
                     runPaths[run.Id] = path;
                 }
             }

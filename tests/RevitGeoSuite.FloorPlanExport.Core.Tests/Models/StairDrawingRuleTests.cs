@@ -134,6 +134,27 @@ public sealed class StairDrawingRuleTests
         Assert.Equal(new[] { 0.6, 1.2, 1.8, 2.4 }, lower.Select(value => Math.Round(value, 6)));
     }
 
+    [Fact]
+    public void CanCutAcross_AllowsQuarterTurnsButNotSpirals()
+    {
+        Assert.True(StairDrawingRule.CanCutAcross(new[] { new Point2D(0, 0), new Point2D(5, 0) }));
+        Assert.True(StairDrawingRule.CanCutAcross(Arc(degrees: 90d)));
+        Assert.False(StairDrawingRule.CanCutAcross(Arc(degrees: 270d)));
+        Assert.False(StairDrawingRule.CanCutAcross(new[]
+        {
+            new Point2D(0, 0), new Point2D(2, 0), new Point2D(2, 2), new Point2D(0, 2), new Point2D(0, 4),
+        }));
+    }
+
+    private static Point2D[] Arc(double degrees)
+    {
+        const int Steps = 36;
+        return Enumerable.Range(0, Steps + 1)
+            .Select(i => (degrees * i / Steps) * Math.PI / 180d)
+            .Select(angle => new Point2D(3d * Math.Cos(angle), 3d * Math.Sin(angle)))
+            .ToArray();
+    }
+
     private static StairPathPiece StraightRun(double length, double width = 2d)
     {
         return new StairPathPiece(

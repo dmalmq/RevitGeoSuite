@@ -1079,6 +1079,13 @@ public sealed class UnitExtractor
             }
         }
 
+        // The view can hand over only the part of the escalator below its cut plane. Add the
+        // whole element's footprint so both floors halve the same rectangle.
+        foreach ((Point2D projected, _) in CollectEscalator3DVertices(escalator))
+        {
+            allPoints.Add(projected);
+        }
+
         if (allPoints.Count < 3)
         {
             return null;

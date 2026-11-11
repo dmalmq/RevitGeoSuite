@@ -331,6 +331,52 @@ public sealed class StairDrawingRule
         return new LineString2D(new[] { new Point2D(first.X, first.Y), new Point2D(last.X, last.Y) });
     }
 
+    /// <summary>
+    /// True when a straight cut across the walking path at any point splits the run into the part
+    /// before and the part after it. That holds while the path turns less than half a circle in
+    /// all; a spiral or S-shaped run that turns more can fold back across its own cut line.
+    /// </summary>
+    public static bool CanCutAcross(IReadOnlyList<Point2D> path, double maximumTurnDegrees = 170d)
+    {
+        if (path is null)
+        {
+            throw new ArgumentNullException(nameof(path));
+        }
+
+        double totalTurn = 0d;
+        double? previousHeading = null;
+        for (int i = 1; i < path.Count; i++)
+        {
+            double dx = path[i].X - path[i - 1].X;
+            double dy = path[i].Y - path[i - 1].Y;
+            if ((dx * dx) + (dy * dy) <= 1e-18d)
+            {
+                continue;
+            }
+
+            double heading = Math.Atan2(dy, dx);
+            if (previousHeading.HasValue)
+            {
+                double turn = heading - previousHeading.Value;
+                while (turn > Math.PI)
+                {
+                    turn -= 2d * Math.PI;
+                }
+
+                while (turn < -Math.PI)
+                {
+                    turn += 2d * Math.PI;
+                }
+
+                totalTurn += Math.Abs(turn);
+            }
+
+            previousHeading = heading;
+        }
+
+        return totalTurn * 180d / Math.PI <= maximumTurnDegrees;
+    }
+
     internal static bool TryPointOnPath(IReadOnlyList<Point2D> path, double distance, out Point2D point, out Point2D direction)
     {
         point = default;
