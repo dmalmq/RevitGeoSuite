@@ -7,7 +7,7 @@ read with ElementId.Value, parameters are grouped with GroupTypeId.
 import System
 from Autodesk.Revit import DB
 
-from kanizu_gis import setup_plan, snapshot
+from kanizu_gis import parameter_table, setup_plan, snapshot
 from kanizu_gis.standards import hex_to_rgb, normalize, rgb_to_hex
 
 FAMILY_CATEGORIES = [DB.BuiltInCategory.OST_GenericModel, DB.BuiltInCategory.OST_SpecialityEquipment]
@@ -132,6 +132,86 @@ def read_snapshot(doc):
         levels=levels,
         family_types=list(family_types.values()),
         standard_version=read_string(doc.ProjectInformation, "gis_standard_version"))
+
+
+def _level_name(doc, element):
+    level_id = getattr(element, "LevelId", None)
+    if level_id is None or level_id == DB.ElementId.InvalidElementId:
+        parameter = element.get_Parameter(DB.BuiltInParameter.STAIRS_BASE_LEVEL_PARAM)
+        level_id = parameter.AsElementId() if parameter is not None else None
+    level = doc.GetElement(level_id) if level_id is not None and level_id != DB.ElementId.InvalidElementId else None
+    return element_name(level) if level is not None else ""
+
+
+def _type_name(doc, element):
+    element_type = doc.GetElement(element.GetTypeId())
+    if element_type is None:
+        return ""
+    family = getattr(element_type, "FamilyName", "") or ""
+    name = element_name(element_type)
+    return u"%s : %s" % (family, name) if family and family != name else name
+
+
+def _parameter_row(doc, element, kind):
+    values = {}
+    for column in parameter_table.EDITABLE[kind]:
+        if column in parameter_table.INTEGER_COLUMNS:
+            number = read_integer(element, column)
+            values[column] = u"" if number is None else number
+        else:
+            values[column] = read_string(element, column)
+    return parameter_table.row(
+        id_value(element.Id), kind, level=_level_name(doc, element) if kind != "level" else element_name(element),
+        family_type=_type_name(doc, element) if kind != "level" else u"",
+        gis_key=read_string(element, "gis_key"), **values)
+
+
+def read_parameter_rows(doc):
+    """Every floor, placed room, stair, escalator-like family instance and level, as table rows."""
+    rows = []
+    for floor in DB.FilteredElementCollector(doc).OfClass(DB.Floor).WhereElementIsNotElementType():
+        rows.append(_parameter_row(doc, floor, "floor"))
+    rooms = DB.FilteredElementCollector(doc).OfCategory(DB.BuiltInCategory.OST_Rooms).WhereElementIsNotElementType()
+    for room in rooms:
+        if getattr(room, "Area", 0) > 0:
+            rows.append(_parameter_row(doc, room, "room"))
+    stairs = DB.FilteredElementCollector(doc).OfCategory(DB.BuiltInCategory.OST_Stairs).WhereElementIsNotElementType()
+    for stair in stairs:
+        if isinstance(stair, DB.Architecture.Stairs):
+            rows.append(_parameter_row(doc, stair, "stair"))
+    for built_in in FAMILY_CATEGORIES:
+        for instance in DB.FilteredElementCollector(doc).OfCategory(built_in).OfClass(DB.FamilyInstance):
+            rows.append(_parameter_row(doc, instance, "family"))
+    levels = sorted(DB.FilteredElementCollector(doc).OfClass(DB.Level), key=lambda level: level.Elevation)
+    for level in levels:
+        rows.append(_parameter_row(doc, level, "level"))
+    return rows
+
+
+def apply_parameter_changes(doc, changes, log):
+    """Writes the accepted changes in one transaction. A cell whose parameter is missing or
+    read-only is skipped and logged; the rest still apply."""
+    transaction = DB.Transaction(doc, "Kanizu GIS: Parameters")
+    transaction.Start()
+    try:
+        written = 0
+        for change in changes:
+            element = doc.GetElement(to_element_id(int(change.element_id)))
+            parameter = element.LookupParameter(change.column) if element is not None else None
+            if parameter is None or parameter.IsReadOnly:
+                log(u"Skipped %s: the parameter is missing or read-only" % change.label())
+                continue
+            if parameter.StorageType == DB.StorageType.Integer:
+                parameter.Set(int(change.new))
+            else:
+                parameter.Set(change.new)
+            written += 1
+        transaction.Commit()
+        return written
+    except Exception:
+        if transaction.HasStarted() and not transaction.HasEnded():
+            transaction.RollBack()
+        raise
 
 
 # ---------------------------------------------------------------- writing
