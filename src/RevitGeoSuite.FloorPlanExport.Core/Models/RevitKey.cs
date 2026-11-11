@@ -90,10 +90,12 @@ public static class RevitKey
     }
 
     /// <summary>
-    /// A layer whose features all carry a different key. Later steps of the export can split one
-    /// element's footprint into more features than the extractor made; each repeat after the
-    /// first gets the next free part number, in feature order. Features without a key are kept as
-    /// they are. Returns <paramref name="layer"/> itself when nothing repeats.
+    /// A layer in which no two features of one floor carry the same key. Later steps of the export
+    /// can split one element's footprint into more features than the extractor made, and two views
+    /// of one floor can both show an element; each repeat after the first gets the next free part
+    /// number, in feature order. Features on different floors (a different <c>level_id</c>) may
+    /// share a key. Features without a key are kept as they are. Returns <paramref name="layer"/>
+    /// itself when nothing repeats.
     /// </summary>
     public static ExportLayer EnsureUnique(ExportLayer layer)
     {
@@ -103,8 +105,19 @@ public static class RevitKey
         }
 
         List<string?> keys = layer.Features.Select(ReadKey).ToList();
-        HashSet<string> taken = new(keys.Where(key => key != null)!, StringComparer.Ordinal);
-        if (taken.Count == keys.Count(key => key != null))
+        List<string> scopes = layer.Features.Select(ReadScope).ToList();
+        HashSet<string> taken = new(StringComparer.Ordinal);
+        int keyed = 0;
+        for (int i = 0; i < keys.Count; i++)
+        {
+            if (keys[i] != null)
+            {
+                keyed++;
+                taken.Add(Scoped(scopes[i], keys[i]!));
+            }
+        }
+
+        if (taken.Count == keyed)
         {
             return layer;
         }
@@ -115,19 +128,31 @@ public static class RevitKey
         {
             IExportFeature feature = layer.Features[i];
             string? key = keys[i];
-            if (key == null || seen.Add(key))
+            if (key == null || seen.Add(Scoped(scopes[i], key)))
             {
                 unique.AddFeature(feature);
                 continue;
             }
 
-            string next = NextFreeKey(key, taken);
-            taken.Add(next);
-            seen.Add(next);
+            string next = NextFreeKey(key, scopes[i], taken);
+            taken.Add(Scoped(scopes[i], next));
+            seen.Add(Scoped(scopes[i], next));
             unique.AddFeature(WithAttribute(feature, AttributeName, next));
         }
 
         return unique;
+    }
+
+    private static string ReadScope(IExportFeature feature)
+    {
+        return feature.Attributes.TryGetValue("level_id", out object? value) && value != null
+            ? Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
+            : string.Empty;
+    }
+
+    private static string Scoped(string scope, string key)
+    {
+        return string.Concat(scope, "\u001f", key);
     }
 
     private static string? ReadKey(IExportFeature feature)
@@ -139,7 +164,7 @@ public static class RevitKey
             : null;
     }
 
-    private static string NextFreeKey(string key, HashSet<string> taken)
+    private static string NextFreeKey(string key, string scope, HashSet<string> taken)
     {
         int split = key.LastIndexOf(Separator);
         string stem = split >= 0 ? key.Substring(0, split) : key;
@@ -154,7 +179,7 @@ public static class RevitKey
             part++;
             candidate = string.Concat(stem, Separator.ToString(), part.ToString(CultureInfo.InvariantCulture));
         }
-        while (taken.Contains(candidate));
+        while (taken.Contains(Scoped(scope, candidate)));
 
         return candidate;
     }

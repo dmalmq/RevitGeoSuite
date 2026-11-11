@@ -744,7 +744,8 @@ public sealed class FloorGeoPackageExporter
                 continue;
             }
 
-            layers.Add(new ArtifactLayerPlan(layerName, MergeLayers(sourceLayers)));
+            // Two views of one floor can both show an element, so keys are made unique again per floor.
+            layers.Add(new ArtifactLayerPlan(layerName, RevitKey.EnsureUnique(MergeLayers(sourceLayers))));
         }
 
         return layers;

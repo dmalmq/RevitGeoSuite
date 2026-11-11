@@ -79,6 +79,18 @@ public sealed class RevitKeyTests
     }
 
     [Fact]
+    public void EnsureUnique_KeepsTheSameKeyOnDifferentFloors()
+    {
+        ExportLayer layer = Layer(Line("m|a|0", level: "L1"), Line("m|a|0", level: "L2"), Line("m|a|0", level: "L1"));
+
+        ExportLayer unique = RevitKey.EnsureUnique(layer);
+
+        Assert.Equal(
+            new[] { "m|a|0", "m|a|0", "m|a|1" },
+            unique.Features.Select(feature => feature.Attributes[RevitKey.AttributeName] as string).ToArray());
+    }
+
+    [Fact]
     public void EnsureUnique_RewritesPolygonsToo()
     {
         ExportLayer layer = new(
@@ -112,7 +124,7 @@ public sealed class RevitKeyTests
         return layer;
     }
 
-    private static ExportLineString Line(string? key, string id = "line")
+    private static ExportLineString Line(string? key, string id = "line", string? level = null)
     {
         LineString2D line = new(new[] { new Point2D(0, 0), new Point2D(1, 0) });
         return new ExportLineString(
@@ -121,6 +133,7 @@ public sealed class RevitKeyTests
             {
                 ["id"] = id,
                 [RevitKey.AttributeName] = key,
+                ["level_id"] = level,
             });
     }
 
