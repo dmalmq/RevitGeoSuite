@@ -780,7 +780,9 @@ public sealed class UnitExtractor
             // The escalator drawing rule: the smallest rectangle around the escalator, split at
             // half the run. Each floor shows its own half, so the pair abuts with no overlap,
             // as in the reference GDBs.
-            double viewLevelElevation = (view?.GenLevel?.Elevation ?? 0d) - (linkZOffset ?? 0d);
+            // ProjectElevation is in model coordinates like the escalator geometry; Elevation can carry
+            // the shared-coordinate offset when the level uses the Shared elevation base.
+            double viewLevelElevation = (view?.GenLevel?.ProjectElevation ?? 0d) - (linkZOffset ?? 0d);
             Polygon2D? simplified = TryCreateEscalatorHalfRectangle(escalator, polygons, viewLevelElevation);
             if (simplified != null)
             {
