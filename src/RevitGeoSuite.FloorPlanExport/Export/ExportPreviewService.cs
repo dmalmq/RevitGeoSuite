@@ -106,6 +106,7 @@ public sealed class ExportPreviewService
         _acceptedOpeningFamilies = acceptedOpeningLoad.Value;
         List<string> gisModelWarnings = new();
         _stairDrawingSettings = GisModelSettings.Load(document, gisModelWarnings).StairDrawingSettings;
+        gisModelWarnings.AddRange(FloorGeoPackageExporter.GisStandardWarnings(GisStandardStateReader.Check(document)));
         _loadWarnings = floorOverrideLoad.Warnings
             .Concat(roomOverrideLoad.Warnings)
             .Concat(familyOverrideLoad.Warnings)

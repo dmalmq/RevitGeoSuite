@@ -11,6 +11,7 @@ using RevitGeoSuite.FloorPlanExport.Core.Diagnostics;
 using RevitGeoSuite.FloorPlanExport.Core.GeoPackage;
 using RevitGeoSuite.FloorPlanExport.Core.Geometry;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
 using RevitGeoSuite.FloorPlanExport.Core.Shapefile;
 using RevitGeoSuite.FloorPlanExport.Core.Validation;
@@ -143,6 +144,17 @@ public sealed class FloorGeoPackageExporter
         Directory.CreateDirectory(outputDirectory);
 
         List<string> setupWarnings = new();
+        // The standards check, before the export binds anything: a model whose output would be
+        // wrong stops here, and every other model carries its state into the report.
+        GisStandardStatus standardStatus = GisStandardStateReader.Check(_document);
+        if (standardStatus.BlocksExport)
+        {
+            throw new InvalidOperationException(
+                "The export is blocked by the Kanizu GIS standards check. " +
+                string.Join(" ", standardStatus.Issues.Where(issue => issue.BlocksExport).Select(issue => issue.Message)));
+        }
+
+        setupWarnings.AddRange(GisStandardWarnings(standardStatus));
         SharedParameterManager parameterManager = new(_document);
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
         ViewExportContextProvider contextProvider = new(_document);
@@ -250,6 +262,31 @@ public sealed class FloorGeoPackageExporter
             effectiveSchemaProfile,
             effectiveValidationPolicyProfile,
             BuildIncludedLinks(contexts));
+    }
+
+    /// <summary>
+    /// The standards check's state line and issues, for a GIS model or one the check blocks. The
+    /// preview shows a blocking issue so the reason is visible before the export stops on it.
+    /// </summary>
+    internal static IEnumerable<string> GisStandardWarnings(GisStandardStatus status)
+    {
+        if (!status.AppliesToModel && !status.BlocksExport)
+        {
+            yield break;
+        }
+
+        yield return status.Summary;
+        foreach (GisStandardIssue issue in status.Issues)
+        {
+            if (issue.BlocksExport)
+            {
+                yield return "Blocks export: " + issue.Message;
+            }
+            else if (!string.Equals(issue.Message, status.Summary, StringComparison.Ordinal))
+            {
+                yield return issue.Message;
+            }
+        }
     }
 
     public FloorGeoPackageExportResult WritePreparedExport(
