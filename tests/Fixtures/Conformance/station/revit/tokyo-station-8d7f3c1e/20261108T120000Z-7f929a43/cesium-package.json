@@ -1,0 +1,53 @@
+{
+  "schema": "revitgeosuite.cesium-package",
+  "version": 1,
+  "packageId": "00000000-0000-4000-8000-000000000001",
+  "createdUtc": "2026-11-08T12:00:00Z",
+  "generator": {
+    "name": "RevitGeoSuite",
+    "version": "1.0.0.0"
+  },
+  "source": {
+    "model": "Tokyo.rvt",
+    "documentKey": "doc-sample",
+    "modelId": "8d7f3c1e-0000-4000-8000-000000000001"
+  },
+  "building": {
+    "id": "tokyo-station-1a2b3c4d",
+    "name": "Tokyo Station"
+  },
+  "crs": {
+    "projectEpsg": 6677,
+    "coordinateMode": "SharedCoordinates",
+    "gisEpsg": 6677
+  },
+  "anchor": {
+    "lat": 35.6812000012,
+    "lon": 139.7671000018,
+    "elevationMeters": 40.0,
+    "geoidOffsetMeters": 36.5,
+    "geoidModel": "EGM2008",
+    "orthometricHeightMeters": 3.5,
+    "heightDatum": "TP",
+    "easting": -5995.185,
+    "northing": -35367.23
+  },
+  "tiles": {
+    "tileset": "tiles/tileset.json",
+    "levels": "tiles/levels.json",
+    "elements": "tiles/elements.json",
+    "rooms": "tiles/rooms.json"
+  },
+  "export": {
+    "scope": "whole",
+    "links": [
+      {
+        "uniqueId": "link-platform-1",
+        "name": "Platform.rvt : 1"
+      }
+    ],
+    "levelOfDetail": "fine",
+    "exactPlacement": true
+  },
+  "contentHash": "7f929a436aa26a4140c5984a4f6ca2c6650db15573c80b339dafa621bc52dfa3"
+}

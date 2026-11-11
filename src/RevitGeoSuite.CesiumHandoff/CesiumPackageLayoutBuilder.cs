@@ -71,6 +71,9 @@ public sealed class CesiumPackageBuildInputs
     public List<CesiumPackageLevelMapEntry>? LevelMap { get; set; }
 
     public List<string>? GisLayers { get; set; }
+
+    /// <summary>What the 3D Tiles export covered and how; written as the manifest's <c>export</c>.</summary>
+    public CesiumPackageExport? Export { get; set; }
 }
 
 /// <summary>
@@ -270,6 +273,7 @@ public sealed class CesiumPackageLayoutBuilder
             Tiles = tiles,
             Gis = gis,
             LevelMap = inputs.LevelMap is { Count: > 0 } ? inputs.LevelMap : null,
+            Export = tiles is null ? null : inputs.Export,
             ContentHash = CesiumPackageContentHasher.Compute(layout.RootDirectory, payloadPaths),
         };
 

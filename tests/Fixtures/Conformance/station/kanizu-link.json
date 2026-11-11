@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "models": [
+    {
+      "appliedVersion": "revit/tokyo-station-8d7f3c1e/20261108T120000Z-7f929a43",
+      "building": "building-1",
+      "documentKey": "doc-sample",
+      "levels": [
+        {
+          "floor": "1",
+          "levelName": "1FL",
+          "levelUniqueId": "lv-host-1fl"
+        },
+        {
+          "floor": "-1",
+          "levelName": "B1FL",
+          "levelUniqueId": "lv-platform-b1fl"
+        }
+      ],
+      "modelId": "8d7f3c1e-0000-4000-8000-000000000001",
+      "name": "Tokyo Station"
+    }
+  ]
+}

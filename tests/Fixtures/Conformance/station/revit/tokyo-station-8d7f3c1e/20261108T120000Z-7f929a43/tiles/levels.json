@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "generator": "RevitGeoSuite.Tiles3DExport",
+  "tileset": "tileset.json",
+  "content": "content.glb",
+  "linkLevels": {
+    "": [
+      {
+        "levelKey": "1fl",
+        "levelName": "1FL",
+        "levelUniqueIds": [
+          "lv-host-1fl"
+        ],
+        "levelElevationMeters": 0.0,
+        "elementCount": 1,
+        "minZMeters": 0.0,
+        "maxZMeters": 1.0
+      }
+    ],
+    "Platform.rvt : 1": [
+      {
+        "levelKey": "b1fl",
+        "levelName": "B1FL",
+        "levelUniqueIds": [
+          "lv-platform-b1fl"
+        ],
+        "levelElevationMeters": -7.5,
+        "elementCount": 1,
+        "minZMeters": -7.5,
+        "maxZMeters": -6.5
+      }
+    ]
+  },
+  "levels": [
+    {
+      "levelKey": "b1fl",
+      "levelName": "B1FL",
+      "levelUniqueIds": [
+        "lv-platform-b1fl"
+      ],
+      "levelElevationMeters": -7.5,
+      "elementCount": 1,
+      "minZMeters": -7.5,
+      "maxZMeters": -6.5
+    },
+    {
+      "levelKey": "1fl",
+      "levelName": "1FL",
+      "levelUniqueIds": [
+        "lv-host-1fl"
+      ],
+      "levelElevationMeters": 0.0,
+      "elementCount": 1,
+      "minZMeters": 0.0,
+      "maxZMeters": 1.0
+    }
+  ]
+}

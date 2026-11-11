@@ -184,6 +184,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 ModelId = tiles.ModelId,
                 LevelMap = gis.LevelMap,
                 GisLayers = new List<string> { "unit", "detail", "opening", "fixture", "level" },
+                Export = tiles.Export,
                 });
 
                 string stagedRoot = layout.RootDirectory;
@@ -267,6 +268,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         public double AnchorNorthing;
         public string? ModelId;
         public Tiles3DExportState State = new();
+        public CesiumPackageExport? Export;
     }
 
     private sealed class GisStepResult
@@ -331,6 +333,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             AnchorNorthing = context.AnchorProjectedCoordinate.Northing,
             ModelId = modelId,
             State = exportResult.UpdatedState,
+            Export = Tiles3DExportSupport.DescribeExport(scopeSelection, lod, prep.Package.UsedExactPlacement),
         };
     }
 
