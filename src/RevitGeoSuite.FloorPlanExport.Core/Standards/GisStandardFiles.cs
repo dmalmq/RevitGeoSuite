@@ -13,6 +13,13 @@ public static class GisStandard
     /// again for, and add the migration from the version before.
     /// </summary>
     public const int Version = 1;
+
+    /// <summary>
+    /// The oldest standard version this build still exports. A model on an older one is blocked
+    /// at export until Set up model brings it forward; one between this and <see cref="Version"/>
+    /// exports with a warning.
+    /// </summary>
+    public const int OldestSupportedVersion = 1;
 }
 
 /// <summary>

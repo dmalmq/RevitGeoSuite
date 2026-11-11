@@ -47,3 +47,12 @@ A generic model or specialty equipment family gets its unit category the same wa
 3. Raise `GisStandard.Version` when existing models have to be set up again.
 
 Never change the GUID of a released parameter: models bound to it would no longer match.
+
+## Standards check
+
+RevitGeoSuite checks a model against this standard itself (`GisStandardCheck`), so nobody has to remember to run Audit and the check also works without pyRevit. It reads `gis_standard_version`, the bound parameters, the `GIS_` plan views and the floor types in use. The current version is `GisStandard.Version` and the oldest one the export still takes is `GisStandard.OldestSupportedVersion`.
+
+- **When a model opens.** One notice per model per Revit session, only for a model that holds the version stamp or any of the six parameters RevitGeoSuite has always used, and only when it is behind the standard, newer than the add-in, or would be blocked at export. It offers Update now (how to run Set up model), Later, and Skip this version (remembered on this PC until a newer standard).
+- **On the ribbon.** The GIS standard button on the Geo Suite panel shows the active model's state (Current, Update available, Update needed, Update add-in, Not set up, Needs fixing). Clicking it lists every issue.
+- **At export.** The export and the preview carry the state line and the warnings into the report. The export is blocked, and says why, only when the output would be wrong: a model below the oldest supported version, or a `gis_` parameter bound under a GUID other than the shipped one (or as a project parameter). The six older parameters keep their own GUIDs with a warning, because the export reads them by name and Set up model never rebinds them. The Cesium export applies the same rule.
+- **In pyRevit.** Audit prints RevitGeoSuite's verdict at the top when RevitGeoSuite is loaded, and Export stops before opening RevitGeoSuite's export when that verdict blocks it.

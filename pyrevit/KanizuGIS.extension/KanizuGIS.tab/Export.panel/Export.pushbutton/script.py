@@ -14,6 +14,18 @@ except standards.StandardsNotFound as error:
     forms.alert(str(error), exitscript=True)
 
 findings = audit.audit(revit_io.read_snapshot(doc), standard)
+try:
+    check = revit_io.revitgeosuite_standard_check(doc)
+except Exception:
+    check = None
+if check is not None:
+    blocked = [message for blocks, message in check[1] if blocks]
+    if blocked:
+        output.print_md(u"## %s" % check[0])
+        for message in blocked:
+            output.print_md(u"- **blocks export** %s" % message)
+        forms.alert(u"RevitGeoSuite will not export this model until this is fixed:\n\n%s" % u"\n".join(blocked),
+                    exitscript=True)
 errors = export_link.blocking_findings(findings)
 if errors:
     output.print_md(u"## Before export / エクスポート前: %s" % export_link.summary(findings))

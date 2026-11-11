@@ -166,6 +166,20 @@ def _parameter_row(doc, element, kind):
         gis_key=read_string(element, "gis_key"), **values)
 
 
+def revitgeosuite_standard_check(doc):
+    """RevitGeoSuite's own standards check (the one its export applies), when RevitGeoSuite is
+    loaded in this Revit: (summary, [(blocks_export, message)]). None without RevitGeoSuite."""
+    for assembly in System.AppDomain.CurrentDomain.GetAssemblies():
+        if assembly.GetName().Name != "RevitGeoSuite.FloorPlanExport":
+            continue
+        reader = assembly.GetType("RevitGeoSuite.FloorPlanExport.Export.GisStandardStateReader")
+        if reader is None:
+            return None
+        status = reader.GetMethod("Check").Invoke(None, System.Array[System.Object]([doc]))
+        return status.Summary, [(issue.BlocksExport, issue.Message) for issue in status.Issues]
+    return None
+
+
 def read_parameter_rows(doc):
     """Every floor, placed room, stair, escalator-like family instance and level, as table rows."""
     rows = []

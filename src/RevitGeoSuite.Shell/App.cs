@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.UI;
 using RevitGeoSuite.Core.Modules;
 using RevitGeoSuite.Shell.Commands;
+using RevitGeoSuite.Shell.Standards;
 
 namespace RevitGeoSuite.Shell;
 
@@ -17,20 +18,23 @@ public sealed class App : IExternalApplication
         RevitContext.Initialize();
 
         EnsureRibbonTab(application);
-        AddWebShellButtons(application);
+        PushButton? standardButton = AddWebShellButtons(application);
+        GisStandardNotifier.Instance.Attach(application, standardButton);
 
         return Result.Succeeded;
     }
 
     public Result OnShutdown(UIControlledApplication application)
     {
+        GisStandardNotifier.Instance.Detach(application);
         return Result.Succeeded;
     }
 
     // Adds the three web-shell entry points to a single panel in the order Georeference,
-    // Import, Export, the same order as the web UI's sidebar groups. Each opens the shared
+    // Import, Export, then the GIS standard state button, the same order as the web UI's sidebar groups. Each opens the shared
     // WebView2 shell on its route; icons are the sidebar's Lucide glyphs.
-    private static void AddWebShellButtons(UIControlledApplication application)
+    // Returns the GIS standard button, whose label shows the active model's state.
+    private static PushButton? AddWebShellButtons(UIControlledApplication application)
     {
         try
         {
@@ -63,10 +67,20 @@ public sealed class App : IExternalApplication
                 typeof(ExportCommand),
                 RibbonIconKind.WebExport,
                 "Open the export workflow"));
+
+            panel.AddSeparator();
+
+            return panel.AddItem(CreateButton(
+                "GisStandard",
+                "GIS standard",
+                typeof(GisStandardCommand),
+                RibbonIconKind.Default,
+                "Where the active model stands against the Kanizu GIS standard")) as PushButton;
         }
         catch (Exception ex)
         {
             Trace.WriteLine($"Failed to add web shell buttons: {ex}");
+            return null;
         }
     }
 

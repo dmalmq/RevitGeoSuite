@@ -13,6 +13,17 @@ except standards.StandardsNotFound as error:
     forms.alert(str(error), exitscript=True)
 
 findings = audit.audit(revit_io.read_snapshot(doc), standard)
+try:
+    check = revit_io.revitgeosuite_standard_check(doc)
+except Exception as error:  # an older RevitGeoSuite without the check, or a reflection failure
+    check = None
+    output.print_md(u"RevitGeoSuite's standards check could not run: %s" % error)
+if check is not None:
+    summary, issues = check
+    output.print_md(u"## RevitGeoSuite: %s" % summary)
+    for blocks, message in issues:
+        if blocks:
+            output.print_md(u"- **blocks export** %s" % message)
 output.print_md(u"## Audit / 監査: %d findings" % len(findings))
 if not findings:
     output.print_md(u"Nothing to fix. 修正点はありません。")
