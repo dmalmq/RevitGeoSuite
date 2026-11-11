@@ -1,0 +1,6 @@
+title: "Set up\nmodel"
+tooltip: >-
+  Brings the model to the Kanizu GIS standard: binds the shared parameters from the shipped file,
+  creates the GIS_ materials and standard floor types in the theme colours, and records the
+  standard version. Shows what it would change first and changes nothing until you accept.
+  Run it on a detached copy the first time.
