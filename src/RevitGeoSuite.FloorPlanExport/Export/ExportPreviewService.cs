@@ -8,6 +8,7 @@ using RevitGeoSuite.FloorPlanExport.Core.Geometry;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Preview;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.Utilities;
 
 namespace RevitGeoSuite.FloorPlanExport.Export;
@@ -31,6 +32,7 @@ public sealed class ExportPreviewService
     private readonly PreviewCategoryAssignmentSession _roomAssignmentSession;
     private readonly IReadOnlyList<string> _loadWarnings;
     private readonly StairDrawingSettings _stairDrawingSettings;
+    private readonly GisFieldList _fieldList;
     private readonly string _projectKey;
     private readonly IReadOnlyList<string> _supportedCategories;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
@@ -105,7 +107,9 @@ public sealed class ExportPreviewService
         _familyCategoryOverrides = familyOverrideLoad.Value;
         _acceptedOpeningFamilies = acceptedOpeningLoad.Value;
         List<string> gisModelWarnings = new();
-        _stairDrawingSettings = GisModelSettings.Load(document, gisModelWarnings).StairDrawingSettings;
+        GisModelSettings gisModelSettings = GisModelSettings.Load(document, gisModelWarnings);
+        _stairDrawingSettings = gisModelSettings.StairDrawingSettings;
+        _fieldList = gisModelSettings.LoadFieldList(gisModelWarnings);
         gisModelWarnings.AddRange(FloorGeoPackageExporter.GisStandardWarnings(GisStandardStateReader.Check(document)));
         _loadWarnings = floorOverrideLoad.Warnings
             .Concat(roomOverrideLoad.Warnings)
@@ -120,7 +124,7 @@ public sealed class ExportPreviewService
         _supportedCategories = zoneCatalog.GetKnownCategories(includeUnspecified: true);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         _linkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
-        _activeSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        _activeSchemaProfile = _fieldList.ApplyTo(activeSchemaProfile);
         _simplifyStairUnits = simplifyStairUnits;
         _simplifyEscalatorUnits = simplifyEscalatorUnits;
         _use3DSectionBoxExport = use3DSectionBoxExport;

@@ -40,6 +40,8 @@ public static class GisStandardFiles
 
     public static string ReadGisModelTemplate() => Read(GisModelFile.TemplateFileName);
 
+    public static string ReadFieldList() => Read(GisFieldList.FileName);
+
     private static string Read(string fileName)
     {
         Assembly assembly = typeof(GisStandardFiles).Assembly;

@@ -41,6 +41,15 @@ public sealed class GisStandardTests
     }
 
     [Fact]
+    public void FieldListFile_MatchesTheGeneratedStandardList()
+    {
+        string expected = GisFieldList.CreateStandard().ToJson();
+
+        AssertShippedFile(GisFieldList.FileName, expected);
+        Assert.Equal(expected, GisStandardFiles.ReadFieldList());
+    }
+
+    [Fact]
     public void GisModelTemplate_HoldsTheDefaults()
     {
         string expected = GisModelFile.CreateDefault().ToJson();

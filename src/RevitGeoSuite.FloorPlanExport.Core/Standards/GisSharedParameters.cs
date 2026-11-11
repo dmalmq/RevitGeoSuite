@@ -202,7 +202,10 @@ public static class GisSharedParameters
     /// The shared parameter file in the format Revit 2024 and later reads. Plain ASCII and LF line
     /// endings, so the file reads the same whatever encoding a tool assumes.
     /// </summary>
-    public static string ToSharedParameterFileText()
+    public static string ToSharedParameterFileText() => ToSharedParameterFileText(All);
+
+    /// <summary>The same file for any list of definitions, such as the standard's plus a field list's.</summary>
+    public static string ToSharedParameterFileText(IEnumerable<GisParameterDefinition> definitions)
     {
         StringBuilder builder = new();
         builder.Append("# This is a Revit shared parameter file.\n");
@@ -212,7 +215,7 @@ public static class GisSharedParameters
         builder.Append("*GROUP\tID\tNAME\n");
         builder.Append("GROUP\t1\t").Append(GroupName).Append('\n');
         builder.Append("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOEXISTENT\n");
-        foreach (GisParameterDefinition definition in All)
+        foreach (GisParameterDefinition definition in definitions)
         {
             builder
                 .Append("PARAM\t")

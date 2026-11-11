@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
@@ -32,14 +33,23 @@ public sealed class SharedParameterManager
     /// every PC binds the same GUIDs. A parameter the model already has under another GUID (from the
     /// per-PC file older versions created) is kept, gets any missing categories, and is reported.
     /// </summary>
-    public void EnsureParameters(ICollection<string> warnings)
+    /// <param name="extraParameters">
+    /// Parameters a station's field list adds (<see cref="GisFieldList.ExtraParameters"/>). They are
+    /// bound the same way, from a file that holds them beside the standard's.
+    /// </param>
+    public void EnsureParameters(ICollection<string> warnings, IReadOnlyList<GisParameterDefinition>? extraParameters = null)
     {
         if (warnings is null)
         {
             throw new ArgumentNullException(nameof(warnings));
         }
 
-        string sharedParameterFile = WriteShippedSharedParameterFile();
+        List<GisParameterDefinition> definitions = GisSharedParameters.All.ToList();
+        definitions.AddRange((extraParameters ?? Array.Empty<GisParameterDefinition>())
+            .Where(extra => !GisSharedParameters.TryGet(extra.Name, out _)));
+        string sharedParameterFile = definitions.Count == GisSharedParameters.All.Count
+            ? WriteShippedSharedParameterFile()
+            : WriteSharedParameterFile("KanizuGIS.SharedParameters.fields.txt", GisSharedParameters.ToSharedParameterFileText(definitions));
         string originalPath = _application.SharedParametersFilename;
         _application.SharedParametersFilename = sharedParameterFile;
         try
@@ -54,7 +64,7 @@ public sealed class SharedParameterManager
 
             Dictionary<string, BoundParameter> bound = ReadBoundParameters();
             List<string> keptLegacy = new();
-            foreach (GisParameterDefinition standard in GisSharedParameters.All)
+            foreach (GisParameterDefinition standard in definitions)
             {
                 ExternalDefinition? definition = group.Definitions.get_Item(standard.Name) as ExternalDefinition;
                 if (definition == null || definition.GUID != standard.Guid)
@@ -325,8 +335,12 @@ public sealed class SharedParameterManager
     /// <summary>Writes the embedded standard file to app data, where Revit can open it, and returns its path.</summary>
     private static string WriteShippedSharedParameterFile()
     {
-        string filePath = Path.Combine(FloorPlanExportAppDataPaths.CurrentBaseDirectory, GisSharedParameters.FileName);
-        string content = GisStandardFiles.ReadSharedParameterFile();
+        return WriteSharedParameterFile(GisSharedParameters.FileName, GisStandardFiles.ReadSharedParameterFile());
+    }
+
+    private static string WriteSharedParameterFile(string fileName, string content)
+    {
+        string filePath = Path.Combine(FloorPlanExportAppDataPaths.CurrentBaseDirectory, fileName);
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
         if (!File.Exists(filePath) || !string.Equals(File.ReadAllText(filePath), content, StringComparison.Ordinal))
         {

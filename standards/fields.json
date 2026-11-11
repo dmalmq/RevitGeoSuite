@@ -1,0 +1,517 @@
+{
+  "schema": "revitgeosuite.gis-fields",
+  "version": 1,
+  "note": "One row per GIS field. Add a field by adding a row in a station copy of this file; see standards/README.md.",
+  "fields": [
+    {
+      "layer": "unit",
+      "name": "id",
+      "aliasJa": "ID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Stable export id of the element."
+    },
+    {
+      "layer": "unit",
+      "name": "revit_key",
+      "aliasJa": "Revitキー",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Model, element UniqueId and part. Matches rows between exports."
+    },
+    {
+      "layer": "unit",
+      "name": "category",
+      "aliasJa": "カテゴリ",
+      "type": "text",
+      "values": [
+        "auditorium",
+        "brick",
+        "classroom",
+        "column",
+        "concrete",
+        "conferenceroom",
+        "drywall",
+        "elevator",
+        "escalator",
+        "fieldofplay",
+        "firstaid",
+        "fitnessroom",
+        "fixture",
+        "foodservice",
+        "footbridge",
+        "glass",
+        "huddleroom",
+        "information",
+        "kitchen",
+        "laboratory",
+        "library",
+        "lobby",
+        "lounge",
+        "mailroom",
+        "mothersroom",
+        "movietheater",
+        "movingwalkway",
+        "nonpublic",
+        "office",
+        "opentobelow",
+        "outdoors",
+        "parking",
+        "phoneroom",
+        "platform",
+        "privatelounge",
+        "ramp",
+        "recreation",
+        "restroom",
+        "restroom.family",
+        "restroom.female",
+        "restroom.female.wheelchair",
+        "restroom.male",
+        "restroom.male.wheelchair",
+        "restroom.transgender",
+        "restroom.transgender.wheelchair",
+        "restroom.unisex",
+        "restroom.unisex.wheelchair",
+        "restroom.wheelchair",
+        "retail",
+        "road",
+        "room",
+        "serverroom",
+        "shower",
+        "smokingarea",
+        "stairs",
+        "steps",
+        "storage",
+        "structure",
+        "terrace",
+        "theater",
+        "ticketing",
+        "unenclosedarea",
+        "vegetation",
+        "waitingroom",
+        "walkway",
+        "walkway.island",
+        "wood"
+      ],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Unit category: the floor's category, else its type's gis_category."
+    },
+    {
+      "layer": "unit",
+      "name": "restrict",
+      "aliasJa": "制限",
+      "type": "text",
+      "values": [
+        "rachi_nai",
+        "rachi_gai"
+      ],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Restriction, such as rachi_nai."
+    },
+    {
+      "layer": "unit",
+      "name": "name",
+      "aliasJa": "名称",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Name of the unit."
+    },
+    {
+      "layer": "unit",
+      "name": "alt_name",
+      "aliasJa": "略称",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Short name of the unit."
+    },
+    {
+      "layer": "unit",
+      "name": "level_id",
+      "aliasJa": "レベルID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "The level the unit is on."
+    },
+    {
+      "layer": "unit",
+      "name": "direction",
+      "aliasJa": "方向",
+      "type": "text",
+      "values": [
+        "up",
+        "down",
+        "both"
+      ],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Travel direction of a stair, escalator or moving walkway."
+    },
+    {
+      "layer": "unit",
+      "name": "to_level",
+      "aliasJa": "行先レベル",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "The level a stair or escalator leads to."
+    },
+    {
+      "layer": "unit",
+      "name": "source",
+      "aliasJa": "ソース",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "What the unit was made from."
+    },
+    {
+      "layer": "unit",
+      "name": "display_point",
+      "aliasJa": "表示点",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Label point."
+    },
+    {
+      "layer": "unit",
+      "name": "preview_fill_color",
+      "aliasJa": "プレビュー色",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Fill colour in the preview."
+    },
+    {
+      "layer": "detail",
+      "name": "id",
+      "aliasJa": "ID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Stable export id."
+    },
+    {
+      "layer": "detail",
+      "name": "revit_key",
+      "aliasJa": "Revitキー",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Model, element UniqueId and part."
+    },
+    {
+      "layer": "detail",
+      "name": "category",
+      "aliasJa": "カテゴリ",
+      "type": "text",
+      "values": [
+        "steps",
+        "line"
+      ],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "What the line shows."
+    },
+    {
+      "layer": "detail",
+      "name": "parent_key",
+      "aliasJa": "親キー",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "revit_key of the stair, escalator or line style the line was drawn from."
+    },
+    {
+      "layer": "detail",
+      "name": "level_id",
+      "aliasJa": "レベルID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "The level the line is on."
+    },
+    {
+      "layer": "detail",
+      "name": "element_id",
+      "aliasJa": "要素ID",
+      "type": "integer",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Revit element id."
+    },
+    {
+      "layer": "opening",
+      "name": "id",
+      "aliasJa": "ID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Stable export id."
+    },
+    {
+      "layer": "opening",
+      "name": "revit_key",
+      "aliasJa": "Revitキー",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Model, element UniqueId and part."
+    },
+    {
+      "layer": "opening",
+      "name": "category",
+      "aliasJa": "カテゴリ",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Opening category."
+    },
+    {
+      "layer": "opening",
+      "name": "level_id",
+      "aliasJa": "レベルID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "The level the opening is on."
+    },
+    {
+      "layer": "opening",
+      "name": "element_id",
+      "aliasJa": "要素ID",
+      "type": "integer",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Revit element id."
+    },
+    {
+      "layer": "fixture",
+      "name": "id",
+      "aliasJa": "ID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Stable export id."
+    },
+    {
+      "layer": "fixture",
+      "name": "revit_key",
+      "aliasJa": "Revitキー",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Model, element UniqueId and part."
+    },
+    {
+      "layer": "fixture",
+      "name": "type",
+      "aliasJa": "種別",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Fixture type."
+    },
+    {
+      "layer": "fixture",
+      "name": "name",
+      "aliasJa": "名称",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Name of the fixture."
+    },
+    {
+      "layer": "fixture",
+      "name": "alt_name",
+      "aliasJa": "略称",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Short name of the fixture."
+    },
+    {
+      "layer": "fixture",
+      "name": "level_id",
+      "aliasJa": "レベルID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "The level the fixture is on."
+    },
+    {
+      "layer": "fixture",
+      "name": "source",
+      "aliasJa": "ソース",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "What the fixture was made from."
+    },
+    {
+      "layer": "fixture",
+      "name": "display_point",
+      "aliasJa": "表示点",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Label point."
+    },
+    {
+      "layer": "level",
+      "name": "id",
+      "aliasJa": "ID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Stable export id of the level."
+    },
+    {
+      "layer": "level",
+      "name": "revit_key",
+      "aliasJa": "Revitキー",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Model, level UniqueId and part."
+    },
+    {
+      "layer": "level",
+      "name": "level_name",
+      "aliasJa": "レベル名",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Revit level name."
+    },
+    {
+      "layer": "level",
+      "name": "ordinal",
+      "aliasJa": "階数",
+      "type": "integer",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Floor number."
+    },
+    {
+      "layer": "level",
+      "name": "elevation_m",
+      "aliasJa": "標高",
+      "type": "real",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Elevation in metres."
+    }
+  ]
+}

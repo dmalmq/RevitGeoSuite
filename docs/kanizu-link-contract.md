@@ -14,7 +14,7 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
       <yyyyMMddTHHmmssZ>-<hash8>/   one version per export
         cesium-package.json         the manifest
         tiles/  tileset.json, content.glb, levels.json, elements.json, rooms.json
-        gis/    floor plans (GeoPackage)
+        gis/    floor plans (GeoPackage), gis-fields.json
 ```
 
 Every file has one writer, so two people on the share never overwrite each other.
@@ -80,10 +80,19 @@ One model's GIS export settings, kept on the share so every PC exports the model
 | `levels` | The levels with a GIS `level_id`, and those of the listed views: `uniqueId`, `name`, `levelId`, `ordinal`, `shortName`. Their pairing with Kanizu floors stays in `kanizu-link.json`. |
 | `views` | The plan views of the last Cesium export, `uniqueId` and `name`. Only that export writes them, so a one-off dialog export does not change them. The Cesium export takes these before the profile's own views, and warns when some no longer exist; the export dialog preselects them when its profile stores none. Without a list, both take the `GIS_` views. |
 | `drawingRules.stairs` | `stepSpacingMeters` (0.60), `stopBeforeMiddleMeters` (1.10), `overlapMeters` (1.80, 0 tiles the two floors exactly). A missing number takes the standard's. Edited by hand on the share; the export never changes them. |
-| `fields` | `standard`: the field list shipped with the standard. |
+| `fields` | Which field list the model exports with: `standard` for the one shipped in `standards/fields.json`, or the path of a station's own list (relative to the station folder, such as `fields.json`, or absolute). |
 | `versions` | `standard` (the model's `gis_standard_version` at the last export), `lastExportRevitGeoSuite`, `lastExportUtc` |
 
 RevitGeoSuite writes it through a temporary file and a rename, and keeps fields it does not know, so a file written by a newer RevitGeoSuite keeps them through an export from an older one.
+
+## `gis/gis-fields.json` (version 1)
+
+The field list the export used, written beside the GeoPackage: schema `revitgeosuite.gis-fields`. One row per field: `layer` (`unit`, `detail`, `opening`, `fixture`, `level`), `name` (the GDB field name), `aliasJa`, `type` (`text`, `integer`, `real`), `length` (absent: 255), `values` (the pick list for a coded-value domain; empty means free text), `source` and `owner`.
+
+- `source.kind` is `core` for a field the export always writes, `parameter` for a Revit parameter (`parameter`, `guid`, `binding`, `categories`), `derived` for a value the export works out, and `none` for a field with no Revit source.
+- `owner` is `revit` (every export writes the value) or `gdb` (the export never writes it; Kanizu keeps the GDB's value and carries it across by `revit_key`).
+
+Kanizu creates a missing field with its alias and pick list and fills the Revit-owned ones. A station adds a field by copying `standards/fields.json` to the share, adding a row, and naming the copy in the model's `gis-model.json` `fields`. RevitGeoSuite then binds the row's parameter and exports its column, with no code change. The standard's `core` rows always win over a station copy.
 
 ## GIS exports: `revit_key`
 
@@ -99,5 +108,6 @@ The floor plan export (GeoPackage, and the GDB built from it) carries `revit_key
 | `rooms.json` | 1 | as above |
 | `kanizu-link.json` | 1 | Kanizu changes it; RevitGeoSuite does not read it |
 | `gis-model.json` | 1 | an older RevitGeoSuite would misread it |
+| `gis-fields.json`, `fields.json` | 1 | an older reader would misread it |
 
 A reader refuses a file newer than it knows, naming the file and both versions, and reads a file without a version as it is.
