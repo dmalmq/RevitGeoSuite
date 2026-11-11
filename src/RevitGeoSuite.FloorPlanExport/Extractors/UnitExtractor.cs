@@ -787,7 +787,23 @@ public sealed class UnitExtractor
     /// </summary>
     private bool TryResolveStandardFamilyZoneInfo(FamilyInstance familyInstance, out ZoneInfo zoneInfo)
     {
+        if (!TryGetStandardCategoryInfo(familyInstance, _zoneCatalog, out ZoneInfo known))
+        {
+            zoneInfo = null!;
+            return false;
+        }
+
         string? restriction = ReadTypeStringParameter(familyInstance, GisSharedParameters.GisRestriction);
+        zoneInfo = new ZoneInfo(known.Category, known.FillColor, restriction ?? known.Restriction).Normalized();
+        return true;
+    }
+
+    /// <summary>
+    /// The catalog entry of the unit category the family sets through its own <c>category</c> or its
+    /// type's <c>gis_category</c>, the first that is a known unit category. Validation counts with it too.
+    /// </summary>
+    public static bool TryGetStandardCategoryInfo(FamilyInstance familyInstance, ZoneCatalog zoneCatalog, out ZoneInfo zoneInfo)
+    {
         foreach (string? candidate in new[]
                  {
                      ReadInstanceStringParameter(familyInstance, GisSharedParameters.Category),
@@ -796,9 +812,8 @@ public sealed class UnitExtractor
         {
             if (candidate != null &&
                 !string.Equals(candidate, "unspecified", StringComparison.OrdinalIgnoreCase) &&
-                _zoneCatalog.TryGetCategoryInfo(candidate, out ZoneInfo known))
+                zoneCatalog.TryGetCategoryInfo(candidate, out zoneInfo))
             {
-                zoneInfo = new ZoneInfo(known.Category, known.FillColor, restriction ?? known.Restriction).Normalized();
                 return true;
             }
         }
