@@ -80,48 +80,50 @@ public sealed class ZoneCatalog
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "FEFEF2", "rachi_nai"),
-            "ラチE��Eコンコース",
-            "改札冁E�E��E�ンコース",
+            "ラチ内コンコース",
+            "改札内コンコース",
             "Circulation (inside fare gates)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "EFFAED", "rachi_nai"),
-            "ラチE��Eコンコース(JR東新幹緁E",
-            "改札冁E�E��E�ンコース(JR東新幹緁E",
+            "ラチ内コンコース(JR東新幹線)",
+            "改札内コンコース(JR東新幹線)",
+            "ラチ内コンコース(JR東日本新幹線)",
+            "改札内コンコース(JR東日本新幹線)",
             "Circulation (JR East Shinkansen)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "FFF4E0", "rachi_nai"),
-            "ラチE��Eコンコース(JR東海新幹緁E",
-            "改札冁E�E��E�ンコース(JR東海新幹緁E",
+            "ラチ内コンコース(JR東海新幹線)",
+            "改札内コンコース(JR東海新幹線)",
             "Circulation (JR Central Shinkansen)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("retail", "E1F3F9", "rachi_nai"),
-            "ラチE��E店�E",
-            "改札冁E�E��E��E�E",
+            "ラチ内店舗",
+            "改札内店舗",
             "Retail (inside fare gates)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("retail", "F3FCFF", "rachi_gai"),
-            "ラチ外店�E",
-            "改札外店�E",
+            "ラチ外店舗",
+            "改札外店舗",
             "Retail (outside fare gates)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("platform", "F9E8E1", "rachi_nai"),
-            "新幹線�Eーム",
+            "新幹線ホーム",
             "Platform (Shinkansen)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("platform", "FFF6F3", "rachi_nai"),
-            "在来線�Eーム",
+            "在来線ホーム",
             "Platform (conventional lines)");
 
         AddZoneAliases(
@@ -134,15 +136,15 @@ public sealed class ZoneCatalog
         AddZoneAliases(
             zones,
             new ZoneInfo("information", "EFEFF9", null),
-            "案�E所",
-            "案�E",
+            "案内所",
+            "案内",
             "Information desk");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("ticketing", "A3CA7F", "rachi_gai"),
-            "みどり�E窓口",
-            "緑�E窓口",
+            "みどりの窓口",
+            "緑の窓口",
             "Ticket office (Midori no Madoguchi)");
 
         AddZoneAliases(
@@ -175,7 +177,7 @@ public sealed class ZoneCatalog
         AddZoneAliases(
             zones,
             new ZoneInfo("restroom.unisex", "D9FFD9", null),
-            "多目皁E�E��E�イレ",
+            "多目的トイレ",
             "Accessible / multipurpose restroom");
 
         AddZoneAliases(
@@ -187,7 +189,7 @@ public sealed class ZoneCatalog
         AddZoneAliases(
             zones,
             new ZoneInfo("waitingroom", "BABABA", null),
-            "征E�E��E�室",
+            "待合室",
             "Waiting room");
 
         AddZoneAliases(
