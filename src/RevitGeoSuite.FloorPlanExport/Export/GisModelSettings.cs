@@ -65,8 +65,9 @@ public sealed class GisModelSettings
     }
 
     /// <summary>
-    /// Writes what this export used into the model's <c>gis-model.json</c>: identity, levels, the
-    /// exported views and versions. Does nothing when the model has no station folder. Never throws.
+    /// Writes what this export used into the model's <c>gis-model.json</c>: identity, levels,
+    /// versions and, when <paramref name="exportedViews"/> holds any, the views. Does nothing when
+    /// the model has no station folder. Never throws.
     /// </summary>
     public static void RecordExport(
         Document document,

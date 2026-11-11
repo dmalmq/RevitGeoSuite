@@ -67,7 +67,8 @@ public sealed class FloorPlanHeadlessExporter
                 $"Profile '{profile.Name}' has no output directory and no override was provided.");
         }
 
-        IReadOnlyList<ViewPlan> selectedViews = ResolveSelectedViews(settings.SelectedViewIds);
+        List<string> viewWarnings = new();
+        IReadOnlyList<ViewPlan> selectedViews = ResolveSelectedViews(settings.SelectedViewIds, viewWarnings);
         if (selectedViews.Count == 0)
         {
             throw new InvalidOperationException(
@@ -131,16 +132,19 @@ public sealed class FloorPlanHeadlessExporter
             GetAvailableFloorTypeNames(),
             new ExportProfileStore());
 
-        return workflow.RunExportCore(
+        FloorGeoPackageExportResult result = workflow.RunExportCore(
             request,
             coordinateInfo,
             progressCallback,
             cancellationToken,
             baselineKeyOverride,
-            persistBaseline);
+            persistBaseline,
+            recordViewsInGisModel: true);
+        result.AddWarnings(viewWarnings);
+        return result;
     }
 
-    private IReadOnlyList<ViewPlan> ResolveSelectedViews(IReadOnlyList<long>? selectedViewIds)
+    private IReadOnlyList<ViewPlan> ResolveSelectedViews(IReadOnlyList<long>? selectedViewIds, ICollection<string> warnings)
     {
         IReadOnlyList<ViewPlan> views = new ViewCollector().GetExportablePlanViews(_document);
 
@@ -152,6 +156,19 @@ public sealed class FloorPlanHeadlessExporter
             IReadOnlyList<ViewPlan> listed = gisModel.MatchViews(views, view => view.UniqueId, view => view.Name ?? string.Empty);
             if (listed.Count > 0)
             {
+                if (listed.Count < gisModel.Views.Count)
+                {
+                    List<string> missing = gisModel.Views
+                        .Where(view => !listed.Any(found =>
+                            string.Equals(found.UniqueId, view.UniqueId, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(found.Name, view.Name, StringComparison.Ordinal)))
+                        .Select(view => string.IsNullOrEmpty(view.Name) ? view.UniqueId : view.Name)
+                        .ToList();
+                    warnings.Add(
+                        $"The model's gis-model.json lists {gisModel.Views.Count} views, but {missing.Count} no longer exist " +
+                        $"({string.Join(", ", missing)}); this export covers the other {listed.Count}.");
+                }
+
                 return listed;
             }
         }
