@@ -1,53 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.Core;
 
 public sealed class SharedParameterManager
 {
-    public const string ImdfIdParameterName = "id";
-    public const string ImdfLevelIdParameterName = "level_id";
-    public const string ImdfNameParameterName = "name";
-    public const string ImdfAltNameParameterName = "short_name";
-    public const string ImdfCategoryParameterName = "category";
-    public const string ImdfOrdinalParameterName = "ordinal";
-
-    private const string SharedParameterGroupName = "RevitGeoSuite FloorPlanExport";
-
-    private static readonly BuiltInCategory[] UnitIdCategories =
-    {
-        BuiltInCategory.OST_Floors,
-        BuiltInCategory.OST_Rooms,
-        BuiltInCategory.OST_Stairs,
-        BuiltInCategory.OST_GenericModel,
-        BuiltInCategory.OST_Doors,
-        BuiltInCategory.OST_Windows,
-        BuiltInCategory.OST_Columns,
-        BuiltInCategory.OST_StructuralColumns,
-    };
-
-    private static readonly BuiltInCategory[] UnitNameCategories =
-    {
-        BuiltInCategory.OST_Floors,
-        BuiltInCategory.OST_Rooms,
-        BuiltInCategory.OST_Stairs,
-        BuiltInCategory.OST_GenericModel,
-    };
-
-    private static readonly BuiltInCategory[] UnitCategoryCategories =
-    {
-        BuiltInCategory.OST_Floors,
-        BuiltInCategory.OST_Rooms,
-    };
-
-    private static readonly BuiltInCategory[] LevelIdBindingCategories =
-    {
-        BuiltInCategory.OST_Levels,
-        BuiltInCategory.OST_Floors,
-        BuiltInCategory.OST_Rooms,
-    };
+    public const string ImdfIdParameterName = GisSharedParameters.Id;
+    public const string ImdfLevelIdParameterName = GisSharedParameters.LevelId;
+    public const string ImdfNameParameterName = GisSharedParameters.Name;
+    public const string ImdfAltNameParameterName = GisSharedParameters.ShortName;
+    public const string ImdfCategoryParameterName = GisSharedParameters.Category;
+    public const string ImdfOrdinalParameterName = GisSharedParameters.Ordinal;
 
     private readonly Document _document;
     private readonly Autodesk.Revit.ApplicationServices.Application _application;
@@ -60,6 +27,11 @@ public sealed class SharedParameterManager
 
     public Document Document => _document;
 
+    /// <summary>
+    /// Binds every parameter of the Kanizu GIS standard from the shipped shared parameter file, so
+    /// every PC binds the same GUIDs. A parameter the model already has under another GUID (from the
+    /// per-PC file older versions created) is kept, gets any missing categories, and is reported.
+    /// </summary>
     public void EnsureParameters(ICollection<string> warnings)
     {
         if (warnings is null)
@@ -67,28 +39,46 @@ public sealed class SharedParameterManager
             throw new ArgumentNullException(nameof(warnings));
         }
 
-        string sharedParameterFile = GetDefaultSharedParameterFilePath();
+        string sharedParameterFile = WriteShippedSharedParameterFile();
         string originalPath = _application.SharedParametersFilename;
-        EnsureSharedParameterFileExists(sharedParameterFile);
-
         _application.SharedParametersFilename = sharedParameterFile;
         try
         {
             DefinitionFile? file = _application.OpenSharedParameterFile();
-            if (file == null)
+            DefinitionGroup? group = file?.Groups.get_Item(GisSharedParameters.GroupName);
+            if (group == null)
             {
                 warnings.Add($"Unable to open shared parameter file at '{sharedParameterFile}'.");
                 return;
             }
 
-            DefinitionGroup? group = file.Groups.get_Item(SharedParameterGroupName) ??
-                                     file.Groups.Create(SharedParameterGroupName);
-            EnsureStringParameterBinding(group, ImdfIdParameterName, UnitIdCategories, warnings);
-            EnsureStringParameterBinding(group, ImdfLevelIdParameterName, LevelIdBindingCategories, warnings);
-            EnsureStringParameterBinding(group, ImdfNameParameterName, UnitNameCategories, warnings);
-            EnsureStringParameterBinding(group, ImdfAltNameParameterName, UnitNameCategories, warnings);
-            EnsureStringParameterBinding(group, ImdfCategoryParameterName, UnitCategoryCategories, warnings);
-            EnsureIntegerParameterBinding(group, ImdfOrdinalParameterName, UnitCategoryCategories, warnings);
+            Dictionary<string, BoundParameter> bound = ReadBoundParameters();
+            List<string> keptLegacy = new();
+            foreach (GisParameterDefinition standard in GisSharedParameters.All)
+            {
+                ExternalDefinition? definition = group.Definitions.get_Item(standard.Name) as ExternalDefinition;
+                if (definition == null || definition.GUID != standard.Guid)
+                {
+                    warnings.Add($"The shipped shared parameter file has no definition '{standard.Name}' with GUID {standard.Guid}.");
+                    continue;
+                }
+
+                if (bound.TryGetValue(standard.Name, out BoundParameter existing) && existing.Guid != standard.Guid)
+                {
+                    keptLegacy.Add(standard.Name);
+                    ExtendExistingBinding(existing, standard, warnings);
+                    continue;
+                }
+
+                EnsureBinding(definition, standard, existing, warnings);
+            }
+
+            if (keptLegacy.Count > 0)
+            {
+                warnings.Add(
+                    $"This model keeps its own definitions of {string.Join(", ", keptLegacy)}, with GUIDs that differ from the shipped standard. " +
+                    "They still export; Set up model reports them.");
+            }
         }
         finally
         {
@@ -295,85 +285,153 @@ public sealed class SharedParameterManager
         return TrySetStringParameter(element, ImdfCategoryParameterName, category, warnings);
     }
 
-    private static string GetDefaultSharedParameterFilePath()
+    /// <summary>Writes the embedded standard file to app data, where Revit can open it, and returns its path.</summary>
+    private static string WriteShippedSharedParameterFile()
     {
-        return Path.Combine(FloorPlanExportAppDataPaths.CurrentBaseDirectory, "FloorPlanExport.SharedParameters.txt");
-    }
-
-    private static void EnsureSharedParameterFileExists(string filePath)
-    {
-        string? directory = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrEmpty(directory))
+        string filePath = Path.Combine(FloorPlanExportAppDataPaths.CurrentBaseDirectory, GisSharedParameters.FileName);
+        string content = GisStandardFiles.ReadSharedParameterFile();
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        if (!File.Exists(filePath) || !string.Equals(File.ReadAllText(filePath), content, StringComparison.Ordinal))
         {
-            Directory.CreateDirectory(directory);
+            File.WriteAllText(filePath, content, new UTF8Encoding(false));
         }
 
-        if (!File.Exists(filePath))
-        {
-            File.WriteAllText(filePath, string.Empty);
-        }
+        return filePath;
     }
 
-    private void EnsureStringParameterBinding(
-        DefinitionGroup group,
-        string parameterName,
-        IReadOnlyList<BuiltInCategory> categories,
-        ICollection<string> warnings)
+    /// <summary>The parameters bound in the model, by name, with their GUID (empty for a project parameter).</summary>
+    private Dictionary<string, BoundParameter> ReadBoundParameters()
     {
-        EnsureParameterBinding(group, parameterName, SpecTypeId.String.Text, categories, warnings);
-    }
-
-    private void EnsureIntegerParameterBinding(
-        DefinitionGroup group,
-        string parameterName,
-        IReadOnlyList<BuiltInCategory> categories,
-        ICollection<string> warnings)
-    {
-        EnsureParameterBinding(group, parameterName, SpecTypeId.Int.Integer, categories, warnings);
-    }
-
-    private void EnsureParameterBinding(
-        DefinitionGroup group,
-        string parameterName,
-        ForgeTypeId specTypeId,
-        IReadOnlyList<BuiltInCategory> categories,
-        ICollection<string> warnings)
-    {
-        Definition? definition = group.Definitions.get_Item(parameterName);
-        if (definition == null)
+        Dictionary<string, BoundParameter> bound = new(StringComparer.Ordinal);
+        DefinitionBindingMapIterator iterator = _document.ParameterBindings.ForwardIterator();
+        iterator.Reset();
+        while (iterator.MoveNext())
         {
-            ExternalDefinitionCreationOptions options =
-                new(parameterName, specTypeId)
-                {
-                    UserModifiable = true,
-                    Visible = true,
-                };
-            definition = group.Definitions.Create(options);
-        }
-
-        CategorySet categorySet = _application.Create.NewCategorySet();
-        for (int i = 0; i < categories.Count; i++)
-        {
-            Category? category = Category.GetCategory(_document, categories[i]);
-            if (category != null)
+            if (iterator.Key is not InternalDefinition definition || iterator.Current is not ElementBinding binding)
             {
-                categorySet.Insert(category);
+                continue;
+            }
+
+            Guid guid = _document.GetElement(definition.Id) is SharedParameterElement shared
+                ? shared.GuidValue
+                : Guid.Empty;
+            if (!bound.ContainsKey(definition.Name))
+            {
+                bound[definition.Name] = new BoundParameter(definition, binding, guid);
             }
         }
 
-        if (categorySet.Size == 0)
+        return bound;
+    }
+
+    private void EnsureBinding(
+        ExternalDefinition definition,
+        GisParameterDefinition standard,
+        BoundParameter? existing,
+        ICollection<string> warnings)
+    {
+        CategorySet categories = BuildCategorySet(standard, existing?.Binding, warnings);
+        if (categories.Size == 0)
         {
-            warnings.Add($"No valid categories found for shared parameter '{parameterName}'.");
+            warnings.Add($"No valid categories found for shared parameter '{standard.Name}'.");
             return;
         }
 
-        Binding binding = _application.Create.NewInstanceBinding(categorySet);
+        if (existing != null && existing.Binding is ElementBinding current && CoversAll(current, categories))
+        {
+            return;
+        }
+
+        Binding binding = standard.Binding == GisParameterBinding.Type
+            ? _application.Create.NewTypeBinding(categories)
+            : _application.Create.NewInstanceBinding(categories);
         BindingMap map = _document.ParameterBindings;
-        bool inserted = map.Insert(definition, binding, GroupTypeId.General);
-        if (!inserted)
+        if (!map.Insert(definition, binding, GroupTypeId.General))
         {
             map.ReInsert(definition, binding, GroupTypeId.General);
         }
+    }
+
+    /// <summary>Adds the standard's categories to a binding the model already had, keeping the binding itself.</summary>
+    private void ExtendExistingBinding(BoundParameter existing, GisParameterDefinition standard, ICollection<string> warnings)
+    {
+        bool isType = existing.Binding is TypeBinding;
+        if (isType != (standard.Binding == GisParameterBinding.Type))
+        {
+            warnings.Add(
+                $"Parameter '{standard.Name}' is bound as a {(isType ? "type" : "instance")} parameter in this model; the standard binds it to the {(isType ? "instance" : "type")}. It was left as it is.");
+            return;
+        }
+
+        CategorySet categories = BuildCategorySet(standard, existing.Binding, warnings);
+        if (CoversAll(existing.Binding, categories))
+        {
+            return;
+        }
+
+        Binding binding = isType
+            ? _application.Create.NewTypeBinding(categories)
+            : _application.Create.NewInstanceBinding(categories);
+        _document.ParameterBindings.ReInsert(existing.Definition, binding, existing.Definition.GetGroupTypeId());
+    }
+
+    /// <summary>The standard's categories plus every category the binding already covers, so nothing is unbound.</summary>
+    private CategorySet BuildCategorySet(GisParameterDefinition standard, ElementBinding? current, ICollection<string> warnings)
+    {
+        CategorySet set = _application.Create.NewCategorySet();
+        if (current != null)
+        {
+            foreach (Category category in current.Categories)
+            {
+                set.Insert(category);
+            }
+        }
+
+        foreach (string name in standard.Categories)
+        {
+            if (!Enum.TryParse(name, out BuiltInCategory builtInCategory))
+            {
+                warnings.Add($"Unknown category '{name}' for shared parameter '{standard.Name}'.");
+                continue;
+            }
+
+            Category? category = Category.GetCategory(_document, builtInCategory);
+            if (category != null && category.AllowsBoundParameters)
+            {
+                set.Insert(category);
+            }
+        }
+
+        return set;
+    }
+
+    private static bool CoversAll(ElementBinding binding, CategorySet categories)
+    {
+        foreach (Category category in categories)
+        {
+            if (!binding.Categories.Contains(category))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private sealed class BoundParameter
+    {
+        public BoundParameter(InternalDefinition definition, ElementBinding binding, Guid guid)
+        {
+            Definition = definition;
+            Binding = binding;
+            Guid = guid;
+        }
+
+        public InternalDefinition Definition { get; }
+
+        public ElementBinding Binding { get; }
+
+        public Guid Guid { get; }
     }
 
     private string GetOrCreateStringParameter(

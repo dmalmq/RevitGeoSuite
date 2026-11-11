@@ -17,6 +17,7 @@ using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Preview;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 
 namespace RevitGeoSuite.FloorPlanExport.Extractors;
@@ -95,6 +96,19 @@ public sealed class UnitExtractor
             point => _sourceDescriptor.TransformToHost.OfPoint(point));
     }
 
+    /// <summary>
+    /// The floor's own <c>category</c> and its type's <c>gis_category</c> and <c>gis_restriction</c>,
+    /// which decide its category before the type name is parsed.
+    /// </summary>
+    private FloorStandardParameters ReadFloorStandardParameters(Floor floor)
+    {
+        Element? floorType = floor.Document.GetElement(floor.GetTypeId());
+        return new FloorStandardParameters(
+            _metadataProvider.GetOptionalStringParameter(floor, GisSharedParameters.Category),
+            floorType == null ? null : _metadataProvider.GetOptionalStringParameter(floorType, GisSharedParameters.GisCategory),
+            floorType == null ? null : _metadataProvider.GetOptionalStringParameter(floorType, GisSharedParameters.GisRestriction));
+    }
+
     public bool TryCreateFloorUnits(
         Floor floor,
         string levelId,
@@ -112,19 +126,20 @@ public sealed class UnitExtractor
         string typeName = GetElementTypeName(floor);
         string rawFloorTypeName = string.IsNullOrWhiteSpace(typeName) ? $"<floor-{elementId}>" : typeName.Trim();
         string zoneName;
+        List<string> nameWarnings = new();
         if (TryResolveFloorZoneName(typeName, out string parsedZoneName, out bool prefixMatched))
         {
             zoneName = parsedZoneName;
             if (!prefixMatched)
             {
-                warnings.Add(
+                nameWarnings.Add(
                     $"Floor {elementId} type '{typeName}' is missing the expected '{ZoneNameParser.DefaultPrefix}' prefix. Parsed zone '{zoneName}' using suffix matching.");
             }
         }
         else
         {
             zoneName = rawFloorTypeName;
-            warnings.Add(
+            nameWarnings.Add(
                 $"Floor {elementId} type '{typeName}' does not match the expected floor naming convention. Using full type name '{zoneName}' for zone lookup.");
         }
 
@@ -158,7 +173,21 @@ public sealed class UnitExtractor
             return false;
         }
 
-        ResolvedFloorCategory resolvedFloorCategory = _floorCategoryResolver.Resolve(rawFloorTypeName, zoneName);
+        ResolvedFloorCategory resolvedFloorCategory = _floorCategoryResolver.Resolve(
+            rawFloorTypeName,
+            zoneName,
+            ReadFloorStandardParameters(floor),
+            warnings);
+        if (resolvedFloorCategory.ResolutionSource != FloorCategoryResolutionSource.TypeParameter &&
+            resolvedFloorCategory.ResolutionSource != FloorCategoryResolutionSource.InstanceParameter)
+        {
+            // The name only matters when the standard parameters did not decide the category.
+            foreach (string nameWarning in nameWarnings)
+            {
+                warnings.Add(nameWarning);
+            }
+        }
+
         ResolvedMappingCategory resolvedCategory = new(
             "floor",
             resolvedFloorCategory.FloorTypeName,

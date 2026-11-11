@@ -717,6 +717,8 @@ internal sealed class ExportPreviewController
             FloorCategoryResolutionSource.Catalog => T("Catalog", "カタログ"),
             FloorCategoryResolutionSource.Override => T("Override", "上書き"),
             FloorCategoryResolutionSource.FallbackUnspecified => T("Fallback", "フォールバック"),
+            FloorCategoryResolutionSource.TypeParameter => T("Floor type parameter", "床タイプのパラメータ"),
+            FloorCategoryResolutionSource.InstanceParameter => T("Floor parameter", "床のパラメータ"),
             _ => "-",
         };
     }
