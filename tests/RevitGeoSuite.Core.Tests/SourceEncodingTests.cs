@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -11,7 +12,8 @@ namespace RevitGeoSuite.Core.Tests;
 /// Guards every hand-written text file in the repository against mojibake. A save through a
 /// Shift_JIS editor once turned 18 Japanese zone names in ZoneCatalog into U+FFFD replacement
 /// characters, so floors named ラチ内コンコース or 待合室 silently lost their category. A file must
-/// be valid UTF-8 and must not contain U+FFFD.
+/// be valid UTF-8 and must not contain U+FFFD. The scan reads the files git tracks, so ignored
+/// local caches and build output never fail it; without git it walks the tree instead.
 /// </summary>
 public sealed class SourceEncodingTests
 {
@@ -20,13 +22,16 @@ public sealed class SourceEncodingTests
         ".cs", ".csproj", ".props", ".targets", ".sln", ".config", ".addin",
         ".json", ".xml", ".xaml", ".resx", ".yml", ".yaml",
         ".ts", ".js", ".svelte", ".css", ".html",
-        ".md", ".txt", ".iss", ".ps1", ".psm1", ".py",
+        ".mjs", ".cjs", ".c", ".cpp", ".h", ".hpp", ".cmake",
+        ".md", ".txt", ".csv", ".gml", ".template", ".iss", ".ps1", ".psm1", ".py",
+        ".gitignore", ".gitattributes",
     };
 
-    // Generated or third-party output: minified bundles may carry U+FFFD on purpose.
+    // Fallback walk only: generated output, local caches and tool folders the repo ignores.
     private static readonly HashSet<string> SkippedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".git", ".vs", "bin", "obj", "node_modules", "dist",
+        ".git", ".vs", ".claude", ".cursor", ".dotnet", "bin", "obj", "node_modules", "dist",
+        "packages", "TestResults", "build", "output", "web-contracts", "web-contracts-generator",
     };
 
     [Fact]
@@ -37,7 +42,7 @@ public sealed class SourceEncodingTests
         List<string> problems = new();
         int scanned = 0;
 
-        foreach (string file in EnumerateTextFiles(repoRoot))
+        foreach (string file in EnumerateCandidateFiles(repoRoot).Where(IsTextFile))
         {
             scanned++;
             string relative = file.Substring(repoRoot.Length).TrimStart(Path.DirectorySeparatorChar);
@@ -66,14 +71,64 @@ public sealed class SourceEncodingTests
         Assert.True(problems.Count == 0, "Broken text encoding:" + Environment.NewLine + string.Join(Environment.NewLine, problems));
     }
 
-    private static IEnumerable<string> EnumerateTextFiles(string directory)
+    private static bool IsTextFile(string file)
+    {
+        string extension = Path.GetExtension(file);
+        return TextExtensions.Contains(extension.Length > 0 ? extension : Path.GetFileName(file));
+    }
+
+    private static IEnumerable<string> EnumerateCandidateFiles(string repoRoot)
+    {
+        IReadOnlyList<string>? tracked = TryListTrackedFiles(repoRoot);
+        if (tracked is not null)
+        {
+            return tracked
+                .Select(relative => Path.Combine(repoRoot, relative.Replace('/', Path.DirectorySeparatorChar)))
+                .Where(File.Exists);
+        }
+
+        return WalkTree(repoRoot);
+    }
+
+    private static IReadOnlyList<string>? TryListTrackedFiles(string repoRoot)
+    {
+        try
+        {
+            ProcessStartInfo startInfo = new("git", "-c core.quotepath=off ls-files -z")
+            {
+                WorkingDirectory = repoRoot,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = new UTF8Encoding(false),
+            };
+
+            using Process? process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return null;
+            }
+
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+            {
+                return null;
+            }
+
+            return output.Split(new[] { '\0' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception || ex is InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static IEnumerable<string> WalkTree(string directory)
     {
         foreach (string file in Directory.EnumerateFiles(directory))
         {
-            if (TextExtensions.Contains(Path.GetExtension(file)))
-            {
-                yield return file;
-            }
+            yield return file;
         }
 
         foreach (string child in Directory.EnumerateDirectories(directory))
@@ -83,7 +138,7 @@ public sealed class SourceEncodingTests
                 continue;
             }
 
-            foreach (string file in EnumerateTextFiles(child))
+            foreach (string file in WalkTree(child))
             {
                 yield return file;
             }
