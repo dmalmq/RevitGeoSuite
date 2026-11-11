@@ -10,6 +10,7 @@ public static class UnitFeatureComposer
     private static readonly HashSet<string> PreservedGeometryAttributeKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "id",
+        "revit_key",
         "level_id",
         "source",
         "display_point",

@@ -370,11 +370,11 @@ public sealed class FloorExportDataPreparer
                     context.Level,
                     levelId,
                     levelOrdinal,
-                    unitLayer,
-                    detailLayer,
-                    openingLayer,
-                    levelLayer,
-                    fixtureLayer,
+                    EnsureUniqueKeys(unitLayer),
+                    EnsureUniqueKeys(detailLayer),
+                    EnsureUniqueKeys(openingLayer),
+                    EnsureUniqueKeys(levelLayer),
+                    EnsureUniqueKeys(fixtureLayer),
                     geometryRepair,
                     viewWarnings.ToList()));
         }
@@ -395,6 +395,11 @@ public sealed class FloorExportDataPreparer
         }
 
         return result.Views[0];
+    }
+
+    private static ExportLayer? EnsureUniqueKeys(ExportLayer? layer)
+    {
+        return layer == null ? null : RevitKey.EnsureUnique(layer);
     }
 
     private static bool NeedsUnitContext(ExportFeatureType featureTypes)
@@ -1110,6 +1115,7 @@ public sealed class FloorExportDataPreparer
         Dictionary<string, object?> attributes = new()
         {
             ["id"] = unitFeature.Attributes.TryGetValue("id", out object? id) ? id : null,
+            [RevitKey.AttributeName] = unitFeature.Attributes.TryGetValue(RevitKey.AttributeName, out object? revitKey) ? revitKey : null,
             ["type"] = unitFeature.Attributes.TryGetValue("category", out object? category) ? category : null,
             ["name"] = unitFeature.Attributes.TryGetValue("name", out object? name) ? name : null,
             ["alt_name"] = unitFeature.Attributes.TryGetValue("alt_name", out object? altName) ? altName : null,

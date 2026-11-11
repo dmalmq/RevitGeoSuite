@@ -28,6 +28,7 @@ public sealed class DetailExtractor
     private readonly ExportSourceDescriptor _sourceDescriptor;
     private readonly string _sourceDocumentKey;
     private readonly string _sourceDocumentName;
+    private readonly string _modelKey;
     private readonly SchemaProfile _schemaProfile;
     private readonly StairVisibilityResolver _stairVisibilityResolver;
 
@@ -51,6 +52,7 @@ public sealed class DetailExtractor
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         _sourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
         _sourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
+        _modelKey = RevitModelKeyResolver.Resolve(_document, _sourceDescriptor);
         _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         _stairVisibilityResolver = new StairVisibilityResolver(
             _document,
@@ -133,6 +135,9 @@ public sealed class DetailExtractor
                     BuildSyntheticId("detail", curveElement.Id.Value, levelId),
                     levelId,
                     "detail-curve",
+                    RevitKey.Create(_modelKey, curveElement.UniqueId),
+                    DetailCategory.ForLineStyle(curveElement.LineStyle?.Name),
+                    parentKey: null,
                     viewName,
                     warnings));
         }
@@ -294,6 +299,7 @@ public sealed class DetailExtractor
             }
 
             IReadOnlyDictionary<string, object?>? stairVisibilityAttributes = stairVisibility?.BuildDebugAttributes();
+            string? stairKey = RevitKey.Create(_modelKey, stair.UniqueId);
 
             foreach (ElementId runId in stair.GetStairsRuns())
             {
@@ -324,6 +330,9 @@ public sealed class DetailExtractor
                             BuildSyntheticId("detail.stair.step", syntheticElementId, levelId),
                             levelId,
                             "stair-step",
+                            RevitKey.Create(_modelKey, run.UniqueId, i),
+                            DetailCategory.Steps,
+                            stairKey,
                             viewName,
                             warnings,
                             stairVisibilityAttributes));
@@ -894,6 +903,9 @@ public sealed class DetailExtractor
         string id,
         string levelId,
         string sourceLabel,
+        string? revitKey,
+        string category,
+        string? parentKey,
         string? viewName,
         ICollection<string> warnings,
         IReadOnlyDictionary<string, object?>? additionalAttributes = null)
@@ -901,6 +913,9 @@ public sealed class DetailExtractor
         Dictionary<string, object?> attributes = new()
         {
             ["id"] = id,
+            [RevitKey.AttributeName] = revitKey,
+            [DetailCategory.AttributeName] = category,
+            [RevitKey.ParentAttributeName] = parentKey,
             ["level_id"] = levelId,
             ["element_id"] = sourceElement.Id.Value,
             ["source_label"] = sourceLabel,

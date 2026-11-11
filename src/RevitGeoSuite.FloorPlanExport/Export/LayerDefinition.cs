@@ -17,6 +17,7 @@ public static class LayerDefinition
             new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
+                new AttributeDefinition(RevitKey.AttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("category", ExportAttributeType.Text),
                 new AttributeDefinition("restrict", ExportAttributeType.Text),
                 new AttributeDefinition("name", ExportAttributeType.Text),
@@ -39,6 +40,9 @@ public static class LayerDefinition
             new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
+                new AttributeDefinition(RevitKey.AttributeName, ExportAttributeType.Text),
+                new AttributeDefinition(DetailCategory.AttributeName, ExportAttributeType.Text),
+                new AttributeDefinition(RevitKey.ParentAttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
                 new AttributeDefinition("element_id", ExportAttributeType.Integer),
             },
@@ -55,6 +59,7 @@ public static class LayerDefinition
             new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
+                new AttributeDefinition(RevitKey.AttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("category", ExportAttributeType.Text),
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
                 new AttributeDefinition("element_id", ExportAttributeType.Integer),
@@ -72,6 +77,7 @@ public static class LayerDefinition
             new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
+                new AttributeDefinition(RevitKey.AttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("type", ExportAttributeType.Text),
                 new AttributeDefinition("name", ExportAttributeType.Text),
                 new AttributeDefinition("alt_name", ExportAttributeType.Text),
@@ -92,6 +98,7 @@ public static class LayerDefinition
             new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
+                new AttributeDefinition(RevitKey.AttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("level_name", ExportAttributeType.Text),
                 new AttributeDefinition("ordinal", ExportAttributeType.Integer),
                 new AttributeDefinition("elevation_m", ExportAttributeType.Real),
