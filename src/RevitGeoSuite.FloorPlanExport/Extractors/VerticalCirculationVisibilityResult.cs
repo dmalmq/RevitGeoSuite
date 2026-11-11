@@ -14,6 +14,7 @@ internal enum VerticalCirculationVisibilitySourceKind
     RectangleProjection = 4,
     ConservativeComposite = 5,
     RawGeometry = 6,
+    DrawingRule = 7,
 }
 
 internal sealed class VerticalCirculationVisibilityResult
@@ -66,6 +67,7 @@ internal sealed class VerticalCirculationVisibilityResult
         VerticalCirculationVisibilitySourceKind.RectangleProjection => "rectangle-projection",
         VerticalCirculationVisibilitySourceKind.ConservativeComposite => "conservative-composite",
         VerticalCirculationVisibilitySourceKind.RawGeometry => "raw-fallback",
+        VerticalCirculationVisibilitySourceKind.DrawingRule => "drawing-rule",
         _ => "unknown",
     };
 

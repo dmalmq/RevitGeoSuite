@@ -23,6 +23,8 @@ public static class LayerDefinition
                 new AttributeDefinition("name", ExportAttributeType.Text),
                 new AttributeDefinition("alt_name", ExportAttributeType.Text),
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
+                new AttributeDefinition(VerticalCirculation.DirectionAttributeName, ExportAttributeType.Text),
+                new AttributeDefinition(VerticalCirculation.ToLevelAttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("source", ExportAttributeType.Text),
                 new AttributeDefinition("display_point", ExportAttributeType.Text),
                 new AttributeDefinition("preview_fill_color", ExportAttributeType.Text),

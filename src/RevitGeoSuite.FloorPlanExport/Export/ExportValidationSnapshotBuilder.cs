@@ -144,13 +144,23 @@ public sealed class ExportValidationSnapshotBuilder
         for (int i = 0; i < familyUnits.Count; i++)
         {
             FamilyInstance unit = familyUnits[i];
-            string familyName = Extractors.UnitExtractor.GetFamilyName(unit);
-            if (!_zoneCatalog.TryGetFamilyInfo(familyName, out ZoneInfo zoneInfo))
+
+            // gis_kind wins over the family name, as it does in the export.
+            string unitCategory;
+            if (VerticalCirculation.TryMapGisKind(Extractors.UnitExtractor.GetGisKind(unit), out string gisCategory))
+            {
+                unitCategory = gisCategory;
+            }
+            else if (_zoneCatalog.TryGetFamilyInfo(Extractors.UnitExtractor.GetFamilyName(unit), out ZoneInfo zoneInfo))
+            {
+                unitCategory = zoneInfo.Category;
+            }
+            else
             {
                 continue;
             }
 
-            if (string.Equals(zoneInfo.Category, category, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(unitCategory, category, StringComparison.OrdinalIgnoreCase))
             {
                 count++;
             }

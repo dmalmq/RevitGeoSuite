@@ -630,7 +630,9 @@ public sealed class FloorExportDataPreparer
                 occlusionContext.OcclusionMask,
                 warnings);
 
-            if (simplifyStairUnits)
+            // The drawing rule already gives the stair its final shape, so simplifying is for stairs
+            // on other levels only.
+            if (simplifyStairUnits && finalVisibility.SourceKind != VerticalCirculationVisibilitySourceKind.DrawingRule)
             {
                 List<Polygon2D>? simplified = extractor.TrySimplifyStairPolygons(
                     stair,
@@ -696,7 +698,7 @@ public sealed class FloorExportDataPreparer
         foreach (FamilyInstance familyUnit in familyUnits)
         {
             if (!extractor.TryResolveFamilyUnitZoneInfo(familyUnit, out _, out ZoneInfo zoneInfo) ||
-                !string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+                !VerticalCirculation.IsMovingCirculation(zoneInfo.Category) ||
                 !extractor.TryResolveEscalatorVisibility(familyUnit, view, warnings, out VerticalCirculationVisibilityResult? visibility))
             {
                 continue;
@@ -735,7 +737,7 @@ public sealed class FloorExportDataPreparer
         foreach (FamilyInstance familyUnit in familyUnits)
         {
             if (!extractor.TryResolveFamilyUnitZoneInfo(familyUnit, out _, out ZoneInfo zoneInfo) ||
-                !string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+                !VerticalCirculation.IsMovingCirculation(zoneInfo.Category) ||
                 !extractor.TryResolveEscalatorVisibility(familyUnit, view, warnings, out VerticalCirculationVisibilityResult? visibility) ||
                 !extractor.TryCreateEscalatorUnit(
                     familyUnit,
@@ -796,11 +798,13 @@ public sealed class FloorExportDataPreparer
                     continue;
                 }
 
-                List<Polygon2D>? simplified = extractor.TrySimplifyStairPolygons(
-                    stair,
-                    view.GenLevel,
-                    visibility.VisiblePolygons,
-                    warnings);
+                List<Polygon2D>? simplified = visibility.SourceKind == VerticalCirculationVisibilitySourceKind.DrawingRule
+                    ? visibility.VisiblePolygons.ToList()
+                    : extractor.TrySimplifyStairPolygons(
+                        stair,
+                        view.GenLevel,
+                        visibility.VisiblePolygons,
+                        warnings);
                 if (simplified == null || simplified.Count == 0)
                 {
                     continue;
@@ -1405,7 +1409,9 @@ public sealed class FloorExportDataPreparer
                          linkedSource.Stairs,
                          geometryRepair,
                          warnings,
-                         view: null,
+                         // The host view only picks the stair drawing rule's floor; every other
+                         // use of the view checks that it belongs to the linked document.
+                         view: context.View,
                          viewName: context.View.Name,
                          stairVisibilityResults: null,
                          skipLevelFilter: true))
@@ -2072,7 +2078,7 @@ public sealed class FloorExportDataPreparer
     private static bool IsVerticalFillCategory(string category)
     {
         return string.Equals(category, "stairs", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+               VerticalCirculation.IsMovingCirculation(category) ||
                string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(category, "column", StringComparison.OrdinalIgnoreCase);
     }
