@@ -98,6 +98,15 @@ def propose_one(floor_type, standard):
     return None
 
 
+def echo_floor_ids(snapshot, proposals):
+    """Floors of the proposed types whose own category equals the gis_category the proposal
+    gives their type. Older exports wrote it back into every floor; once the type carries it,
+    clearing the floor's copy changes nothing in the export and lets the type decide again."""
+    given = dict((proposal.floor_type.element_id, proposal.gis_category.strip().lower()) for proposal in proposals)
+    return [floor.element_id for floor in snapshot.floors
+            if floor.type_id in given and floor.category.strip().lower() == given[floor.type_id]]
+
+
 def _restriction(zone, standard_type):
     """The standard type's restriction; for a type whose restriction is by location, the one the
     name states (ラチ内店舗 is rachi_nai), else empty."""

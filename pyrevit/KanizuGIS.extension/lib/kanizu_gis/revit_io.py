@@ -302,8 +302,9 @@ def apply_setup(doc, standard, plan, log):
         raise
 
 
-def apply_proposals(doc, standard, proposals, log):
-    """Writes each accepted proposal onto its floor type. Floors keep their type."""
+def apply_proposals(doc, standard, proposals, log, echo_floor_ids=None):
+    """Writes each accepted proposal onto its floor type, and clears the floors' own category
+    where it only repeats the new gis_category. Floors keep their type."""
     materials = dict((element_name(material), material.Id) for material in DB.FilteredElementCollector(doc).OfClass(DB.Material))
     transaction = DB.Transaction(doc, "Kanizu GIS: Fix floor types")
     transaction.Start()
@@ -314,6 +315,9 @@ def apply_proposals(doc, standard, proposals, log):
             log(u"%s: gis_category %s%s" % (
                 proposal.floor_type.name, proposal.gis_category,
                 ", gis_restriction " + proposal.gis_restriction if proposal.gis_restriction else ""))
+        if echo_floor_ids:
+            clear_floor_categories(doc, echo_floor_ids)
+            log("Cleared the repeated category of %d floors" % len(echo_floor_ids))
         transaction.Commit()
     except Exception:
         if transaction.HasStarted() and not transaction.HasEnded():

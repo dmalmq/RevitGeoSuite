@@ -64,5 +64,17 @@ class FloorTypeMatchTests(unittest.TestCase):
         self.assertIn(u"j ラチ内コンコース_床", label)
 
 
+    def test_echo_floor_ids_are_floors_repeating_the_proposed_category(self):
+        floor_type = snapshot.FloorTypeInfo(1, u"j 改札内コンコース_床", "", "", "", [11, 12])
+        other = snapshot.FloorTypeInfo(2, u"j 謎の部屋_床", "", "", "", [13])
+        model = helpers.model_on_standard(
+            self.standard,
+            floor_types=helpers.floor_types_as_standard(self.standard) + [floor_type, other],
+            floors=[snapshot.FloorInfo(11, 1, " Walkway"), snapshot.FloorInfo(12, 1, "retail"),
+                    snapshot.FloorInfo(13, 2, "walkway")])
+        proposals = floor_type_match.propose(model, self.standard)
+        self.assertEqual([11], floor_type_match.echo_floor_ids(model, proposals))
+
+
 if __name__ == "__main__":
     unittest.main()

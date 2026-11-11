@@ -102,34 +102,34 @@ def plan_setup(snapshot, standard):
 
 
 def find_category_echoes(snapshot, standard):
-    """Floors whose own category equals the category their type gives, either the type's
-    gis_category after setup or the category its name stands for. Older exports wrote that
-    value back into every floor; left in place it would override the type for good."""
+    """Floors whose own category equals the category their type gives once Set up model has run:
+    the standard type's gis_category, or the type's own gis_category. Older exports wrote that
+    value back into every floor; left in place it would override the type for good.
+
+    Clearing such a floor never changes what it exports, because the type gives the same value.
+    A type that has no gis_category is left alone even when its name matches a standard type:
+    the export then falls back to the exact type name, which can give something else (or
+    nothing), so its floors keep their category until Fix floor types gives the type one."""
     types = dict((floor_type.element_id, floor_type) for floor_type in snapshot.floor_types)
     echoes = []
     for floor in snapshot.floors:
         floor_type = types.get(floor.type_id)
         if floor_type is None or not floor.category:
             continue
-        category = floor.category.strip().lower()
-        if category in _categories_of_type(floor_type, standard):
+        given = category_given_by_type(floor_type, standard)
+        if given and floor.category.strip().lower() == given:
             echoes.append(floor.element_id)
     return echoes
 
 
-def _categories_of_type(floor_type, standard):
-    from kanizu_gis import floor_type_match
-
-    categories = set()
+def category_given_by_type(floor_type, standard):
+    """The known category a floor type gives its floors after Set up model, lower case, or ""."""
     standard_type = standard.floor_type(floor_type.name)
     if standard_type is not None:
-        categories.add(standard_type.gis_category)
-    if floor_type.gis_category:
-        categories.add(floor_type.gis_category.strip().lower())
-    proposal = floor_type_match.propose_one(floor_type, standard)
-    if proposal is not None:
-        categories.add(proposal.gis_category)
-    return categories
+        return standard_type.gis_category.strip().lower()
+    if standard.is_known_category(floor_type.gis_category):
+        return floor_type.gis_category.strip().lower()
+    return ""
 
 
 def _plan_parameter(snapshot, parameter):

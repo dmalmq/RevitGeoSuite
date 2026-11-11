@@ -81,18 +81,21 @@ class SetupPlanTests(unittest.TestCase):
     def test_clears_category_echoes_when_the_version_is_first_stamped(self):
         floor_types = helpers.floor_types_as_standard(self.standard) + [
             snapshot.FloorTypeInfo(1, u"j 改札内コンコース_床", "", "", "", [11, 12, 13]),
+            snapshot.FloorTypeInfo(2, u"j 東口通路_床", "walkway", "", "", [14, 15]),
         ]
         concourse = floor_types[1]  # j ラチ内コンコース_床, walkway
         floors = [
             snapshot.FloorInfo(21, concourse.element_id, "walkway"),    # echo of the type
             snapshot.FloorInfo(22, concourse.element_id, "nonpublic"),  # a real override
-            snapshot.FloorInfo(11, 1, "Walkway"),                        # echo of the name
+            snapshot.FloorInfo(11, 1, "Walkway"),                        # matches the name only: kept
             snapshot.FloorInfo(12, 1, "retail"),                         # a real override
+            snapshot.FloorInfo(14, 2, "walkway"),                        # echo of the type's own gis_category
+            snapshot.FloorInfo(15, 2, "retail"),                         # a real override
         ]
         plan = setup_plan.plan_setup(
             helpers.model_on_standard(self.standard, floor_types=floor_types, floors=floors, standard_version=""),
             self.standard)
-        self.assertEqual([21, 11], plan.echo_floor_ids)
+        self.assertEqual([21, 14], plan.echo_floor_ids)
         self.assertIn("Clear the category of 2 floors that only repeats their type (written by an older export)",
                       setup_plan.describe(plan))
 

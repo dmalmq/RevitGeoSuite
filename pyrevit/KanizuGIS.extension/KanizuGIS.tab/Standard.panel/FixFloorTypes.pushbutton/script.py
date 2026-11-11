@@ -14,9 +14,13 @@ except standards.StandardsNotFound as error:
 
 snapshot = revit_io.read_snapshot(doc)
 for name in ("gis_category", "gis_restriction"):
-    if name not in snapshot.bound_parameters:
+    bound = snapshot.bound_parameters.get(name)
+    if bound is None:
         forms.alert(u"%s is not bound yet. Run Set up model first.\n先に「Set up model」を実行してください。" % name,
                     exitscript=True)
+    elif bound.binding != "type":
+        forms.alert(u"%s is bound as an %s parameter, so it cannot be written onto floor types. "
+                    u"Rebind it as a type parameter first." % (name, bound.binding), exitscript=True)
 
 proposals = floor_type_match.propose(snapshot, standard)
 left = floor_type_match.unmatched(snapshot, standard)
@@ -40,7 +44,8 @@ if not selected:
     script.exit()
 
 output.print_md(u"## Fix floor types / 床タイプの修正")
-revit_io.apply_proposals(doc, standard, selected, lambda message: output.print_md(u"- " + message))
+revit_io.apply_proposals(doc, standard, selected, lambda message: output.print_md(u"- " + message),
+                         floor_type_match.echo_floor_ids(snapshot, selected))
 if left:
     output.print_md(u"### Not matched, decide by hand / 手動で判断")
     for floor_type in left:
