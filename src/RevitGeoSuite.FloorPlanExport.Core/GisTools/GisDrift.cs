@@ -1,0 +1,353 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
+
+/// <summary>One Revit-owned field someone changed in the GDB, as Kanizu records it.</summary>
+public sealed class GisDriftRow
+{
+    public GisDriftRow(
+        string revitKey,
+        string uniqueId,
+        string layer,
+        string field,
+        string parameter,
+        string guid,
+        string binding,
+        string label,
+        string revit,
+        string gdb,
+        string @base,
+        bool conflict)
+    {
+        RevitKey = revitKey;
+        UniqueId = uniqueId;
+        Layer = layer;
+        Field = field;
+        Parameter = parameter;
+        Guid = guid;
+        Binding = binding;
+        Label = label;
+        Revit = revit;
+        Gdb = gdb;
+        Base = @base;
+        Conflict = conflict;
+    }
+
+    public string RevitKey { get; }
+
+    public string UniqueId { get; }
+
+    /// <summary>unit, fixture, level, ...</summary>
+    public string Layer { get; }
+
+    public string Field { get; }
+
+    /// <summary>The station field's own parameter, empty for a core field.</summary>
+    public string Parameter { get; }
+
+    public string Guid { get; }
+
+    /// <summary>"instance" or "type" for a station field's parameter.</summary>
+    public string Binding { get; }
+
+    public string Label { get; }
+
+    /// <summary>The value the export wrote.</summary>
+    public string Revit { get; }
+
+    /// <summary>The value the GDB holds now.</summary>
+    public string Gdb { get; }
+
+    /// <summary>The value at the last apply.</summary>
+    public string Base { get; }
+
+    /// <summary>True when Revit changed the field too since the last apply.</summary>
+    public bool Conflict { get; }
+
+    public string Describe() => $"{Layer} {(Label.Length > 0 ? Label : UniqueId)} {Field}";
+}
+
+public sealed class GisDriftFile
+{
+    public GisDriftFile(string model, string appliedVersion, IReadOnlyList<GisDriftRow> rows)
+    {
+        Model = model;
+        AppliedVersion = appliedVersion;
+        Rows = rows;
+    }
+
+    public string Model { get; }
+
+    public string AppliedVersion { get; }
+
+    public IReadOnlyList<GisDriftRow> Rows { get; }
+}
+
+/// <summary>One parameter to set on one element: the GDB's value, accepted into Revit.</summary>
+public sealed class GisDriftChange
+{
+    public GisDriftChange(GisDriftRow row, string parameter, string binding, string oldValue, string newValue)
+    {
+        Row = row;
+        Parameter = parameter;
+        Binding = binding;
+        OldValue = oldValue;
+        NewValue = newValue;
+    }
+
+    public GisDriftRow Row { get; }
+
+    public string UniqueId => Row.UniqueId;
+
+    public string Parameter { get; }
+
+    /// <summary><see cref="GisDrift.Instance"/> or <see cref="GisDrift.Type"/>.</summary>
+    public string Binding { get; }
+
+    public string OldValue { get; }
+
+    public string NewValue { get; }
+
+    public bool Conflict => Row.Conflict;
+
+    public string Label()
+    {
+        string text = $"{Row.Describe()}: {Parameter} {(OldValue.Length > 0 ? OldValue : "(empty)")} to {(NewValue.Length > 0 ? NewValue : "(empty)")}";
+        if (Binding == GisDrift.Type)
+        {
+            text += " (type parameter: every element of the type changes)";
+        }
+
+        if (Conflict)
+        {
+            text += " (also changed in Revit since the last apply)";
+        }
+
+        return text;
+    }
+}
+
+/// <summary>
+/// Review GDB edits: the values the station's GDB holds that this model's export does not. Kanizu
+/// writes <c>gis-drift/&lt;model&gt;.gis-drift.json</c> into the station folder every time it applies
+/// this model's GIS export to the GDB; each row is a Revit-owned field someone changed in the GDB.
+/// Accepting a row writes the GDB's value into the Revit parameter the field comes from, so the
+/// next export agrees and the GDB edit survives it. Rows the model already agrees with are left
+/// out, so reading the file twice changes nothing the second time. The format is described in
+/// docs/kanizu-link-contract.md.
+/// </summary>
+public static class GisDrift
+{
+    public const string Schema = "kanizu.gis-drift";
+    public const int Version = 1;
+    public const string Folder = "gis-drift";
+    public const string Instance = "instance";
+    public const string Type = "type";
+
+    /// <summary>
+    /// The Revit parameter behind each core field, for rows whose field has no parameter of its own
+    /// in the field list. Fields Revit works out (geometry, ids, the level, the detail and opening
+    /// categories) are not here: a GDB edit to them can only be made again in Revit by hand.
+    /// </summary>
+    public static IReadOnlyDictionary<(string Layer, string Field), (string Parameter, string Binding)> CoreParameters { get; } =
+        new Dictionary<(string, string), (string, string)>
+        {
+            [("unit", "name")] = ("name", Instance),
+            [("unit", "alt_name")] = ("short_name", Instance),
+            [("unit", "category")] = ("category", Instance),
+            [("unit", "direction")] = ("gis_direction", Instance),
+            [("unit", "restrict")] = ("gis_restriction", Type),
+            [("fixture", "name")] = ("name", Instance),
+            [("fixture", "alt_name")] = ("short_name", Instance),
+            [("level", "ordinal")] = ("ordinal", Instance),
+        };
+
+    /// <summary>The drift file's name for a model id, as Kanizu writes it.</summary>
+    public static string FileName(string model)
+    {
+        StringBuilder safe = new();
+        foreach (char character in model ?? string.Empty)
+        {
+            bool asciiLetterOrDigit = character < 128 && char.IsLetterOrDigit(character);
+            safe.Append(asciiLetterOrDigit || character == '-' ? character : '_');
+        }
+
+        return safe + ".gis-drift.json";
+    }
+
+    /// <summary>The model key Kanizu files the drift under: the model id in lower case.</summary>
+    public static string ModelKey(string? modelId) => GisToolStandard.Normalize(modelId).ToLowerInvariant();
+
+    /// <summary>The drift file from its JSON text. Throws <see cref="FormatException"/> for another schema or version.</summary>
+    public static GisDriftFile Parse(string text)
+    {
+        JToken data;
+        try
+        {
+            // Dates stay text: a label or version that looks like a date must read back as written.
+            using JsonTextReader reader = new(new StringReader(text ?? string.Empty)) { DateParseHandling = DateParseHandling.None };
+            data = JToken.ReadFrom(reader);
+        }
+        catch (JsonException error)
+        {
+            throw new FormatException($"The drift file is not JSON: {error.Message}", error);
+        }
+
+        if (data is not JObject root || (string?)(root["schema"] as JValue) != Schema)
+        {
+            throw new FormatException($"The file is not a Kanizu drift file (schema {Schema}).");
+        }
+
+        JToken? version = root["version"];
+        // Kanizu writes the version as an integer (a u32); a number equal to it, such as 1.0, is the same version.
+        if (version is not JValue { Type: JTokenType.Integer or JTokenType.Float } number || Convert.ToDouble(number.Value, CultureInfo.InvariantCulture) != Version)
+        {
+            throw new FormatException($"The drift file is version {version}; this tool reads version {Version}. Update RevitGeoSuite.");
+        }
+
+        List<GisDriftRow> rows = new();
+        if (root["rows"] is JArray entries)
+        {
+            foreach (JObject entry in entries.OfType<JObject>())
+            {
+                string revitKey = Text(entry["revitKey"]);
+                string uniqueId = Text(entry["uniqueId"]);
+                rows.Add(new GisDriftRow(
+                    revitKey,
+                    uniqueId.Length > 0 ? uniqueId : UniqueIdOf(revitKey),
+                    Text(entry["layer"]),
+                    Text(entry["field"]),
+                    Text(entry["parameter"]),
+                    Text(entry["guid"]),
+                    Text(entry["binding"]),
+                    Text(entry["label"]),
+                    Text(entry["revit"]),
+                    Text(entry["gdb"]),
+                    Text(entry["base"]),
+                    Truthy(entry["conflict"])));
+            }
+        }
+
+        return new GisDriftFile(Text(root["model"]), Text(root["appliedVersion"]), rows);
+    }
+
+    /// <summary>Reads a drift file, with or without a byte order mark.</summary>
+    public static GisDriftFile Read(string path)
+    {
+        using StreamReader reader = new(path, new UTF8Encoding(false), detectEncodingFromByteOrderMarks: true);
+        return Parse(reader.ReadToEnd());
+    }
+
+    /// <summary>The Revit parameter and binding a row writes, or null when no parameter holds the field.</summary>
+    public static (string Parameter, string Binding)? Target(GisDriftRow row)
+    {
+        if (row.Parameter.Length > 0)
+        {
+            return (row.Parameter, row.Binding == Type ? Type : Instance);
+        }
+
+        return CoreParameters.TryGetValue((row.Layer, row.Field), out (string Parameter, string Binding) target) ? target : null;
+    }
+
+    /// <summary>
+    /// The changes accepting the drift would make, and the rows that cannot be written.
+    /// <paramref name="current"/>(uniqueId, parameter, binding) returns the parameter's text in the
+    /// model, or null when the element or the parameter is missing. A row the model already agrees
+    /// with is left out. Conflicts come with the rest; the page leaves them unticked.
+    /// </summary>
+    public static (IReadOnlyList<GisDriftChange> Changes, IReadOnlyList<string> Problems) Plan(
+        GisDriftFile driftFile,
+        Func<string, string, string, string?> current,
+        GisToolStandard standard)
+    {
+        List<GisDriftChange> changes = new();
+        List<string> problems = new();
+        HashSet<(string, string, string)> seen = new();
+        foreach (GisDriftRow row in driftFile.Rows)
+        {
+            (string Parameter, string Binding)? target = Target(row);
+            if (target is null)
+            {
+                problems.Add($"{row.Describe()}: no Revit parameter holds this field; change it in Revit by hand (GDB: {(row.Gdb.Length > 0 ? row.Gdb : "(empty)")}).");
+                continue;
+            }
+
+            (string parameter, string binding) = target.Value;
+            (string? value, string? problem) = ParameterTable.CheckValue(parameter, row.Gdb, standard);
+            if (problem != null)
+            {
+                problems.Add($"{row.Describe()}: {problem}");
+                continue;
+            }
+
+            string? old = current(row.UniqueId, parameter, binding);
+            if (old is null)
+            {
+                problems.Add($"{row.Describe()}: the element or its {parameter} parameter is not in this model.");
+                continue;
+            }
+
+            if (Same(parameter, old, value!))
+            {
+                continue;
+            }
+
+            if (!seen.Add((row.UniqueId, parameter, binding)))
+            {
+                continue;
+            }
+
+            changes.Add(new GisDriftChange(row, parameter, binding, old, value!));
+        }
+
+        return (changes, problems);
+    }
+
+    private static bool Same(string parameter, string old, string value)
+    {
+        if (ParameterTable.IntegerColumns.Contains(parameter))
+        {
+            return int.TryParse(old.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int left) &&
+                   int.TryParse(value.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int right) &&
+                   left == right;
+        }
+
+        return GisToolStandard.Normalize(old) == GisToolStandard.Normalize(value);
+    }
+
+    private static string UniqueIdOf(string revitKey)
+    {
+        string[] parts = revitKey.Split('|');
+        return parts.Length >= 3 ? parts[1] : string.Empty;
+    }
+
+    private static string Text(JToken? token)
+    {
+        if (token is null || token.Type == JTokenType.Null)
+        {
+            return string.Empty;
+        }
+
+        return token.Type switch
+        {
+            JTokenType.String => (string)token!,
+            JTokenType.Integer or JTokenType.Float or JTokenType.Boolean => Convert.ToString(((JValue)token).Value, CultureInfo.InvariantCulture) ?? string.Empty,
+            _ => token.ToString(Formatting.None),
+        };
+    }
+
+    private static bool Truthy(JToken? token) => token?.Type switch
+    {
+        JTokenType.Boolean => (bool)token,
+        JTokenType.Integer => (long)token != 0,
+        JTokenType.String => ((string)token!).Length > 0,
+        _ => false,
+    };
+}
