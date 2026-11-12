@@ -1,0 +1,123 @@
+{
+  "schema": "kanizu.gis-drift",
+  "version": 1,
+  "model": "8d7f3c1e-0000",
+  "appliedVersion": "revit/lumine-8d7f3c1e/20261110T000000Z-aaaaaaaa",
+  "rows": [
+    {
+      "revitKey": "8d7f3c1e-0000|u-1|0",
+      "uniqueId": "u-1",
+      "layer": "unit",
+      "field": "name",
+      "parameter": "",
+      "guid": "",
+      "binding": "",
+      "label": "北改札",
+      "revit": "改札",
+      "gdb": "北改札",
+      "base": "改札",
+      "conflict": false
+    },
+    {
+      "revitKey": "8d7f3c1e-0000|u-1|0",
+      "uniqueId": "u-1",
+      "layer": "unit",
+      "field": "alt_name",
+      "parameter": "",
+      "guid": "",
+      "binding": "",
+      "label": "北改札",
+      "revit": null,
+      "gdb": "北",
+      "base": null,
+      "conflict": false
+    },
+    {
+      "revitKey": "8d7f3c1e-0000|u-1|0",
+      "uniqueId": "u-1",
+      "layer": "unit",
+      "field": "restrict",
+      "parameter": "",
+      "guid": "",
+      "binding": "",
+      "label": "北改札",
+      "revit": "rachi_gai",
+      "gdb": "rachi_nai",
+      "base": "rachi_gai",
+      "conflict": false
+    },
+    {
+      "revitKey": "8d7f3c1e-0000|u-1|0",
+      "uniqueId": "u-1",
+      "layer": "unit",
+      "field": "shop_hours",
+      "parameter": "kanizu_shop_hours",
+      "guid": "",
+      "binding": "type",
+      "label": "北改札",
+      "revit": "9-21",
+      "gdb": "10-20",
+      "base": "9-21",
+      "conflict": false
+    },
+    {
+      "revitKey": "8d7f3c1e-0000|u-2|0",
+      "uniqueId": "u-2",
+      "layer": "unit",
+      "field": "category",
+      "parameter": "",
+      "guid": "",
+      "binding": "",
+      "label": "北改札",
+      "revit": "retail",
+      "gdb": "walkway",
+      "base": "nonpublic",
+      "conflict": true
+    },
+    {
+      "revitKey": "8d7f3c1e-0000|u-3|0",
+      "uniqueId": "u-3",
+      "layer": "unit",
+      "field": "name",
+      "parameter": "",
+      "guid": "",
+      "binding": "",
+      "label": "北改札",
+      "revit": "店舗",
+      "gdb": null,
+      "base": "店舗",
+      "conflict": false
+    },
+    {
+      "revitKey": "8d7f3c1e-0000|lvl|0",
+      "uniqueId": "lvl",
+      "layer": "level",
+      "field": "ordinal",
+      "parameter": "",
+      "guid": "",
+      "binding": "",
+      "label": "北改札",
+      "revit": "1",
+      "gdb": "2",
+      "base": "1",
+      "conflict": false
+    },
+    {
+      "revitKey": "8d7f3c1e-0000|u-1|0",
+      "uniqueId": "u-1",
+      "layer": "unit",
+      "field": "level_id",
+      "parameter": "",
+      "guid": "",
+      "binding": "",
+      "label": "北改札",
+      "revit": "a",
+      "gdb": "b",
+      "base": "a",
+      "conflict": false
+    }
+  ],
+  "notPlaced": [
+    "8d7f3c1e-0000|x|0"
+  ]
+}

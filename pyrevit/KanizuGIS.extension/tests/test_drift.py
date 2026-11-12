@@ -71,6 +71,42 @@ class ParseTests(unittest.TestCase):
             shutil.rmtree(folder)
 
 
+KANIZU_FIXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+                              "tests", "Fixtures", "Conformance", "gis-drift", "8d7f3c1e-0000.gis-drift.json")
+
+
+class KanizuWrittenFileTests(unittest.TestCase):
+    """A file written by Kanizu's own DriftFile::save (tests/Fixtures/Conformance/gis-drift/README.md)."""
+
+    def test_reads_and_plans_a_file_kanizu_wrote(self):
+        parsed = drift.read(KANIZU_FIXTURE)
+        self.assertEqual(parsed.model, u"8d7f3c1e-0000")
+        self.assertEqual(drift.file_name(parsed.model), os.path.basename(KANIZU_FIXTURE))
+        self.assertEqual(len(parsed.rows), 8)
+        model = Model({
+            (u"u-1", "name", "instance"): u"改札",
+            (u"u-1", "short_name", "instance"): u"",
+            (u"u-1", "gis_restriction", "type"): u"rachi_gai",
+            (u"u-1", "kanizu_shop_hours", "type"): u"9-21",
+            (u"u-2", "category", "instance"): u"retail",
+            (u"u-3", "name", "instance"): u"店舗",
+            (u"lvl", "ordinal", "instance"): u"1",
+        })
+
+        changes, problems = drift.plan(parsed, model, load_standard())
+
+        self.assertEqual([(c.unique_id, c.parameter, c.old, c.new, c.conflict) for c in changes], [
+            (u"u-1", "name", u"改札", u"北改札", False),
+            (u"u-1", "short_name", u"", u"北", False),
+            (u"u-1", "gis_restriction", u"rachi_gai", u"rachi_nai", False),
+            (u"u-1", u"kanizu_shop_hours", u"9-21", u"10-20", False),
+            (u"u-2", "category", u"retail", u"walkway", True),
+            (u"u-3", "name", u"店舗", u"", False),
+            (u"lvl", "ordinal", u"1", u"2", False),
+        ])
+        self.assertEqual(len(problems), 1)
+
+
 class PlanTests(unittest.TestCase):
     def setUp(self):
         self.standard = load_standard()
