@@ -7,6 +7,8 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
+using RevitGeoSuite.FloorPlanExport.Core.Models;
+
 namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
 /// <summary>One Revit-owned field someone changed in the GDB, as Kanizu records it.</summary>
@@ -306,7 +308,8 @@ public static class GisDrift
                 gdb = row.GdbCategory;
                 if (row.GdbRestriction.Length > 0)
                 {
-                    string restriction = GisToolStandard.Normalize(current(row.UniqueId, RestrictionParameter, Type));
+                    // Spelled as the export spells it, so RACHI_GAI agrees with rachi_gai.
+                    string restriction = ImdfRestrictionNormalizer.FloorTypeRestriction(current(row.UniqueId, RestrictionParameter, Type)) ?? string.Empty;
                     if (restriction != row.GdbRestriction)
                     {
                         problems.Add(

@@ -41,6 +41,14 @@ public sealed class LayerDefinitionTests
     }
 
     [Fact]
+    public void UnitLayer_CarriesTheFloorTypeRestrictionBesideRestrict()
+    {
+        List<string> names = LayerDefinition.CreateUnitLayer().Attributes.Select(attribute => attribute.Name).ToList();
+
+        Assert.Equal(names.IndexOf("restrict") + 1, names.IndexOf(ImdfRestrictionNormalizer.FloorTypeAttributeName));
+    }
+
+    [Fact]
     public void DetailLayer_WritesCategoryAndParentKey()
     {
         ExportLayer detail = LayerDefinition.CreateDetailLayer();

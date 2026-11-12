@@ -183,10 +183,16 @@ class PlanTests(unittest.TestCase):
             (u"u-2", "gis_restriction", "type"): u"",
             (u"u-3", "category", "instance"): u"walkway",
             (u"u-3", "gis_restriction", "type"): u"rachi_gai",
+            (u"u-4", "category", "instance"): u"walkway",
+            (u"u-4", "gis_restriction", "type"): u"RACHI-NAI",
         })
+        spelled = entry("category", u"walkway_sta", revit=u"walkway", unique_id=u"u-4")
+        spelled.update({"gdbCategory": u"walkway", "gdbRestriction": u"rachi_nai"})
 
-        changes, problems = drift.plan(drift.parse(text([inside, store, wrong_side])), model, self.standard)
+        changes, problems = drift.plan(drift.parse(text([inside, store, wrong_side, spelled])), model,
+                                       self.standard)
 
+        # u-4's type spells rachi_nai another way: it agrees, and walkway is what it already has.
         self.assertEqual([(c.unique_id, c.parameter, c.new) for c in changes],
                          [(u"u-1", "category", u"walkway"), (u"u-2", "category", u"retail")])
         self.assertEqual(len(problems), 1)
