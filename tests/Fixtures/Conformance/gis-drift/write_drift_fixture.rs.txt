@@ -1,5 +1,7 @@
 // Scratch: writes a drift file with Kanizu's own writer (DriftFile::save), for RevitGeoSuite's reader test.
-use kanizu_core::revit::gis::{self, Drift, DriftFile};
+// Its shapes cover each shape edit: a reshape, a split (both pieces carry u-4's key, grouped under it), a
+// merge (u-5 keeps its row and took in u-6), a unit drawn by hand, a deletion and a move to another floor.
+use kanizu_core::revit::gis::{self, Drift, DriftFile, ShapeDrift};
 use std::path::Path;
 
 #[allow(clippy::too_many_arguments)]
@@ -32,6 +34,30 @@ fn category_row(uid: &str, revit: &str, gdb: &str, base: &str, conflict: bool) -
     }
 }
 
+/// A rectangle in EPSG:6677, as GeoJSON with its exterior ring counter-clockwise.
+fn outline(x0: f64, y0: f64, x1: f64, y1: f64) -> serde_json::Value {
+    serde_json::json!({
+        "type": "Polygon",
+        "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]],
+    })
+}
+
+/// One shape edit; `group` and `keeps` only for a split or merge.
+fn shape(edit: &str, uid: &str, label: &str, group: &str, keeps: bool, outline: Option<serde_json::Value>) -> ShapeDrift {
+    let key = if uid.is_empty() { String::new() } else { format!("8d7f3c1e-0000|{uid}|0") };
+    ShapeDrift {
+        edit: edit.into(),
+        revit_key: key,
+        unique_id: uid.into(),
+        layer: "unit".into(),
+        label: label.into(),
+        level_id: if outline.is_some() { "lvl-1f".into() } else { String::new() },
+        group: if group.is_empty() { String::new() } else { format!("8d7f3c1e-0000|{group}|0") },
+        keeps,
+        outline,
+    }
+}
+
 fn main() {
     let out = std::env::args().nth(1).expect("station folder");
     let file = DriftFile {
@@ -50,6 +76,17 @@ fn main() {
             row("unit", "level_id", "", "", "u-1", Some("a"), Some("b"), Some("a"), false),
         ],
         not_placed: vec!["8d7f3c1e-0000|x|0".into()],
+        epsg: Some(6677),
+        shapes: vec![
+            shape("reshaped", "u-1", "北改札", "", false, Some(outline(-5900.0, -35000.0, -5890.0, -34985.0))),
+            shape("split", "u-4", "店舗A", "u-4", true, Some(outline(-5880.0, -35000.0, -5875.0, -34990.0))),
+            shape("split", "u-4", "店舗A", "u-4", false, Some(outline(-5875.0, -35000.0, -5870.0, -34990.0))),
+            shape("merged", "u-5", "店舗B", "u-5", true, Some(outline(-5860.0, -35000.0, -5840.0, -34990.0))),
+            shape("merged", "u-6", "店舗C", "u-5", false, None),
+            shape("handDrawn", "", "コインロッカー", "", false, Some(outline(-5800.0, -35000.0, -5797.0, -34998.0))),
+            shape("deleted", "u-7", "店舗D", "", false, None),
+            shape("moved", "u-8", "店舗E", "", false, Some(outline(-5820.0, -35000.0, -5810.0, -34990.0))),
+        ],
     };
     let path = file.save(Path::new(&out)).expect("saved");
     println!("{}", path.display());
