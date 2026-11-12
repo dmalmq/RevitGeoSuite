@@ -86,7 +86,6 @@ class KanizuWrittenFileTests(unittest.TestCase):
         model = Model({
             (u"u-1", "name", "instance"): u"改札",
             (u"u-1", "short_name", "instance"): u"",
-            (u"u-1", "gis_restriction", "type"): u"rachi_gai",
             (u"u-1", "kanizu_shop_hours", "type"): u"9-21",
             (u"u-2", "category", "instance"): u"retail",
             (u"u-2", "gis_restriction", "type"): u"rachi_gai",
@@ -99,13 +98,14 @@ class KanizuWrittenFileTests(unittest.TestCase):
         self.assertEqual([(c.unique_id, c.parameter, c.old, c.new, c.conflict) for c in changes], [
             (u"u-1", "name", u"改札", u"北改札", False),
             (u"u-1", "short_name", u"", u"北", False),
-            (u"u-1", "gis_restriction", u"rachi_gai", u"rachi_nai", False),
             (u"u-1", u"kanizu_shop_hours", u"9-21", u"10-20", False),
             (u"u-2", "category", u"retail", u"walkway", True),
             (u"u-3", "name", u"店舗", u"", False),
             (u"lvl", "ordinal", u"1", u"2", False),
         ])
-        self.assertEqual(len(problems), 1)
+        # restrict (employeesonly to private) and level_id are listed for a change by hand.
+        self.assertEqual(len(problems), 2)
+        self.assertIn(u"restrict", problems[0])
 
 
 class PlanTests(unittest.TestCase):
@@ -116,7 +116,7 @@ class PlanTests(unittest.TestCase):
         rows = [
             entry("name", u"北改札", revit=u"改札"),
             entry("alt_name", u"北", revit=u""),
-            entry("restrict", u"rachi_nai", revit=u""),
+            entry("restrict", u"employeesonly", revit=u""),
             entry("shop_hours", u"10-20", parameter=u"kanizu_shop_hours", binding=u"type"),
             entry("ordinal", u"2", layer="level", revit=u"1", unique_id=u"lvl"),
         ]
@@ -130,11 +130,13 @@ class PlanTests(unittest.TestCase):
 
         changes, problems = drift.plan(drift.parse(text(rows)), model, self.standard)
 
-        self.assertEqual(problems, [])
+        # restrict holds IMDF restrictions in the GDB; gis_restriction is the side of the gates.
+        self.assertEqual(len(problems), 1)
+        self.assertIn(u"restrict", problems[0])
+        self.assertIn(u"by hand", problems[0])
         self.assertEqual([(c.parameter, c.binding, c.new) for c in changes], [
             ("name", "instance", u"北改札"),
             ("short_name", "instance", u"北"),
-            ("gis_restriction", "type", u"rachi_nai"),
             (u"kanizu_shop_hours", "type", u"10-20"),
             ("ordinal", "instance", u"2"),
         ])
@@ -166,6 +168,30 @@ class PlanTests(unittest.TestCase):
         self.assertIn(u"not-a-category", problems[1])
         self.assertIn(u"whole number", problems[2])
         self.assertIn(u"not in this model", problems[3])
+
+    def test_a_station_category_code_is_written_as_its_revit_category_and_its_side_of_the_gates(self):
+        inside = entry("category", u"walkway_sta", revit=u"walkway")
+        inside.update({"gdbCategory": u"walkway", "gdbRestriction": u"rachi_nai"})
+        store = entry("category", u"store", revit=u"ticket office", unique_id=u"u-2")
+        store.update({"gdbCategory": u"retail"})
+        wrong_side = entry("category", u"walkway_sta", revit=u"walkway", unique_id=u"u-3")
+        wrong_side.update({"gdbCategory": u"walkway", "gdbRestriction": u"rachi_nai"})
+        model = Model({
+            (u"u-1", "category", "instance"): u"room",
+            (u"u-1", "gis_restriction", "type"): u"rachi_nai",
+            (u"u-2", "category", "instance"): u"ticketing",
+            (u"u-2", "gis_restriction", "type"): u"",
+            (u"u-3", "category", "instance"): u"walkway",
+            (u"u-3", "gis_restriction", "type"): u"rachi_gai",
+        })
+
+        changes, problems = drift.plan(drift.parse(text([inside, store, wrong_side])), model, self.standard)
+
+        self.assertEqual([(c.unique_id, c.parameter, c.new) for c in changes],
+                         [(u"u-1", "category", u"walkway"), (u"u-2", "category", u"retail")])
+        self.assertEqual(len(problems), 1)
+        self.assertIn(u"rachi_nai", problems[0])
+        self.assertIn(u"floor type", problems[0])
 
     def test_conflicts_are_marked(self):
         rows = [entry("name", u"北改札", revit=u"南改札", base=u"改札", conflict=True)]

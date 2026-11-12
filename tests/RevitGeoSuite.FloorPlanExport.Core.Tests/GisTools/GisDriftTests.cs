@@ -142,7 +142,6 @@ public sealed class GisDriftTests
         {
             [("u-1", "name", "instance")] = "改札",
             [("u-1", "short_name", "instance")] = "",
-            [("u-1", "gis_restriction", "type")] = "rachi_gai",
             [("u-1", "kanizu_shop_hours", "type")] = "9-21",
             [("u-2", "category", "instance")] = "retail",
             [("u-2", "gis_restriction", "type")] = "rachi_gai",
@@ -157,14 +156,16 @@ public sealed class GisDriftTests
             {
                 "u-1 name 改札>北改札 -",
                 "u-1 short_name >北 -",
-                "u-1 gis_restriction rachi_gai>rachi_nai -",
                 "u-1 kanizu_shop_hours 9-21>10-20 -",
                 "u-2 category retail>walkway conflict",
                 "u-3 name 店舗> -",
                 "lvl ordinal 1>2 -",
             },
             changes.Select(change => $"{change.UniqueId} {change.Parameter} {change.OldValue}>{change.NewValue} {(change.Conflict ? "conflict" : "-")}"));
-        Assert.Contains("by hand", Assert.Single(problems));
+        // restrict (employeesonly to private) and level_id are listed for a change by hand.
+        Assert.Equal(2, problems.Count);
+        Assert.All(problems, problem => Assert.Contains("by hand", problem));
+        Assert.Contains("restrict", problems[0]);
     }
 
     private static string SourceFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
@@ -204,7 +205,7 @@ public sealed class GisDriftTests
         {
             Entry("name", "北改札", revit: "改札"),
             Entry("alt_name", "北"),
-            Entry("restrict", "rachi_nai"),
+            Entry("restrict", "employeesonly"),
             Entry("shop_hours", "10-20", parameter: "kanizu_shop_hours", binding: "type"),
             Entry("ordinal", "2", layer: "level", revit: "1", uniqueId: "lvl"),
         };
@@ -219,13 +220,14 @@ public sealed class GisDriftTests
 
         var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(rows)), model, Standard);
 
-        Assert.Empty(problems);
+        // restrict holds IMDF restrictions in the GDB; gis_restriction is the side of the gates.
+        Assert.Contains("by hand", Assert.Single(problems));
+        Assert.Contains("restrict", problems[0]);
         Assert.Equal(
             new[]
             {
                 ("name", "instance", "北改札"),
                 ("short_name", "instance", "北"),
-                ("gis_restriction", "type", "rachi_nai"),
                 ("kanizu_shop_hours", "type", "10-20"),
                 ("ordinal", "instance", "2"),
             },

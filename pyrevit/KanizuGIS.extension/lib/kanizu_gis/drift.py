@@ -25,22 +25,27 @@ TYPE = "type"
 
 # The Revit parameter behind each core field, for rows whose field has no parameter of its own
 # in the field list. Fields Revit works out (geometry, ids, the level, the detail and opening
-# categories) are not here: a GDB edit to them can only be made again in Revit by hand.
+# categories) are not here: a GDB edit to them can only be made again in Revit by hand. Nor is
+# unit restrict: the GDB holds IMDF restrictions there (employeesonly), while the floor type's
+# gis_restriction says which side of the ticket gates it is on and picks the station category
+# code, so writing one into the other would change the unit's category.
 CORE_PARAMETERS = {
     ("unit", "name"): ("name", INSTANCE),
     ("unit", "alt_name"): ("short_name", INSTANCE),
     ("unit", "category"): ("category", INSTANCE),
     ("unit", "direction"): ("gis_direction", INSTANCE),
-    ("unit", "restrict"): ("gis_restriction", TYPE),
     ("fixture", "name"): ("name", INSTANCE),
     ("fixture", "alt_name"): ("short_name", INSTANCE),
     ("level", "ordinal"): ("ordinal", INSTANCE),
 }
 
+# The floor type parameter that says which side of the ticket gates a unit is on.
+RESTRICTION_PARAMETER = "gis_restriction"
+
 
 class DriftRow(object):
     def __init__(self, revit_key, unique_id, layer, field, parameter, guid, binding, label,
-                 revit, gdb, base, conflict):
+                 revit, gdb, base, conflict, gdb_category=u"", gdb_restriction=u""):
         self.revit_key = revit_key
         self.unique_id = unique_id
         self.layer = layer
@@ -53,6 +58,12 @@ class DriftRow(object):
         self.gdb = gdb
         self.base = base
         self.conflict = conflict
+        # For a unit's category: the GDB's station code (walkway_sta, store) as the Revit
+        # category it comes from, and the floor type restriction it needs (rachi_nai, rachi_gai;
+        # empty when the code says nothing about one). Kanizu works these out from its station
+        # code table, so this tool keeps no copy of it.
+        self.gdb_category = gdb_category
+        self.gdb_restriction = gdb_restriction
 
     def describe(self):
         return u"%s %s %s" % (self.layer, self.label or self.unique_id, self.field)
@@ -123,7 +134,9 @@ def parse(text):
             revit=_value(entry.get("revit")),
             gdb=_value(entry.get("gdb")),
             base=_value(entry.get("base")),
-            conflict=bool(entry.get("conflict"))))
+            conflict=bool(entry.get("conflict")),
+            gdb_category=_text(entry.get("gdbCategory")),
+            gdb_restriction=_text(entry.get("gdbRestriction"))))
     return DriftFile(_text(data.get("model")), _text(data.get("appliedVersion")), rows)
 
 
@@ -156,6 +169,16 @@ def plan(drift_file, current, standard=None):
             continue
         parameter, binding = where
         new = row.gdb
+        if row.gdb_category:
+            new = row.gdb_category
+            if row.gdb_restriction:
+                restriction = current(row.unique_id, RESTRICTION_PARAMETER, TYPE)
+                if normalize(restriction or u"") != row.gdb_restriction:
+                    problems.append(u"%s: the GDB's %s needs a floor type with %s %s (this one has %s); "
+                                    u"change the floor type in Revit by hand."
+                                    % (row.describe(), row.gdb, RESTRICTION_PARAMETER,
+                                       row.gdb_restriction, restriction or u"none"))
+                    continue
         if standard is not None or parameter == "ordinal":
             value, problem = parameter_table.check_value(parameter, new, standard)
             if problem:

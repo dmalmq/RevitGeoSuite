@@ -164,10 +164,16 @@ public static class GisDrift
     public const string Instance = "instance";
     public const string Type = "type";
 
+    /// <summary>The floor type parameter that says which side of the ticket gates a unit is on.</summary>
+    public const string RestrictionParameter = "gis_restriction";
+
     /// <summary>
     /// The Revit parameter behind each core field, for rows whose field has no parameter of its own
     /// in the field list. Fields Revit works out (geometry, ids, the level, the detail and opening
-    /// categories) are not here: a GDB edit to them can only be made again in Revit by hand.
+    /// categories) are not here: a GDB edit to them can only be made again in Revit by hand. Nor is
+    /// unit restrict: the GDB holds IMDF restrictions there (employeesonly), while the floor type's
+    /// gis_restriction says which side of the ticket gates it is on and picks the station category
+    /// code, so writing one into the other would change the unit's category.
     /// </summary>
     public static IReadOnlyDictionary<(string Layer, string Field), (string Parameter, string Binding)> CoreParameters { get; } =
         new Dictionary<(string, string), (string, string)>
@@ -176,7 +182,6 @@ public static class GisDrift
             [("unit", "alt_name")] = ("short_name", Instance),
             [("unit", "category")] = ("category", Instance),
             [("unit", "direction")] = ("gis_direction", Instance),
-            [("unit", "restrict")] = ("gis_restriction", Type),
             [("fixture", "name")] = ("name", Instance),
             [("fixture", "alt_name")] = ("short_name", Instance),
             [("level", "ordinal")] = ("ordinal", Instance),
@@ -301,12 +306,11 @@ public static class GisDrift
                 gdb = row.GdbCategory;
                 if (row.GdbRestriction.Length > 0)
                 {
-                    string restrictionParameter = CoreParameters[("unit", "restrict")].Parameter;
-                    string restriction = GisToolStandard.Normalize(current(row.UniqueId, restrictionParameter, Type));
+                    string restriction = GisToolStandard.Normalize(current(row.UniqueId, RestrictionParameter, Type));
                     if (restriction != row.GdbRestriction)
                     {
                         problems.Add(
-                            $"{row.Describe()}: the GDB's {row.Gdb} needs a floor type with {restrictionParameter} {row.GdbRestriction} " +
+                            $"{row.Describe()}: the GDB's {row.Gdb} needs a floor type with {RestrictionParameter} {row.GdbRestriction} " +
                             $"(this one has {(restriction.Length > 0 ? restriction : "none")}); change the floor type in Revit by hand.");
                         continue;
                     }

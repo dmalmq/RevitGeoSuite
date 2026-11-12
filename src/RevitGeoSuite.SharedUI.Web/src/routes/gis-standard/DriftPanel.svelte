@@ -10,6 +10,7 @@
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Dialog, Table } from '$lib/kit'
   import { format } from '$lib/shell'
+  import { initiallyUnticked, isOtherModel, needsConfirm as confirmFirst } from '$lib/gisStandard/driftReview'
   import AppliedBanner from './AppliedBanner.svelte'
   import ProblemList from './ProblemList.svelte'
 
@@ -21,8 +22,8 @@
   let confirmOpen = $state(false)
 
   const ticked = $derived((drift?.changes ?? []).filter((_, index) => !unticked.has(index)))
-  const otherModel = $derived(!!drift && !!drift.modelKey && !!drift.fileModel && drift.modelKey !== drift.fileModel)
-  const needsConfirm = $derived(!!drift && (drift.source === 'picked' || otherModel))
+  const otherModel = $derived(!!drift && isOtherModel(drift))
+  const needsConfirm = $derived(!!drift && confirmFirst(drift))
 
   onMount(() => void inspect({ path: '', pick: false }))
 
@@ -33,7 +34,7 @@
       const response = await request('gisDrift.inspect', payload)
       if (response.cancelled) return
       drift = response
-      unticked = new Set(response.changes.flatMap((change, index) => (change.conflict ? [index] : [])))
+      unticked = initiallyUnticked(response)
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
     } finally {
@@ -70,6 +71,11 @@
     unticked = next
   }
 
+  const applyLabel = $derived(
+    otherModel
+      ? format($t('GisStandard.Drift.ApplyOther', 'Accept {0} change(s) from another model'), ticked.length)
+      : format($t('GisStandard.Drift.Apply', 'Accept {0} change(s)'), ticked.length)
+  )
   const empty = (value: string) => (value.length ? value : $t('GisStandard.Empty', '(empty)'))
   const none = $derived($t('GisStandard.Drift.NoModel', '(none)'))
 </script>
@@ -105,6 +111,9 @@
       {#if needsConfirm}
         <Banner tone="warning" title={otherModel ? $t('GisStandard.Drift.OtherModel', 'This drift file is for another model') : $t('GisStandard.Drift.Picked', 'This drift file was picked by hand')}>
           {format($t('GisStandard.Drift.Models', 'File: {0} · Open model: {1} ({2})'), drift.fileModel || none, drift.modelKey || none, drift.documentTitle)}
+          {#if otherModel}
+            <p class="mt-1">{$t('GisStandard.Drift.OtherModelHint', 'Rows match elements by their Revit unique id, which a copied model shares with its source. Every row starts unticked: tick only values you know belong to this model.')}</p>
+          {/if}
         </Banner>
       {/if}
       {#if drift.changes.length === 0}
@@ -150,7 +159,7 @@
       <Button icon="folder-open" onclick={() => inspect({ path: '', pick: true })} disabled={working !== null}>{$t('GisStandard.Drift.Pick', 'Pick a drift file…')}</Button>
       {#if drift && drift.changes.length > 0}
         <Button variant="primary" icon="check" onclick={start} disabled={working !== null || ticked.length === 0} busy={working === 'apply'}>
-          {format($t('GisStandard.Drift.Apply', 'Accept {0} change(s)'), ticked.length)}
+          {applyLabel}
         </Button>
       {/if}
     {/snippet}
@@ -173,6 +182,6 @@
   {/if}
   {#snippet footer()}
     <Button onclick={() => (confirmOpen = false)}>{$t('Common.Cancel', 'Cancel')}</Button>
-    <Button variant="primary" icon="check" onclick={apply}>{format($t('GisStandard.Drift.Apply', 'Accept {0} change(s)'), ticked.length)}</Button>
+    <Button variant="primary" icon="check" onclick={apply}>{applyLabel}</Button>
   {/snippet}
 </Dialog>

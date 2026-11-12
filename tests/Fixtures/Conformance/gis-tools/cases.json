@@ -141,7 +141,7 @@
         "rows": [
           { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "name", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "改札", "gdb": "北改札", "base": "改札", "conflict": false },
           { "revitKey": "abc|u-1|0", "layer": "unit", "field": "alt_name", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": null, "gdb": "北", "base": null, "conflict": false },
-          { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "restrict", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "", "gdb": "rachi_nai", "base": "", "conflict": false },
+          { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "restrict", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "", "gdb": "employeesonly", "base": "", "conflict": false },
           { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "shop_hours", "parameter": "kanizu_shop_hours", "guid": "", "binding": "type", "label": "改札", "revit": "", "gdb": "10-20", "base": "", "conflict": false },
           { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "name", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "改札", "gdb": "北改札", "base": "改札", "conflict": false },
           { "revitKey": "abc|u-2|0", "uniqueId": "u-2", "layer": "unit", "field": "direction", "parameter": "", "guid": "", "binding": "", "label": "階段", "revit": "down", "gdb": "上り", "base": "both", "conflict": true },
@@ -167,12 +167,11 @@
       "expected_changes": [
         ["u-1", "name", "instance", "改札", "北改札", false],
         ["u-1", "short_name", "instance", "", "北", false],
-        ["u-1", "gis_restriction", "type", "", "rachi_nai", false],
         ["u-1", "kanizu_shop_hours", "type", "", "10-20", false],
         ["u-2", "gis_direction", "instance", "down", "up", true],
         ["u-2", "category", "instance", "stairs", "Stairs", false]
       ],
-      "expected_problem_count": 4
+      "expected_problem_count": 5
     }
   ],
   "whole_number": [

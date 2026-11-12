@@ -383,11 +383,13 @@ function gisDrift() {
   let accepted = false
   const station = 'D:\\Stations\\Tokyo'
   const path = `${station}\\gis-drift\\8d7f3c1e-0000.gis-drift.json`
+  // The rows of tests/Fixtures/Conformance/gis-drift/8d7f3c1e-0000.gis-drift.json, which Kanizu wrote.
   const changes = [
-    { uniqueId: 'u-1', layer: 'unit', field: 'name', feature: '改札', parameter: 'name', binding: 'instance', oldValue: '改札', newValue: '北改札', conflict: false, label: 'unit 改札 name: name 改札 to 北改札' },
-    { uniqueId: 'u-2', layer: 'unit', field: 'category', feature: '店舗A', parameter: 'category', binding: 'instance', oldValue: 'retail', newValue: 'walkway', conflict: true, label: 'unit 店舗A category: category retail to walkway (also changed in Revit since the last apply)' },
-    { uniqueId: 'u-1', layer: 'unit', field: 'restrict', feature: '改札', parameter: 'gis_restriction', binding: 'type', oldValue: 'rachi_gai', newValue: 'rachi_nai', conflict: false, label: 'unit 改札 restrict: gis_restriction rachi_gai to rachi_nai (type parameter: every element of the type changes)' },
-    { uniqueId: 'lvl', layer: 'level', field: 'ordinal', feature: 'B1FL', parameter: 'ordinal', binding: 'instance', oldValue: '-1', newValue: '-2', conflict: false, label: 'level B1FL ordinal: ordinal -1 to -2' }
+    { uniqueId: 'u-1', layer: 'unit', field: 'name', feature: '北改札', parameter: 'name', binding: 'instance', oldValue: '改札', newValue: '北改札', conflict: false, label: 'unit 北改札 name: name 改札 to 北改札' },
+    { uniqueId: 'u-1', layer: 'unit', field: 'alt_name', feature: '北改札', parameter: 'short_name', binding: 'instance', oldValue: '', newValue: '北', conflict: false, label: 'unit 北改札 alt_name: short_name (empty) to 北' },
+    { uniqueId: 'u-1', layer: 'unit', field: 'shop_hours', feature: '北改札', parameter: 'kanizu_shop_hours', binding: 'type', oldValue: '9-21', newValue: '10-20', conflict: false, label: 'unit 北改札 shop_hours: kanizu_shop_hours 9-21 to 10-20 (type parameter: every element of the type changes)' },
+    { uniqueId: 'u-2', layer: 'unit', field: 'category', feature: '北改札', parameter: 'category', binding: 'instance', oldValue: 'retail', newValue: 'walkway', conflict: true, label: 'unit 北改札 category: category retail to walkway (also changed in Revit since the last apply)' },
+    { uniqueId: 'lvl', layer: 'level', field: 'ordinal', feature: '北改札', parameter: 'ordinal', binding: 'instance', oldValue: '1', newValue: '2', conflict: false, label: 'level 北改札 ordinal: ordinal 1 to 2' }
   ]
   const inspect = (payload: { path?: string; pick?: boolean }) => ({
     cancelled: false,
@@ -399,8 +401,11 @@ function gisDrift() {
     stationFolder: station,
     expectedPath: path,
     appliedVersion: 'revit/tokyo-8d7f3c1e/20261110T000000Z-aaaaaaaa',
-    changes: accepted ? [changes[1]] : changes,
-    problems: ['unit 改札 level_id: no Revit parameter holds this field; change it in Revit by hand (GDB: b).']
+    changes: accepted ? [changes[3]] : changes,
+    problems: [
+      'unit 北改札 restrict: no Revit parameter holds this field; change it in Revit by hand (GDB: private).',
+      'unit 北改札 level_id: no Revit parameter holds this field; change it in Revit by hand (GDB: b).'
+    ]
   })
   return {
     'gisDrift.inspect': inspect,

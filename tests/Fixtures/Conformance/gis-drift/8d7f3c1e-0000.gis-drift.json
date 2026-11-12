@@ -41,9 +41,9 @@
       "guid": "",
       "binding": "",
       "label": "北改札",
-      "revit": "rachi_gai",
-      "gdb": "rachi_nai",
-      "base": "rachi_gai",
+      "revit": "employeesonly",
+      "gdb": "private",
+      "base": "employeesonly",
       "conflict": false
     },
     {

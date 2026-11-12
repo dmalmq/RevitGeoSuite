@@ -42,7 +42,7 @@ fn main() {
         rows: vec![
             row("unit", "name", "", "", "u-1", Some("改札"), Some("北改札"), Some("改札"), false),
             row("unit", "alt_name", "", "", "u-1", None, Some("北"), None, false),
-            row("unit", "restrict", "", "", "u-1", Some("rachi_gai"), Some("rachi_nai"), Some("rachi_gai"), false),
+            row("unit", "restrict", "", "", "u-1", Some("employeesonly"), Some("private"), Some("employeesonly"), false),
             row("unit", "shop_hours", "kanizu_shop_hours", "type", "u-1", Some("9-21"), Some("10-20"), Some("9-21"), false),
             category_row("u-2", "retail", "walkway", "nonpublic", true),
             row("unit", "name", "", "", "u-3", Some("店舗"), None, Some("店舗"), false),
