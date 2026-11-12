@@ -31,4 +31,18 @@ public sealed class ImdfRestrictionNormalizerTests
         Assert.Null(ImdfRestrictionNormalizer.FloorTypeRestriction("  "));
         Assert.Null(ImdfRestrictionNormalizer.FloorTypeRestriction(null));
     }
+
+    [Theory]
+    [InlineData("ラチ内店舗", "rachi_nai")]
+    [InlineData("改札内コンコース", "rachi_nai")]
+    [InlineData("ラチ外店舗", "rachi_gai")]
+    public void FloorTypeRestriction_CarriesTheSideAFloorTypeNameGives(string typeName, string side)
+    {
+        // A legacy type with no gis_restriction gets its side of the gates from its name; the
+        // export exports that resolved side, so Kanizu can still pick store_sta or walkway_sta.
+        Assert.True(ZoneCatalog.CreateDefault().TryGetZoneInfo(typeName, out ZoneInfo info));
+
+        Assert.Equal(side, ImdfRestrictionNormalizer.FloorTypeRestriction(info.Restriction));
+        Assert.Null(ImdfRestrictionNormalizer.NormalizeUnitRestriction(info.Restriction));
+    }
 }

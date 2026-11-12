@@ -6,9 +6,9 @@ namespace RevitGeoSuite.FloorPlanExport.Core.Models;
 public static class ImdfRestrictionNormalizer
 {
     /// <summary>
-    /// The unit attribute that carries the floor type's restriction as Revit holds it
-    /// (<c>rachi_nai</c> inside the ticket gates, <c>rachi_gai</c> outside), which <c>restrict</c>
-    /// leaves out. Kanizu reads it to pick the station's category code (<c>walkway_sta</c>,
+    /// The unit attribute that carries the unit's side of the ticket gates as the export resolves it
+    /// (<c>rachi_nai</c> inside, <c>rachi_gai</c> outside), which <c>restrict</c> leaves out: the
+    /// type's <c>gis_restriction</c>, or for a type without one the side its name gives. Kanizu reads it to pick the station's category code (<c>walkway_sta</c>,
     /// <c>store</c>) and does not write it to the GDB.
     /// </summary>
     public const string FloorTypeAttributeName = "gis_restriction";
