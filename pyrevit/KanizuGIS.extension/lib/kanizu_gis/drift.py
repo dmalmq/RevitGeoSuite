@@ -173,7 +173,7 @@ def plan(drift_file, current, standard=None):
             new = row.gdb_category
             if row.gdb_restriction:
                 restriction = current(row.unique_id, RESTRICTION_PARAMETER, TYPE)
-                if normalize(restriction or u"") != row.gdb_restriction:
+                if side_of_gates(restriction) != row.gdb_restriction:
                     problems.append(u"%s: the GDB's %s needs a floor type with %s %s (this one has %s); "
                                     u"change the floor type in Revit by hand."
                                     % (row.describe(), row.gdb, RESTRICTION_PARAMETER,
@@ -197,6 +197,14 @@ def plan(drift_file, current, standard=None):
         seen.add(key)
         changes.append(Change(row, parameter, binding, old, new))
     return changes, problems
+
+
+def side_of_gates(restriction):
+    """rachi_nai or rachi_gai however the type spells it (RACHI_GAI, rachinai, rachi-nai), as the
+    export writes it; any other restriction stripped."""
+    text = normalize(restriction or u"")
+    compact = u"".join(c for c in text if c not in u"_-" and not c.isspace()).lower()
+    return {u"rachinai": u"rachi_nai", u"rachigai": u"rachi_gai"}.get(compact, text)
 
 
 def _same(parameter, old, new):

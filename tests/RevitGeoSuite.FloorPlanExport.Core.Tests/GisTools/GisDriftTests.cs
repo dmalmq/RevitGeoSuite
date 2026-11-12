@@ -112,12 +112,17 @@ public sealed class GisDriftTests
             [("u-2", "gis_restriction", "type")] = "",
             [("u-3", "category", "instance")] = "walkway",
             [("u-3", "gis_restriction", "type")] = "rachi_gai",
+            [("u-4", "category", "instance")] = "room",
+            [("u-4", "gis_restriction", "type")] = "RACHI-NAI",
         });
+        JObject spelled = Entry("category", "walkway_sta", revit: "walkway", uniqueId: "u-4");
+        spelled["gdbCategory"] = "walkway";
+        spelled["gdbRestriction"] = "rachi_nai";
 
-        var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(new[] { inside, store, wrongSide })), model, Standard);
+        var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(new[] { inside, store, wrongSide, spelled })), model, Standard);
 
         Assert.Equal(
-            new[] { ("u-1", "category", "walkway"), ("u-2", "category", "retail") },
+            new[] { ("u-1", "category", "walkway"), ("u-2", "category", "retail"), ("u-4", "category", "walkway") },
             changes.Select(change => (change.UniqueId, change.Parameter, change.NewValue)));
         string problem = Assert.Single(problems);
         Assert.Contains("rachi_nai", problem);
