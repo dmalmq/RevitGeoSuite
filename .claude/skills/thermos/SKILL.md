@@ -20,8 +20,8 @@ Run the two thermo review passes as async background subagents in parallel, then
 1. Determine the review scope from the user request, PR, current branch, or relevant changed files.
 2. Gather the diff and any file/context excerpts needed for reviewers to evaluate the change without guessing.
 3. Launch both subagents in the same message with `run_in_background: true`:
-   - `subagent_type: "pstack:thermo-nuclear-review-subagent"` for bugs, breakages, security, devex regressions, feature-flag leaks, and other branch-audit risks.
-   - `subagent_type: "pstack:thermo-nuclear-code-quality-review-subagent"` for maintainability, structure, file-size growth, spaghetti, abstractions, and codebase-health risks.
+   - `subagent_type: "thermo-nuclear-review-subagent"` for bugs, breakages, security, devex regressions, feature-flag leaks, and other branch-audit risks.
+   - `subagent_type: "thermo-nuclear-code-quality-review-subagent"` for maintainability, structure, file-size growth, spaghetti, abstractions, and codebase-health risks.
 
    Set `model` on both to the `thermos reviewers` line in `pstack-models.md`, or to the default in [Models](#models) if the sheet or that line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the `Agent` tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message. Pick each subagent's reasoning level for the job, per the Subagents section of the **poteto-mode** skill.
 4. Pass each subagent the same scoped diff/file context and ask it to return prioritized findings with file references and evidence.
