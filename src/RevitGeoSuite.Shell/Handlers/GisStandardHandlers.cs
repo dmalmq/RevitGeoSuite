@@ -92,7 +92,14 @@ public sealed class GisSelectElementsHandler : IRpcHandler
             uiDocument.Selection.SetElementIds(ids);
             if (ids.Count > 0)
             {
-                uiDocument.ShowElements(ids);
+                try
+                {
+                    uiDocument.ShowElements(ids);
+                }
+                catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                {
+                    // No open view can show them; they stay selected.
+                }
             }
 
             return (object?)new GisSelectElementsResponse { Selected = ids.Count };
