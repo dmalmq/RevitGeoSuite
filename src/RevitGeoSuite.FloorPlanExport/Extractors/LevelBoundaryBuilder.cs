@@ -6,6 +6,7 @@ using NetTopologySuite.Operation.Union;
 using NetTopologySuite.Precision;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 
 namespace RevitGeoSuite.FloorPlanExport.Extractors;
@@ -139,6 +140,12 @@ public sealed class LevelBoundaryBuilder
         return repaired.Buffer(0d);
     }
 
+    private static string? ReadShortName(Level level)
+    {
+        string? value = level.LookupParameter(GisSharedParameters.ShortName)?.AsString();
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
+    }
+
     private static Dictionary<string, object?> BuildAttributes(
         Level level,
         string levelId,
@@ -155,6 +162,7 @@ public sealed class LevelBoundaryBuilder
             ["id"] = levelId,
             [RevitKey.AttributeName] = RevitKey.Create(RevitModelKeyResolver.Resolve(level.Document), level.UniqueId),
             ["level_name"] = level.Name,
+            [GisSharedParameters.ShortName] = ReadShortName(level),
             ["ordinal"] = ordinal,
             ["elevation_m"] = level.Elevation * FeetToMeters,
             ["source_document_key"] = sourceDocumentKey,

@@ -24,8 +24,11 @@ INSTANCE = "instance"
 TYPE = "type"
 
 # The Revit parameter behind each core field, for rows whose field has no parameter of its own
-# in the field list. Fields Revit works out (geometry, ids, the level, the detail and opening
-# categories) are not here: a GDB edit to them can only be made again in Revit by hand. Nor is
+# in the field list. Fields Revit works out (geometry, ids, the level, the detail, opening and
+# fixture categories, the level's name) are not here: a GDB edit to them can only be made again
+# in Revit by hand. Kanizu reads a fixture's type as the GDB's category and a level's level_name
+# as its name, so rows name those fields as the GDB does. A fixture's category only says it is a
+# fixture (a ticket gate), so writing a GDB category into it would make the gate a unit. Nor is
 # unit restrict: the GDB holds IMDF restrictions there (employeesonly), while the floor type's
 # gis_restriction says which side of the ticket gates it is on and picks the station category
 # code, so writing one into the other would change the unit's category.
@@ -36,6 +39,7 @@ CORE_PARAMETERS = {
     ("unit", "direction"): ("gis_direction", INSTANCE),
     ("fixture", "name"): ("name", INSTANCE),
     ("fixture", "alt_name"): ("short_name", INSTANCE),
+    ("level", "short_name"): ("short_name", INSTANCE),
     ("level", "ordinal"): ("ordinal", INSTANCE),
 }
 
