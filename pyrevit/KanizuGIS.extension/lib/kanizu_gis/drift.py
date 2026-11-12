@@ -25,17 +25,22 @@ TYPE = "type"
 
 # The Revit parameter behind each core field, for rows whose field has no parameter of its own
 # in the field list. Fields Revit works out (geometry, ids, the level, the detail and opening
-# categories) are not here: a GDB edit to them can only be made again in Revit by hand.
+# categories) are not here: a GDB edit to them can only be made again in Revit by hand. Nor is
+# unit restrict: the GDB holds IMDF restrictions there (employeesonly), while the floor type's
+# gis_restriction says which side of the ticket gates it is on and picks the station category
+# code, so writing one into the other would change the unit's category.
 CORE_PARAMETERS = {
     ("unit", "name"): ("name", INSTANCE),
     ("unit", "alt_name"): ("short_name", INSTANCE),
     ("unit", "category"): ("category", INSTANCE),
     ("unit", "direction"): ("gis_direction", INSTANCE),
-    ("unit", "restrict"): ("gis_restriction", TYPE),
     ("fixture", "name"): ("name", INSTANCE),
     ("fixture", "alt_name"): ("short_name", INSTANCE),
     ("level", "ordinal"): ("ordinal", INSTANCE),
 }
+
+# The floor type parameter that says which side of the ticket gates a unit is on.
+RESTRICTION_PARAMETER = "gis_restriction"
 
 
 class DriftRow(object):
@@ -167,11 +172,11 @@ def plan(drift_file, current, standard=None):
         if row.gdb_category:
             new = row.gdb_category
             if row.gdb_restriction:
-                restriction = current(row.unique_id, CORE_PARAMETERS[("unit", "restrict")][0], TYPE)
+                restriction = current(row.unique_id, RESTRICTION_PARAMETER, TYPE)
                 if normalize(restriction or u"") != row.gdb_restriction:
                     problems.append(u"%s: the GDB's %s needs a floor type with %s %s (this one has %s); "
                                     u"change the floor type in Revit by hand."
-                                    % (row.describe(), row.gdb, CORE_PARAMETERS[("unit", "restrict")][0],
+                                    % (row.describe(), row.gdb, RESTRICTION_PARAMETER,
                                        row.gdb_restriction, restriction or u"none"))
                     continue
         if standard is not None or parameter == "ordinal":

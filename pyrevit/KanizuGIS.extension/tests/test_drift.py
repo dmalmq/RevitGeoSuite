@@ -79,7 +79,7 @@ class PlanTests(unittest.TestCase):
         rows = [
             entry("name", u"北改札", revit=u"改札"),
             entry("alt_name", u"北", revit=u""),
-            entry("restrict", u"rachi_nai", revit=u""),
+            entry("restrict", u"employeesonly", revit=u""),
             entry("shop_hours", u"10-20", parameter=u"kanizu_shop_hours", binding=u"type"),
             entry("ordinal", u"2", layer="level", revit=u"1", unique_id=u"lvl"),
         ]
@@ -93,11 +93,13 @@ class PlanTests(unittest.TestCase):
 
         changes, problems = drift.plan(drift.parse(text(rows)), model, self.standard)
 
-        self.assertEqual(problems, [])
+        # restrict holds IMDF restrictions in the GDB; gis_restriction is the side of the gates.
+        self.assertEqual(len(problems), 1)
+        self.assertIn(u"restrict", problems[0])
+        self.assertIn(u"by hand", problems[0])
         self.assertEqual([(c.parameter, c.binding, c.new) for c in changes], [
             ("name", "instance", u"北改札"),
             ("short_name", "instance", u"北"),
-            ("gis_restriction", "type", u"rachi_nai"),
             (u"kanizu_shop_hours", "type", u"10-20"),
             ("ordinal", "instance", u"2"),
         ])
