@@ -10,6 +10,7 @@ import type {
   GeoreferenceGridCandidatesResponse,
   GeoreferenceHasUndoResponse,
   GisExportOptionsResponse,
+  GisStandardInspectResponse,
   MeshOverlayResponse,
   PreviewInitialStateResponse,
   PreviewViewPayload,
@@ -288,9 +289,70 @@ const cesiumState: CesiumExportStateResponse = {
 
 const undo: GeoreferenceHasUndoResponse = { hasSnapshot: false, summary: '' }
 
+// The GIS standard page: a model with two floor types that need a category, one the matcher
+// cannot place, and an escalator family without gis_kind. Applying a step clears what it fixes.
+function gisStandard(scenario: MockScenario) {
+  let setUp = scenario === 'existing'
+  let fixed = false
+  const inspect = (): GisStandardInspectResponse => ({
+    documentTitle: 'TokyoStation_Concourse.rvt',
+    standardVersion: 1,
+    modelVersion: setUp ? '1' : '',
+    exportSummary: setUp ? 'On the current Kanizu GIS standard (version 1).' : 'Not set up with the Kanizu GIS standard.',
+    exportBlockers: [],
+    findings: [
+      ...(setUp ? [] : [{ severity: 'warning', topic: 'standard', message: 'The model has not been set up with the Kanizu GIS standard. Run Set up model.', elementIds: [] }]),
+      ...(fixed
+        ? []
+        : [
+            { severity: 'warning', topic: 'floor types', message: 'Floor type 1F ラチ内 床 (14 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [301, 302, 303] },
+            { severity: 'warning', topic: 'floor types', message: 'Floor type j 店舗_床 (old) (6 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [311, 312] }
+          ]),
+      { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
+      { severity: 'warning', topic: 'levels', message: 'Level B1FL has no short_name, so the export guesses it from the level name.', elementIds: [11] },
+      { severity: 'warning', topic: 'families', message: 'ESC_1200 : S800 looks like a escalator but has no gis_kind, so it is found only by its family name, if at all.', elementIds: [401, 402] },
+      { severity: 'info', topic: 'parameters', message: 'Parameter name uses its own GUID 1f0c9e2a-0000-4000-8000-000000000001, not the standard\'s 47b8db20-e756-4280-a842-f570dc847db5. It exports, but other models cannot share schedules or families with it.', elementIds: [] }
+    ],
+    setupLines: setUp
+      ? []
+      : [
+          'Bind gis_category (type) to Floors',
+          'Bind gis_restriction (type) to Floors',
+          'Bind gis_standard_version to Project Information',
+          'Create material GIS_ラチ内コンコース #F2E6C9',
+          'Create material GIS_店舗 #F7C6A3',
+          'Create floor type j ラチ内コンコース_床 (walkway, rachi_nai, GIS_ラチ内コンコース)',
+          'Create floor type j 店舗_床 (retail, GIS_店舗)',
+          'Set gis_standard_version 1'
+        ],
+    proposals:
+      !setUp || fixed
+        ? []
+        : [
+            { floorTypeId: 201, floorTypeName: '1F ラチ内 床', floorCount: 14, standardTypeName: 'j ラチ内コンコース_床', gisCategory: 'walkway', gisRestriction: 'rachi_nai', material: 'GIS_ラチ内コンコース', reason: 'words' },
+            { floorTypeId: 202, floorTypeName: 'j 店舗_床 (old)', floorCount: 6, standardTypeName: 'j 店舗_床', gisCategory: 'retail', gisRestriction: '', material: 'GIS_店舗', reason: 'name' }
+          ],
+    unmatched: [{ floorTypeId: 203, name: '機械室', floorIds: [321, 322] }],
+    fixBlocker: setUp ? '' : 'gis_category is not bound yet. Run Set up model first.'
+  })
+  return {
+    'gisStandard.inspect': inspect,
+    'gisStandard.setup': () => {
+      setUp = true
+      return { log: ['Bound gis_category', 'Bound gis_restriction', 'Material GIS_店舗 #F7C6A3', 'Created floor type j 店舗_床 from j 床', 'gis_standard_version = 1'] }
+    },
+    'gisStandard.fixFloorTypes': (payload: { floorTypeIds?: number[] }) => {
+      fixed = true
+      return { log: (payload?.floorTypeIds ?? []).map((id) => `Floor type ${id}: gis_category set`) }
+    },
+    'gisStandard.select': (payload: { elementIds?: number[] }) => ({ selected: payload?.elementIds?.length ?? 0 })
+  }
+}
+
 /** Request/response fixtures. A function gets the request payload. */
 export function responses(scenario: MockScenario): Record<string, unknown | ((payload: any) => unknown)> {
   return {
+    ...gisStandard(scenario),
     'georeference.getCurrentState': currentState(scenario),
     'georeference.getAvailableCrs': {
       groups: [{ region: 'Japan', entries: [{ epsgCode: 6677, name: 'JGD2011 / Japan Plane Rectangular CS IX', areaSummary: 'Tokyo' }] }]

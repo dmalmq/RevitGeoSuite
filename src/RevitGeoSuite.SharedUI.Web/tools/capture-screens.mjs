@@ -15,7 +15,7 @@ import { createServer } from 'vite'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const ROUTES = ['/georeference', '/import', '/export', '/export/geopackage', '/kit']
+const ROUTES = ['/georeference', '/gis-standard', '/import', '/export', '/export/geopackage', '/kit']
 const PRIMARY = 'button.bg-teal-600:visible:enabled, button.bg-primary:visible:enabled, button.btn-primary:visible:enabled'
 const CLICKABLE = 'main button:visible, aside button:visible, [class*="flex-1"] button:visible'
 

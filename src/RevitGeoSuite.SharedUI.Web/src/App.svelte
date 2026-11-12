@@ -16,6 +16,7 @@
   import ImportRoute from './routes/import/ImportRoute.svelte'
   import ExportRoute from './routes/export/ExportRoute.svelte'
   import FloorPlanExportRoute from './routes/export/FloorPlanExportRoute.svelte'
+  import GisStandardRoute from './routes/gis-standard/GisStandardRoute.svelte'
 
   // The route is driven entirely by the URL hash (e.g. index.html#/import). The shell window sets
   // the initial hash via WebShellOptions.InitialRoute; the rail changes it for in-place navigation.
@@ -73,6 +74,8 @@
     switch (route) {
       case '/georeference':
         return GeoreferenceRoute
+      case '/gis-standard':
+        return GisStandardRoute
       case '/import':
         return ImportRoute
       case '/export':
