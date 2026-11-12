@@ -995,8 +995,24 @@ public sealed class UnitExtractor
             return null;
         }
 
-        string exportId = _metadataProvider.GetLevelMetadata(exportedLevel, warnings).ExportId;
-        return string.IsNullOrWhiteSpace(exportId) ? null : exportId;
+        // Read only. A level gets its id in the export's id transaction, which covers the levels
+        // of the exported views; this runs after it, with no transaction open, so asking for the
+        // id to be created here made Revit refuse the write and failed the whole export. A level
+        // without an id is not in this export, so the far end has no level to name.
+        string? exportId = _metadataProvider.GetReferencedLevelId(exportedLevel, warnings);
+        if (string.IsNullOrWhiteSpace(exportId))
+        {
+            string message =
+                $"Level '{exportedLevel.Name}' is not in this export, so stairs and escalators that end on it have an empty to_level.";
+            if (!warnings.Contains(message))
+            {
+                warnings.Add(message);
+            }
+
+            return null;
+        }
+
+        return exportId!.Trim();
     }
 
     private const double FeetToMetersForLevels = 0.3048d;
