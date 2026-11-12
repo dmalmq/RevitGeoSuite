@@ -94,6 +94,48 @@ public sealed class GisDriftTests
     }
 
     [Fact]
+    public void ReadsAFileWrittenByKanizu()
+    {
+        // Written by Kanizu's DriftFile::save; see tests/Fixtures/Conformance/gis-drift/README.md.
+        string path = Path.Combine(Path.GetDirectoryName(SourceFile())!, "..", "..", "Fixtures", "Conformance", "gis-drift", "8d7f3c1e-0000.gis-drift.json");
+        GisDriftFile file = GisDrift.Read(path);
+        Assert.Equal("8d7f3c1e-0000", file.Model);
+        Assert.Equal("revit/lumine-8d7f3c1e/20261110T000000Z-aaaaaaaa", file.AppliedVersion);
+        Assert.Equal(GisDrift.FileName(file.Model), Path.GetFileName(path));
+        Assert.Equal(8, file.Rows.Count);
+        Assert.Equal("", file.Rows[1].Revit);
+        Assert.Equal("", file.Rows[5].Gdb);
+        var model = Model(new Dictionary<(string, string, string), string>
+        {
+            [("u-1", "name", "instance")] = "改札",
+            [("u-1", "short_name", "instance")] = "",
+            [("u-1", "gis_restriction", "type")] = "rachi_gai",
+            [("u-1", "kanizu_shop_hours", "type")] = "9-21",
+            [("u-2", "category", "instance")] = "retail",
+            [("u-3", "name", "instance")] = "店舗",
+            [("lvl", "ordinal", "instance")] = "1",
+        });
+
+        var (changes, problems) = GisDrift.Plan(file, model, Standard);
+
+        Assert.Equal(
+            new[]
+            {
+                "u-1 name 改札>北改札 -",
+                "u-1 short_name >北 -",
+                "u-1 gis_restriction rachi_gai>rachi_nai -",
+                "u-1 kanizu_shop_hours 9-21>10-20 -",
+                "u-2 category retail>walkway conflict",
+                "u-3 name 店舗> -",
+                "lvl ordinal 1>2 -",
+            },
+            changes.Select(change => $"{change.UniqueId} {change.Parameter} {change.OldValue}>{change.NewValue} {(change.Conflict ? "conflict" : "-")}"));
+        Assert.Contains("by hand", Assert.Single(problems));
+    }
+
+    private static string SourceFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
+
+    [Fact]
     public void FileNameMatchesKanizus()
     {
         Assert.Equal("0f3a-B2.gis-drift.json", GisDrift.FileName("0f3a-B2"));
