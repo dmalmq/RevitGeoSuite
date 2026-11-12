@@ -119,6 +119,7 @@ class PlanTests(unittest.TestCase):
             entry("restrict", u"employeesonly", revit=u""),
             entry("shop_hours", u"10-20", parameter=u"kanizu_shop_hours", binding=u"type"),
             entry("ordinal", u"2", layer="level", revit=u"1", unique_id=u"lvl"),
+            entry("short_name", u"B1", layer="level", revit=u"", unique_id=u"lvl"),
         ]
         model = Model({
             (u"u-1", "name", "instance"): u"改札",
@@ -126,6 +127,7 @@ class PlanTests(unittest.TestCase):
             (u"u-1", "gis_restriction", "type"): u"",
             (u"u-1", "kanizu_shop_hours", "type"): u"",
             (u"lvl", "ordinal", "instance"): u"1",
+            (u"lvl", "short_name", "instance"): u"",
         })
 
         changes, problems = drift.plan(drift.parse(text(rows)), model, self.standard)
@@ -139,6 +141,7 @@ class PlanTests(unittest.TestCase):
             ("short_name", "instance", u"北"),
             (u"kanizu_shop_hours", "type", u"10-20"),
             ("ordinal", "instance", u"2"),
+            ("short_name", "instance", u"B1"),
         ])
         self.assertIn(u"every element of the type", changes[2].label())
 
@@ -157,17 +160,24 @@ class PlanTests(unittest.TestCase):
             entry("ordinal", u"two", layer="level", unique_id=u"lvl"),
             entry("name", u"北", unique_id=u"gone"),
             entry("direction", u"上り", revit=u"down"),
+            entry("category", u"checkin.desk", layer="fixture", revit=u"checkin.kiosk"),
+            entry("name", u"B1ラチ外", layer="level", revit=u"B1FL", unique_id=u"lvl"),
         ]
         model = Model({(u"u-1", "gis_direction", "instance"): u"down", (u"lvl", "ordinal", "instance"): u"1"})
 
         changes, problems = drift.plan(drift.parse(text(rows)), model, self.standard)
 
         self.assertEqual([(c.parameter, c.new) for c in changes], [("gis_direction", "up")])
-        self.assertEqual(len(problems), 4)
+        self.assertEqual(len(problems), 6)
         self.assertIn(u"by hand", problems[0])
         self.assertIn(u"not-a-category", problems[1])
         self.assertIn(u"whole number", problems[2])
         self.assertIn(u"not in this model", problems[3])
+        # A fixture's category only marks it a fixture, and a level's name is the Revit level's.
+        self.assertIn(u"fixture", problems[4])
+        self.assertIn(u"by hand", problems[4])
+        self.assertIn(u"level", problems[5])
+        self.assertIn(u"by hand", problems[5])
 
     def test_a_station_category_code_is_written_as_its_revit_category_and_its_side_of_the_gates(self):
         inside = entry("category", u"walkway_sta", revit=u"walkway")

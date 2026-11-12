@@ -506,6 +506,18 @@
     },
     {
       "layer": "level",
+      "name": "short_name",
+      "aliasJa": "略称",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "Short name of the level, from its short_name parameter."
+    },
+    {
+      "layer": "level",
       "name": "ordinal",
       "aliasJa": "階数",
       "type": "integer",

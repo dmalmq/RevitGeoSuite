@@ -3,6 +3,7 @@ using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.GeoPackage;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.Export;
 
@@ -103,6 +104,7 @@ public static class LayerDefinition
                 new AttributeDefinition("id", ExportAttributeType.Text),
                 new AttributeDefinition(RevitKey.AttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("level_name", ExportAttributeType.Text),
+                new AttributeDefinition(GisSharedParameters.ShortName, ExportAttributeType.Text),
                 new AttributeDefinition("ordinal", ExportAttributeType.Integer),
                 new AttributeDefinition("elevation_m", ExportAttributeType.Real),
             },
