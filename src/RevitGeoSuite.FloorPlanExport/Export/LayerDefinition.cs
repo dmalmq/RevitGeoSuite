@@ -20,6 +20,7 @@ public static class LayerDefinition
                 new AttributeDefinition(RevitKey.AttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("category", ExportAttributeType.Text),
                 new AttributeDefinition("restrict", ExportAttributeType.Text),
+                new AttributeDefinition(ImdfRestrictionNormalizer.FloorTypeAttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("name", ExportAttributeType.Text),
                 new AttributeDefinition("alt_name", ExportAttributeType.Text),
                 new AttributeDefinition("level_id", ExportAttributeType.Text),

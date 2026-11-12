@@ -7,6 +7,8 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
+using RevitGeoSuite.FloorPlanExport.Core.Models;
+
 namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
 /// <summary>One Revit-owned field someone changed in the GDB, as Kanizu records it.</summary>
@@ -24,7 +26,9 @@ public sealed class GisDriftRow
         string revit,
         string gdb,
         string @base,
-        bool conflict)
+        bool conflict,
+        string gdbCategory = "",
+        string gdbRestriction = "")
     {
         RevitKey = revitKey;
         UniqueId = uniqueId;
@@ -38,6 +42,8 @@ public sealed class GisDriftRow
         Gdb = gdb;
         Base = @base;
         Conflict = conflict;
+        GdbCategory = gdbCategory ?? string.Empty;
+        GdbRestriction = gdbRestriction ?? string.Empty;
     }
 
     public string RevitKey { get; }
@@ -70,6 +76,15 @@ public sealed class GisDriftRow
 
     /// <summary>True when Revit changed the field too since the last apply.</summary>
     public bool Conflict { get; }
+
+    /// <summary>
+    /// For a unit's category: the GDB's station code (walkway_sta, store) as the Revit category it
+    /// comes from. Kanizu works it out from its station code table, so this tool keeps no copy.
+    /// </summary>
+    public string GdbCategory { get; }
+
+    /// <summary>With <see cref="GdbCategory"/>: the floor type restriction the code needs (rachi_nai, rachi_gai), or empty.</summary>
+    public string GdbRestriction { get; }
 
     public string Describe() => $"{Layer} {(Label.Length > 0 ? Label : UniqueId)} {Field}";
 }
@@ -151,10 +166,16 @@ public static class GisDrift
     public const string Instance = "instance";
     public const string Type = "type";
 
+    /// <summary>The floor type parameter that says which side of the ticket gates a unit is on.</summary>
+    public const string RestrictionParameter = "gis_restriction";
+
     /// <summary>
     /// The Revit parameter behind each core field, for rows whose field has no parameter of its own
     /// in the field list. Fields Revit works out (geometry, ids, the level, the detail and opening
-    /// categories) are not here: a GDB edit to them can only be made again in Revit by hand.
+    /// categories) are not here: a GDB edit to them can only be made again in Revit by hand. Nor is
+    /// unit restrict: the GDB holds IMDF restrictions there (employeesonly), while the floor type's
+    /// gis_restriction says which side of the ticket gates it is on and picks the station category
+    /// code, so writing one into the other would change the unit's category.
     /// </summary>
     public static IReadOnlyDictionary<(string Layer, string Field), (string Parameter, string Binding)> CoreParameters { get; } =
         new Dictionary<(string, string), (string, string)>
@@ -163,7 +184,6 @@ public static class GisDrift
             [("unit", "alt_name")] = ("short_name", Instance),
             [("unit", "category")] = ("category", Instance),
             [("unit", "direction")] = ("gis_direction", Instance),
-            [("unit", "restrict")] = ("gis_restriction", Type),
             [("fixture", "name")] = ("name", Instance),
             [("fixture", "alt_name")] = ("short_name", Instance),
             [("level", "ordinal")] = ("ordinal", Instance),
@@ -231,7 +251,9 @@ public static class GisDrift
                     Text(entry["revit"]),
                     Text(entry["gdb"]),
                     Text(entry["base"]),
-                    Truthy(entry["conflict"])));
+                    Truthy(entry["conflict"]),
+                    Text(entry["gdbCategory"]),
+                    Text(entry["gdbRestriction"])));
             }
         }
 
@@ -280,7 +302,25 @@ public static class GisDrift
             }
 
             (string parameter, string binding) = target.Value;
-            (string? value, string? problem) = ParameterTable.CheckValue(parameter, row.Gdb, standard);
+            string gdb = row.Gdb;
+            if (row.GdbCategory.Length > 0)
+            {
+                gdb = row.GdbCategory;
+                if (row.GdbRestriction.Length > 0)
+                {
+                    // Spelled as the export spells it, so RACHI_GAI agrees with rachi_gai.
+                    string restriction = ImdfRestrictionNormalizer.FloorTypeRestriction(current(row.UniqueId, RestrictionParameter, Type)) ?? string.Empty;
+                    if (restriction != row.GdbRestriction)
+                    {
+                        problems.Add(
+                            $"{row.Describe()}: the GDB's {row.Gdb} needs a floor type with {RestrictionParameter} {row.GdbRestriction} " +
+                            $"(this one has {(restriction.Length > 0 ? restriction : "none")}); change the floor type in Revit by hand.");
+                        continue;
+                    }
+                }
+            }
+
+            (string? value, string? problem) = ParameterTable.CheckValue(parameter, gdb, standard);
             if (problem != null)
             {
                 problems.Add($"{row.Describe()}: {problem}");
