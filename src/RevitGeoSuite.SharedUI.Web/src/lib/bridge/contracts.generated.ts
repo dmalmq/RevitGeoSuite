@@ -421,6 +421,13 @@ export interface GeoreferenceRevertResponse {
   summary: string
 }
 
+export interface GisAuditFindingItem {
+  elementIds: number[]
+  message: string
+  severity: string
+  topic: string
+}
+
 export interface GisExportCategoryColor {
   category: string
   color: string
@@ -449,9 +456,58 @@ export interface GisExportRequest {
   paths: string[]
 }
 
+export interface GisFixFloorTypesRequest {
+  floorTypeIds: number[]
+}
+
+export interface GisFloorTypeProposalItem {
+  floorCount: number
+  floorTypeId: number
+  floorTypeName: string
+  gisCategory: string
+  gisRestriction: string
+  material: string
+  reason: string
+  standardTypeName: string
+}
+
 export interface GisLevelOption {
   elevationFeet: number
   id: number
+  name: string
+}
+
+export interface GisSelectElementsRequest {
+  elementIds: number[]
+}
+
+export interface GisSelectElementsResponse {
+  selected: number
+}
+
+export interface GisStandardApplyResponse {
+  log: string[]
+}
+
+export interface GisStandardEmptyRequest {
+}
+
+export interface GisStandardInspectResponse {
+  documentTitle: string
+  exportBlockers: string[]
+  exportSummary: string
+  findings: GisAuditFindingItem[]
+  fixBlocker: string
+  modelVersion: string
+  proposals: GisFloorTypeProposalItem[]
+  setupLines: string[]
+  standardVersion: number
+  unmatched: GisUnmatchedFloorTypeItem[]
+}
+
+export interface GisUnmatchedFloorTypeItem {
+  floorIds: number[]
+  floorTypeId: number
   name: string
 }
 
@@ -1110,6 +1166,10 @@ export interface RpcMethods {
   'georeference.revert': { request: GeoreferenceRevertRequest; response: GeoreferenceRevertResponse }
   'gis.export': { request: GisExportRequest; response: JobStarted }
   'gis.exportOptions': { request: GisExportOptionsRequest; response: GisExportOptionsResponse }
+  'gisStandard.fixFloorTypes': { request: GisFixFloorTypesRequest; response: GisStandardApplyResponse }
+  'gisStandard.inspect': { request: GisStandardEmptyRequest; response: GisStandardInspectResponse }
+  'gisStandard.select': { request: GisSelectElementsRequest; response: GisSelectElementsResponse }
+  'gisStandard.setup': { request: GisStandardEmptyRequest; response: GisStandardApplyResponse }
   'job.cancel': { request: JobCancelRequest; response: JobCancelResponse }
   'localization.getAll': { request: LocalizationGetAllRequest; response: LocalizationStrings }
   'localization.setLanguage': { request: LocalizationSetLanguageRequest; response: LocalizationSetLanguageResponse }
