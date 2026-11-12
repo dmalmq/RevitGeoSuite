@@ -1,6 +1,6 @@
 # Kanizu drift file fixture
 
-`8d7f3c1e-0000.gis-drift.json` was written by Kanizu's own writer, `kanizu_core::revit::gis::DriftFile::save`, at Kanizu `dev` eaa9da6 (2026-11-12). It is not hand-made, so it shows exactly what RevitGeoSuite's Review GDB edits has to read: integer `version`, `null` for a missing `revit`/`gdb`/`base`, and `notPlaced`.
+`8d7f3c1e-0000.gis-drift.json` was written by Kanizu's own writer, `kanizu_core::revit::gis::DriftFile::save`, at Kanizu a55c7b6f (branch claude/project-thread-29jvoc, 2026-11-12), the commit that adds `gdbCategory` and `gdbRestriction`. It is not hand-made, so it shows exactly what RevitGeoSuite's Review GDB edits has to read: integer `version`, `null` for a missing `revit`/`gdb`/`base`, and `notPlaced`.
 
 To regenerate after the format changes, copy `write_drift_fixture.rs.txt` to `crates/kanizu-core/examples/write_drift_fixture.rs` in a Kanizu checkout and run:
 

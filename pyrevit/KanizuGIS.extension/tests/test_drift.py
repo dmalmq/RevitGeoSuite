@@ -86,9 +86,9 @@ class KanizuWrittenFileTests(unittest.TestCase):
         model = Model({
             (u"u-1", "name", "instance"): u"改札",
             (u"u-1", "short_name", "instance"): u"",
-            (u"u-1", "gis_restriction", "type"): u"rachi_gai",
             (u"u-1", "kanizu_shop_hours", "type"): u"9-21",
             (u"u-2", "category", "instance"): u"retail",
+            (u"u-2", "gis_restriction", "type"): u"rachi_gai",
             (u"u-3", "name", "instance"): u"店舗",
             (u"lvl", "ordinal", "instance"): u"1",
         })
@@ -98,13 +98,14 @@ class KanizuWrittenFileTests(unittest.TestCase):
         self.assertEqual([(c.unique_id, c.parameter, c.old, c.new, c.conflict) for c in changes], [
             (u"u-1", "name", u"改札", u"北改札", False),
             (u"u-1", "short_name", u"", u"北", False),
-            (u"u-1", "gis_restriction", u"rachi_gai", u"rachi_nai", False),
             (u"u-1", u"kanizu_shop_hours", u"9-21", u"10-20", False),
             (u"u-2", "category", u"retail", u"walkway", True),
             (u"u-3", "name", u"店舗", u"", False),
             (u"lvl", "ordinal", u"1", u"2", False),
         ])
-        self.assertEqual(len(problems), 1)
+        # restrict (employeesonly to private) and level_id are listed for a change by hand.
+        self.assertEqual(len(problems), 2)
+        self.assertIn(u"restrict", problems[0])
 
 
 class PlanTests(unittest.TestCase):

@@ -41,9 +41,9 @@
       "guid": "",
       "binding": "",
       "label": "北改札",
-      "revit": "rachi_gai",
-      "gdb": "rachi_nai",
-      "base": "rachi_gai",
+      "revit": "employeesonly",
+      "gdb": "private",
+      "base": "employeesonly",
       "conflict": false
     },
     {
@@ -72,7 +72,9 @@
       "revit": "retail",
       "gdb": "walkway",
       "base": "nonpublic",
-      "conflict": true
+      "conflict": true,
+      "gdbCategory": "walkway",
+      "gdbRestriction": "rachi_gai"
     },
     {
       "revitKey": "8d7f3c1e-0000|u-3|0",
