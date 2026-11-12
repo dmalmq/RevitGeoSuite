@@ -16,7 +16,7 @@
   let loading = $state(false)
   let applying = $state<'setup' | 'fix' | null>(null)
   let error = $state<string | null>(null)
-  let applied = $state<{ title: string; log: string[] } | null>(null)
+  let applied = $state<{ title: string; log: string[]; skipped: string[] } | null>(null)
   let rejected = $state<Set<number>>(new Set())
 
   const findings = $derived(model?.findings ?? [])
@@ -58,8 +58,9 @@
         title:
           kind === 'setup'
             ? $t('GisStandard.Setup.Done', 'Set up model applied')
-            : format($t('GisStandard.Fix.Done', '{0} floor type(s) fixed'), accepted.length),
-        log: response.log
+            : format($t('GisStandard.Fix.Done', '{0} floor type(s) fixed'), accepted.length - response.skipped.length),
+        log: response.log,
+        skipped: response.skipped
       }
       void refreshReadiness()
     } catch (err: any) {
@@ -119,8 +120,14 @@
     {#if error}<Banner tone="danger" onclose={() => (error = null)}>{error}</Banner>{/if}
 
     {#if applied}
-      <Banner tone="success" title={applied.title} onclose={() => (applied = null)}>
+      <Banner tone={applied.skipped.length ? 'warning' : 'success'} title={applied.title} onclose={() => (applied = null)}>
         {$t('GisStandard.UndoHint', 'One Undo in Revit takes the whole change back.')}
+        {#if applied.skipped.length}
+          <p class="mt-1">{format($t('GisStandard.Fix.Skipped', '{0} accepted floor type(s) were skipped because the model changed since the preview:'), applied.skipped.length)}</p>
+          <ul class="ml-4 list-disc text-small">
+            {#each applied.skipped as line, index (index)}<li>{line}</li>{/each}
+          </ul>
+        {/if}
         {#if applied.log.length}
           <details class="mt-1 text-small">
             <summary class="cursor-pointer">{format($t('GisStandard.Changes', '{0} change(s)'), applied.log.length)}</summary>

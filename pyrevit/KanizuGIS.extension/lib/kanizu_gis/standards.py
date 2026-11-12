@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import re
 
 STANDARDS_ENV = "KANIZU_GIS_STANDARDS"
 FLOOR_TYPES_FILE = "floor-types.json"
@@ -84,6 +85,18 @@ def normalize(value):
     if value is None:
         return ""
     return value.strip()
+
+
+_WHOLE_NUMBER = re.compile(r"^[+-]?[0-9]+$")
+
+
+def parse_whole_number(text):
+    """A whole number written as text, as RevitGeoSuite's export reads it, or None."""
+    value = normalize(text)
+    if not _WHOLE_NUMBER.match(value):
+        return None
+    number = int(value)
+    return number if -2 ** 31 <= number < 2 ** 31 else None
 
 
 def _read_json(path):

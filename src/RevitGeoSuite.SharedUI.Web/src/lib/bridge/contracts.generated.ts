@@ -487,6 +487,7 @@ export interface GisSelectElementsResponse {
 
 export interface GisStandardApplyResponse {
   log: string[]
+  skipped: string[]
 }
 
 export interface GisStandardEmptyRequest {

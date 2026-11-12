@@ -100,6 +100,9 @@ public sealed class GisFixFloorTypesRequest
 public sealed class GisStandardApplyResponse
 {
     public string[] Log { get; set; } = Array.Empty<string>();
+
+    /// <summary>Accepted changes that no longer apply to the model as it is now, one line each.</summary>
+    public string[] Skipped { get; set; } = Array.Empty<string>();
 }
 
 /// <summary>Payload of <c>gisStandard.select</c>: the elements to select and show in Revit.</summary>

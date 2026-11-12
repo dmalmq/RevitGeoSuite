@@ -263,7 +263,7 @@ public static class GisAudit
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "families",
-                    $"{name} looks like a {suggested} but has no gis_kind, so it is found only by its family name, if at all.",
+                    $"{name} looks like {("aeiou".IndexOf(suggested[0]) >= 0 ? "an" : "a")} {suggested} but has no gis_kind, so it is found only by its family name, if at all.",
                     familyType.InstanceIds);
             }
         }

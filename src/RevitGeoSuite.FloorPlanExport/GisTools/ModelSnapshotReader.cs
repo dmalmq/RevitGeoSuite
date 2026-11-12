@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
@@ -105,10 +104,7 @@ public static class ModelSnapshotReader
             return parameter.AsInteger();
         }
 
-        return parameter.StorageType == StorageType.String &&
-               int.TryParse(GisToolStandard.Normalize(parameter.AsString()), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int value)
-            ? value
-            : null;
+        return parameter.StorageType == StorageType.String ? GisToolStandard.ParseWholeNumber(parameter.AsString()) : null;
     }
 
     private static List<BoundParameterInfo> ReadBoundParameters(Document document)

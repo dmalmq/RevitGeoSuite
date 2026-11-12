@@ -61,6 +61,17 @@ public sealed class GisToolsConformanceTests
     }
 
     [Fact]
+    public void WholeNumber()
+    {
+        foreach (JObject testCase in Cases["whole_number"]!.Cast<JObject>())
+        {
+            Assert.True(
+                (int?)testCase["expected"] == GisToolStandard.ParseWholeNumber((string)testCase["text"]!),
+                $"'{testCase["text"]}': expected {testCase["expected"]}");
+        }
+    }
+
+    [Fact]
     public void DriftPlan()
     {
         foreach (JObject testCase in Cases["drift_plan"]!.Cast<JObject>())

@@ -64,8 +64,8 @@ class AuditTests(unittest.TestCase):
         ])
         self.assertEqual([(audit.ERROR, [25]), (audit.WARNING, [21]), (audit.WARNING, [22])],
                          [(finding.severity, finding.element_ids) for finding in findings])
-        self.assertIn("escalator", findings[1].message)
-        self.assertIn("moving_walkway", findings[2].message)
+        self.assertIn("looks like an escalator", findings[1].message)
+        self.assertIn("looks like a moving_walkway", findings[2].message)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Autodesk.Revit.DB;
@@ -50,26 +49,23 @@ public sealed class GisFixFloorTypesHandler : IRpcHandler
     public Task<object?> HandleAsync(object? payload)
     {
         GisFixFloorTypesRequest request = (payload as JObject)?.ToObject<GisFixFloorTypesRequest>() ?? new GisFixFloorTypesRequest();
-        HashSet<long> accepted = new(request.FloorTypeIds);
         return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
         {
             GisStandardWork.RequireEditable(doc);
             GisToolStandard standard = GisToolStandard.LoadEmbedded();
             ModelSnapshot snapshot = ModelSnapshotReader.Read(doc);
-            string blocker = GisStandardWork.FixBlocker(snapshot);
+            string blocker = FloorTypeMatcher.WriteBlocker(snapshot);
             if (blocker.Length > 0)
             {
                 throw new InvalidOperationException(blocker);
             }
 
-            List<FloorTypeProposal> proposals = FloorTypeMatcher.Propose(snapshot, standard)
-                .Where(proposal => accepted.Contains(proposal.FloorType.ElementId))
-                .ToList();
-            IReadOnlyList<string> log = proposals.Count == 0
+            FloorTypeFix fix = FloorTypeMatcher.Accept(snapshot, standard, request.FloorTypeIds);
+            IReadOnlyList<string> log = fix.Proposals.Count == 0
                 ? Array.Empty<string>()
-                : GisStandardWriter.ApplyProposals(doc, proposals, FloorTypeMatcher.EchoFloorIds(snapshot, proposals));
+                : GisStandardWriter.ApplyProposals(doc, fix.Proposals, fix.EchoFloorIds);
             GisStandardNotifier.Instance.Refresh(doc, force: true);
-            return (object?)new GisStandardApplyResponse { Log = log.ToArray() };
+            return (object?)new GisStandardApplyResponse { Log = log.ToArray(), Skipped = fix.Skipped.ToArray() };
         });
     }
 }
@@ -111,6 +107,11 @@ internal static class GisStandardWork
 {
     public static GisStandardInspectResponse Inspect(Document document)
     {
+        if (document.IsFamilyDocument)
+        {
+            throw new InvalidOperationException("Open a project model to check it against the Kanizu GIS standard.");
+        }
+
         GisToolStandard standard = GisToolStandard.LoadEmbedded();
         ModelSnapshot snapshot = ModelSnapshotReader.Read(document);
         GisStandardStatus status = GisStandardStateReader.Check(document);
@@ -153,27 +154,8 @@ internal static class GisStandardWork
                     FloorIds = floorType.FloorIds.ToArray(),
                 })
                 .ToArray(),
-            FixBlocker = FixBlocker(snapshot),
+            FixBlocker = FloorTypeMatcher.WriteBlocker(snapshot),
         };
-    }
-
-    /// <summary>Fix floor types writes type parameters, so both must be bound, and bound to types.</summary>
-    public static string FixBlocker(ModelSnapshot snapshot)
-    {
-        foreach (string name in new[] { GisSharedParameters.GisCategory, GisSharedParameters.GisRestriction })
-        {
-            if (!snapshot.BoundParameters.TryGetValue(name, out BoundParameterInfo? bound))
-            {
-                return string.Format(CultureInfo.InvariantCulture, "{0} is not bound yet. Run Set up model first.", name);
-            }
-
-            if (bound.Binding != GisParameterBinding.Type)
-            {
-                return string.Format(CultureInfo.InvariantCulture, "{0} is bound as an instance parameter, so it cannot be written onto floor types. Rebind it as a type parameter first.", name);
-            }
-        }
-
-        return string.Empty;
     }
 
     public static void RequireEditable(Document document)

@@ -21,6 +21,10 @@ public static class GisStandardWriter
     /// <summary>Applies <paramref name="plan"/> and returns what it did, one line per change.</summary>
     public static IReadOnlyList<string> ApplySetup(Document document, GisToolStandard standard, SetupPlan plan)
     {
+        RequireOwnable(document, plan.FloorTypes.Where(step => step.ElementId.HasValue).Select(step => step.ElementId!.Value)
+            .Concat(plan.EchoFloorIds)
+            .Concat(plan.Materials.Select(step => MaterialId(document, step.Name)).Where(id => id.HasValue).Select(id => id!.Value))
+            .Concat(new[] { document.ProjectInformation.Id.Value }));
         List<string> log = new();
         InTransaction(document, SetupTransactionName, () =>
         {
@@ -51,6 +55,7 @@ public static class GisStandardWriter
     /// </summary>
     public static IReadOnlyList<string> ApplyProposals(Document document, IReadOnlyList<FloorTypeProposal> proposals, IReadOnlyList<long> echoFloorIds)
     {
+        RequireOwnable(document, proposals.Select(proposal => proposal.FloorType.ElementId).Concat(echoFloorIds));
         Dictionary<string, ElementId> materials = MaterialIdsByName(document);
         List<string> log = new();
         InTransaction(document, FixTransactionName, () =>
@@ -221,6 +226,40 @@ public static class GisStandardWriter
             .OfClass(typeof(Material))
             .GroupBy(material => material.Name ?? string.Empty, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
+
+    /// <summary>
+    /// In a workshared model, refuses before any change when another user borrows an element the
+    /// run would edit, so the user learns which ones instead of meeting a rolled-back transaction.
+    /// </summary>
+    private static void RequireOwnable(Document document, IEnumerable<long> elementIds)
+    {
+        if (!document.IsWorkshared)
+        {
+            return;
+        }
+
+        List<string> borrowed = new();
+        foreach (long id in elementIds.Distinct())
+        {
+            ElementId elementId = new(id);
+            if (WorksharingUtils.GetCheckoutStatus(document, elementId) == CheckoutStatus.OwnedByOtherUser)
+            {
+                Element? element = document.GetElement(elementId);
+                string owner = WorksharingUtils.GetWorksharingTooltipInfo(document, elementId)?.Owner ?? "another user";
+                borrowed.Add($"{element?.Name ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture)} ({owner})");
+            }
+        }
+
+        if (borrowed.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Nothing was changed: {borrowed.Count} element(s) are borrowed by other users: {string.Join(", ", borrowed.Take(10))}. " +
+                "Ask them to synchronize and relinquish, then reload latest and try again.");
+        }
+    }
+
+    private static long? MaterialId(Document document, string name) =>
+        new FilteredElementCollector(document).OfClass(typeof(Material)).FirstOrDefault(material => material.Name == name)?.Id.Value;
 
     private static void InTransaction(Document document, string name, Action work)
     {

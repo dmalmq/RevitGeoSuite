@@ -99,8 +99,8 @@ public sealed class GisAuditTests
         Assert.Equal(
             new[] { (GisAuditSeverity.Error, 25L), (GisAuditSeverity.Warning, 21L), (GisAuditSeverity.Warning, 22L) },
             findings.Select(finding => (finding.Severity, finding.ElementIds.Single())));
-        Assert.Contains("escalator", findings[1].Message);
-        Assert.Contains("moving_walkway", findings[2].Message);
+        Assert.Contains("looks like an escalator", findings[1].Message);
+        Assert.Contains("looks like a moving_walkway", findings[2].Message);
     }
 
     [Fact]

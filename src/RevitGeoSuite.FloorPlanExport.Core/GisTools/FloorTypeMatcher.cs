@@ -37,6 +37,24 @@ public sealed class FloorTypeProposal
     }
 }
 
+/// <summary>What Fix floor types applies for the floor types a user accepted, planned again from the model as it is now.</summary>
+public sealed class FloorTypeFix
+{
+    public FloorTypeFix(IReadOnlyList<FloorTypeProposal> proposals, IReadOnlyList<long> echoFloorIds, IReadOnlyList<string> skipped)
+    {
+        Proposals = proposals;
+        EchoFloorIds = echoFloorIds;
+        Skipped = skipped;
+    }
+
+    public IReadOnlyList<FloorTypeProposal> Proposals { get; }
+
+    public IReadOnlyList<long> EchoFloorIds { get; }
+
+    /// <summary>One line per accepted floor type that no longer has a proposal, and why.</summary>
+    public IReadOnlyList<string> Skipped { get; }
+}
+
 /// <summary>
 /// Fix floor types: which standard floor type a non-standard one most likely is. A proposal never
 /// changes a floor's type, so geometry and UniqueIds stay as they are; applying it writes
@@ -129,6 +147,57 @@ public static class FloorTypeMatcher
         return snapshot.FloorTypes
             .Where(floorType => NeedsFix(floorType, standard) && !matched.Contains(floorType.ElementId))
             .ToList();
+    }
+
+    /// <summary>
+    /// The proposals for <paramref name="acceptedIds"/>, matched again from <paramref name="snapshot"/>.
+    /// An accepted type that is gone, or no longer needs a fix or matches, is reported in
+    /// <see cref="FloorTypeFix.Skipped"/> instead of being dropped.
+    /// </summary>
+    public static FloorTypeFix Accept(ModelSnapshot snapshot, GisToolStandard standard, IEnumerable<long> acceptedIds)
+    {
+        Dictionary<long, FloorTypeProposal> byType = Propose(snapshot, standard).ToDictionary(proposal => proposal.FloorType.ElementId);
+        List<FloorTypeProposal> proposals = new();
+        List<string> skipped = new();
+        foreach (long id in acceptedIds.Distinct())
+        {
+            if (byType.TryGetValue(id, out FloorTypeProposal? proposal))
+            {
+                proposals.Add(proposal);
+                continue;
+            }
+
+            FloorTypeInfo? floorType = snapshot.FloorTypes.FirstOrDefault(entry => entry.ElementId == id);
+            skipped.Add(floorType is null
+                ? $"Floor type {id} is no longer in the model."
+                : NeedsFix(floorType, standard)
+                    ? $"Floor type {floorType.Name} no longer matches a standard type."
+                    : $"Floor type {floorType.Name} no longer needs a fix.");
+        }
+
+        return new FloorTypeFix(proposals, EchoFloorIds(snapshot, proposals), skipped);
+    }
+
+    /// <summary>
+    /// Why Fix floor types cannot write yet, or empty when it can: it writes gis_category and
+    /// gis_restriction onto floor types, so both must be bound, and bound to types.
+    /// </summary>
+    public static string WriteBlocker(ModelSnapshot snapshot)
+    {
+        foreach (string name in new[] { GisSharedParameters.GisCategory, GisSharedParameters.GisRestriction })
+        {
+            if (!snapshot.BoundParameters.TryGetValue(name, out BoundParameterInfo? bound))
+            {
+                return $"{name} is not bound yet. Run Set up model first.";
+            }
+
+            if (bound.Binding != GisParameterBinding.Type)
+            {
+                return $"{name} is bound as an instance parameter, so it cannot be written onto floor types. Rebind it as a type parameter first.";
+            }
+        }
+
+        return string.Empty;
     }
 
     public static FloorTypeProposal? ProposeOne(FloorTypeInfo floorType, GisToolStandard standard)
