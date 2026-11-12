@@ -15,6 +15,7 @@ TestResults/
 !.claude/skills/
 !.claude/agents/
 !.claude/PSTACK.md
+!.claude/pstack-models.md
 # AI assistant docs/config — keep out of the repo
 CLAUDE.md
 CLAUDE.local.md

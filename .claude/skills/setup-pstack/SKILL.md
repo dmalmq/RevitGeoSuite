@@ -45,7 +45,9 @@ Then ask for the default reasoning effort, the `default effort` line. It is `ses
 
 ### 4. Choose whether the session hook routes tasks
 
-On Claude Code, the plugin's `SessionStart` hook injects the poteto-mode mandate on startup, resume, clear, and compact. Ask whether to keep the hook. The default is on. The answer is the `session hook` line in the current runtime's sheet: `on` or `off`. With no sheet or no line, the hook injects. The line is inert on other runtimes without a pstack routing hook.
+A vendored install, where pstack's skills are copied into the project's `.claude/` and the plugin is not installed, has no `SessionStart` hook: this repository vendors only the skills and agents. Then skip this question, keep the `session hook` line as it is, and tell the user plainly that no hook is installed, so nothing injects the mandate at session start.
+
+Otherwise, on Claude Code, the plugin's `SessionStart` hook injects the poteto-mode mandate on startup, resume, clear, and compact. Ask whether to keep the hook. The default is on. The answer is the `session hook` line in the current runtime's sheet: `on` or `off`. With no sheet or no line, the hook injects. The line is inert on other runtimes without a pstack routing hook.
 
 ### 5. Validate
 
@@ -86,11 +88,11 @@ session hook: on
 
 ### 7. Wire it in
 
-On Claude Code, if `<config>/CLAUDE.md` does not already include `<config>/pstack-models.md`, append an `@` line naming the sheet's resolved path, such as `@~/.claude/pstack-models.md`, so the model rows load on every session. For a project sheet, append `@.claude/pstack-models.md` to the `CLAUDE.md` at the repository root instead, if it is not there, and tell the user to commit both files.
+On Claude Code, if `<config>/CLAUDE.md` does not already include `<config>/pstack-models.md`, append an `@` line naming the sheet's resolved path, such as `@~/.claude/pstack-models.md`, so the model rows load on every session. For a project sheet, append `@.claude/pstack-models.md` to the `CLAUDE.md` at the repository root instead, if it is not there. Tell the user to commit only `.claude/pstack-models.md`: in this repository the root `CLAUDE.md` stays local-only and is not committed.
 
 ### 8. Confirm
 
-Tell the user where the override was written, how its model rows load, and whether the plugin hook is on. Re-running this skill updates the override sheet.
+Tell the user where the override was written, how its model rows load, and whether the plugin hook is on. For a vendored install, say that no hook is installed. Re-running this skill updates the override sheet.
 
 ### 9. Offer a verification skill (optional)
 
