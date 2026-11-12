@@ -99,6 +99,7 @@ const gridCandidates: GeoreferenceGridCandidatesResponse = {
 
 const settings: ExporterSettingsPayload = {
   activeSchemaProfileName: 'Default',
+  auditErrorsAccepted: false,
   activeValidationPolicyProfileName: 'Default',
   coordinateMode: 'shared',
   detail: true,

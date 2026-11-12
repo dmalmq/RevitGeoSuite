@@ -215,6 +215,7 @@ export interface ExporterSaveProfileRequest {
 export interface ExporterSettingsPayload {
   activeSchemaProfileName: string
   activeValidationPolicyProfileName: string
+  auditErrorsAccepted: boolean
   coordinateMode: string
   detail: boolean
   fixture: boolean

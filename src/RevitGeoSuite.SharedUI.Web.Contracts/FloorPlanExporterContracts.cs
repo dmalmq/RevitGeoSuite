@@ -101,6 +101,12 @@ public sealed class ExporterSettingsPayload
 {
     public string OutputDirectory { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Run only: the person saw the GIS audit errors and chose Export anyway. Never saved with the
+    /// settings, so every export asks again.
+    /// </summary>
+    public bool AuditErrorsAccepted { get; set; }
+
     public int TargetEpsg { get; set; } = 4326;
 
     public string CoordinateMode { get; set; } = "shared";

@@ -80,6 +80,10 @@ public static class ModelSnapshotReader
             ReadText(document.ProjectInformation, GisSharedParameters.GisStandardVersion));
     }
 
+    /// <summary>The audit errors of <paramref name="document"/>: what makes its export come out wrong.</summary>
+    public static IReadOnlyList<GisAuditFinding> AuditErrors(Document document) =>
+        GisAudit.BlockingFindings(GisAudit.Run(Read(document), GisToolStandard.LoadEmbedded()));
+
     /// <summary>A text parameter's value, trimmed; empty when the parameter is missing or not text.</summary>
     public static string ReadText(Element? element, string name)
     {

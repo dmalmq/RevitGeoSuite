@@ -116,4 +116,24 @@ public sealed class GisAuditTests
         Assert.Equal(new[] { "b" }, GisAudit.BlockingFindings(findings).Select(finding => finding.Message));
         Assert.Equal("1 errors, 1 warnings, 1 notes", GisAudit.Summary(findings));
     }
+
+    [Fact]
+    public void TheExportRecordNamesEachAcceptedErrorAndIsEmptyWithoutErrors()
+    {
+        GisAuditFinding[] errors =
+        {
+            new(GisAuditSeverity.Error, "floors", "b"),
+            new(GisAuditSeverity.Error, "families", "d"),
+        };
+
+        Assert.Equal(
+            new[]
+            {
+                "Exported with 2 GIS audit error(s) accepted; the output may be wrong where they apply.",
+                "GIS audit error: b",
+                "GIS audit error: d",
+            },
+            GisAudit.ExportRecord(errors));
+        Assert.Empty(GisAudit.ExportRecord(System.Array.Empty<GisAuditFinding>()));
+    }
 }

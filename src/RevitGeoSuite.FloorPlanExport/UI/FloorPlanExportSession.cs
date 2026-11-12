@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
+using RevitGeoSuite.FloorPlanExport.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Geometry;
@@ -597,6 +599,17 @@ public sealed class FloorPlanExportSession : IDisposable
         if (validationError != null)
         {
             return new ExporterRunResponse { Success = false, Error = validationError };
+        }
+
+        Document? document = _views.FirstOrDefault()?.Document;
+        int auditErrors = document == null ? 0 : ModelSnapshotReader.AuditErrors(document).Count;
+        if (auditErrors > 0 && !payload.AuditErrorsAccepted)
+        {
+            return new ExporterRunResponse
+            {
+                Success = false,
+                Error = $"The GIS audit found {auditErrors} error(s) that make the export come out wrong. Fix them on the GIS standard page, or confirm Export anyway.",
+            };
         }
 
         if (_runExportRequested == null)

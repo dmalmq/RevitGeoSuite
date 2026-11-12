@@ -79,6 +79,24 @@ public static class GisAudit
     public static IReadOnlyList<GisAuditFinding> BlockingFindings(IEnumerable<GisAuditFinding> findings) =>
         findings.Where(finding => finding.Severity == GisAuditSeverity.Error).ToList();
 
+    /// <summary>
+    /// The lines the export report carries when it ran with audit errors: a count, then each error.
+    /// Nothing for a model without errors.
+    /// </summary>
+    public static IEnumerable<string> ExportRecord(IReadOnlyList<GisAuditFinding> errors)
+    {
+        if (errors.Count == 0)
+        {
+            yield break;
+        }
+
+        yield return string.Format(CultureInfo.InvariantCulture, "Exported with {0} GIS audit error(s) accepted; the output may be wrong where they apply.", errors.Count);
+        foreach (GisAuditFinding error in errors)
+        {
+            yield return "GIS audit error: " + error.Message;
+        }
+    }
+
     /// <summary>"1 errors, 0 warnings, 2 notes": the counts by severity, for the export prompt.</summary>
     public static string Summary(IEnumerable<GisAuditFinding> findings)
     {
