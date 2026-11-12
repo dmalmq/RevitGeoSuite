@@ -72,6 +72,12 @@ public sealed class PreviewExportMetadataProvider : IExportMetadataProvider
         return new ExportLevelMetadata(generated, hasPersistedId: false);
     }
 
+    public string? GetReferencedLevelId(Level level, ICollection<string> warnings)
+    {
+        // The preview never writes, and its transient level ids are stable within a preview.
+        return GetLevelMetadata(level, warnings).ExportId;
+    }
+
     public string? GetOptionalStringParameter(Element element, string parameterName)
     {
         if (element is null)

@@ -79,6 +79,18 @@ public sealed class PersistentExportMetadataProvider : IExportMetadataProvider
         return new ExportLevelMetadata(id, hasPersistedId);
     }
 
+    public string? GetReferencedLevelId(Level level, ICollection<string> warnings)
+    {
+        if (level is null)
+        {
+            throw new ArgumentNullException(nameof(level));
+        }
+
+        // Only the stored id. GetLevelMetadata creates a missing one, which is a model write, and
+        // this is called while the views are prepared, outside every transaction.
+        return _parameterManager.GetOptionalStringParameter(level, SharedParameterManager.ImdfLevelIdParameterName);
+    }
+
     public string? GetOptionalStringParameter(Element element, string parameterName)
     {
         return ReadOptionalStringParameter(element, parameterName);
