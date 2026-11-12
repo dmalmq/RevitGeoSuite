@@ -213,6 +213,7 @@ public sealed class GisDriftTests
             Entry("restrict", "employeesonly"),
             Entry("shop_hours", "10-20", parameter: "kanizu_shop_hours", binding: "type"),
             Entry("ordinal", "2", layer: "level", revit: "1", uniqueId: "lvl"),
+            Entry("short_name", "B1", layer: "level", uniqueId: "lvl"),
         };
         var model = Model(new Dictionary<(string, string, string), string>
         {
@@ -221,6 +222,7 @@ public sealed class GisDriftTests
             [("u-1", "gis_restriction", "type")] = "",
             [("u-1", "kanizu_shop_hours", "type")] = "",
             [("lvl", "ordinal", "instance")] = "1",
+            [("lvl", "short_name", "instance")] = "",
         });
 
         var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(rows)), model, Standard);
@@ -235,6 +237,7 @@ public sealed class GisDriftTests
                 ("short_name", "instance", "北"),
                 ("kanizu_shop_hours", "type", "10-20"),
                 ("ordinal", "instance", "2"),
+                ("short_name", "instance", "B1"),
             },
             changes.Select(change => (change.Parameter, change.Binding, change.NewValue)));
         Assert.Contains("every element of the type", changes[2].Label());
@@ -266,6 +269,8 @@ public sealed class GisDriftTests
             Entry("ordinal", "two", layer: "level", uniqueId: "lvl"),
             Entry("name", "北", uniqueId: "gone"),
             Entry("direction", "上り", revit: "down"),
+            Entry("category", "checkin.desk", layer: "fixture", revit: "checkin.kiosk"),
+            Entry("name", "B1ラチ外", layer: "level", revit: "B1FL", uniqueId: "lvl"),
         };
         var model = Model(new Dictionary<(string, string, string), string>
         {
@@ -276,11 +281,16 @@ public sealed class GisDriftTests
         var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(rows)), model, Standard);
 
         Assert.Equal(new[] { ("gis_direction", "up") }, changes.Select(change => (change.Parameter, change.NewValue)));
-        Assert.Equal(4, problems.Count);
+        Assert.Equal(6, problems.Count);
         Assert.Contains("by hand", problems[0]);
         Assert.Contains("not-a-category", problems[1]);
         Assert.Contains("whole number", problems[2]);
         Assert.Contains("not in this model", problems[3]);
+        // A fixture's category only marks it a fixture, and a level's name is the Revit level's.
+        Assert.Contains("fixture", problems[4]);
+        Assert.Contains("by hand", problems[4]);
+        Assert.Contains("level", problems[5]);
+        Assert.Contains("by hand", problems[5]);
     }
 
     [Fact]
