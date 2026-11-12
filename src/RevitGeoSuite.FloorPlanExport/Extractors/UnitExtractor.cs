@@ -721,6 +721,11 @@ public sealed class UnitExtractor
             sourceLabel: familyName,
             viewName: view?.Name,
             warnings: warnings);
+        if (string.Equals(zoneInfo.Category, VerticalCirculation.ElevatorCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            feature = WithAttribute(feature, VerticalCirculation.LevelsServedAttributeName, ResolveLevelsServed(familyInstance, warnings));
+        }
+
         return true;
     }
 
@@ -921,6 +926,74 @@ public sealed class UnitExtractor
         return true;
     }
 
+    private static ExportPolygon WithAttribute(ExportPolygon feature, string name, string? value)
+    {
+        Dictionary<string, object?> attributes = new(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, object?> entry in feature.Attributes)
+        {
+            attributes[entry.Key] = entry.Value;
+        }
+
+        attributes[name] = value;
+        return new ExportPolygon(feature.Polygons, attributes);
+    }
+
+    /// <summary>
+    /// The elevator's stops as a comma-separated list of level ids: the type's gis_levels_served,
+    /// else the levels the car's height spans. Null, with a warning, when neither gives two.
+    /// </summary>
+    private string? ResolveLevelsServed(FamilyInstance elevator, ICollection<string> warnings)
+    {
+        List<ElevatorStop> levels = new();
+        foreach (Level level in new FilteredElementCollector(_document).OfClass(typeof(Level)).Cast<Level>())
+        {
+            string? exportId = ReadLevelExportId(level, warnings, out _);
+            if (exportId != null)
+            {
+                levels.Add(new ElevatorStop(
+                    exportId,
+                    level.Name,
+                    level.LookupParameter(GisSharedParameters.ShortName)?.AsString(),
+                    level.ProjectElevation * FeetToMetersForLevels));
+            }
+        }
+
+        BoundingBoxXYZ? box = elevator.get_BoundingBox(null);
+        string? levelsServed = ReadStringParameter(elevator, GisSharedParameters.GisLevelsServed);
+        List<string> unknown = new();
+        IReadOnlyList<string> stops = VerticalCirculation.ResolveLevelsServed(
+            levels,
+            (box?.Min.Z ?? 0d) * FeetToMetersForLevels,
+            (box?.Max.Z ?? 0d) * FeetToMetersForLevels,
+            levelsServed,
+            unknown);
+        string label = $"Elevator {elevator.Id.Value} ({GetFamilyName(elevator)})";
+        if (unknown.Count > 0)
+        {
+            AddOnce(warnings, $"{label}: gis_levels_served names {string.Join(", ", unknown)}, which match no level name or short_name in this export.");
+        }
+
+        if (stops.Count == 0)
+        {
+            if (levelsServed == null)
+            {
+                AddOnce(warnings, $"{label} spans fewer than two exported levels, so levels_served is empty. Set gis_levels_served on its type.");
+            }
+
+            return null;
+        }
+
+        return string.Join(",", stops);
+    }
+
+    private static void AddOnce(ICollection<string> warnings, string message)
+    {
+        if (!warnings.Contains(message))
+        {
+            warnings.Add(message);
+        }
+    }
+
     private static ExportPolygon WithDirection(ExportPolygon feature, string? direction, string? toLevel)
     {
         Dictionary<string, object?> attributes = new(StringComparer.Ordinal);
@@ -986,10 +1059,22 @@ public sealed class UnitExtractor
             return null;
         }
 
+        string? exportId = ReadLevelExportId(level, warnings, out Level? exportedLevel);
+        if (exportId == null && exportedLevel != null)
+        {
+            AddOnce(warnings, $"Level '{exportedLevel.Name}' is not in this export, so stairs and escalators that end on it have an empty to_level.");
+        }
+
+        return exportId;
+    }
+
+    /// <summary>The export id of <paramref name="level"/>, or of the host level at its elevation for a link; null when that level is not in this export.</summary>
+    private string? ReadLevelExportId(Level level, ICollection<string> warnings, out Level? exportedLevel)
+    {
         // Features from a link carry the host view's level id, so a linked stair's or escalator's
         // ends must name the host levels at the same elevation. This also keeps the export from
         // trying to give the linked document's levels ids of their own.
-        Level? exportedLevel = _sourceDescriptor.IsLinkedSource ? FindHostLevelAtElevationOf(level) : level;
+        exportedLevel = _sourceDescriptor.IsLinkedSource ? FindHostLevelAtElevationOf(level) : level;
         if (exportedLevel == null)
         {
             return null;
@@ -1000,19 +1085,7 @@ public sealed class UnitExtractor
         // id to be created here made Revit refuse the write and failed the whole export. A level
         // without an id is not in this export, so the far end has no level to name.
         string? exportId = _metadataProvider.GetReferencedLevelId(exportedLevel, warnings);
-        if (string.IsNullOrWhiteSpace(exportId))
-        {
-            string message =
-                $"Level '{exportedLevel.Name}' is not in this export, so stairs and escalators that end on it have an empty to_level.";
-            if (!warnings.Contains(message))
-            {
-                warnings.Add(message);
-            }
-
-            return null;
-        }
-
-        return exportId!.Trim();
+        return string.IsNullOrWhiteSpace(exportId) ? null : exportId!.Trim();
     }
 
     private const double FeetToMetersForLevels = 0.3048d;

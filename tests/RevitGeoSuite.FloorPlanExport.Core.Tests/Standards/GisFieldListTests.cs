@@ -23,13 +23,22 @@ public sealed class GisFieldListTests
         "\"source\":{\"kind\":\"parameter\",\"parameter\":\"" + parameter + "\",\"guid\":\"" + guid + "\",\"binding\":\"instance\",\"categories\":[\"OST_Floors\",\"OST_Rooms\"]}}";
 
     [Fact]
-    public void TheStandardListReadsBackAndAddsNothingToTheExport()
+    public void TheStandardListReadsBackAndExportsTheDoorFieldsFromStandardParameters()
     {
         GisFieldList standard = GisFieldList.Parse(GisFieldList.CreateStandard().ToJson(), "standard");
 
         Assert.Equal(GisFieldList.CreateStandard().Fields.Count, standard.Fields.Count);
         Assert.Empty(standard.ExtraParameters());
-        Assert.Empty(standard.ToMappings());
+        Assert.Equal(
+            new[] { "Opening.door<-gis_door", "Opening.access_con<-gis_access_con", "Opening.name<-name" },
+            standard.ToMappings().Select(mapping => $"{mapping.Layer}.{mapping.FieldName}<-{mapping.SourceKey}"));
+        Assert.All(standard.ToMappings(), mapping => Assert.False(mapping.WarnWhenMissing));
+        Assert.Equal(
+            new[] { "fixture.anchor_id", "level.address_id", "level.build_id" },
+            standard.Fields.Where(field => field.Owner == GisFieldOwner.Gdb).Select(field => field.Key));
+        Assert.All(
+            standard.Fields.Where(field => field.Owner == GisFieldOwner.Gdb),
+            field => Assert.Equal(GisFieldSourceKind.None, field.Source.Kind));
         Assert.Equal(
             FloorTypeStandard.KnownCategories,
             standard.Fields.Single(field => field.Key == "unit.category").Values);
@@ -48,7 +57,7 @@ public sealed class GisFieldListTests
         Assert.Equal(new Guid(OperatorGuid), parameter.Guid);
         Assert.Equal(new[] { "OST_Floors", "OST_Rooms" }, parameter.Categories);
 
-        CustomAttributeMapping mapping = Assert.Single(list.ToMappings());
+        CustomAttributeMapping mapping = Assert.Single(list.ToMappings(), candidate => candidate.Layer == SchemaLayerType.Unit);
         Assert.Equal(SchemaLayerType.Unit, mapping.Layer);
         Assert.Equal("operator", mapping.FieldName);
         Assert.Equal(CustomAttributeSourceKind.RevitParameter, mapping.SourceKind);

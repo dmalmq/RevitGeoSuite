@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Models;
 
@@ -19,6 +20,10 @@ public static class VerticalCirculation
 
     public const string ToLevelAttributeName = "to_level";
 
+    public const string LevelsServedAttributeName = "levels_served";
+
+    public const string ElevatorCategory = "elevator";
+
     public const string EscalatorCategory = "escalator";
 
     public const string MovingWalkwayCategory = "movingwalkway";
@@ -34,7 +39,7 @@ public static class VerticalCirculation
         ["escalator"] = EscalatorCategory,
         ["moving_walkway"] = MovingWalkwayCategory,
         ["movingwalkway"] = MovingWalkwayCategory,
-        ["elevator"] = "elevator",
+        ["elevator"] = ElevatorCategory,
         ["ticket_gate"] = "fixture",
     };
 
@@ -102,5 +107,94 @@ public static class VerticalCirculation
         }
 
         return null;
+    }
+
+    /// <summary>A car whose span reaches this far below a level still stops there (a pit, a slab).</summary>
+    public const double StopBelowToleranceMeters = 0.5d;
+
+    /// <summary>The car must reach this far above a level to stop there, so the overrun above the top stop does not count.</summary>
+    public const double MinimumCarHeightMeters = 2.0d;
+
+    private static readonly char[] LevelListSeparators = { ',', '、', ';', '\n' };
+
+    /// <summary>
+    /// The export ids of the levels an elevator stops at, lowest first. With <paramref name="levelsServed"/>
+    /// (the type's <c>gis_levels_served</c>: level names or short names) those levels, and names that
+    /// match no level go to <paramref name="unknownNames"/>. Without it, the levels whose elevation lies
+    /// within the car's height span, and nothing when that is fewer than two.
+    /// </summary>
+    public static IReadOnlyList<string> ResolveLevelsServed(
+        IReadOnlyList<ElevatorStop> levels,
+        double bottomMeters,
+        double topMeters,
+        string? levelsServed,
+        ICollection<string> unknownNames)
+    {
+        string[] names = (levelsServed ?? string.Empty)
+            .Split(LevelListSeparators, StringSplitOptions.RemoveEmptyEntries)
+            .Select(name => name.Trim())
+            .Where(name => name.Length > 0)
+            .ToArray();
+        IEnumerable<ElevatorStop> stops;
+        if (names.Length > 0)
+        {
+            List<ElevatorStop> named = new();
+            foreach (string name in names)
+            {
+                ElevatorStop? match = levels.FirstOrDefault(level => level.Answers(name));
+                if (match == null)
+                {
+                    unknownNames.Add(name);
+                }
+                else
+                {
+                    named.Add(match);
+                }
+            }
+
+            stops = named;
+        }
+        else
+        {
+            List<ElevatorStop> spanned = levels
+                .Where(level => level.ElevationMeters >= bottomMeters - StopBelowToleranceMeters &&
+                                level.ElevationMeters <= topMeters - MinimumCarHeightMeters)
+                .ToList();
+            stops = spanned.Select(level => level.ExportId).Distinct(StringComparer.Ordinal).Count() < 2
+                ? Enumerable.Empty<ElevatorStop>()
+                : spanned;
+        }
+
+        return stops
+            .OrderBy(level => level.ElevationMeters)
+            .Select(level => level.ExportId)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+}
+
+/// <summary>A level an elevator can stop at: its export id, the names a <c>gis_levels_served</c> value can use, and its elevation.</summary>
+public sealed class ElevatorStop
+{
+    public ElevatorStop(string exportId, string name, string? shortName, double elevationMeters)
+    {
+        ExportId = exportId ?? throw new ArgumentNullException(nameof(exportId));
+        Name = name ?? string.Empty;
+        ShortName = shortName;
+        ElevationMeters = elevationMeters;
+    }
+
+    public string ExportId { get; }
+
+    public string Name { get; }
+
+    public string? ShortName { get; }
+
+    public double ElevationMeters { get; }
+
+    public bool Answers(string name)
+    {
+        return string.Equals(Name.Trim(), name, StringComparison.OrdinalIgnoreCase) ||
+               (!string.IsNullOrWhiteSpace(ShortName) && string.Equals(ShortName!.Trim(), name, StringComparison.OrdinalIgnoreCase));
     }
 }

@@ -28,7 +28,7 @@ public sealed class SetupPlannerTests
     {
         SetupPlan plan = SetupPlanner.Plan(new ModelSnapshot(), Standard);
 
-        Assert.Equal(12, plan.Parameters.Count(step => step.Action == ParameterSetupAction.Bind));
+        Assert.Equal(GisSharedParameters.All.Count, plan.Parameters.Count(step => step.Action == ParameterSetupAction.Bind));
         Assert.Equal(Standard.Materials.Count, plan.Materials.Count);
         Assert.Equal(12, plan.FloorTypes.Count(step => step.Action == SetupAction.Create));
         Assert.True(plan.SetsVersion);

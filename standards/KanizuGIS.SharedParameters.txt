@@ -7,7 +7,7 @@ GROUP	1	RevitGeoSuite FloorPlanExport
 *PARAM	GUID	NAME	DATATYPE	DATACATEGORY	GROUP	VISIBLE	DESCRIPTION	USERMODIFIABLE	HIDEWHENNOEXISTENT
 PARAM	64e7d743-c3ae-4831-a208-33c2762ac50a	id	TEXT		1	1	Stable export id of the element.	1	0
 PARAM	84f1637a-1421-4c6c-9670-c000206ffea0	level_id	TEXT		1	1	Stable export id of the level.	1	0
-PARAM	47b8db20-e756-4280-a842-f570dc847db5	name	TEXT		1	1	Name of the unit in the GIS.	1	0
+PARAM	47b8db20-e756-4280-a842-f570dc847db5	name	TEXT		1	1	Name of the unit or door in the GIS.	1	0
 PARAM	03f1849b-ac06-42c8-aff7-51a973f0a730	short_name	TEXT		1	1	Short name of the unit or level in the GIS.	1	0
 PARAM	7fb0aa6b-c570-437d-a86a-f25f02537165	category	TEXT		1	1	Unit category for this element only. Overrides gis_category of the type.	1	0
 PARAM	6724ae86-07fe-44ba-b29b-1e9298bc3c8a	ordinal	INTEGER		1	1	Floor number of the level in the GIS.	1	0
@@ -15,5 +15,8 @@ PARAM	d4ed1842-369c-4064-97fd-93fab33f0a87	gis_category	TEXT		1	1	Unit category 
 PARAM	6df45ec8-c9ee-4b56-a038-c8c125b3ae1e	gis_restriction	TEXT		1	1	Restriction of every element of this type, such as rachi_nai. Empty means by location.	1	0
 PARAM	ff63e172-c407-4265-b075-4e1d5e9822b8	gis_kind	TEXT		1	1	What a family is in the GIS: escalator, moving_walkway, elevator or ticket_gate.	1	0
 PARAM	343f3126-afff-422c-99c1-0d1d4f1b1c95	gis_direction	TEXT		1	1	Travel direction of an escalator or moving walkway: up, down or both.	1	0
+PARAM	26b16279-ebcb-4baa-9a7e-b07addf4e5b4	gis_levels_served	TEXT		1	1	Levels an elevator of this type stops at, by level name or short_name, separated by commas. Empty means the levels the car spans.	1	0
+PARAM	e413bbb1-dab0-4acd-9b16-eeac608dca9b	gis_door	TEXT		1	1	Door type of every door of this type, exported to the opening's door field.	1	0
+PARAM	0156f4b3-7806-4033-baa0-09838c299ddb	gis_access_con	TEXT		1	1	Access control of every door of this type, exported to the opening's access_con field.	1	0
 PARAM	0816cab3-3717-4632-854f-c6c7c11e0881	gis_key	TEXT		1	1	revit_key of the first feature (part 0) this element made in the last export. Written by the export.	0	0
 PARAM	a5edd0e8-7877-4498-91c6-29691a6a01f5	gis_standard_version	TEXT		1	1	Version of the Kanizu GIS standard the model was set up with.	0	0

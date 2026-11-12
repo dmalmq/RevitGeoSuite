@@ -16,7 +16,7 @@ class SetupPlanTests(unittest.TestCase):
 
     def test_an_empty_model_gets_everything(self):
         plan = setup_plan.plan_setup(snapshot.ModelSnapshot(), self.standard)
-        self.assertEqual(12, len([step for step in plan.parameters if step.action == setup_plan.BIND]))
+        self.assertEqual(15, len([step for step in plan.parameters if step.action == setup_plan.BIND]))
         self.assertEqual(len(self.standard.materials), len(plan.materials))
         self.assertEqual(12, len([step for step in plan.floor_types if step.action == setup_plan.CREATE]))
         self.assertTrue(plan.sets_version)

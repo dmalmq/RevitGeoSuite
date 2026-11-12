@@ -17,7 +17,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 |---|---|---|
 | `id` | instance | floors, rooms, stairs, generic models, specialty equipment, doors, windows, columns |
 | `level_id` | instance | levels, floors, rooms |
-| `name` | instance | floors, rooms, stairs, generic models, specialty equipment |
+| `name` | instance | floors, rooms, stairs, generic models, specialty equipment, doors |
 | `short_name` | instance | the same, and levels |
 | `category` | instance | floors, rooms, stairs, generic models, specialty equipment; overrides the type's `gis_category` |
 | `ordinal` | instance (integer) | levels, floors, rooms |
@@ -25,6 +25,9 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | `gis_restriction` | type | floors, generic models, specialty equipment; empty means by location |
 | `gis_kind` | type | generic models, specialty equipment (escalator, moving_walkway, elevator, ticket_gate) |
 | `gis_direction` | instance | stairs, generic models, specialty equipment (up, down, both) |
+| `gis_levels_served` | type | generic models, specialty equipment; the levels an elevator stops at, by level name or `short_name`, separated by commas; empty means the levels the car spans |
+| `gis_door` | type | doors; the opening's `door` field |
+| `gis_access_con` | type | doors; the opening's `access_con` field |
 | `gis_key` | instance, not user editable | floors, rooms, stairs, generic models, specialty equipment, columns; the export writes the element's first `revit_key` (part 0) here |
 | `gis_standard_version` | instance, not user editable | project information; the version of this standard the model was set up with |
 
@@ -60,7 +63,7 @@ RevitGeoSuite checks a model against this standard itself (`GisStandardCheck`), 
 
 ## Field list
 
-`fields.json` lists every field the export writes (`source.kind` `core`), with the alias and pick list Kanizu gives the GDB field. To add a field for a station, copy it to the station folder, add a row, and set `fields` in the model's `gis-model.json` to the copy's name. For example, an operator name kept in a new instance parameter:
+`fields.json` lists every field the export writes, with the alias and pick list Kanizu gives the GDB field. Most rows are `core`. The opening's `door`, `access_con` and `name` are `parameter` rows that read the standard parameters `gis_door`, `gis_access_con` (both from the door's type) and `name`, so a GDB edit to them can be taken back into Revit. Level `address_id` and `build_id` and fixture `anchor_id` are GDB-owned rows: the export never writes them, and Kanizu keeps the GDB's values. To add a field for a station, copy it to the station folder, add a row, and set `fields` in the model's `gis-model.json` to the copy's name. For example, an operator name kept in a new instance parameter:
 
 ```json
 {

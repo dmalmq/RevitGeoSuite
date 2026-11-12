@@ -83,6 +83,9 @@ public static class GisSharedParameters
     public const string GisRestriction = "gis_restriction";
     public const string GisKind = "gis_kind";
     public const string GisDirection = "gis_direction";
+    public const string GisLevelsServed = "gis_levels_served";
+    public const string GisDoor = "gis_door";
+    public const string GisAccessCon = "gis_access_con";
     public const string GisKey = "gis_key";
     public const string GisStandardVersion = "gis_standard_version";
 
@@ -92,6 +95,7 @@ public static class GisSharedParameters
     private const string GenericModel = "OST_GenericModel";
     private const string SpecialtyEquipment = "OST_SpecialityEquipment";
     private const string Levels = "OST_Levels";
+    private const string Doors = "OST_Doors";
 
     /// <summary>The categories that make unit features: floors, rooms, stairs and the escalator and fixture families.</summary>
     private static readonly string[] UnitCategories = { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment };
@@ -109,7 +113,7 @@ public static class GisSharedParameters
             new Guid("64e7d743-c3ae-4831-a208-33c2762ac50a"),
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
-            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, "OST_Doors", "OST_Windows", "OST_Columns", "OST_StructuralColumns" },
+            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, Doors, "OST_Windows", "OST_Columns", "OST_StructuralColumns" },
             "Stable export id of the element."),
         new GisParameterDefinition(
             LevelId,
@@ -123,8 +127,8 @@ public static class GisSharedParameters
             new Guid("47b8db20-e756-4280-a842-f570dc847db5"),
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
-            UnitCategories,
-            "Name of the unit in the GIS."),
+            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, Doors },
+            "Name of the unit or door in the GIS."),
         new GisParameterDefinition(
             ShortName,
             new Guid("03f1849b-ac06-42c8-aff7-51a973f0a730"),
@@ -174,6 +178,27 @@ public static class GisSharedParameters
             GisParameterBinding.Instance,
             new[] { Stairs, GenericModel, SpecialtyEquipment },
             "Travel direction of an escalator or moving walkway: up, down or both."),
+        new GisParameterDefinition(
+            GisLevelsServed,
+            new Guid("26b16279-ebcb-4baa-9a7e-b07addf4e5b4"),
+            GisParameterDataType.Text,
+            GisParameterBinding.Type,
+            FamilyCategories,
+            "Levels an elevator of this type stops at, by level name or short_name, separated by commas. Empty means the levels the car spans."),
+        new GisParameterDefinition(
+            GisDoor,
+            new Guid("e413bbb1-dab0-4acd-9b16-eeac608dca9b"),
+            GisParameterDataType.Text,
+            GisParameterBinding.Type,
+            new[] { Doors },
+            "Door type of every door of this type, exported to the opening's door field."),
+        new GisParameterDefinition(
+            GisAccessCon,
+            new Guid("0156f4b3-7806-4033-baa0-09838c299ddb"),
+            GisParameterDataType.Text,
+            GisParameterBinding.Type,
+            new[] { Doors },
+            "Access control of every door of this type, exported to the opening's access_con field."),
         new GisParameterDefinition(
             GisKey,
             new Guid("0816cab3-3717-4632-854f-c6c7c11e0881"),

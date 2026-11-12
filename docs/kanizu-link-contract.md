@@ -93,6 +93,16 @@ The field list the export used, written beside the GeoPackage: schema `revitgeos
 
 - `source.kind` is `core` for a field the export always writes, `parameter` for a Revit parameter (`parameter`, `guid`, `binding`, `categories`), `derived` for a value the export works out, and `none` for a field with no Revit source.
 - `owner` is `revit` (every export writes the value) or `gdb` (the export never writes it; Kanizu keeps the GDB's value and carries it across by `revit_key`).
+- A `parameter` row with `binding` `type` is read from the element's type. A blank or absent parameter value exports as no value.
+
+The standard list has these rows beyond the core ones:
+
+| Row | Source | Owner |
+|---|---|---|
+| `unit.levels_served` | core: the levels an elevator stops at, as level ids lowest first and separated by commas. From the type's `gis_levels_served` (level names or `short_name`s), else the levels whose elevation lies within the car's height span. Empty when neither gives two levels, and for every unit that is not an elevator family. | revit |
+| `opening.door`, `opening.access_con` | parameter `gis_door`, `gis_access_con` on the door type | revit |
+| `opening.name` | parameter `name` on the door | revit |
+| `level.address_id`, `level.build_id`, `fixture.anchor_id` | none | gdb |
 
 Unit categories reach the GDB in the station's codes. The export writes a unit's category in IMDF terms (`walkway`, `retail`, `ticketing`) and its side of the ticket gates in `gis_restriction` (`rachi_nai` inside, `rachi_gai` outside), which `restrict` leaves out. `gis_restriction` is the side the export resolves, the same one that picks `restrict` and the preview fill: the type's `gis_restriction` parameter, or, for a type without one, the side its name gives (`ラチ内店舗`, `改札内コンコース`). Kanizu's station code table turns the two into the GDB's one code (`walkway_sta`, `walkway`, `store_sta`, `store`, `ticket office`) and drops `gis_restriction`. A pair with no code is written as exported and listed when the apply is reviewed. A blank `restrict` never replaces a GDB value such as `employeesonly`.
 

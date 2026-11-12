@@ -59,13 +59,14 @@ public sealed class GisStandardTests
     }
 
     [Fact]
-    public void SharedParameters_HaveTheTwelveStandardNamesWithUniqueGuids()
+    public void SharedParameters_HaveTheStandardNamesWithUniqueGuids()
     {
         Assert.Equal(
             new[]
             {
                 "id", "level_id", "name", "short_name", "category", "ordinal",
-                "gis_category", "gis_restriction", "gis_kind", "gis_direction", "gis_key", "gis_standard_version",
+                "gis_category", "gis_restriction", "gis_kind", "gis_direction",
+                "gis_levels_served", "gis_door", "gis_access_con", "gis_key", "gis_standard_version",
             },
             GisSharedParameters.All.Select(definition => definition.Name));
         Assert.Equal(GisSharedParameters.All.Count, GisSharedParameters.All.Select(definition => definition.Guid).Distinct().Count());
