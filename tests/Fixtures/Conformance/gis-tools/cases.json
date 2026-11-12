@@ -1,0 +1,178 @@
+{
+  "note": "Shared cases for the KanizuGIS model tools. Both pyrevit/KanizuGIS.extension/tests/test_conformance.py and tests/RevitGeoSuite.FloorPlanExport.Core.Tests/GisTools/GisToolsConformanceTests.cs read this file, so a rule changed in one implementation and not the other fails a test. Delete with the pyRevit extension (M4).",
+  "audit": [
+    {
+      "name": "a model on the standard is clean",
+      "model": { "base": "standard" },
+      "expected": []
+    },
+    {
+      "name": "never set up",
+      "model": { "base": "standard", "standard_version": "" },
+      "expected": [ ["warning", "standard", []] ]
+    },
+    {
+      "name": "version is not a number",
+      "model": { "base": "standard", "standard_version": "v1" },
+      "expected": [ ["error", "standard", []] ]
+    },
+    {
+      "name": "parameters: missing, legacy GUID, wrong binding",
+      "model": {
+        "base": "standard",
+        "bound_skip": ["gis_kind", "name", "gis_category"],
+        "bound_extra": [
+          { "name": "name", "guid": null, "binding": "instance", "categories": ["OST_Floors"] },
+          { "name": "gis_category", "guid": "standard", "binding": "instance", "categories": ["OST_Floors"] }
+        ]
+      },
+      "expected": [ ["warning", "parameters", []], ["warning", "parameters", []], ["info", "parameters", []] ]
+    },
+    {
+      "name": "floor types, floors, levels and families together",
+      "model": {
+        "base": "standard",
+        "floor_types_extra": [
+          { "id": 1, "name": "j 改札内コンコース_床", "floor_ids": [11, 12] },
+          { "id": 2, "name": "j 謎_床", "gis_category": "concourse", "floor_ids": [13] },
+          { "id": 3, "name": "j 未使用_床", "floor_ids": [] },
+          { "id": 4, "name": "j 東口通路_床", "gis_category": " Walkway ", "floor_ids": [14] }
+        ],
+        "floors": [
+          { "id": 5, "type_id": 200, "category": "lobby" },
+          { "id": 6, "type_id": 200, "category": "hall" },
+          { "id": 7, "type_id": 200, "category": " Retail " }
+        ],
+        "levels": [
+          { "id": 31, "name": "ルミネ2_3FL", "ordinal": null, "short_name": "3F" },
+          { "id": 32, "name": "B1FL", "ordinal": -1, "short_name": "" },
+          { "id": 33, "name": "Roof", "ordinal": null, "short_name": "", "has_floors": false }
+        ],
+        "family_types": [
+          { "id": 41, "family": "j エスカレータ-lightweight", "type": "S1000", "instance_ids": [21] },
+          { "id": 42, "family": "Moving Walkway", "type": "Type 1", "instance_ids": [22] },
+          { "id": 43, "family": "j エスカレーター-lightweight", "type": "S1000", "gis_kind": "Escalator", "instance_ids": [23] },
+          { "id": 44, "family": "Bench", "type": "1800", "instance_ids": [24] },
+          { "id": 45, "family": "Lift", "type": "A", "gis_kind": "lift", "instance_ids": [25] },
+          { "id": 46, "family": "j エスカレータ-other", "type": "S800", "gis_category": "escalator", "instance_ids": [26] },
+          { "id": 47, "family": "自動改札機", "type": "標準", "instance_ids": [27] },
+          { "id": 48, "family": "ELEVATOR 11人乗", "type": "A", "instance_ids": [28] }
+        ]
+      },
+      "expected": [
+        ["error", "floor types", [13]],
+        ["error", "floors", [6]],
+        ["error", "families", [25]],
+        ["warning", "floor types", [11, 12]],
+        ["warning", "levels", [31]],
+        ["warning", "levels", [32]],
+        ["warning", "families", [21]],
+        ["warning", "families", [22]],
+        ["warning", "families", [27]],
+        ["warning", "families", [28]]
+      ]
+    }
+  ],
+  "floor_type_match": [
+    { "name": "j 改札内コンコース_床", "expected": ["j ラチ内コンコース_床", "rachi_nai", "words in the name"] },
+    { "name": "j 改札外通路コンコース_床", "expected": ["j ラチ外コンコース_床", "rachi_gai", "words in the name"] },
+    { "name": "j 新幹線ホーム(JR東)_床", "expected": ["j 新幹線ホーム_床", "rachi_nai", "words in the name"] },
+    { "name": "j 在来線ホーム_床", "expected": ["j ホーム_床", "rachi_nai", "words in the name"] },
+    { "name": "j ラチ内コンコース(JR東海新幹線)_床", "expected": ["j 新幹線コンコース_床", "rachi_nai", "words in the name"] },
+    { "name": "j 新幹線待合室_床", "expected": ["j 待合室_床", "", "words in the name"] },
+    { "name": "j 緑の窓口_床", "expected": ["j みどりの窓口_床", "", "words in the name"] },
+    { "name": "j 駅務室_床", "expected": ["j 駅事務室_床", "", "words in the name"] },
+    { "name": "j 男子トイレ2_床", "expected": ["j 男子トイレ_床", "", "words in the name"] },
+    { "name": "j 多目的トイレ（東）_床", "expected": ["j 多目的トイレ_床", "", "words in the name"] },
+    { "name": "j ラチ内店舗_床", "expected": ["j 店舗_床", "rachi_nai", "words in the name"] },
+    { "name": "j 改札外店舗_床", "expected": ["j 店舗_床", "rachi_gai", "words in the name"] },
+    { "name": "j 店舗_床 古い", "expected": ["j 店舗_床", "", "words in the name"] },
+    { "name": " 店舗 ", "expected": ["j 店舗_床", "", "name"] },
+    { "name": "ラチ外コンコース_床", "expected": ["j ラチ外コンコース_床", "rachi_gai", "name"] },
+    { "name": "Generic 150mm", "expected": null },
+    { "name": "j 謎の部屋_床", "expected": null }
+  ],
+  "setup_plan": [
+    {
+      "name": "a model on the standard needs nothing",
+      "model": { "base": "standard" },
+      "expected_lines": []
+    },
+    {
+      "name": "legacy GUID, wrong binding, a drifted type and material, echoes, first stamp",
+      "model": {
+        "base": "standard",
+        "standard_version": "",
+        "bound_skip": ["category", "gis_kind"],
+        "bound_extra": [
+          { "name": "category", "guid": "11111111-2222-3333-4444-555555555555", "binding": "instance", "categories": ["OST_Floors", "OST_Rooms"] },
+          { "name": "gis_kind", "guid": "standard", "binding": "instance", "categories": ["OST_GenericModel"] }
+        ],
+        "standard_type_edits": [ { "index": 0, "gis_category": "", "material": "Concrete" } ],
+        "material_edits": [ { "index": 0, "color": "#000000" } ],
+        "floor_types_extra": [
+          { "id": 2, "name": "j 東口通路_床", "gis_category": "walkway", "floor_ids": [14, 15] }
+        ],
+        "floors": [
+          { "id": 21, "type_id": 201, "category": "walkway" },
+          { "id": 22, "type_id": 201, "category": "nonpublic" },
+          { "id": 14, "type_id": 2, "category": "Walkway" },
+          { "id": 15, "type_id": 2, "category": "retail" }
+        ]
+      },
+      "expected_lines": [
+        "Add Stairs, GenericModel, SpecialityEquipment to parameter category (kept under its own GUID 11111111-2222-3333-4444-555555555555)",
+        "Leave parameter gis_kind as it is: bound as instance parameter, the standard binds it as type",
+        "Recolour material GIS_free_area, #000000 to #FFFFFF",
+        "Update floor type j ラチ外コンコース_床: gis_category (empty) to walkway; material Concrete to GIS_free_area",
+        "Clear the category of 2 floors that only repeats their type (written by an older export)",
+        "Set gis_standard_version (none) to 1"
+      ]
+    }
+  ],
+  "drift_plan": [
+    {
+      "name": "core fields, a station field, an agreeing row, problems and a conflict",
+      "drift": {
+        "schema": "kanizu.gis-drift",
+        "version": 1,
+        "model": "abc",
+        "appliedVersion": "v/2",
+        "rows": [
+          { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "name", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "改札", "gdb": "北改札", "base": "改札", "conflict": false },
+          { "revitKey": "abc|u-1|0", "layer": "unit", "field": "alt_name", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": null, "gdb": "北", "base": null, "conflict": false },
+          { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "restrict", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "", "gdb": "rachi_nai", "base": "", "conflict": false },
+          { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "shop_hours", "parameter": "kanizu_shop_hours", "guid": "", "binding": "type", "label": "改札", "revit": "", "gdb": "10-20", "base": "", "conflict": false },
+          { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "name", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "改札", "gdb": "北改札", "base": "改札", "conflict": false },
+          { "revitKey": "abc|u-2|0", "uniqueId": "u-2", "layer": "unit", "field": "direction", "parameter": "", "guid": "", "binding": "", "label": "階段", "revit": "down", "gdb": "上り", "base": "both", "conflict": true },
+          { "revitKey": "abc|u-2|0", "uniqueId": "u-2", "layer": "unit", "field": "category", "parameter": "", "guid": "", "binding": "", "label": "階段", "revit": "stairs", "gdb": "Stairs", "base": "stairs", "conflict": false },
+          { "revitKey": "abc|lvl|0", "uniqueId": "lvl", "layer": "level", "field": "ordinal", "parameter": "", "guid": "", "binding": "", "label": "1FL", "revit": "1", "gdb": "01", "base": "1", "conflict": false },
+          { "revitKey": "abc|lvl2|0", "uniqueId": "lvl2", "layer": "level", "field": "ordinal", "parameter": "", "guid": "", "binding": "", "label": "2FL", "revit": "1", "gdb": "two", "base": "1", "conflict": false },
+          { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "level_id", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "a", "gdb": "b", "base": "a", "conflict": false },
+          { "revitKey": "abc|u-1|0", "uniqueId": "u-1", "layer": "unit", "field": "category", "parameter": "", "guid": "", "binding": "", "label": "改札", "revit": "walkway", "gdb": "concourse", "base": "walkway", "conflict": false },
+          { "revitKey": "abc|gone|0", "uniqueId": "gone", "layer": "unit", "field": "name", "parameter": "", "guid": "", "binding": "", "label": "", "revit": "x", "gdb": "y", "base": "x", "conflict": false }
+        ]
+      },
+      "model_values": [
+        ["u-1", "name", "instance", "改札"],
+        ["u-1", "short_name", "instance", ""],
+        ["u-1", "gis_restriction", "type", ""],
+        ["u-1", "kanizu_shop_hours", "type", ""],
+        ["u-1", "category", "instance", "walkway"],
+        ["u-2", "gis_direction", "instance", "down"],
+        ["u-2", "category", "instance", "stairs"],
+        ["lvl", "ordinal", "instance", "1"],
+        ["lvl2", "ordinal", "instance", "1"]
+      ],
+      "expected_changes": [
+        ["u-1", "name", "instance", "改札", "北改札", false],
+        ["u-1", "short_name", "instance", "", "北", false],
+        ["u-1", "gis_restriction", "type", "", "rachi_nai", false],
+        ["u-1", "kanizu_shop_hours", "type", "", "10-20", false],
+        ["u-2", "gis_direction", "instance", "down", "up", true],
+        ["u-2", "category", "instance", "stairs", "Stairs", false]
+      ],
+      "expected_problem_count": 4
+    }
+  ]
+}

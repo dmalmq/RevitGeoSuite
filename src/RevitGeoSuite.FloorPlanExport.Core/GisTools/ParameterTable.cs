@@ -159,7 +159,13 @@ public static class ParameterTable
     public static void WriteCsv(string path, IEnumerable<IReadOnlyDictionary<string, string>> rows) =>
         File.WriteAllBytes(path, ToCsvBytes(rows));
 
-    /// <summary>The text of a CSV file: UTF-8 (with or without a byte order mark) or, as Japanese Excel saves CSV, CP932.</summary>
+    /// <summary>
+    /// The text of a CSV file. A UTF-8 byte order mark is skipped; the bytes are then decoded as
+    /// strict UTF-8 (with or without the mark), and only when that fails as strict CP932, which is
+    /// what Japanese Excel saves as "CSV". Japanese text in CP932 is almost never valid UTF-8, so
+    /// the order does not misread it. Bytes valid in neither throw <see cref="FormatException"/>
+    /// rather than reading back as replacement characters.
+    /// </summary>
     public static string DecodeCsv(byte[] data)
     {
         if (data is null)
@@ -174,8 +180,28 @@ public static class ParameterTable
         }
         catch (DecoderFallbackException)
         {
-            return Encoding.GetEncoding(932).GetString(data);
         }
+
+        // Not every runtime honours the exception fallback for CP932 (Mono swaps in '?'), so the text
+        // must also encode back to the same bytes. Excel writes the canonical CP932 bytes, so a file
+        // it saved always round-trips.
+        Encoding cp932 = Encoding.GetEncoding(932, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        try
+        {
+            string text = cp932.GetString(data);
+            if (cp932.GetBytes(text).SequenceEqual(data))
+            {
+                return text;
+            }
+        }
+        catch (DecoderFallbackException)
+        {
+        }
+        catch (EncoderFallbackException)
+        {
+        }
+
+        throw new FormatException("The file is neither UTF-8 nor CP932 (Shift_JIS) text. Save it from Excel as CSV UTF-8 and read it again.");
     }
 
     public static IReadOnlyList<Dictionary<string, string>> ReadCsv(string path) => ParseCsvText(DecodeCsv(File.ReadAllBytes(path)));

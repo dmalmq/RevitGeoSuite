@@ -85,6 +85,15 @@ public sealed class GisDriftTests
     }
 
     [Fact]
+    public void AcceptsVersionOneWrittenAsADecimal()
+    {
+        string text = Text(new[] { Entry("name", "北") }).Replace("\"version\": 1,", "\"version\": 1.0,");
+
+        Assert.Contains("1.0", text);
+        Assert.Equal("北", GisDrift.Parse(text).Rows[0].Gdb);
+    }
+
+    [Fact]
     public void FileNameMatchesKanizus()
     {
         Assert.Equal("0f3a-B2.gis-drift.json", GisDrift.FileName("0f3a-B2"));

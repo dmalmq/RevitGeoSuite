@@ -206,7 +206,8 @@ public static class GisDrift
         }
 
         JToken? version = root["version"];
-        if (version is not JValue { Type: JTokenType.Integer } || (long)version != Version)
+        // Kanizu writes the version as an integer (a u32); a number equal to it, such as 1.0, is the same version.
+        if (version is not JValue { Type: JTokenType.Integer or JTokenType.Float } number || Convert.ToDouble(number.Value, CultureInfo.InvariantCulture) != Version)
         {
             throw new FormatException($"The drift file is version {version}; this tool reads version {Version}. Update RevitGeoSuite.");
         }

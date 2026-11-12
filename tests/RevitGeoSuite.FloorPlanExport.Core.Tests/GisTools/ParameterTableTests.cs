@@ -82,6 +82,36 @@ public sealed class ParameterTableTests
     }
 
     [Fact]
+    public void DecodesCp932FromJapaneseExcel()
+    {
+        string text = "element_id,kind,name,short_name\r\n1,floor,ラチ内コンコース,改札内\r\n2,room,みどりの窓口,窓口\r\n3,level,東口（地下1階）,B1\r\n";
+
+        IReadOnlyList<Dictionary<string, string>> rows = ParameterTable.ParseCsvText(ParameterTable.DecodeCsv(Encoding.GetEncoding(932).GetBytes(text)));
+
+        Assert.Equal(new[] { "ラチ内コンコース", "みどりの窓口", "東口（地下1階）" }, rows.Select(row => row["name"]));
+        Assert.Equal(new[] { "改札内", "窓口", "B1" }, rows.Select(row => row["short_name"]));
+    }
+
+    [Fact]
+    public void DecodesUtf8WithoutAByteOrderMark()
+    {
+        byte[] data = new UTF8Encoding(false).GetBytes("element_id,name\r\n1,新幹線ホーム\r\n");
+
+        Assert.NotEqual(0xEF, data[0]);
+        Assert.Equal("新幹線ホーム", ParameterTable.ParseCsvText(ParameterTable.DecodeCsv(data))[0]["name"]);
+    }
+
+    [Fact]
+    public void BytesValidInNeitherEncodingAreRefused()
+    {
+        // 0x81 is a UTF-8 continuation byte with no lead, and a CP932 lead byte that 0x20 cannot follow.
+        byte[] data = Encoding.ASCII.GetBytes("element_id,name\r\n1,").Concat(new byte[] { 0x81, 0x20 }).ToArray();
+
+        FormatException error = Assert.Throws<FormatException>(() => ParameterTable.DecodeCsv(data));
+        Assert.Contains("neither UTF-8 nor CP932", error.Message);
+    }
+
+    [Fact]
     public void UnchangedFileChangesNothing()
     {
         var (changes, problems) = Diff(Edited());
