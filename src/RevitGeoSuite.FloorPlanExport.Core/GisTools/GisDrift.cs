@@ -168,7 +168,7 @@ public sealed class GisDriftShape
     /// <summary>For a split or merge: this row keeps the element (and its key). The other pieces of a split become new floors; the other units of a merge are deleted.</summary>
     public bool Keeps { get; }
 
-    /// <summary>The GDB outline in <see cref="GisDriftFile.Epsg"/>: polygons, each a list of rings (the outer one first). Empty for a deleted unit and for the units a merge took in.</summary>
+    /// <summary>The GDB outline in <see cref="GisDriftFile.Epsg"/>: polygons, each a list of rings (the outer one first), each point X easting and Y northing whatever axis order the EPSG code names. Empty for a deleted unit and for the units a merge took in.</summary>
     public IReadOnlyList<IReadOnlyList<IReadOnlyList<(double X, double Y)>>> Outline { get; }
 
     public string Describe() => $"{Layer} {(Label.Length > 0 ? Label : UniqueId)} {Edit}";
