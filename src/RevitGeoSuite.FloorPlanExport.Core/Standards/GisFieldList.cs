@@ -60,7 +60,7 @@ public sealed class GisFieldList
             Core("unit", "level_id", "レベルID", "The level the unit is on."),
             Core("unit", VerticalCirculation.DirectionAttributeName, "方向", "Travel direction of a stair, escalator or moving walkway.", values: direction),
             Core("unit", VerticalCirculation.ToLevelAttributeName, "行先レベル", "The level a stair or escalator leads to."),
-            Core("unit", VerticalCirculation.LevelsServedAttributeName, "停止レベル", "The levels an elevator stops at: level ids, lowest first, separated by commas. From gis_levels_served, else the levels the car spans."),
+            Core("unit", VerticalCirculation.LevelsServedAttributeName, "停止レベル", "The levels an elevator stops at: level ids, lowest first, separated by commas. From gis_levels_served, else the levels the car spans.", length: 2000),
             Core("unit", "source", "ソース", "What the unit was made from."),
             Core("unit", "display_point", "表示点", "Label point."),
             Core("unit", "preview_fill_color", "プレビュー色", "Fill colour in the preview."),
@@ -118,11 +118,16 @@ public sealed class GisFieldList
     public static GisFieldList MergeOntoStandard(GisFieldList standard, GisFieldList station, ICollection<string> problems)
     {
         List<GisField> merged = new(standard.Fields);
-        HashSet<string> core = new(standard.Fields.Select(field => field.Key), StringComparer.Ordinal);
+        Dictionary<string, GisField> core = standard.Fields.ToDictionary(field => field.Key, StringComparer.Ordinal);
         foreach (GisField field in station.Fields)
         {
-            if (core.Contains(field.Key))
+            if (core.TryGetValue(field.Key, out GisField? standardField))
             {
+                if (!SameSource(field, standardField))
+                {
+                    problems?.Add($"{field.Key}: the standard list defines this field ({DescribeSource(standardField)}), so the station row ({DescribeSource(field)}) is left out.");
+                }
+
                 continue;
             }
 
@@ -136,6 +141,26 @@ public sealed class GisFieldList
         }
 
         return new GisFieldList(merged);
+    }
+
+    private static bool SameSource(GisField a, GisField b)
+    {
+        return a.Owner == b.Owner &&
+               a.Source.Kind == b.Source.Kind &&
+               string.Equals(a.Source.Parameter, b.Source.Parameter, StringComparison.Ordinal) &&
+               a.Source.Binding == b.Source.Binding &&
+               string.Equals(a.Source.Derived, b.Source.Derived, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string DescribeSource(GisField field)
+    {
+        string source = field.Source.Kind switch
+        {
+            GisFieldSourceKind.Parameter => $"parameter {field.Source.Parameter}",
+            GisFieldSourceKind.Derived => $"derived {field.Source.Derived}",
+            _ => field.Source.Kind.ToString().ToLowerInvariant(),
+        };
+        return $"{source}, owner {field.Owner.ToString().ToLowerInvariant()}";
     }
 
     public static GisFieldList Parse(string json, string sourceLabel, ICollection<string>? problems = null)
@@ -419,7 +444,8 @@ public sealed class GisFieldList
         string aliasJa,
         string description,
         GisFieldType type = GisFieldType.Text,
-        IReadOnlyList<string>? values = null)
+        IReadOnlyList<string>? values = null,
+        int? length = null)
     {
         return new GisField
         {
@@ -427,6 +453,7 @@ public sealed class GisFieldList
             Name = name,
             AliasJa = aliasJa,
             Type = type,
+            Length = length,
             Values = values?.ToList() ?? new List<string>(),
             Source = new GisFieldSource { Kind = GisFieldSourceKind.Core },
             Owner = GisFieldOwner.Revit,

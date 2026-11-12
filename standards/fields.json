@@ -206,6 +206,7 @@
       "name": "levels_served",
       "aliasJa": "停止レベル",
       "type": "text",
+      "length": 2000,
       "values": [],
       "source": {
         "kind": "core"

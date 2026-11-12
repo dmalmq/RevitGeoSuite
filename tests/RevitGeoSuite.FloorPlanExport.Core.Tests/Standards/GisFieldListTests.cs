@@ -76,7 +76,31 @@ public sealed class GisFieldListTests
 
         Assert.Equal("カテゴリ", list.Fields.Single(field => field.Key == "unit.category").AliasJa);
         Assert.DoesNotContain(list.Fields, field => field.Name == "made_up");
-        Assert.Single(problems);
+        Assert.Equal(2, problems.Count);
+    }
+
+    [Fact]
+    public void AStationRowForAStandardDoorFieldIsLeftOutAndReported()
+    {
+        List<string> problems = new();
+        string ownDoor = "{\"layer\":\"opening\",\"name\":\"door\",\"source\":{\"kind\":\"parameter\",\"parameter\":\"door_kind\",\"guid\":\"9a1d6c1e-2f0b-4b7e-9f3e-0c5d2a7b8e11\",\"binding\":\"instance\",\"categories\":[\"OST_Doors\"]}}";
+
+        GisFieldList list = GisFieldList.MergeOntoStandard(
+            GisFieldList.CreateStandard(), GisFieldList.Parse(StationList(ownDoor), "station"), problems);
+
+        Assert.Equal("gis_door", list.Fields.Single(field => field.Key == "opening.door").Source.Parameter);
+        Assert.Contains("opening.door", Assert.Single(problems));
+    }
+
+    [Fact]
+    public void AStationCopyOfTheStandardMergesWithoutProblems()
+    {
+        List<string> problems = new();
+
+        GisFieldList.MergeOntoStandard(
+            GisFieldList.CreateStandard(), GisFieldList.Parse(GisFieldList.CreateStandard().ToJson(), "station"), problems);
+
+        Assert.Empty(problems);
     }
 
     [Fact]

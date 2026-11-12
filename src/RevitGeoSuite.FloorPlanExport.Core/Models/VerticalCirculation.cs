@@ -115,7 +115,7 @@ public static class VerticalCirculation
     /// <summary>The car must reach this far above a level to stop there, so the overrun above the top stop does not count.</summary>
     public const double MinimumCarHeightMeters = 2.0d;
 
-    private static readonly char[] LevelListSeparators = { ',', '、', ';', '\n' };
+    private static readonly char[] LevelListSeparators = { ',', '、', '，', ';', '；', '\n' };
 
     /// <summary>
     /// The export ids of the levels an elevator stops at, lowest first. With <paramref name="levelsServed"/>

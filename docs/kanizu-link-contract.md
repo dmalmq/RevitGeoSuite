@@ -99,7 +99,7 @@ The standard list has these rows beyond the core ones:
 
 | Row | Source | Owner |
 |---|---|---|
-| `unit.levels_served` | core: the levels an elevator stops at, as level ids lowest first and separated by commas. From the type's `gis_levels_served` (level names or `short_name`s), else the levels whose elevation lies within the car's height span. Empty when neither gives two levels, and for every unit that is not an elevator family. | revit |
+| `unit.levels_served` | core: the levels an elevator stops at, as level ids lowest first and separated by commas. From the type's `gis_levels_served` (level names or `short_name`s), else the levels whose elevation lies within the car's height span. Empty when neither gives two levels, and for every unit that is not an elevator family. Kanizu reads it for the network and does not write it to the GDB, whose levels have ids of their own. | revit |
 | `opening.door`, `opening.access_con` | parameter `gis_door`, `gis_access_con` on the door type | revit |
 | `opening.name` | parameter `name` on the door | revit |
 | `level.address_id`, `level.build_id`, `fixture.anchor_id` | none | gdb |

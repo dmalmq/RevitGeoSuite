@@ -45,6 +45,7 @@ public sealed class UnitExtractor
     private readonly ExportSourceDescriptor _sourceDescriptor;
     private readonly ZoneCatalog _zoneCatalog;
     private readonly IExportMetadataProvider _metadataProvider;
+    private IReadOnlyList<ElevatorStop>? _elevatorStops;
     private readonly FloorCategoryResolver _floorCategoryResolver;
     private readonly RoomCategoryResolver _roomCategoryResolver;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
@@ -944,20 +945,7 @@ public sealed class UnitExtractor
     /// </summary>
     private string? ResolveLevelsServed(FamilyInstance elevator, ICollection<string> warnings)
     {
-        List<ElevatorStop> levels = new();
-        foreach (Level level in new FilteredElementCollector(_document).OfClass(typeof(Level)).Cast<Level>())
-        {
-            string? exportId = ReadLevelExportId(level, warnings, out _);
-            if (exportId != null)
-            {
-                levels.Add(new ElevatorStop(
-                    exportId,
-                    level.Name,
-                    level.LookupParameter(GisSharedParameters.ShortName)?.AsString(),
-                    level.ProjectElevation * FeetToMetersForLevels));
-            }
-        }
-
+        IReadOnlyList<ElevatorStop> levels = _elevatorStops ??= CollectElevatorStops(warnings);
         BoundingBoxXYZ? box = elevator.get_BoundingBox(null);
         string? levelsServed = ReadStringParameter(elevator, GisSharedParameters.GisLevelsServed);
         List<string> unknown = new();
@@ -984,6 +972,26 @@ public sealed class UnitExtractor
         }
 
         return string.Join(",", stops);
+    }
+
+    /// <summary>The levels with an export id, read once per extractor: every elevator asks for them.</summary>
+    private IReadOnlyList<ElevatorStop> CollectElevatorStops(ICollection<string> warnings)
+    {
+        List<ElevatorStop> levels = new();
+        foreach (Level level in new FilteredElementCollector(_document).OfClass(typeof(Level)).Cast<Level>())
+        {
+            string? exportId = ReadLevelExportId(level, warnings, out _);
+            if (exportId != null)
+            {
+                levels.Add(new ElevatorStop(
+                    exportId,
+                    level.Name,
+                    level.LookupParameter(GisSharedParameters.ShortName)?.AsString(),
+                    level.ProjectElevation * FeetToMetersForLevels));
+            }
+        }
+
+        return levels;
     }
 
     private static void AddOnce(ICollection<string> warnings, string message)
