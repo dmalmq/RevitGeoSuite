@@ -116,6 +116,20 @@ A core field maps to its parameter by name: unit and fixture `name` to `name`, `
 
 The floor plan export (GeoPackage, and the GDB built from it) carries `revit_key` on every feature, `parent_key` and `category` on detail lines. `revit_key` reads `model|UniqueId|part`, with `model@LinkUniqueId` for a feature read through a link. The rules are defined once, in the remarks on [`RevitKey`](../src/RevitGeoSuite.FloorPlanExport.Core/Models/RevitKey.cs); a reader follows those rather than a copy here. It is written only in the GIS export, not in the Cesium package's tiles.
 
+## The walking network: who owns what
+
+Revit owns everything the network is generated from, Kanizu owns the links, and the network GDB only receives. Nobody draws or types a network value in ArcGIS Pro as the normal path.
+
+| Part | Owner | How |
+|---|---|---|
+| Links on one floor | Kanizu | Generated from the units and openings of the GIS export, edited by hand in Kanizu, checked there. Revit has no element for a walking link. |
+| Connections between floors | Revit | One level connector per stair, escalator, elevator or ramp element. Kanizu pairs the element's units on each floor by their shared `revit_key` and stores the key on the connector. A wrong connector is fixed by fixing the model and generating again. |
+| The delivered network | The network GDB | Kanizu writes it, floor links and connectors together, and is its only writer. |
+
+In Kanizu a connector that carries a `revit_key` is locked: it can be inspected and its cost changed, but not removed, reversed, rejoined or changed to another kind. Generating again keeps its id and cost while the element still exports, and removes it once the element is gone. Units without a key, such as data from before the GIS export, still pair by distance on adjacent floors, and a connector drawn by hand stays possible for a station with no Revit model.
+
+What crosses each way: Revit sends Kanizu the units, openings and connector elements in the GIS export. Kanizu sends the network GDB the whole network. Whatever Kanizu shows back in Revit is a read-only view of the network, never ownership.
+
 ## Versions
 
 | File | Version | Raised when |
