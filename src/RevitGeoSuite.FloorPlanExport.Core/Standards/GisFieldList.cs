@@ -54,6 +54,7 @@ public sealed class GisFieldList
             Core("unit", RevitKey.AttributeName, "Revitキー", "Model, element UniqueId and part. Matches rows between exports."),
             Core("unit", "category", "カテゴリ", "Unit category: the floor's category, else its type's gis_category.", values: FloorTypeStandard.KnownCategories),
             Core("unit", "restrict", "制限", "Restriction, such as rachi_nai.", values: restriction),
+            Core("unit", ImdfRestrictionNormalizer.FloorTypeAttributeName, "ラチ内外", "The floor type's restriction (rachi_nai, rachi_gai), which restrict leaves out. Kanizu reads it for the station category code and does not write it to the GDB.", values: restriction),
             Core("unit", "name", "名称", "Name of the unit."),
             Core("unit", "alt_name", "略称", "Short name of the unit."),
             Core("unit", "level_id", "レベルID", "The level the unit is on."),

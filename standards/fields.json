@@ -124,6 +124,21 @@
     },
     {
       "layer": "unit",
+      "name": "gis_restriction",
+      "aliasJa": "ラチ内外",
+      "type": "text",
+      "values": [
+        "rachi_nai",
+        "rachi_gai"
+      ],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "The floor type's restriction (rachi_nai, rachi_gai), which restrict leaves out. Kanizu reads it for the station category code and does not write it to the GDB."
+    },
+    {
+      "layer": "unit",
       "name": "name",
       "aliasJa": "名称",
       "type": "text",

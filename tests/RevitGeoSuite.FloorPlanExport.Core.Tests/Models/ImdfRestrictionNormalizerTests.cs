@@ -22,4 +22,13 @@ public sealed class ImdfRestrictionNormalizerTests
     {
         Assert.Equal("employeesonly", ImdfRestrictionNormalizer.NormalizeUnitRestriction(" employeesonly "));
     }
+
+    [Fact]
+    public void FloorTypeRestriction_KeepsTheFareGateValueThatRestrictLeavesOut()
+    {
+        Assert.Equal("rachi_nai", ImdfRestrictionNormalizer.FloorTypeRestriction(" rachi_nai "));
+        Assert.Equal("rachi_gai", ImdfRestrictionNormalizer.FloorTypeRestriction("rachi_gai"));
+        Assert.Null(ImdfRestrictionNormalizer.FloorTypeRestriction("  "));
+        Assert.Null(ImdfRestrictionNormalizer.FloorTypeRestriction(null));
+    }
 }
