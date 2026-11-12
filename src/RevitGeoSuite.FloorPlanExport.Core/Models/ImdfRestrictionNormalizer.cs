@@ -13,10 +13,25 @@ public static class ImdfRestrictionNormalizer
     /// </summary>
     public const string FloorTypeAttributeName = "gis_restriction";
 
-    /// <summary>The floor type's restriction, trimmed, or null when it has none.</summary>
+    /// <summary>
+    /// The side of the gates as <c>rachi_nai</c> or <c>rachi_gai</c> however the type spells it
+    /// (<c>RACHI_GAI</c>, <c>rachinai</c>, <c>rachi-nai</c>); any other restriction trimmed; null
+    /// when there is none.
+    /// </summary>
     public static string? FloorTypeRestriction(string? restriction)
     {
-        return string.IsNullOrWhiteSpace(restriction) ? null : restriction.Trim();
+        if (string.IsNullOrWhiteSpace(restriction))
+        {
+            return null;
+        }
+
+        string trimmed = restriction.Trim();
+        return Compact(trimmed) switch
+        {
+            "rachinai" => "rachi_nai",
+            "rachigai" => "rachi_gai",
+            _ => trimmed,
+        };
     }
 
     public static string? NormalizeUnitRestriction(string? restriction)
@@ -27,10 +42,10 @@ public static class ImdfRestrictionNormalizer
         }
 
         string trimmed = restriction.Trim();
-        string compact = new(trimmed.Where(ch => ch != '_' && ch != '-' && !char.IsWhiteSpace(ch)).ToArray());
-        return compact.Equals("rachigai", StringComparison.OrdinalIgnoreCase) ||
-               compact.Equals("rachinai", StringComparison.OrdinalIgnoreCase)
-            ? null
-            : trimmed;
+        string compact = Compact(trimmed);
+        return compact is "rachigai" or "rachinai" ? null : trimmed;
     }
+
+    private static string Compact(string value) =>
+        new string(value.Where(ch => ch != '_' && ch != '-' && !char.IsWhiteSpace(ch)).ToArray()).ToLowerInvariant();
 }

@@ -33,6 +33,16 @@ public sealed class ImdfRestrictionNormalizerTests
     }
 
     [Theory]
+    [InlineData("RACHI_GAI", "rachi_gai")]
+    [InlineData("rachinai", "rachi_nai")]
+    [InlineData("rachi-nai", "rachi_nai")]
+    [InlineData(" employeesonly ", "employeesonly")]
+    public void FloorTypeRestriction_SpellsTheSideOfTheGatesOneWay(string restriction, string expected)
+    {
+        Assert.Equal(expected, ImdfRestrictionNormalizer.FloorTypeRestriction(restriction));
+    }
+
+    [Theory]
     [InlineData("ラチ内店舗", "rachi_nai")]
     [InlineData("改札内コンコース", "rachi_nai")]
     [InlineData("ラチ外店舗", "rachi_gai")]
