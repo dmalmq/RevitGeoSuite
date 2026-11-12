@@ -33,7 +33,7 @@ Enumerate the model names the `Agent` tool's `model` parameter accepts in this s
 
 ### 2. Load current state
 
-On Claude Code, first ask whether to configure the user sheet, for every project, or the project sheet, for this repository on any machine. The rest of the steps use the chosen sheet.
+On Claude Code, first ask whether to configure the user sheet, for every project, or the project sheet, for this repository. In this repository the project sheet is stored in git, but it loads only on a machine whose local, uncommitted root `CLAUDE.md` has the `@.claude/pstack-models.md` line. The rest of the steps use the chosen sheet.
 
 The default role-to-model mapping is the rule shape shown in the Write the override sheet step below. If the current runtime's sheet already exists, read it and treat its values as the current choices. Otherwise start from those defaults. A line whose role is not in that shape, such as `how critics`, is from a retired role. Drop it. An older sheet may name full model IDs that start with `claude-`, which the `Agent` tool rejects. Replace each with its family name, the word after `claude-`.
 
@@ -88,7 +88,7 @@ session hook: on
 
 ### 7. Wire it in
 
-On Claude Code, if `<config>/CLAUDE.md` does not already include `<config>/pstack-models.md`, append an `@` line naming the sheet's resolved path, such as `@~/.claude/pstack-models.md`, so the model rows load on every session. For a project sheet, append `@.claude/pstack-models.md` to the `CLAUDE.md` at the repository root instead, if it is not there. Tell the user to commit only `.claude/pstack-models.md`: in this repository the root `CLAUDE.md` stays local-only and is not committed.
+On Claude Code, if `<config>/CLAUDE.md` does not already include `<config>/pstack-models.md`, append an `@` line naming the sheet's resolved path, such as `@~/.claude/pstack-models.md`, so the model rows load on every session. For a project sheet, append `@.claude/pstack-models.md` to the `CLAUDE.md` at the repository root instead, if it is not there. Tell the user to commit only `.claude/pstack-models.md`: in this repository the root `CLAUDE.md` stays local-only and is not committed. So the sheet loads only where that local line exists, and each other machine, cloud sessions included, has to add the line once or rerun `/setup-pstack`.
 
 ### 8. Confirm
 
