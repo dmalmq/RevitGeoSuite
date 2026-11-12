@@ -94,6 +94,37 @@ public sealed class GisDriftTests
     }
 
     [Fact]
+    public void AStationCategoryCodeIsWrittenAsItsRevitCategoryAndItsSideOfTheGates()
+    {
+        JObject inside = Entry("category", "walkway_sta", revit: "walkway");
+        inside["gdbCategory"] = "walkway";
+        inside["gdbRestriction"] = "rachi_nai";
+        JObject store = Entry("category", "store", revit: "ticket office", uniqueId: "u-2");
+        store["gdbCategory"] = "retail";
+        JObject wrongSide = Entry("category", "walkway_sta", revit: "walkway", uniqueId: "u-3");
+        wrongSide["gdbCategory"] = "walkway";
+        wrongSide["gdbRestriction"] = "rachi_nai";
+        var model = Model(new Dictionary<(string, string, string), string>
+        {
+            [("u-1", "category", "instance")] = "room",
+            [("u-1", "gis_restriction", "type")] = "rachi_nai",
+            [("u-2", "category", "instance")] = "ticketing",
+            [("u-2", "gis_restriction", "type")] = "",
+            [("u-3", "category", "instance")] = "walkway",
+            [("u-3", "gis_restriction", "type")] = "rachi_gai",
+        });
+
+        var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(new[] { inside, store, wrongSide })), model, Standard);
+
+        Assert.Equal(
+            new[] { ("u-1", "category", "walkway"), ("u-2", "category", "retail") },
+            changes.Select(change => (change.UniqueId, change.Parameter, change.NewValue)));
+        string problem = Assert.Single(problems);
+        Assert.Contains("rachi_nai", problem);
+        Assert.Contains("floor type", problem);
+    }
+
+    [Fact]
     public void ReadsAFileWrittenByKanizu()
     {
         // Written by Kanizu's DriftFile::save; see tests/Fixtures/Conformance/gis-drift/README.md.
@@ -105,6 +136,8 @@ public sealed class GisDriftTests
         Assert.Equal(8, file.Rows.Count);
         Assert.Equal("", file.Rows[1].Revit);
         Assert.Equal("", file.Rows[5].Gdb);
+        Assert.Equal(("walkway", "rachi_gai"), (file.Rows[4].GdbCategory, file.Rows[4].GdbRestriction));
+        Assert.Equal(("", ""), (file.Rows[0].GdbCategory, file.Rows[0].GdbRestriction));
         var model = Model(new Dictionary<(string, string, string), string>
         {
             [("u-1", "name", "instance")] = "改札",
@@ -112,6 +145,7 @@ public sealed class GisDriftTests
             [("u-1", "gis_restriction", "type")] = "rachi_gai",
             [("u-1", "kanizu_shop_hours", "type")] = "9-21",
             [("u-2", "category", "instance")] = "retail",
+            [("u-2", "gis_restriction", "type")] = "rachi_gai",
             [("u-3", "name", "instance")] = "店舗",
             [("lvl", "ordinal", "instance")] = "1",
         });
@@ -252,5 +286,27 @@ public sealed class GisDriftTests
 
         Assert.True(changes[0].Conflict);
         Assert.Contains("also changed in Revit", changes[0].Label());
+    }
+
+    [Fact]
+    public void AcceptKeepsTickedChangesTheFileStillPlansAndListsTheRest()
+    {
+        GisDriftFile file = GisDrift.Parse(Text(new[] { Entry("name", "北改札"), Entry("alt_name", "北", uniqueId: "u-2") }));
+        var model = Model(new Dictionary<(string, string, string), string>
+        {
+            [("u-1", "name", "instance")] = "改札",
+            [("u-2", "short_name", "instance")] = "",
+        });
+        var (planned, _) = GisDrift.Plan(file, model, Standard);
+
+        var (changes, skipped) = GisDrift.Accept(planned, new[]
+        {
+            ("u-1", "name", "instance", "北改札", "a"),
+            ("u-1", "name", "instance", "北改札", "a"),
+            ("u-2", "short_name", "instance", "南", "b"),
+        });
+
+        Assert.Equal(new[] { "u-1" }, changes.Select(change => change.UniqueId));
+        Assert.Contains("Skipped b", Assert.Single(skipped));
     }
 }

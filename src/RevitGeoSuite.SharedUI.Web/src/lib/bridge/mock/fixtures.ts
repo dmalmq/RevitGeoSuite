@@ -312,6 +312,7 @@ function gisStandard(scenario: MockScenario) {
             { severity: 'warning', topic: 'floor types', message: 'Floor type 店舗_床 (6 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: range(331, 6) }
           ]),
       { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
+      { severity: 'error', topic: 'families', message: "Lift : A has gis_kind 'lift', which the export does not know; its instances export as plain fixtures.", elementIds: [501] },
       { severity: 'warning', topic: 'levels', message: 'Level B1FL has no short_name, so the export guesses it from the level name.', elementIds: [11] },
       { severity: 'warning', topic: 'families', message: 'ESC_1200 : S800 looks like an escalator but has no gis_kind, so it is found only by its family name, if at all.', elementIds: [401, 402] },
       { severity: 'info', topic: 'parameters', message: 'Parameter name uses its own GUID 1f0c9e2a-0000-4000-8000-000000000001, not the standard\'s 47b8db20-e756-4280-a842-f570dc847db5. It exports, but other models cannot share schedules or families with it.', elementIds: [] }
@@ -349,7 +350,64 @@ function gisStandard(scenario: MockScenario) {
       const names: Record<number, string> = { 201: '1F ラチ内 床: gis_category walkway, gis_restriction rachi_nai', 202: '店舗_床: gis_category retail' }
       return { log: (payload?.floorTypeIds ?? []).map((id) => names[id] ?? `Floor type ${id}`), skipped: [] }
     },
-    'gisStandard.select': (payload: { elementIds?: number[] }) => ({ selected: payload?.elementIds?.length ?? 0 })
+    'gisStandard.select': (payload: { elementIds?: number[] }) => ({ selected: payload?.elementIds?.length ?? 0 }),
+    ...gisParameters(),
+    ...gisDrift()
+  }
+}
+
+// Parameters: an edited CSV with three changes and two rows that will not be written.
+function gisParameters() {
+  const changes = [
+    { elementId: '301', kind: 'floor', column: 'name', oldValue: '', newValue: '北改札内コンコース' },
+    { elementId: '301', kind: 'floor', column: 'category', oldValue: '', newValue: 'walkway' },
+    { elementId: '11', kind: 'level', column: 'short_name', oldValue: '', newValue: 'B1' }
+  ]
+  return {
+    'gisParameters.write': () => ({ path: 'C:\\Users\\me\\Documents\\TokyoStation_Concourse_gis-parameters.csv', rowCount: 412 }),
+    'gisParameters.read': () => ({
+      path: 'C:\\Users\\me\\Documents\\TokyoStation_Concourse_gis-parameters.csv',
+      rowCount: 412,
+      changes,
+      problems: ["Line 57: 'shop' is not a unit category.", 'Line 203: element 99001 is not in the model.']
+    }),
+    'gisParameters.apply': (payload: { changes?: typeof changes }) => ({
+      log: (payload?.changes ?? []).map((change) => `${change.kind} ${change.elementId}: ${change.column} ${change.oldValue || '(empty)'} to ${change.newValue}`),
+      skipped: []
+    })
+  }
+}
+
+// Review GDB edits: Kanizu's drift file for this model, with a conflict and a row it cannot write.
+function gisDrift() {
+  let accepted = false
+  const station = 'D:\\Stations\\Tokyo'
+  const path = `${station}\\gis-drift\\8d7f3c1e-0000.gis-drift.json`
+  const changes = [
+    { uniqueId: 'u-1', layer: 'unit', field: 'name', feature: '改札', parameter: 'name', binding: 'instance', oldValue: '改札', newValue: '北改札', conflict: false, label: 'unit 改札 name: name 改札 to 北改札' },
+    { uniqueId: 'u-2', layer: 'unit', field: 'category', feature: '店舗A', parameter: 'category', binding: 'instance', oldValue: 'retail', newValue: 'walkway', conflict: true, label: 'unit 店舗A category: category retail to walkway (also changed in Revit since the last apply)' },
+    { uniqueId: 'u-1', layer: 'unit', field: 'restrict', feature: '改札', parameter: 'gis_restriction', binding: 'type', oldValue: 'rachi_gai', newValue: 'rachi_nai', conflict: false, label: 'unit 改札 restrict: gis_restriction rachi_gai to rachi_nai (type parameter: every element of the type changes)' },
+    { uniqueId: 'lvl', layer: 'level', field: 'ordinal', feature: 'B1FL', parameter: 'ordinal', binding: 'instance', oldValue: '-1', newValue: '-2', conflict: false, label: 'level B1FL ordinal: ordinal -1 to -2' }
+  ]
+  const inspect = (payload: { path?: string; pick?: boolean }) => ({
+    cancelled: false,
+    source: payload?.pick ? 'picked' : 'station',
+    path: payload?.pick ? 'C:\\Users\\me\\Downloads\\0f3a-b2.gis-drift.json' : path,
+    documentTitle: 'TokyoStation_Concourse.rvt',
+    modelKey: '8d7f3c1e-0000',
+    fileModel: payload?.pick ? '0f3a-b2' : '8d7f3c1e-0000',
+    stationFolder: station,
+    expectedPath: path,
+    appliedVersion: 'revit/tokyo-8d7f3c1e/20261110T000000Z-aaaaaaaa',
+    changes: accepted ? [changes[1]] : changes,
+    problems: ['unit 改札 level_id: no Revit parameter holds this field; change it in Revit by hand (GDB: b).']
+  })
+  return {
+    'gisDrift.inspect': inspect,
+    'gisDrift.apply': (payload: { changes?: typeof changes }) => {
+      accepted = true
+      return { log: (payload?.changes ?? []).map((change) => change.label), skipped: [] }
+    }
   }
 }
 

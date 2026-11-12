@@ -185,4 +185,30 @@ public sealed class ParameterTableTests
 
         Assert.Equal(new[] { ("name", "階段A", "") }, changes.Select(change => (change.Column, change.OldValue, change.NewValue)));
     }
+
+    [Fact]
+    public void AcceptKeepsChangesThatStillApplyAndListsTheRest()
+    {
+        List<IReadOnlyDictionary<string, string>> now = ModelRows();
+        now[1] = ParameterTable.Row(102, "stair", "1FL", values: new[] { Cell("name", "階段B"), Cell("gis_direction", "both") });
+        ParameterTableChange[] accepted =
+        {
+            new("101", "floor", "category", "", "walkway"),
+            new("101", "floor", "category", "", "walkway"),
+            new("102", "stair", "name", "階段A", "階段C"),
+            new("103", "family", "gis_direction", "", "上り"),
+            new("104", "level", "category", "", "walkway"),
+            new("999", "floor", "name", "", "x"),
+        };
+
+        (IReadOnlyList<ParameterTableChange> changes, IReadOnlyList<string> skipped) = ParameterTable.Accept(now, accepted, Standard);
+
+        Assert.Equal(
+            new[] { ("101", "category", "walkway"), ("103", "gis_direction", "up") },
+            changes.Select(change => (change.ElementId, change.Column, change.NewValue)));
+        Assert.Equal(3, skipped.Count);
+        Assert.Contains("changed in Revit", skipped[0]);
+        Assert.Contains("cannot be set on a level", skipped[1]);
+        Assert.Contains("no longer in the model", skipped[2]);
+    }
 }

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Architecture;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
@@ -84,6 +86,47 @@ public static class ModelSnapshotReader
     public static IReadOnlyList<GisAuditFinding> AuditErrors(Document document) =>
         GisAudit.BlockingFindings(GisAudit.Run(Read(document), GisToolStandard.LoadEmbedded()));
 
+    /// <summary>Every floor, placed room, stair, escalator-like family instance and level, as Parameters rows.</summary>
+    public static List<IReadOnlyDictionary<string, string>> ParameterRows(Document document)
+    {
+        List<IReadOnlyDictionary<string, string>> rows = new();
+        foreach (Floor floor in new FilteredElementCollector(document).OfClass(typeof(Floor)).WhereElementIsNotElementType().Cast<Floor>())
+        {
+            rows.Add(ParameterRow(document, floor, "floor"));
+        }
+
+        foreach (Element room in new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType())
+        {
+            if (room is SpatialElement { Area: > 0 })
+            {
+                rows.Add(ParameterRow(document, room, "room"));
+            }
+        }
+
+        foreach (Element stair in new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_Stairs).WhereElementIsNotElementType())
+        {
+            if (stair is Stairs)
+            {
+                rows.Add(ParameterRow(document, stair, "stair"));
+            }
+        }
+
+        foreach (BuiltInCategory category in FamilyCategories)
+        {
+            foreach (Element instance in new FilteredElementCollector(document).OfCategory(category).OfClass(typeof(FamilyInstance)))
+            {
+                rows.Add(ParameterRow(document, instance, "family"));
+            }
+        }
+
+        foreach (Level level in new FilteredElementCollector(document).OfClass(typeof(Level)).Cast<Level>().OrderBy(level => level.Elevation))
+        {
+            rows.Add(ParameterRow(document, level, "level"));
+        }
+
+        return rows;
+    }
+
     /// <summary>A text parameter's value, trimmed; empty when the parameter is missing or not text.</summary>
     public static string ReadText(Element? element, string name)
     {
@@ -109,6 +152,50 @@ public static class ModelSnapshotReader
         }
 
         return parameter.StorageType == StorageType.String ? GisToolStandard.ParseWholeNumber(parameter.AsString()) : null;
+    }
+
+    private static Dictionary<string, string> ParameterRow(Document document, Element element, string kind)
+    {
+        List<KeyValuePair<string, string>> values = new();
+        foreach (string column in ParameterTable.Editable[kind])
+        {
+            string value = ParameterTable.IntegerColumns.Contains(column)
+                ? ReadInteger(element, column)?.ToString(CultureInfo.InvariantCulture) ?? string.Empty
+                : ReadText(element, column);
+            values.Add(new KeyValuePair<string, string>(column, value));
+        }
+
+        bool isLevel = kind == "level";
+        return ParameterTable.Row(
+            element.Id.Value,
+            kind,
+            isLevel ? element.Name ?? string.Empty : LevelName(document, element),
+            isLevel ? string.Empty : TypeName(document, element),
+            ReadText(element, GisSharedParameters.GisKey),
+            values);
+    }
+
+    private static string LevelName(Document document, Element element)
+    {
+        ElementId levelId = element.LevelId;
+        if (levelId == ElementId.InvalidElementId)
+        {
+            levelId = element.get_Parameter(BuiltInParameter.STAIRS_BASE_LEVEL_PARAM)?.AsElementId() ?? ElementId.InvalidElementId;
+        }
+
+        return levelId == ElementId.InvalidElementId ? string.Empty : document.GetElement(levelId)?.Name ?? string.Empty;
+    }
+
+    private static string TypeName(Document document, Element element)
+    {
+        if (document.GetElement(element.GetTypeId()) is not ElementType type)
+        {
+            return string.Empty;
+        }
+
+        string family = type.FamilyName ?? string.Empty;
+        string name = type.Name ?? string.Empty;
+        return family.Length > 0 && family != name ? $"{family} : {name}" : name;
     }
 
     private static List<BoundParameterInfo> ReadBoundParameters(Document document)

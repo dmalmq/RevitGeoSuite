@@ -17,6 +17,8 @@ public static class GisStandardWriter
 {
     public const string SetupTransactionName = "Kanizu GIS: Set up model";
     public const string FixTransactionName = "Kanizu GIS: Fix floor types";
+    public const string ParametersTransactionName = "Kanizu GIS: Parameters";
+    public const string DriftTransactionName = "Kanizu GIS: Review GDB edits";
 
     /// <summary>Applies <paramref name="plan"/> and returns what it did, one line per change.</summary>
     public static IReadOnlyList<string> ApplySetup(Document document, GisToolStandard standard, SetupPlan plan)
@@ -76,6 +78,101 @@ public static class GisStandardWriter
             }
         });
         return log;
+    }
+
+    /// <summary>Writes the accepted Parameters cells in one transaction. A cell whose parameter is missing or read-only is skipped and listed.</summary>
+    public static (IReadOnlyList<string> Log, IReadOnlyList<string> Skipped) ApplyParameters(Document document, IReadOnlyList<ParameterTableChange> changes)
+    {
+        RequireOwnable(document, changes.Select(change => long.Parse(change.ElementId, System.Globalization.CultureInfo.InvariantCulture)));
+        List<string> log = new();
+        List<string> skipped = new();
+        InTransaction(document, ParametersTransactionName, () =>
+        {
+            foreach (ParameterTableChange change in changes)
+            {
+                Element? element = document.GetElement(new ElementId(long.Parse(change.ElementId, System.Globalization.CultureInfo.InvariantCulture)));
+                Parameter? parameter = element?.LookupParameter(change.Column);
+                if (parameter == null || parameter.IsReadOnly)
+                {
+                    skipped.Add($"Skipped {change.Label()}: the parameter is missing or read-only.");
+                    continue;
+                }
+
+                if (parameter.StorageType == StorageType.Integer)
+                {
+                    parameter.Set(int.Parse(change.NewValue, System.Globalization.CultureInfo.InvariantCulture));
+                }
+                else
+                {
+                    parameter.Set(change.NewValue);
+                }
+
+                log.Add(change.Label());
+            }
+        });
+        return (log, skipped);
+    }
+
+    /// <summary>
+    /// Writes the accepted GDB values in one transaction. Several rows can reach one type parameter
+    /// through different instances: the first accepted value wins, and a later different one is
+    /// listed instead of overwriting it. A parameter that is missing, read-only or takes a whole
+    /// number the value is not, is listed too.
+    /// </summary>
+    public static (IReadOnlyList<string> Log, IReadOnlyList<string> Skipped) ApplyDrift(Document document, IReadOnlyList<GisDriftChange> changes)
+    {
+        List<string> log = new();
+        List<string> skipped = new();
+        List<(GisDriftChange Change, Parameter Parameter)> targets = new();
+        foreach (GisDriftChange change in changes)
+        {
+            Parameter? parameter = GisDriftSource.Target(document, change.UniqueId, change.Parameter, change.Binding);
+            if (parameter == null || parameter.IsReadOnly)
+            {
+                skipped.Add($"Skipped {change.Label()}: the parameter is missing or read-only.");
+                continue;
+            }
+
+            targets.Add((change, parameter));
+        }
+
+        RequireOwnable(document, targets.Select(target => target.Parameter.Element.Id.Value));
+        InTransaction(document, DriftTransactionName, () =>
+        {
+            Dictionary<(long, string), string> written = new();
+            foreach ((GisDriftChange change, Parameter parameter) in targets)
+            {
+                (long, string) key = (parameter.Element.Id.Value, change.Parameter);
+                if (written.TryGetValue(key, out string? earlier))
+                {
+                    if (earlier != change.NewValue)
+                    {
+                        skipped.Add($"Skipped {change.Label()}: another accepted row already set this type parameter to {(earlier.Length > 0 ? earlier : "(empty)")}.");
+                    }
+
+                    continue;
+                }
+
+                if (parameter.StorageType == StorageType.Integer)
+                {
+                    if (!int.TryParse(change.NewValue, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out int number))
+                    {
+                        skipped.Add($"Skipped {change.Label()}: the parameter takes a whole number.");
+                        continue;
+                    }
+
+                    parameter.Set(number);
+                }
+                else
+                {
+                    parameter.Set(change.NewValue);
+                }
+
+                written[key] = change.NewValue;
+                log.Add(change.Label());
+            }
+        });
+        return (log, skipped);
     }
 
     private static void BindParameters(Document document, SetupPlan plan, List<string> log)

@@ -2,6 +2,7 @@
 use kanizu_core::revit::gis::{self, Drift, DriftFile};
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)]
 fn row(layer: &str, field: &str, parameter: &str, binding: &str, uid: &str, revit: Option<&str>, gdb: Option<&str>, base: Option<&str>, conflict: bool) -> Drift {
     Drift {
         revit_key: format!("8d7f3c1e-0000|{uid}|0"),
@@ -16,6 +17,18 @@ fn row(layer: &str, field: &str, parameter: &str, binding: &str, uid: &str, revi
         gdb: gdb.map(Into::into),
         base: base.map(Into::into),
         conflict,
+        gdb_category: None,
+        gdb_restriction: None,
+    }
+}
+
+/// A unit category row as Kanizu reviews it: the GDB's station code with the Revit category and restriction it comes from.
+fn category_row(uid: &str, revit: &str, gdb: &str, base: &str, conflict: bool) -> Drift {
+    let (category, restriction) = kanizu_core::station_categories::revit_category(gdb).expect("a station code");
+    Drift {
+        gdb_category: Some(category.into()),
+        gdb_restriction: restriction.map(Into::into),
+        ..row("unit", "category", "", "", uid, Some(revit), Some(gdb), Some(base), conflict)
     }
 }
 
@@ -31,7 +44,7 @@ fn main() {
             row("unit", "alt_name", "", "", "u-1", None, Some("北"), None, false),
             row("unit", "restrict", "", "", "u-1", Some("rachi_gai"), Some("rachi_nai"), Some("rachi_gai"), false),
             row("unit", "shop_hours", "kanizu_shop_hours", "type", "u-1", Some("9-21"), Some("10-20"), Some("9-21"), false),
-            row("unit", "category", "", "", "u-2", Some("retail"), Some("walkway"), Some("nonpublic"), true),
+            category_row("u-2", "retail", "walkway", "nonpublic", true),
             row("unit", "name", "", "", "u-3", Some("店舗"), None, Some("店舗"), false),
             row("level", "ordinal", "", "", "lvl", Some("1"), Some("2"), Some("1"), false),
             row("unit", "level_id", "", "", "u-1", Some("a"), Some("b"), Some("a"), false),

@@ -118,3 +118,132 @@ public sealed class GisSelectElementsResponse
 {
     public int Selected { get; set; }
 }
+
+/// <summary>One cell the edited Parameters CSV changes.</summary>
+[TsExport]
+public sealed class GisParameterChangeItem
+{
+    public string ElementId { get; set; } = string.Empty;
+
+    /// <summary>floor, room, stair, family or level.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public string Column { get; set; } = string.Empty;
+
+    public string OldValue { get; set; } = string.Empty;
+
+    public string NewValue { get; set; } = string.Empty;
+}
+
+/// <summary>Where <c>gisParameters.write</c> wrote the table; Path is empty when the user cancelled.</summary>
+[TsExport]
+public sealed class GisParametersWriteResponse
+{
+    public string Path { get; set; } = string.Empty;
+
+    public int RowCount { get; set; }
+}
+
+/// <summary>What the CSV the user picked would change; Path is empty when the user cancelled.</summary>
+[TsExport]
+public sealed class GisParametersReadResponse
+{
+    public string Path { get; set; } = string.Empty;
+
+    public int RowCount { get; set; }
+
+    public GisParameterChangeItem[] Changes { get; set; } = Array.Empty<GisParameterChangeItem>();
+
+    /// <summary>Rows and cells that will not be written, one line each.</summary>
+    public string[] Problems { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>Payload of <c>gisParameters.apply</c>: the changes the user kept ticked.</summary>
+[TsExport]
+public sealed class GisParametersApplyRequest
+{
+    public GisParameterChangeItem[] Changes { get; set; } = Array.Empty<GisParameterChangeItem>();
+}
+
+/// <summary>Payload of <c>gisDrift.inspect</c>: the station folder's drift file, a path read before, or a file the user picks.</summary>
+[TsExport]
+public sealed class GisDriftInspectRequest
+{
+    /// <summary>A drift file to read again; empty for the station folder's file.</summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>True to let the user pick a drift file.</summary>
+    public bool Pick { get; set; }
+}
+
+/// <summary>The GDB edits a drift file holds for the open model.</summary>
+[TsExport]
+public sealed class GisDriftInspectResponse
+{
+    /// <summary>True when the user closed the file picker; nothing else is set.</summary>
+    public bool Cancelled { get; set; }
+
+    /// <summary>station (Kanizu's file for this model), picked (chosen by hand) or none (no file yet).</summary>
+    public string Source { get; set; } = string.Empty;
+
+    public string Path { get; set; } = string.Empty;
+
+    public string DocumentTitle { get; set; } = string.Empty;
+
+    /// <summary>The open model's key (its model id in lower case); empty when it has none yet.</summary>
+    public string ModelKey { get; set; } = string.Empty;
+
+    /// <summary>The model the drift file was written for.</summary>
+    public string FileModel { get; set; } = string.Empty;
+
+    public string StationFolder { get; set; } = string.Empty;
+
+    /// <summary>Where Kanizu writes this model's drift file; empty without a model id and station folder.</summary>
+    public string ExpectedPath { get; set; } = string.Empty;
+
+    public string AppliedVersion { get; set; } = string.Empty;
+
+    public GisDriftChangeItem[] Changes { get; set; } = Array.Empty<GisDriftChangeItem>();
+
+    /// <summary>Rows that cannot be written, one line each.</summary>
+    public string[] Problems { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>One GDB value to accept into one Revit parameter.</summary>
+[TsExport]
+public sealed class GisDriftChangeItem
+{
+    public string UniqueId { get; set; } = string.Empty;
+
+    /// <summary>unit, fixture, level, ...</summary>
+    public string Layer { get; set; } = string.Empty;
+
+    /// <summary>The GDB field.</summary>
+    public string Field { get; set; } = string.Empty;
+
+    /// <summary>The feature's name, or its unique id.</summary>
+    public string Feature { get; set; } = string.Empty;
+
+    public string Parameter { get; set; } = string.Empty;
+
+    /// <summary>instance or type; a type parameter changes every element of the type.</summary>
+    public string Binding { get; set; } = string.Empty;
+
+    public string OldValue { get; set; } = string.Empty;
+
+    public string NewValue { get; set; } = string.Empty;
+
+    /// <summary>Revit changed the field too since the last apply; starts unticked.</summary>
+    public bool Conflict { get; set; }
+
+    public string Label { get; set; } = string.Empty;
+}
+
+/// <summary>Payload of <c>gisDrift.apply</c>: the drift file and the changes the user kept ticked.</summary>
+[TsExport]
+public sealed class GisDriftApplyRequest
+{
+    public string Path { get; set; } = string.Empty;
+
+    public GisDriftChangeItem[] Changes { get; set; } = Array.Empty<GisDriftChangeItem>();
+}

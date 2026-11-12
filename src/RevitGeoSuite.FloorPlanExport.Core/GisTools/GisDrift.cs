@@ -24,7 +24,9 @@ public sealed class GisDriftRow
         string revit,
         string gdb,
         string @base,
-        bool conflict)
+        bool conflict,
+        string gdbCategory = "",
+        string gdbRestriction = "")
     {
         RevitKey = revitKey;
         UniqueId = uniqueId;
@@ -38,6 +40,8 @@ public sealed class GisDriftRow
         Gdb = gdb;
         Base = @base;
         Conflict = conflict;
+        GdbCategory = gdbCategory ?? string.Empty;
+        GdbRestriction = gdbRestriction ?? string.Empty;
     }
 
     public string RevitKey { get; }
@@ -70,6 +74,15 @@ public sealed class GisDriftRow
 
     /// <summary>True when Revit changed the field too since the last apply.</summary>
     public bool Conflict { get; }
+
+    /// <summary>
+    /// For a unit's category: the GDB's station code (walkway_sta, store) as the Revit category it
+    /// comes from. Kanizu works it out from its station code table, so this tool keeps no copy.
+    /// </summary>
+    public string GdbCategory { get; }
+
+    /// <summary>With <see cref="GdbCategory"/>: the floor type restriction the code needs (rachi_nai, rachi_gai), or empty.</summary>
+    public string GdbRestriction { get; }
 
     public string Describe() => $"{Layer} {(Label.Length > 0 ? Label : UniqueId)} {Field}";
 }
@@ -231,7 +244,9 @@ public static class GisDrift
                     Text(entry["revit"]),
                     Text(entry["gdb"]),
                     Text(entry["base"]),
-                    Truthy(entry["conflict"])));
+                    Truthy(entry["conflict"]),
+                    Text(entry["gdbCategory"]),
+                    Text(entry["gdbRestriction"])));
             }
         }
 
@@ -280,7 +295,25 @@ public static class GisDrift
             }
 
             (string parameter, string binding) = target.Value;
-            (string? value, string? problem) = ParameterTable.CheckValue(parameter, row.Gdb, standard);
+            string gdb = row.Gdb;
+            if (row.GdbCategory.Length > 0)
+            {
+                gdb = row.GdbCategory;
+                if (row.GdbRestriction.Length > 0)
+                {
+                    string restrictionParameter = CoreParameters[("unit", "restrict")].Parameter;
+                    string restriction = GisToolStandard.Normalize(current(row.UniqueId, restrictionParameter, Type));
+                    if (restriction != row.GdbRestriction)
+                    {
+                        problems.Add(
+                            $"{row.Describe()}: the GDB's {row.Gdb} needs a floor type with {restrictionParameter} {row.GdbRestriction} " +
+                            $"(this one has {(restriction.Length > 0 ? restriction : "none")}); change the floor type in Revit by hand.");
+                        continue;
+                    }
+                }
+            }
+
+            (string? value, string? problem) = ParameterTable.CheckValue(parameter, gdb, standard);
             if (problem != null)
             {
                 problems.Add($"{row.Describe()}: {problem}");
@@ -308,6 +341,45 @@ public static class GisDrift
         }
 
         return (changes, problems);
+    }
+
+    /// <summary>
+    /// The planned changes the user ticked, matched by element, parameter, binding and value. A
+    /// ticked change the plan no longer holds (the model or the drift file changed since the
+    /// preview) is listed, not written.
+    /// </summary>
+    public static (IReadOnlyList<GisDriftChange> Changes, IReadOnlyList<string> Skipped) Accept(
+        IReadOnlyList<GisDriftChange> planned,
+        IEnumerable<(string UniqueId, string Parameter, string Binding, string NewValue, string Label)> accepted)
+    {
+        Dictionary<(string, string, string, string), GisDriftChange> byKey = new();
+        foreach (GisDriftChange change in planned)
+        {
+            byKey[(change.UniqueId, change.Parameter, change.Binding, change.NewValue)] = change;
+        }
+
+        List<GisDriftChange> changes = new();
+        List<string> skipped = new();
+        HashSet<(string, string, string, string)> seen = new();
+        foreach ((string uniqueId, string parameter, string binding, string newValue, string label) in accepted)
+        {
+            (string, string, string, string) key = (uniqueId, parameter, binding, newValue);
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            if (byKey.TryGetValue(key, out GisDriftChange? change))
+            {
+                changes.Add(change);
+            }
+            else
+            {
+                skipped.Add($"Skipped {label}: the model or the drift file changed since the preview.");
+            }
+        }
+
+        return (changes, skipped);
     }
 
     private static bool Same(string parameter, string old, string value)

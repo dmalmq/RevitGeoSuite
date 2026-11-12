@@ -64,6 +64,11 @@ using RevitGeoSuite.SharedUI.Web.Contracts;
 [assembly: RpcMethod("gisStandard.setup", typeof(GisStandardEmptyRequest), typeof(GisStandardApplyResponse))]
 [assembly: RpcMethod("gisStandard.fixFloorTypes", typeof(GisFixFloorTypesRequest), typeof(GisStandardApplyResponse))]
 [assembly: RpcMethod("gisStandard.select", typeof(GisSelectElementsRequest), typeof(GisSelectElementsResponse))]
+[assembly: RpcMethod("gisParameters.write", typeof(GisStandardEmptyRequest), typeof(GisParametersWriteResponse))]
+[assembly: RpcMethod("gisParameters.read", typeof(GisStandardEmptyRequest), typeof(GisParametersReadResponse))]
+[assembly: RpcMethod("gisParameters.apply", typeof(GisParametersApplyRequest), typeof(GisStandardApplyResponse))]
+[assembly: RpcMethod("gisDrift.inspect", typeof(GisDriftInspectRequest), typeof(GisDriftInspectResponse))]
+[assembly: RpcMethod("gisDrift.apply", typeof(GisDriftApplyRequest), typeof(GisStandardApplyResponse))]
 
 [assembly: RpcEvent("navigate", typeof(NavigateEvent))]
 [assembly: RpcEvent("job.progress", typeof(JobProgress))]

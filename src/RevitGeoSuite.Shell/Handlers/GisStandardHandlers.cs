@@ -107,11 +107,7 @@ internal static class GisStandardWork
 {
     public static GisStandardInspectResponse Inspect(Document document)
     {
-        if (document.IsFamilyDocument)
-        {
-            throw new InvalidOperationException("Open a project model to check it against the Kanizu GIS standard.");
-        }
-
+        RequireProject(document);
         GisToolStandard standard = GisToolStandard.LoadEmbedded();
         ModelSnapshot snapshot = ModelSnapshotReader.Read(document);
         GisStandardStatus status = GisStandardStateReader.Check(document);
@@ -156,6 +152,14 @@ internal static class GisStandardWork
                 .ToArray(),
             FixBlocker = FloorTypeMatcher.WriteBlocker(snapshot),
         };
+    }
+
+    public static void RequireProject(Document document)
+    {
+        if (document.IsFamilyDocument)
+        {
+            throw new InvalidOperationException("Open a project model to check it against the Kanizu GIS standard.");
+        }
     }
 
     public static void RequireEditable(Document document)

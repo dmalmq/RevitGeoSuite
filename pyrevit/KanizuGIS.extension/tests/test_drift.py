@@ -89,6 +89,7 @@ class KanizuWrittenFileTests(unittest.TestCase):
             (u"u-1", "gis_restriction", "type"): u"rachi_gai",
             (u"u-1", "kanizu_shop_hours", "type"): u"9-21",
             (u"u-2", "category", "instance"): u"retail",
+            (u"u-2", "gis_restriction", "type"): u"rachi_gai",
             (u"u-3", "name", "instance"): u"店舗",
             (u"lvl", "ordinal", "instance"): u"1",
         })
