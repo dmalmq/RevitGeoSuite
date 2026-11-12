@@ -10,7 +10,12 @@ packages/
 TestResults/
 *.slnx
 *.log
-.claude/
+.claude/*
+# except the vendored pstack skills cloud sessions load
+!.claude/skills/
+!.claude/agents/
+!.claude/PSTACK.md
+!.claude/pstack-models.md
 # AI assistant docs/config — keep out of the repo
 CLAUDE.md
 CLAUDE.local.md
