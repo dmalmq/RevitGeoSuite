@@ -37,6 +37,7 @@ internal sealed class GisStandardNotifier
     private string _driftPath = string.Empty;
     private DateTime _driftWritten;
     private DateTime _nextDriftPoll;
+    private bool _modelChanged;
 
     public static GisStandardNotifier Instance { get; } = new();
 
@@ -45,6 +46,7 @@ internal sealed class GisStandardNotifier
         _button = button;
         application.ControlledApplication.DocumentOpened += OnDocumentOpened;
         application.ControlledApplication.DocumentSaved += OnDocumentChanged;
+        application.ControlledApplication.DocumentChanged += OnModelChanged;
         application.ControlledApplication.DocumentClosed += OnDocumentClosed;
         application.ViewActivated += OnViewActivated;
         application.Idling += OnIdling;
@@ -54,6 +56,7 @@ internal sealed class GisStandardNotifier
     {
         application.ControlledApplication.DocumentOpened -= OnDocumentOpened;
         application.ControlledApplication.DocumentSaved -= OnDocumentChanged;
+        application.ControlledApplication.DocumentChanged -= OnModelChanged;
         application.ControlledApplication.DocumentClosed -= OnDocumentClosed;
         application.ViewActivated -= OnViewActivated;
         application.Idling -= OnIdling;
@@ -74,6 +77,13 @@ internal sealed class GisStandardNotifier
     private void OnDocumentChanged(object sender, DocumentSavedEventArgs e)
     {
         _buttonDocumentKey = null;
+    }
+
+    // An edit or an Undo can settle or reopen a GDB edit. Only a flag here: the Idling poll counts
+    // again at most every few seconds, so nothing is re-planned per edit.
+    private void OnModelChanged(object sender, DocumentChangedEventArgs e)
+    {
+        _modelChanged = true;
     }
 
     private void OnDocumentClosed(object sender, DocumentClosedEventArgs e)
@@ -108,8 +118,9 @@ internal sealed class GisStandardNotifier
         if (DateTime.UtcNow >= _nextDriftPoll)
         {
             _nextDriftPoll = DateTime.UtcNow + DriftPollInterval;
-            if (DriftFileChanged())
+            if (_modelChanged || DriftFileChanged())
             {
+                _modelChanged = false;
                 Refresh((sender as UIApplication)?.ActiveUIDocument?.Document, force: true);
             }
         }
