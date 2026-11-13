@@ -292,8 +292,8 @@ internal sealed class Commands
     /// Puts the test copy into the state a step needs, in one transaction named
     /// <see cref="FixtureTransaction"/>: renames element types (renames: [{from, to}]), sets text
     /// parameters (values: [{id, name, value}]), edits views and view templates (views: see
-    /// <see cref="ViewCommands.Edit"/>), copies elements in place (copyInPlace: [ids]) and cuts
-    /// floor openings (openingInEastBand: [{floor, bandM, sizeM}], see <see cref="FloorCommands.OpeningInEastBand"/>).
+    /// <see cref="ViewCommands.Edit"/>), copies elements in place (copyInPlace: [ids]),
+    /// deletes elements (delete: [ids]) and cuts floor openings (openingInEastBand: [{floor, bandM, sizeM}], see <see cref="FloorCommands.OpeningInEastBand"/>).
     /// Only ever runs on a document inside the test folder.
     /// </summary>
     public const string FixtureTransaction = "UI test: fixture";
@@ -305,6 +305,7 @@ internal sealed class Commands
         List<Dictionary<string, object?>> viewEdits = Objects(request, "views");
         long[] copies = Longs(request, "copyInPlace");
         List<Dictionary<string, object?>> openings = Objects(request, "openingInEastBand");
+        long[] deletions = Longs(request, "delete");
         return api.Run(app =>
         {
             Document document = app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");
@@ -346,6 +347,12 @@ internal sealed class Commands
             }
 
             log.AddRange(ViewCommands.CopyInPlace(document, copies));
+            foreach (long id in deletions)
+            {
+                ICollection<ElementId> gone = document.Delete(new ElementId(id));
+                log.Add($"deleted {id} and {gone.Count - 1} element(s) with it");
+            }
+
             foreach (Dictionary<string, object?> opening in openings)
             {
                 log.Add(FloorCommands.OpeningInEastBand(

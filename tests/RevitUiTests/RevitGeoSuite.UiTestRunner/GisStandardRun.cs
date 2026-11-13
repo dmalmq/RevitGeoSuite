@@ -93,6 +93,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         new("c3a-reshape", "Review GDB edits reshapes a floor to the GDB outline (RevitGeoSuite #57).", run => run.ReshapeSteps()),
         new("c3b-split", "Review GDB edits splits a floor by the GDB's pieces (C3b).", run => run.SplitSteps()),
         new("c3c-merge", "Review GDB edits merges floors the GDB merged (C3c).", run => run.MergeSteps()),
+        new("c3d-hand-drawn", "Review GDB edits creates a floor for a unit drawn by hand in the GDB (C3d).", run => run.HandDrawnSteps()),
     };
 
     private async Task GisStandardSteps()

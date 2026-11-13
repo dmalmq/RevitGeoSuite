@@ -76,6 +76,20 @@ public class ReshapeFixtureTests
     }
 
     [Fact]
+    public void Hand_drawn_unit_carries_the_type_fields_only_when_asked_and_can_name_another_level()
+    {
+        var unit = new FloorUnit("Model|u|0", "u", "Kiosk", "L1", "retail", 6677, new[] { Square }) { Restriction = "rachi_gai" };
+
+        JsonObject typed = ReshapeFixture.HandDrawn(unit).Single();
+        JsonObject untyped = ReshapeFixture.HandDrawn(unit, withType: false, levelId: "nowhere").Single();
+
+        Assert.Equal(("handDrawn", "", "Kiosk (drawn)"), (typed["edit"]!.GetValue<string>(), typed["uniqueId"]!.GetValue<string>(), typed["gdbName"]!.GetValue<string>()));
+        Assert.Equal(("retail", "rachi_gai"), (typed["gdbCategory"]!.GetValue<string>(), typed["gdbRestriction"]!.GetValue<string>()));
+        Assert.False(untyped.ContainsKey("gdbCategory") || untyped.ContainsKey("gdbRestriction"));
+        Assert.Equal("nowhere", untyped["levelId"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void Distance_is_zero_for_the_same_shape_however_its_edges_are_split_and_catches_a_two_centimetre_shift()
     {
         var outline = new List<IReadOnlyList<(double X, double Y)>> { Square };

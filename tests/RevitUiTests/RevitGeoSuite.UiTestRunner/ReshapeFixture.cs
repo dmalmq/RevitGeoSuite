@@ -8,6 +8,9 @@ namespace RevitGeoSuite.UiTestRunner;
 internal sealed record FloorUnit(string RevitKey, string UniqueId, string Name, string LevelId, string Category, int Epsg, IReadOnlyList<IReadOnlyList<(double X, double Y)>> Rings)
 {
     public string ModelKey => RevitKey.Split('|')[0].ToLowerInvariant();
+
+    /// <summary>The unit's restriction, empty when the layer has no restriction column.</summary>
+    public string Restriction { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -31,7 +34,8 @@ internal static class ReshapeFixture
             foreach ((string table, string column, int srs) in UnitTables(connection))
             {
                 using SqliteCommand command = connection.CreateCommand();
-                command.CommandText = $"SELECT revit_key, name, level_id, category, \"{column.Replace("\"", "\"\"")}\" FROM \"{table.Replace("\"", "\"\"")}\"";
+                string restriction = HasColumn(connection, table, "restriction") ? "restriction" : "''";
+                command.CommandText = $"SELECT revit_key, name, level_id, category, \"{column.Replace("\"", "\"\"")}\", {restriction} FROM \"{table.Replace("\"", "\"\"")}\"";
                 using SqliteDataReader reader = command.ExecuteReader();
                 while (reader.Read())
                 {
@@ -45,7 +49,7 @@ internal static class ReshapeFixture
                     List<List<List<(double, double)>>> polygons = GeoPackageGeometry.Polygons((byte[])reader[4]);
                     if (polygons.Count == 1)
                     {
-                        units.Add(new FloorUnit(key, parts[1], Text(reader, 1), Text(reader, 2), Text(reader, 3), srs, polygons[0]));
+                        units.Add(new FloorUnit(key, parts[1], Text(reader, 1), Text(reader, 2), Text(reader, 3), srs, polygons[0]) { Restriction = Text(reader, 5) });
                     }
                 }
             }
@@ -165,6 +169,37 @@ internal static class ReshapeFixture
         return new[] { kept, gone };
     }
 
+    /// <summary>
+    /// A `handDrawn` unit with the unit's outline and level_id, named "&lt;name&gt; (drawn)", with its category and
+    /// restriction unless <paramref name="withType"/> is false, as make_reshape_fixture.py --hand-drawn [--no-type] writes it.
+    /// </summary>
+    public static JsonObject[] HandDrawn(FloorUnit unit, bool withType = true, string? levelId = null)
+    {
+        string name = unit.Name + " (drawn)";
+        var coordinates = new JsonArray(unit.Rings.Select(ring => (JsonNode)new JsonArray(ring.Select(point => (JsonNode)new JsonArray(point.X, point.Y)).ToArray())).ToArray());
+        var drawn = new JsonObject
+        {
+            ["edit"] = "handDrawn",
+            ["revitKey"] = string.Empty,
+            ["uniqueId"] = string.Empty,
+            ["layer"] = "unit",
+            ["label"] = name,
+            ["levelId"] = levelId ?? unit.LevelId,
+            ["outline"] = new JsonObject { ["type"] = "Polygon", ["coordinates"] = coordinates },
+            ["gdbName"] = name,
+        };
+        if (withType)
+        {
+            drawn["gdbCategory"] = unit.Category;
+            if (unit.Restriction.Length > 0)
+            {
+                drawn["gdbRestriction"] = unit.Restriction;
+            }
+        }
+
+        return new[] { drawn };
+    }
+
     public static string DriftJson(FloorUnit unit, IEnumerable<JsonObject> shapes, string model = "")
     {
         var file = new JsonObject
@@ -227,6 +262,13 @@ internal static class ReshapeFixture
         double length = dx * dx + dy * dy;
         double t = length == 0 ? 0 : Math.Clamp(((p.X - a.X) * dx + (p.Y - a.Y) * dy) / length, 0, 1);
         return Math.Sqrt(Math.Pow(p.X - (a.X + t * dx), 2) + Math.Pow(p.Y - (a.Y + t * dy), 2));
+    }
+
+    private static bool HasColumn(SqliteConnection connection, string table, string column)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table.Replace("'", "''")}') WHERE name = '{column}'";
+        return Convert.ToInt32(command.ExecuteScalar()) > 0;
     }
 
     private static IEnumerable<(string Table, string Column, int Srs)> UnitTables(SqliteConnection connection)
