@@ -26,7 +26,7 @@
     </ul>
   {/if}
   {#if notes.length}
-    <p class="mt-1">{$t('GisStandard.Notes', 'Revit\'s notes on these changes:')}</p>
+    <p class="mt-1">{$t('GisStandard.RevitNotes', 'Revit\'s notes on these changes:')}</p>
     <ul class="ml-4 max-h-40 list-disc overflow-y-auto text-small">
       {#each notes as line, index (index)}<li>{line}</li>{/each}
     </ul>
