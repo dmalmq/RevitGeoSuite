@@ -99,6 +99,7 @@ public static class ExportViewSetup
                 view.ViewTemplateId = template.Id;
             }
 
+            document.Regenerate();
             SetCrop(view, ExportViewPlanner.CropFor(FrameOf(view), floorPoints));
             log.Add($"Created plan {newView.ViewName}");
         }
