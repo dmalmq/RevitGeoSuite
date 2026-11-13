@@ -10,6 +10,7 @@ There are eight scenarios. `--scenario` picks one, and `--script` is the same op
 - `b2a` checks the export audit and the template repair (RevitGeoSuite #54): the findings of the topics ids, stairs, escalators, levels and views, Set up model putting back what someone changed in `GIS Export`, a `GIS_` plan without the template, and the duplicate id error of a floor pasted in place. It expects a model on which Set up model has run once, and runs it first when it has not.
 - `c3a-reshape` checks that Review GDB edits reshapes a floor to the GDB outline (RevitGeoSuite #57). It makes its own drift file from its own export, so the build PC runs one command. With `--drift <file>`, it uses that file instead.
 - `c3b-split`, `c3c-merge` and `c3d-hand-drawn` check that Review GDB edits splits a floor by the GDB's pieces, merges floors that the GDB merged, and creates a floor for a unit drawn by hand in the GDB (C3b, C3c, C3d). They prepare themselves the same way.
+- `a3-fields` checks that the GeoPackage export writes elevator `levels_served`, the door fields and the GDB-owned field rows (RevitGeoSuite #45). It runs with whatever build `-RgsBuild` names.
 - `c8-network` checks the GIS standard page's Network tab, which shows Kanizu's walking network in Revit (C8). It makes its own station folder in the run folder with a Cesium export and writes the C8 sample network there, fitted to two adjacent levels of the model.
 
 ## How it works
@@ -75,7 +76,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn` or `c8-network`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields` or `c8-network`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -231,6 +232,26 @@ Each Revit assumption in the C3b evidence table is checked by a step:
 | Deleting a merged floor deletes its hosted elements, and nothing blocks it | C3c.8 |
 
 The commit events of each apply are recorded. One undo step is proven by pressing Undo once, not by counting events. Revit can raise one DocumentChanged event per inner transaction of an assimilated group.
+
+## The a3-fields scenario
+
+The spec is `/mnt/project-files/revit-template-review/a3-ui-scenario.md`.
+
+```powershell
+.\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit -RgsBuild <#45 build> --scenario a3-fields --model C:\dev\revit-test\Shinjuku_Lumine_Est.rvt
+```
+
+| Step | Checks |
+| --- | --- |
+| A3.0 | Runs Set up model when it has changes, and records its log. |
+| A3.A | `gis_levels_served` is a type parameter on Generic Models and Specialty Equipment. `gis_door` and `gis_access_con` are type parameters on Doors. `name` is an instance parameter that includes Doors. |
+| A3.1 | Lists every family instance whose type has `gis_kind` or `gis_category` set to `elevator`, with its family, type, level and Z range. E is the first of these. E's type `gis_levels_served` is emptied if it has a value. |
+| A3.2 | Exports `span` to `<run>\a3\span`: every `Copy 1` plan view, Per level GeoPackage, Shared coordinates, EPSG 6677. Records the elevator warnings and the warnings about missing door fields. |
+| A3.3 | The test door is the first door, by element id, that the span export writes as an opening. Its type gets `gis_door` = `automatic` and `gis_access_con` = `test`, and the door gets `name` = `A3 test door`. E's type gets `gis_levels_served` = the two lowest exported levels plus `ZZ`. |
+| A3.4 | Exports `override` with the same settings. |
+| A3.B to A3.F | Pass rules B to F of the spec. B reads `span`. C and D read `override`. E and F read both. |
+
+The scenario fills the door after the span export, not before it as the spec has it. Only an export says which doors are written as openings, so rules D and E read the override export. Level ids and elevations come from the model's levels: their `level_id` and their project elevation.
 
 ## The c8-network scenario
 
