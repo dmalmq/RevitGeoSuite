@@ -25,12 +25,12 @@ internal sealed partial class GisStandardRun
     {
         await Step("A3.0", "Set up model (it binds the new parameters)", EnsureSetUp);
         await Step("A3.A", "Rule A: gis_levels_served, gis_door and gis_access_con bound as type parameters; name includes Doors", A3Bindings);
-        await Step("A3.1", "List the elevator family instances; E is the first, its gis_levels_served empty", A3Elevators);
+        await Step("A3.1", "List the elevator objects by shaft; E is the lowest object of the first shaft on two or more levels", A3Elevators);
         await Step("A3.2", "Export 'span': GeoPackage per level, the Copy 1 views, shared coordinates", step => A3Export(step, "span"));
         await Step("A3.3", "Pick the test door from the span export; fill it, and set E's gis_levels_served to two levels and ZZ", A3Fill);
         await Step("A3.4", "Export 'override' with the same settings", step => A3Export(step, "override"));
-        await Step("A3.B", "Rule B (span): each elevator row lists two or more rising level ids, or is empty with a warning", A3Span);
-        await Step("A3.C", "Rule C (override): E's rows hold the two named levels, lowest first; one warning names ZZ", A3Override);
+        await Step("A3.B", "Rule B (span): each shaft's rows share its levels lowest first; a lone object is empty with a warning", A3Span);
+        await Step("A3.C", "Rule C (override): every row of E's shaft holds the two named levels, lowest first; one warning names ZZ", A3Override);
         await Step("A3.D", "Rule D (override): the test door's row has automatic / test / A3 test door; only its type's doors have values", A3Door);
         await Step("A3.E", "Rule E: no warning about a missing door, access_con or name", A3NoMissing);
         await Step("A3.F", "Rule F: gis-fields.json has the 7 rows as specified", A3Fields);
@@ -57,23 +57,44 @@ internal sealed partial class GisStandardRun
     private Task A3Elevators(StepResult step)
     {
         a3.Elevators = host.Call("elevators")["elevators"].Deserialize<ElevatorRow[]>(Web) ?? Array.Empty<ElevatorRow>();
-        foreach (ElevatorRow elevator in a3.Elevators)
-        {
-            step.Note($"Elevator {elevator.Id}: {elevator.Family} / {elevator.Type} (type {elevator.TypeId}, {elevator.Category}), level {elevator.Level}, Z {Metres(elevator.ZMinM)} to {Metres(elevator.ZMaxM)}, gis_levels_served '{elevator.LevelsServed}'.");
-        }
-
         if (!step.Check(a3.Elevators.Length > 0, $"The model has family instances whose type has gis_kind or gis_category 'elevator' ({a3.Elevators.Length})."))
         {
             return Task.CompletedTask;
         }
 
-        a3.E = a3.Elevators[0];
-        int sameType = a3.Elevators.Count(elevator => elevator.TypeId == a3.E.TypeId);
-        step.Note($"E = {a3.E.Id} ({a3.E.Family} / {a3.E.Type}); {sameType} elevator(s) share its type, so the override reaches all of them.");
-        if (!string.IsNullOrEmpty(a3.E.LevelsServed))
+        PlanBox[] boxes = a3.Elevators.Select(elevator => elevator.Box).ToArray();
+        a3.Shafts = A3Fixture.Shafts(boxes).Select(group => group.Select(index => a3.Elevators[index]).ToArray()).ToArray();
+        for (int shaft = 0; shaft < a3.Shafts.Length; shaft++)
         {
-            JsonObject fixture = host.Call("fixture", new { values = new[] { new { id = a3.E.TypeId, name = "gis_levels_served", value = string.Empty } } });
-            step.Note($"E's type had gis_levels_served '{a3.E.LevelsServed}'; emptied it. Fixture: {fixture["log"]?.ToJsonString()}.");
+            foreach (ElevatorRow elevator in a3.Shafts[shaft].OrderBy(item => item.ZMinM))
+            {
+                step.Note($"Shaft {shaft + 1}: elevator {elevator.Id}, {elevator.Family} / {elevator.Type} (type {elevator.TypeId}, {elevator.Category}), level {elevator.Level}, "
+                    + $"X {Metres(elevator.XMinM)} to {Metres(elevator.XMaxM)}, Y {Metres(elevator.YMinM)} to {Metres(elevator.YMaxM)}, Z {Metres(elevator.ZMinM)} to {Metres(elevator.ZMaxM)}, gis_levels_served '{elevator.LevelsServed}'.");
+            }
+        }
+
+        foreach ((int first, int second) in A3Fixture.SameLevelOverlaps(boxes, a3.Elevators.Select(elevator => elevator.Level).ToArray()))
+        {
+            step.Note($"FLAG: elevators {a3.Elevators[first].Id} and {a3.Elevators[second].Id} are both on {a3.Elevators[first].Level} and their plan boxes overlap: two cars may have been joined into one shaft.");
+        }
+
+        a3.EShaft = a3.Shafts.FirstOrDefault(shaft => shaft.Select(elevator => elevator.LevelElementId).Distinct().Count() >= 2);
+        if (!step.Check(a3.EShaft != null, $"A shaft has objects on two or more levels ({a3.Shafts.Length} shaft(s), {a3.Shafts.Count(shaft => shaft.Length == 1)} lone object(s))."))
+        {
+            return Task.CompletedTask;
+        }
+
+        a3.E = a3.EShaft!.OrderBy(elevator => elevator.ZMinM).First();
+        HashSet<long> types = a3.EShaft!.Select(elevator => elevator.TypeId).ToHashSet();
+        int[] shared = Enumerable.Range(0, a3.Shafts.Length).Where(index => a3.Shafts[index] != a3.EShaft && a3.Shafts[index].Any(elevator => elevator.TypeId == a3.E.TypeId)).Select(index => index + 1).ToArray();
+        step.Note($"E = elevator {a3.E.Id} ({a3.E.Family} / {a3.E.Type}, level {a3.E.Level}), the lowest of shaft {Array.IndexOf(a3.Shafts, a3.EShaft) + 1} ({a3.EShaft!.Length} object(s)).");
+        step.Note(shared.Length == 0 ? "No other shaft uses E's type." : $"Shaft(s) {string.Join(", ", shared)} also use E's type, so the override reaches them too.");
+        var empty = a3.EShaft!.Where(elevator => !string.IsNullOrEmpty(elevator.LevelsServed)).Select(elevator => elevator.TypeId).Distinct()
+            .Select(type => new { id = type, name = "gis_levels_served", value = string.Empty }).ToArray();
+        if (empty.Length > 0)
+        {
+            JsonObject fixture = host.Call("fixture", new { values = empty });
+            step.Note($"Emptied gis_levels_served on {empty.Length} type(s) of E's shaft. Fixture: {fixture["log"]?.ToJsonString()}.");
         }
 
         return Task.CompletedTask;
@@ -170,53 +191,78 @@ internal sealed partial class GisStandardRun
             return Task.CompletedTask;
         }
 
-        Dictionary<string, double> elevations = ElevationById();
-        Dictionary<string, ElevatorRow> byUniqueId = a3.Elevators.ToDictionary(elevator => elevator.UniqueId, StringComparer.Ordinal);
+        HashSet<string> exportedLevels = A3Fixture.Rows(span.Folder, "level").Select(row => A3Fixture.Value(row, "id")).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        Dictionary<long, LevelRow> levels = Levels().ToDictionary(level => level.Id);
+        List<Dictionary<string, string?>> rows = ElevatorUnits(span.Folder);
         var cases = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (Dictionary<string, string?> row in ElevatorUnits(span.Folder))
+        for (int index = 0; index < a3.Shafts.Length; index++)
         {
-            string uniqueId = A3Fixture.UniqueId(row);
-            ElevatorRow? elevator = byUniqueId.GetValueOrDefault(uniqueId);
-            string spanCase = A3Fixture.SpanCase(A3Fixture.Value(row, "levels_served"), elevations);
-            string label = $"unit {A3Fixture.Value(row, "id")} (element {elevator?.Id.ToString(CultureInfo.InvariantCulture) ?? uniqueId}, {row["_file"]})";
-            if (spanCase == "empty")
+            ElevatorRow[] shaft = a3.Shafts[index];
+            HashSet<string> members = shaft.Select(elevator => elevator.UniqueId).ToHashSet(StringComparer.Ordinal);
+            List<Dictionary<string, string?>> shaftRows = rows.Where(row => members.Contains(A3Fixture.UniqueId(row))).ToList();
+            LevelRow[] stops = shaft.Select(elevator => elevator.LevelElementId is long id && levels.TryGetValue(id, out LevelRow? level) ? level : null)
+                .OfType<LevelRow>().Where(level => level.LevelId != null && exportedLevels.Contains(level.LevelId))
+                .DistinctBy(level => level.LevelId).OrderBy(level => level.ElevationFt).ToArray();
+            string expected = stops.Length >= 2 ? string.Join(",", stops.Select(level => level.LevelId)) : string.Empty;
+            string[] values = shaftRows.Select(row => A3Fixture.Value(row, "levels_served") ?? string.Empty).Distinct(StringComparer.Ordinal).ToArray();
+            string label = $"Shaft {index + 1} ({string.Join(", ", shaft.Select(elevator => elevator.Id))}; {shaftRows.Count} row(s))";
+            if (shaftRows.Count == 0)
             {
-                bool warned = elevator != null && span.Warnings.Any(warning => warning.StartsWith($"Elevator {elevator.Id} ", StringComparison.Ordinal) && warning.Contains("spans fewer than two exported levels", StringComparison.Ordinal));
-                step.Check(warned, $"{label}: empty levels_served comes with a 'spans fewer than two exported levels' warning for that elevator.");
+                step.Note($"{label}: no elevator unit rows in the span export.");
+                continue;
+            }
+
+            step.Check(values.Length == 1, $"{label}: every row has the same levels_served ({string.Join(" | ", values.Select(value => $"'{value}'"))}).");
+            if (stops.Length >= 2)
+            {
+                step.Check(values.All(value => value.Replace(" ", string.Empty, StringComparison.Ordinal) == expected), $"{label}: levels_served is its exported levels lowest first, '{expected}' ({string.Join(", ", stops.Select(level => level.Name))}).");
+                cases["shaft"] = cases.GetValueOrDefault("shaft") + shaftRows.Count;
             }
             else
             {
-                step.Check(spanCase == "list", $"{label}: levels_served '{A3Fixture.Value(row, "levels_served")}' {(spanCase == "list" ? "is two or more level ids, lowest first" : spanCase)}.");
-            }
+                step.Check(values.All(value => value.Length == 0), $"{label}: a shaft on fewer than two exported levels has empty levels_served.");
+                foreach (ElevatorRow elevator in shaft)
+                {
+                    step.Check(span.Warnings.Any(warning => warning.StartsWith($"Elevator {elevator.Id} ", StringComparison.Ordinal) && warning.Contains("has no elevator object in the same plan spot on another exported level", StringComparison.Ordinal)),
+                        $"Elevator {elevator.Id}: the export warns it has no elevator object in the same plan spot on another exported level.");
+                }
 
-            cases[spanCase] = cases.GetValueOrDefault(spanCase) + 1;
+                cases["lone"] = cases.GetValueOrDefault("lone") + shaftRows.Count;
+            }
         }
 
-        step.Note($"Elevator rows by case: {string.Join(", ", cases.Select(pair => $"{pair.Key} {pair.Value}"))}.");
-        step.Check(cases.Values.Sum() > 0, "The span export has elevator unit rows.");
+        HashSet<string> known = a3.Elevators.Select(elevator => elevator.UniqueId).ToHashSet(StringComparer.Ordinal);
+        int unmatched = rows.Count(row => !known.Contains(A3Fixture.UniqueId(row)));
+        step.Note($"Elevator rows: {rows.Count}; in shafts on two or more levels {cases.GetValueOrDefault("shaft")}, lone {cases.GetValueOrDefault("lone")}, not matched to an elevator object {unmatched}; distinct levels_served values {rows.Select(row => A3Fixture.Value(row, "levels_served") ?? string.Empty).Distinct().Count()}.");
+        step.Check(rows.Count > 0, "The span export has elevator unit rows.");
         return Task.CompletedTask;
     }
 
     private Task A3Override(StepResult step)
     {
-        if (!a3.Exports.TryGetValue("override", out A3Output? export) || a3.E == null || a3.Named == null)
+        if (!a3.Exports.TryGetValue("override", out A3Output? export) || a3.E == null || a3.EShaft == null || a3.Named == null)
         {
             step.NotRun("The override export did not finish, or there was no E or no two levels to name.");
             return Task.CompletedTask;
         }
 
         string expected = $"{a3.Named[0].LevelId},{a3.Named[1].LevelId}";
-        List<Dictionary<string, string?>> rows = ElevatorUnits(export.Folder).Where(row => A3Fixture.UniqueId(row) == a3.E.UniqueId).ToList();
-        if (step.Check(rows.Count > 0, $"E ({a3.E.Id}) has elevator unit rows ({rows.Count})."))
+        HashSet<string> members = a3.EShaft.Select(elevator => elevator.UniqueId).ToHashSet(StringComparer.Ordinal);
+        List<Dictionary<string, string?>> rows = ElevatorUnits(export.Folder);
+        List<Dictionary<string, string?>> mine = rows.Where(row => members.Contains(A3Fixture.UniqueId(row))).ToList();
+        if (step.Check(mine.Count > 0, $"E's shaft has elevator unit rows ({mine.Count})."))
         {
-            foreach (Dictionary<string, string?> row in rows)
+            foreach (Dictionary<string, string?> row in mine)
             {
                 string? value = A3Fixture.Value(row, "levels_served");
                 step.Check(value?.Replace(" ", string.Empty, StringComparison.Ordinal) == expected, $"Unit {A3Fixture.Value(row, "id")} has levels_served '{expected}' ({a3.Named[0].Name}, {a3.Named[1].Name}); it has '{value}'.");
             }
         }
 
-        string[] zz = export.Warnings.Where(warning => Regex.IsMatch(warning, $@"gis_levels_served names .*\b{A3Fixture.UnknownLevelName}\b.*match no level name or short_name")).ToArray();
+        HashSet<string> sharedType = a3.Elevators.Where(elevator => elevator.TypeId == a3.E.TypeId && !members.Contains(elevator.UniqueId)).Select(elevator => elevator.UniqueId).ToHashSet(StringComparer.Ordinal);
+        int reached = rows.Count(row => sharedType.Contains(A3Fixture.UniqueId(row)) && A3Fixture.Value(row, "levels_served")?.Replace(" ", string.Empty, StringComparison.Ordinal) == expected);
+        step.Note($"Other elevator objects of E's type: {sharedType.Count}; rows of theirs with the override: {reached} (expected, not a failure).");
+        string[] zz = export.Warnings.Where(warning => warning.Contains("match no level name or short_name", StringComparison.Ordinal) && Regex.IsMatch(warning, $@"\b{A3Fixture.UnknownLevelName}\b")).ToArray();
         step.Check(zz.Length == 1, $"Exactly one warning says {A3Fixture.UnknownLevelName} matches no level name or short_name ({zz.Length}: {string.Join(" | ", zz)}).");
         return Task.CompletedTask;
     }
@@ -329,6 +375,10 @@ internal sealed class A3Case
 
     public ElevatorRow? E { get; set; }
 
+    public ElevatorRow[][] Shafts { get; set; } = Array.Empty<ElevatorRow[]>();
+
+    public ElevatorRow[]? EShaft { get; set; }
+
     public DoorRow? Door { get; set; }
 
     public LevelRow[] Levels { get; set; } = Array.Empty<LevelRow>();
@@ -340,6 +390,11 @@ internal sealed class A3Case
 
 internal sealed record A3Output(string Folder, string[] Warnings);
 
-internal sealed record ElevatorRow(long Id, string UniqueId, long TypeId, string? Family, string? Type, string? Category, string? Level, double? ZMinM, double? ZMaxM, string? LevelsServed);
+internal sealed record ElevatorRow(
+    long Id, string UniqueId, long TypeId, string? Family, string? Type, string? Category, string? Level, long? LevelElementId,
+    double? XMinM, double? XMaxM, double? YMinM, double? YMaxM, double? ZMinM, double? ZMaxM, string? LevelsServed)
+{
+    public PlanBox Box => new(XMinM ?? 0, YMinM ?? 0, XMaxM ?? 0, YMaxM ?? 0);
+}
 
 internal sealed record DoorRow(long Id, string UniqueId, long TypeId, string? Type, string? Family);

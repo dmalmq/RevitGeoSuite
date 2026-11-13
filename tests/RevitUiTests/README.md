@@ -238,18 +238,18 @@ The commit events of each apply are recorded. One undo step is proven by pressin
 The spec is `/mnt/project-files/revit-template-review/a3-ui-scenario.md`.
 
 ```powershell
-.\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit -RgsBuild <#45 build> --scenario a3-fields --model C:\dev\revit-test\Shinjuku_Lumine_Est.rvt
+.\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit -RgsBuild <#45 build> --scenario a3-fields --model C:\dev\revit-test\auto\lumine-pristine.rvt
 ```
 
 | Step | Checks |
 | --- | --- |
 | A3.0 | Runs Set up model when it has changes, and records its log. |
 | A3.A | `gis_levels_served` is a type parameter on Generic Models and Specialty Equipment. `gis_door` and `gis_access_con` are type parameters on Doors. `name` is an instance parameter that includes Doors. |
-| A3.1 | Lists every family instance whose type has `gis_kind` or `gis_category` set to `elevator`, with its family, type, level and Z range. E is the first of these. E's type `gis_levels_served` is emptied if it has a value. |
+| A3.1 | Lists every elevator object by shaft, with its family, type, level and box in metres. An elevator object is a family instance whose type has `gis_kind` or `gis_category` set to `elevator`. A shaft is a group of objects whose plan boxes overlap by at least half of the smaller box, joined transitively, as #45 does. The step flags two objects on the same level whose boxes overlap, which would mean two cars were joined. E is the lowest object of the first shaft that has objects on two or more levels. `gis_levels_served` is emptied on that shaft's types. |
 | A3.2 | Exports `span` to `<run>\a3\span`: every `Copy 1` plan view, Per level GeoPackage, Shared coordinates, EPSG 6677. Records the elevator warnings and the warnings about missing door fields. |
 | A3.3 | The test door is the first door, by element id, that the span export writes as an opening. Its type gets `gis_door` = `automatic` and `gis_access_con` = `test`, and the door gets `name` = `A3 test door`. E's type gets `gis_levels_served` = the two lowest exported levels plus `ZZ`. |
 | A3.4 | Exports `override` with the same settings. |
-| A3.B to A3.F | Pass rules B to F of the spec. B reads `span`. C and D read `override`. E and F read both. |
+| A3.B to A3.F | Pass rules B to F of the spec. B (span) checks that every row of a shaft has the same value. That value is the shaft's exported levels, lowest first, or it is empty, with the "no elevator object in the same plan spot" warning, for a lone object. C (override) checks every row of E's shaft. D reads `override`. E (the `Schema field '…' … could not resolve its mapped source` warnings) and F read both exports. |
 
 The scenario fills the door after the span export, not before it as the spec has it. Only an export says which doors are written as openings, so rules D and E read the override export. Level ids and elevations come from the model's levels: their `level_id` and their project elevation.
 

@@ -131,13 +131,53 @@ internal static class A3Fixture
         }
     }
 
-    /// <summary>Rule E: warnings that say a door, access_con or name value is missing.</summary>
+    /// <summary>
+    /// Rule E: the export's warning for a door field it could not fill,
+    /// "Schema field 'door' on opening element &lt;id&gt; could not resolve its mapped source." (also access_con, name).
+    /// </summary>
     public static string[] MissingDoorFieldWarnings(IEnumerable<string> warnings) =>
-        warnings.Where(warning =>
-                System.Text.RegularExpressions.Regex.IsMatch(warning, @"\b(gis_door|gis_access_con|door|access_con|name)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                && System.Text.RegularExpressions.Regex.IsMatch(warning, @"\b(missing|empty|no value|not set|blank)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                && !warning.Contains("levels_served", StringComparison.Ordinal))
-            .ToArray();
+        warnings.Where(warning => System.Text.RegularExpressions.Regex.IsMatch(warning, @"Schema field '(door|access_con|name)'.*could not resolve its mapped source")).ToArray();
+
+    /// <summary>
+    /// The export's shafts: elevator objects whose plan boxes overlap by at least half of the smaller
+    /// box, joined transitively. Each shaft lists its objects' indexes, in input order.
+    /// </summary>
+    public static List<List<int>> Shafts(IReadOnlyList<PlanBox> boxes)
+    {
+        int[] parent = Enumerable.Range(0, boxes.Count).ToArray();
+        int Find(int index) => parent[index] == index ? index : parent[index] = Find(parent[index]);
+        for (int a = 0; a < boxes.Count; a++)
+        {
+            for (int b = a + 1; b < boxes.Count; b++)
+            {
+                double smaller = Math.Min(boxes[a].Area, boxes[b].Area);
+                if (smaller > 0 && boxes[a].Overlap(boxes[b]) >= 0.5 * smaller)
+                {
+                    parent[Find(b)] = Find(a);
+                }
+            }
+        }
+
+        return Enumerable.Range(0, boxes.Count).GroupBy(Find).Select(group => group.ToList()).OrderBy(group => group[0]).ToList();
+    }
+
+    /// <summary>Pairs of objects on the same level whose plan boxes overlap at all: two cars a shaft may have merged.</summary>
+    public static List<(int A, int B)> SameLevelOverlaps(IReadOnlyList<PlanBox> boxes, IReadOnlyList<string?> levels)
+    {
+        var pairs = new List<(int, int)>();
+        for (int a = 0; a < boxes.Count; a++)
+        {
+            for (int b = a + 1; b < boxes.Count; b++)
+            {
+                if (levels[a] != null && levels[a] == levels[b] && boxes[a].Overlap(boxes[b]) > 0)
+                {
+                    pairs.Add((a, b));
+                }
+            }
+        }
+
+        return pairs;
+    }
 
     public static bool IsElevatorWarning(string warning) =>
         warning.Contains("Elevator", StringComparison.Ordinal) || warning.Contains("elevator", StringComparison.Ordinal) || warning.Contains("levels_served", StringComparison.Ordinal);
@@ -163,6 +203,15 @@ internal static class A3Fixture
 
         return tables;
     }
+}
+
+/// <summary>An elevator object's plan bounding box, in metres.</summary>
+internal sealed record PlanBox(double MinX, double MinY, double MaxX, double MaxY)
+{
+    public double Area => Math.Max(0, MaxX - MinX) * Math.Max(0, MaxY - MinY);
+
+    public double Overlap(PlanBox other) =>
+        Math.Max(0, Math.Min(MaxX, other.MaxX) - Math.Max(MinX, other.MinX)) * Math.Max(0, Math.Min(MaxY, other.MaxY) - Math.Max(MinY, other.MinY));
 }
 
 internal sealed record FieldExpectation(string Layer, string Name, string Owner, string Kind, string? Parameter = null, string? Binding = null)

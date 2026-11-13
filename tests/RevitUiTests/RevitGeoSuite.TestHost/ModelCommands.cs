@@ -41,7 +41,7 @@ internal static class ModelCommands
 
     /// <summary>
     /// Every family instance whose type has gis_kind or gis_category "elevator", by element id: family,
-    /// type, host level, bounding box Z in metres and the type's gis_levels_served.
+    /// type, host level, bounding box in metres and the type's gis_levels_served.
     /// </summary>
     public static Dictionary<string, object?> Elevators(UIApplication app)
     {
@@ -65,6 +65,11 @@ internal static class ModelCommands
                 ["type"] = type.Name,
                 ["category"] = instance.Category?.Name,
                 ["level"] = document.GetElement(instance.LevelId)?.Name,
+                ["levelElementId"] = instance.LevelId == ElementId.InvalidElementId ? null : instance.LevelId.Value,
+                ["xMinM"] = box == null ? null : box.Min.X * FeetToMetres,
+                ["xMaxM"] = box == null ? null : box.Max.X * FeetToMetres,
+                ["yMinM"] = box == null ? null : box.Min.Y * FeetToMetres,
+                ["yMaxM"] = box == null ? null : box.Max.Y * FeetToMetres,
                 ["zMinM"] = box == null ? null : box.Min.Z * FeetToMetres,
                 ["zMaxM"] = box == null ? null : box.Max.Z * FeetToMetres,
                 ["levelsServed"] = type.LookupParameter("gis_levels_served")?.AsString(),

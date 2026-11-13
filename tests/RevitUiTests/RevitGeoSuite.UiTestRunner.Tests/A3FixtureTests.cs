@@ -45,18 +45,36 @@ public class A3FixtureTests
     }
 
     [Fact]
-    public void Finds_warnings_about_missing_door_fields_only()
+    public void Finds_the_schema_field_warnings_for_door_fields_only()
     {
         string[] warnings =
         {
-            "Door 123 has no value for gis_door.",
-            "Opening 5: name is empty.",
-            "Elevator 9 (EV) spans fewer than two exported levels, so levels_served is empty. Set gis_levels_served on its type.",
-            "The model has no GIS_ views.",
+            "Schema field 'door' on opening element 123 could not resolve its mapped source.",
+            "Schema field 'name' on opening element 5 could not resolve its mapped source.",
+            "Schema field 'category' on unit element 7 could not resolve its mapped source.",
+            "Elevator 9 (EV) has no elevator object in the same plan spot on another exported level, so levels_served is empty. Set gis_levels_served on its type.",
         };
 
-        Assert.Equal(new[] { "Door 123 has no value for gis_door.", "Opening 5: name is empty." }, A3Fixture.MissingDoorFieldWarnings(warnings));
-        Assert.True(A3Fixture.IsElevatorWarning(warnings[2]));
+        Assert.Equal(warnings.Take(2), A3Fixture.MissingDoorFieldWarnings(warnings));
+        Assert.True(A3Fixture.IsElevatorWarning(warnings[3]));
+    }
+
+    [Fact]
+    public void Joins_objects_that_overlap_by_half_of_the_smaller_box_transitively()
+    {
+        PlanBox[] boxes =
+        {
+            new(0, 0, 2, 2),       // 0: B1
+            new(0.5, 0, 2.5, 2),   // 1: 1F, overlaps 0 by 75 %
+            new(1.0, 0, 3.0, 2),   // 2: 2F, overlaps 1 by 75 %, 0 by 50 %
+            new(2.2, 0, 4.2, 2),   // 3: 1F, the next car: overlaps 1 by 15 %, 2 by 40 %
+            new(10, 10, 11, 11),   // 4: lone
+        };
+
+        List<List<int>> shafts = A3Fixture.Shafts(boxes);
+
+        Assert.Equal(new[] { new[] { 0, 1, 2 }, new[] { 3 }, new[] { 4 } }, shafts.Select(shaft => shaft.ToArray()));
+        Assert.Equal(new[] { (1, 3) }, A3Fixture.SameLevelOverlaps(boxes, new[] { "B1", "1F", "2F", "1F", "1F" }));
     }
 
     [Fact]
