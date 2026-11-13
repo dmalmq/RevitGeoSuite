@@ -344,6 +344,12 @@ public static class GisShapeEdits
             return 0;
         }
 
+        if (!CanSketch(outline) || others.Any(other => !CanSketch(other.Outline)))
+        {
+            problems.Add($"{keeper.Describe()}: {CrossesItself}");
+            return 0;
+        }
+
         // A new floor is one polygon, so a piece in several parts could never be read back as drawn.
         if (others.Any(other => other.Outline.Count > 1))
         {
@@ -408,6 +414,12 @@ public static class GisShapeEdits
         if (outline.Count == 0)
         {
             problems.Add($"{keeper.Describe()}: the GDB outline has no area.");
+            return 0;
+        }
+
+        if (!CanSketch(outline))
+        {
+            problems.Add($"{keeper.Describe()}: {CrossesItself}");
             return 0;
         }
 
