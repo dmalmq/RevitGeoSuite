@@ -167,7 +167,7 @@ public static class ShapeEditWork
         ElementId levelId = new(edit.Floor.LevelId);
         double z = (document.GetElement(levelId) as Level)?.ProjectElevation ?? 0;
         FailOnError failures = new();
-        Floor? floor = null;
+        List<(Floor Floor, Polygon2D Polygon)> made = new();
         using (Transaction transaction = new(document, edit.Label()))
         {
             transaction.SetFailureHandlingOptions(transaction.GetFailureHandlingOptions().SetFailuresPreprocessor(failures));
@@ -178,7 +178,8 @@ public static class ShapeEditWork
                     .Concat(polygon.InteriorRings)
                     .Select(ring => CurveLoop.Create(Lines(ring, z).Cast<Curve>().ToList()))
                     .ToList();
-                floor = Floor.Create(document, loops, type.Id, levelId);
+                Floor floor = Floor.Create(document, loops, type.Id, levelId);
+                made.Add((floor, polygon));
                 foreach (KeyValuePair<string, string> value in drawn.Values)
                 {
                     if (floor.LookupParameter(value.Key) is { IsReadOnly: false, StorageType: StorageType.String } parameter)
@@ -195,13 +196,14 @@ public static class ShapeEditWork
             }
         }
 
-        if (floor == null || !floor.IsValidObject || !GisShapeEdits.SameOutline(FloorTopFaces.Read(floor).Outline, drawn.Outline))
+        if (made.Count == 0 || made.Any(entry => !entry.Floor.IsValidObject))
         {
-            throw new InvalidOperationException("Revit did not keep the GDB outline of the hand-drawn unit's floor; nothing changed.");
+            throw new InvalidOperationException("Revit did not keep the hand-drawn unit's floor; nothing changed.");
         }
 
         return failures.Warnings.Distinct().Select(text => "Revit warned: " + text)
-            .Append($"New floor {floor.Id.Value} ({type.Name}). The next Kanizu apply pairs the hand-drawn unit with it.")
+            .Concat(made.SelectMany(entry => TopFaceGap(entry.Floor, new[] { entry.Polygon })))
+            .Concat(made.Select(entry => $"New floor {entry.Floor.Id.Value} ({type.Name}). The next Kanizu apply pairs the hand-drawn unit with it."))
             .ToList();
     }
 
