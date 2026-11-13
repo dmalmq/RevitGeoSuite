@@ -37,7 +37,10 @@ if ($Uninstall) {
 }
 
 $project = Join-Path $PSScriptRoot 'RevitGeoSuite.TestHost\RevitGeoSuite.TestHost.csproj'
-dotnet build $project -c Release
+. (Join-Path $PSScriptRoot 'Find-DotnetSdk.ps1')
+$dotnet = Find-DotnetSdk
+Write-Host "Using $dotnet"
+& $dotnet build $project -c Release
 if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
 
 $built = Join-Path $repo 'bin\Tests\RevitGeoSuite.TestHost\RevitGeoSuite.TestHost.dll'

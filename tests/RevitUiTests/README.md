@@ -35,7 +35,7 @@ The test code never reaches the installer. All three projects build into `bin\Te
 ## One-time setup on the build PC
 
 1. Stay signed in to the build PC desktop. Revit needs an interactive session to run.
-2. Install the .NET 8 SDK if it is not there yet (`dotnet --list-sdks`).
+2. Install the .NET 8 SDK if it is not there yet. Both scripts find it themselves: they try `DOTNET_ROOT`, then `%USERPROFILE%\.dotnet`, then each `dotnet` on PATH, then `C:\Program Files\dotnet`, and use the first that lists a .NET 8 or later SDK. A `dotnet` on PATH that is only a runtime is skipped. When none has the SDK, the script stops and names what it tried. To pick an install, set `DOTNET_ROOT` to its folder.
 3. Close Revit. Then run `tests\RevitUiTests\Install-TestHost.ps1` in a clone of this repo.
 4. Start Revit 2024 once by hand. Answer **Always Load** for "RevitGeoSuite test host". Revit asks this once for an unsigned add-in. In this session the add-in stays inert. Close Revit again.
 5. Make a pristine detached copy of the test model at `C:\dev\revit-test\auto\lumine-pristine.rvt`. The copy must never have been set up with the GIS standard. Never use the original or the central model, and never save over the pristine copy.
