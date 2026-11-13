@@ -47,7 +47,7 @@ public sealed class GisAuditFindingItem
     /// <summary>error, warning or info.</summary>
     public string Severity { get; set; } = string.Empty;
 
-    /// <summary>standard, parameters, floor types, floors, levels or families.</summary>
+    /// <summary>standard, parameters, floor types, floors, levels, families or network.</summary>
     public string Topic { get; set; } = string.Empty;
 
     public string Message { get; set; } = string.Empty;
@@ -343,4 +343,54 @@ public sealed class GisDriftApplyRequest
     public string Path { get; set; } = string.Empty;
 
     public GisDriftChangeItem[] Changes { get; set; } = Array.Empty<GisDriftChangeItem>();
+}
+
+[TsExport]
+public sealed class GisNetworkShowRequest
+{
+    /// <summary>True to draw the network in the review views, false to hide it.</summary>
+    public bool Show { get; set; }
+}
+
+/// <summary>Kanizu's walking network for this model: where the file is, what it holds and whether it is drawn.</summary>
+[TsExport]
+public sealed class GisNetworkResponse
+{
+    public string DocumentTitle { get; set; } = string.Empty;
+
+    /// <summary>none (no file, or no model id or station folder), unreadable, or station.</summary>
+    public string Source { get; set; } = string.Empty;
+
+    /// <summary>Where Kanizu writes the file for this model; empty without a model id or station folder.</summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>Why the file could not be read.</summary>
+    public string Problem { get; set; } = string.Empty;
+
+    /// <summary>Why the file is not drawn in this model, such as another CRS.</summary>
+    public string Refused { get; set; } = string.Empty;
+
+    public string BasedOn { get; set; } = string.Empty;
+
+    public string WrittenUtc { get; set; } = string.Empty;
+
+    public string Kanizu { get; set; } = string.Empty;
+
+    public int Links { get; set; }
+
+    public int Connectors { get; set; }
+
+    /// <summary>Findings drawn on a floor.</summary>
+    public int Findings { get; set; }
+
+    /// <summary>Links, connectors and findings on a level_id no level of this model has.</summary>
+    public int UnknownLevel { get; set; }
+
+    /// <summary>What Kanizu left out because its floor has no level of this model.</summary>
+    public int NotShown { get; set; }
+
+    public bool Shown { get; set; }
+
+    /// <summary>Every finding in the file, in the audit's words.</summary>
+    public GisAuditFindingItem[] Items { get; set; } = Array.Empty<GisAuditFindingItem>();
 }

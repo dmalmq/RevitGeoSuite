@@ -11,6 +11,8 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
     <model id>.gis-model.json     one model's GIS export settings
   gis-drift/                    Kanizu writes; RevitGeoSuite's pyRevit tools read
     <model id>.gis-drift.json     GDB edits to fields this model owns
+  gis-network/                  Kanizu writes; RevitGeoSuite reads and draws it read-only
+    <model id>.gis-network.json   the walking network as this model sees it
   revit/                        RevitGeoSuite writes; Kanizu reads, and removes old versions
     <model folder>/
       <yyyyMMddTHHmmssZ>-<hash8>/   one version per export
@@ -148,6 +150,24 @@ In Kanizu a connector that carries a `revit_key` is locked: it can be inspected 
 
 What crosses each way: Revit sends Kanizu the units, openings and connector elements in the GIS export. Kanizu sends the network GDB the whole network. Whatever Kanizu shows back in Revit is a read-only view of the network, never ownership.
 
+## `gis-network/<model id>.gis-network.json` (version 1)
+
+Kanizu writes the whole file again each time it saves the network: when Save writes the network GDB, and when the project is saved after the network changed since the file was last written. It never writes on Generate alone. It writes through a temporary file and a rename, names the file like `gis-drift`, and deletes it when the model's network is cleared. RevitGeoSuite's GIS standard page reads it on its Network tab and draws it with DirectContext3D in the `GIS_` plans (each plan its own level's links, connector ends and findings) and in `GIS_` 3D views (all of it, connectors running between levels), plus the view that was active when it was shown. It reads the file again when a view opens and the file was written since. Nothing of it is an element, an undo step or part of any export, and no link or finding id is stored in the model. The sample is [tests/Fixtures/Conformance/gis-network](../tests/Fixtures/Conformance/gis-network/).
+
+| Field | Meaning |
+|---|---|
+| `schema`, `version` | `kanizu.gis-network` and `1`. A file without a version is version 1. |
+| `model`, `basedOn` | The model key, as in `gis-drift`, and the export version (relative to the station folder) whose CRS and level ids the file uses. |
+| `writtenUtc`, `kanizu` | For display only. |
+| `epsg` | The CRS of every position, `[easting, northing]` in metres, rounded to 1 mm. RevitGeoSuite inverts the export's shared-coordinate affine, which holds only for the model's project CRS: when `epsg` is another CRS it draws nothing and says why. |
+| `levels[]` | `levelId`, `floorKey`, `ordinal`, `shortName`, for labels. |
+| `links[]` | `id`, `levelId`, `line` (two or more positions), `oneWay` (first to last), `stepFree`, `passageType`. |
+| `connectors[]` | `id`, `kind` (`elevator`, `escalator`, `stairs`, `ramp`, `movingwalkway`; another kind is drawn generically), `revitKey` and `uniqueId` (null when drawn by hand or untied), `from` and `to` (`levelId`, `at`), `oneWay`, `stepFree`, `passageType`. |
+| `findings[]` | Only findings that need a model change: `kind`, `levelId` and `at` (either can be null; the finding then goes to the audit only), `revitKey`, `uniqueId`, `linkId`, `detail` (an English sentence). The audit words each kind itself: `transitWithoutLink`, `connectorWithoutElement`, `connectorOutsideUnit`, `floorWithoutConnector`, `rampUnresolved`, `rampUnjoined` and `linkThroughWall` are warnings, `doorWithoutLink` is a note, and an unknown kind is a note showing `detail`. |
+| `notShown` | `links`, `connectors`, `findings` that Kanizu left out because their floor is paired with no level of this model. |
+
+Each point sits at its level's `Level.ProjectElevation`, found by the level's `level_id` parameter, lifted 100 mm so the floor's top face does not hide it. Items on a `levelId` no level of the model has are counted, not drawn. In a host model only the host's own file is read; drawing linked models' files through the link transforms is not built yet.
+
 ## Versions
 
 | File | Version | Raised when |
@@ -160,5 +180,6 @@ What crosses each way: Revit sends Kanizu the units, openings and connector elem
 | `gis-model.json` | 1 | an older RevitGeoSuite would misread it |
 | `gis-fields.json`, `fields.json` | 1 | an older reader would misread it |
 | `gis-drift/*.gis-drift.json` | 1 | as above (`epsg` and `shapes` were added in version 1: a reader that ignores them still reads every value row right) |
+| `gis-network/*.gis-network.json` | 1 | an older reader would misread it; new connector kinds, passage codes and finding kinds need no new version |
 
 A reader refuses a file newer than it knows, naming the file and both versions, and reads a file without a version as it is.

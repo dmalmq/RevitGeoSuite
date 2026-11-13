@@ -76,19 +76,8 @@ public static class ShapeEditWork
         return GisShapeEdits.Plan(file, floors, new SharedCoordinateProjector(document.ActiveProjectLocation).Transform, ModelEpsg(document), GisToolStandard.LoadEmbedded(), levels);
     }
 
-    /// <summary>Revit levels by their level_id value; a level_id two levels share names neither.</summary>
-    private static Dictionary<string, long> PairedLevels(Document document)
-    {
-        List<(string Key, long Id)> pairs = new FilteredElementCollector(document)
-            .OfClass(typeof(Level))
-            .Cast<Level>()
-            .Select(level => (Key: level.LookupParameter("level_id")?.AsString() ?? string.Empty, Id: level.Id.Value))
-            .Where(pair => pair.Key.Length > 0)
-            .ToList();
-        return pairs.GroupBy(pair => pair.Key, StringComparer.Ordinal)
-            .Where(group => group.Count() == 1)
-            .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
-    }
+    private static Dictionary<string, long> PairedLevels(Document document) =>
+        GisNetworkSource.LevelsByLevelId(document).ToDictionary(pair => pair.Key, pair => pair.Value.Id.Value, StringComparer.Ordinal);
 
     /// <summary>The standard floor types this model has, by name, in the standard's order.</summary>
     public static IEnumerable<string> StandardFloorTypesIn(Document document)
@@ -517,7 +506,8 @@ public static class ShapeEditWork
         }
     }
 
-    private static int ModelEpsg(Document document)
+    /// <summary>The EPSG code of the model's project CRS, or 0 when it has none.</summary>
+    internal static int ModelEpsg(Document document)
     {
         try
         {

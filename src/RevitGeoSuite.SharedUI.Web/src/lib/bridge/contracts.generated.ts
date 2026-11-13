@@ -528,6 +528,28 @@ export interface GisLevelOption {
   name: string
 }
 
+export interface GisNetworkResponse {
+  basedOn: string
+  connectors: number
+  documentTitle: string
+  findings: number
+  items: GisAuditFindingItem[]
+  kanizu: string
+  links: number
+  notShown: number
+  path: string
+  problem: string
+  refused: string
+  shown: boolean
+  source: string
+  unknownLevel: number
+  writtenUtc: string
+}
+
+export interface GisNetworkShowRequest {
+  show: boolean
+}
+
 export interface GisParameterChangeItem {
   column: string
   elementId: string
@@ -1280,6 +1302,8 @@ export interface RpcMethods {
   'gisDrift.inspect': { request: GisDriftInspectRequest; response: GisDriftInspectResponse }
   'gisDrift.showShape': { request: GisShapeShowRequest; response: GisShapeShowResponse }
   'gisDrift.waiting': { request: GisStandardEmptyRequest; response: GisDriftWaitingResponse }
+  'gisNetwork.inspect': { request: GisStandardEmptyRequest; response: GisNetworkResponse }
+  'gisNetwork.show': { request: GisNetworkShowRequest; response: GisNetworkResponse }
   'gisParameters.apply': { request: GisParametersApplyRequest; response: GisStandardApplyResponse }
   'gisParameters.read': { request: GisStandardEmptyRequest; response: GisParametersReadResponse }
   'gisParameters.write': { request: GisStandardEmptyRequest; response: GisParametersWriteResponse }

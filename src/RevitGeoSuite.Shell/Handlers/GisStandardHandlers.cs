@@ -126,6 +126,7 @@ internal static class GisStandardWork
             ExportSummary = status.Summary,
             ExportBlockers = status.Issues.Where(issue => issue.BlocksExport).Select(issue => issue.Message).ToArray(),
             Findings = ExportAuditReader.Audit(document, snapshot, standard, viewSnapshot)
+                .Concat(GisNetworkSource.Audit(document))
                 .Select(finding => new GisAuditFindingItem
                 {
                     Severity = finding.Severity.ToString().ToLowerInvariant(),
