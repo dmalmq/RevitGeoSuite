@@ -35,7 +35,8 @@ public sealed class GisStandardSetupHandler : IRpcHandler
             GisStandardWork.RequireEditable(doc);
             GisToolStandard standard = GisToolStandard.LoadEmbedded();
             SetupPlan plan = SetupPlanner.Plan(ModelSnapshotReader.Read(doc), standard);
-            IReadOnlyList<string> log = plan.IsEmpty ? Array.Empty<string>() : GisStandardWriter.ApplySetup(doc, standard, plan);
+            ExportViewPlan views = ExportViewPlanner.Plan(ExportViewSetup.Read(doc));
+            IReadOnlyList<string> log = plan.IsEmpty && views.IsEmpty ? Array.Empty<string>() : GisStandardWriter.ApplySetup(doc, standard, plan, views);
             GisStandardNotifier.Instance.Refresh(doc, force: true);
             return (object?)new GisStandardApplyResponse { Log = log.ToArray() };
         });
@@ -115,6 +116,8 @@ internal static class GisStandardWork
         ModelSnapshot snapshot = ModelSnapshotReader.Read(document);
         GisStandardStatus status = GisStandardStateReader.Check(document);
         SetupPlan plan = SetupPlanner.Plan(snapshot, standard);
+        ExportViewSnapshot viewSnapshot = ExportViewSetup.Read(document);
+        ExportViewPlan views = ExportViewPlanner.Plan(viewSnapshot);
         return new GisStandardInspectResponse
         {
             DocumentTitle = document.Title ?? string.Empty,
@@ -122,7 +125,7 @@ internal static class GisStandardWork
             ModelVersion = snapshot.StandardVersion,
             ExportSummary = status.Summary,
             ExportBlockers = status.Issues.Where(issue => issue.BlocksExport).Select(issue => issue.Message).ToArray(),
-            Findings = GisAudit.Run(snapshot, standard)
+            Findings = ExportAuditReader.Audit(document, snapshot, standard, viewSnapshot)
                 .Select(finding => new GisAuditFindingItem
                 {
                     Severity = finding.Severity.ToString().ToLowerInvariant(),
@@ -131,7 +134,7 @@ internal static class GisStandardWork
                     ElementIds = finding.ElementIds.ToArray(),
                 })
                 .ToArray(),
-            SetupLines = plan.IsEmpty ? Array.Empty<string>() : SetupPlanner.Describe(plan).ToArray(),
+            SetupLines = (plan.IsEmpty ? Array.Empty<string>() : SetupPlanner.Describe(plan)).Concat(ExportViewPlanner.Describe(views)).ToArray(),
             Proposals = FloorTypeMatcher.Propose(snapshot, standard)
                 .Select(proposal => new GisFloorTypeProposalItem
                 {
