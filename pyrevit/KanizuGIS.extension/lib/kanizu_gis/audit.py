@@ -112,7 +112,7 @@ def _audit_levels(snapshot):
         if missing:
             findings.append(Finding(
                 WARNING, "levels",
-                u"Level %s has no %s, so the export guesses it from the level name." % (level.name, " or ".join(missing)),
+                u"Level %s has no %s. The export counts a missing ordinal from the other levels and leaves a missing short_name empty." % (level.name, " or ".join(missing)),
                 [level.element_id]))
     return findings
 

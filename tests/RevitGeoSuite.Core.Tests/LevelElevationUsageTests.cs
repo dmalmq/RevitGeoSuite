@@ -25,7 +25,7 @@ public sealed class LevelElevationUsageTests
         ("RevitGeoSuite.Shell/Handlers/GisImportHandler.cs", "ElevationFeet = level.Elevation", "level picker label"),
         ("RevitGeoSuite.Shell/Handlers/GisImportHandler.cs", "new GisExportLevel(level.Id.Value, level.Name ?? string.Empty, level.Elevation)", "sorts groups by level"),
         ("RevitGeoSuite.FloorPlanExport/Extractors/LevelBoundaryBuilder.cs", "[\"elevation_m\"] = level.Elevation * FeetToMeters,", "the level's real height"),
-        ("RevitGeoSuite.FloorPlanExport/Export/FloorExportDataPreparer.cs", "double distance = Math.Abs(levels[i].Elevation);", "ground-level guess for the computed ordinal"),
+        ("RevitGeoSuite.FloorPlanExport/Export/FloorExportDataPreparer.cs", "new LevelOrdinalInput(level.Id.Value, level.Name ?? string.Empty, level.Elevation,", "level height order for ordinals"),
         ("RevitGeoSuite.FloorPlanExport/Export/Temp3DViewScope.cs", "level.Elevation,", "diagnostic beside ProjectElevation"),
     };
 
@@ -47,7 +47,7 @@ public sealed class LevelElevationUsageTests
             for (int index = 0; index < lines.Length; index++)
             {
                 string line = lines[index].Trim();
-                if (!LevelElevation.IsMatch(line) || line.Contains(".OrderBy(") || IsAllowed(relative, line))
+                if (line.StartsWith("//", StringComparison.Ordinal) || !LevelElevation.IsMatch(line) || line.Contains(".OrderBy(") || IsAllowed(relative, line))
                 {
                     continue;
                 }

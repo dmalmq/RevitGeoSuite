@@ -243,7 +243,7 @@ public static class GisAudit
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "levels",
-                    $"Level {level.Name} has no {string.Join(" or ", missing)}, so the export guesses it from the level name.",
+                    $"Level {level.Name} has no {string.Join(" or ", missing)}. The export counts a missing ordinal from the other levels and leaves a missing short_name empty.",
                     new[] { level.ElementId });
             }
         }
