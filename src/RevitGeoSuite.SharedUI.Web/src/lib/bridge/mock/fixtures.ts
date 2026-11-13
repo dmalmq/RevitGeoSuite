@@ -309,7 +309,7 @@ function gisStandard(scenario: MockScenario) {
         ? []
         : [
             { severity: 'warning', topic: 'floor types', message: 'Floor type 1F ラチ内 床 (14 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: range(301, 14) },
-            { severity: 'warning', topic: 'floor types', message: 'Floor type j 店舗_床 (6 floors) uses an old name. Run Fix floor types to rename it to j ラチ外店舗_床 or j ラチ内店舗_床.', elementIds: range(331, 6) }
+            { severity: 'warning', topic: 'floor types', message: 'Floor type j 店舗_床 (6 floors) uses an old name. Run Fix floor types to rename it to j ラチ外店舗_床 or j ラチ内店舗_床. All 6 floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first.', elementIds: range(331, 6) }
           ]),
       { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
       { severity: 'error', topic: 'families', message: "Lift : A has gis_kind 'lift', which the export does not know; its instances export as plain fixtures.", elementIds: [501] },

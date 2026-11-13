@@ -22,3 +22,8 @@ export function toggled(proposals: Proposal[], ticked: Set<string>, proposal: Pr
   next.add(proposalKey(proposal))
   return next
 }
+
+/** Renaming a type moves every floor of it, so a type with several candidates states how many floors follow the choice. */
+export function allFloorsHint(template: string, proposal: Pick<GisFloorTypeProposalItem, 'floorCount' | 'standardTypeName'>): string {
+  return template.replace('{0}', String(proposal.floorCount)).replace('{1}', proposal.standardTypeName)
+}

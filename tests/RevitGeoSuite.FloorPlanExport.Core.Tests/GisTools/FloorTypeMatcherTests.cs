@@ -270,4 +270,23 @@ public sealed class FloorTypeMatcherTests
         instance.Add(new BoundParameterInfo("gis_category", null, GisParameterBinding.Instance, new[] { "OST_Floors" }));
         Assert.StartsWith("gis_category is bound as an instance parameter", FloorTypeMatcher.WriteBlocker(ModelOnStandard(instance)));
     }
+
+    [Fact]
+    public void Audit_says_a_two_sided_old_name_moves_all_its_floors()
+    {
+        ModelSnapshot model = new(floorTypes: new[]
+        {
+            FloorType("j 店舗_床", "retail", floors: 6, elementId: 1),
+            FloorType("smoking room", "smokingarea", floors: 2, elementId: 2),
+        });
+        List<string> messages = GisAudit.Run(model, Standard).Select(finding => finding.Message).Where(message => message.Contains("uses an old name")).ToList();
+
+        Assert.Equal(
+            new[]
+            {
+                "Floor type j 店舗_床 (6 floors) uses an old name. Run Fix floor types to rename it to j ラチ外店舗_床 or j ラチ内店舗_床. All 6 floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first.",
+                "Floor type smoking room (2 floors) uses an old name. Run Fix floor types to rename it to j 喫煙所_床.",
+            },
+            messages);
+    }
 }

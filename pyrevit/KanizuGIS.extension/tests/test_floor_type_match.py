@@ -133,6 +133,16 @@ class FloorTypeMatchTests(unittest.TestCase):
         proposals = floor_type_match.propose(model, self.standard)
         self.assertEqual([11], floor_type_match.echo_floor_ids(model, proposals))
 
+    def test_audit_says_a_two_sided_old_name_moves_all_its_floors(self):
+        from kanizu_gis import audit
+        model = snapshot.ModelSnapshot(floor_types=[floor_type(u"j 店舗_床", "retail", floors=6, element_id=1),
+                                                    floor_type(u"smoking room", "smokingarea", floors=2, element_id=2)])
+        messages = [f.message for f in audit.audit(model, self.standard) if u"uses an old name" in f.message]
+        self.assertEqual([
+            u"Floor type j 店舗_床 (6 floors) uses an old name. Run Fix floor types to rename it to j ラチ外店舗_床 or j ラチ内店舗_床. All 6 floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first.",
+            u"Floor type smoking room (2 floors) uses an old name. Run Fix floor types to rename it to j 喫煙所_床.",
+        ], messages)
+
 
 if __name__ == "__main__":
     unittest.main()

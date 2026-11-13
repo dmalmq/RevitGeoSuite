@@ -85,7 +85,8 @@ def _audit_floor_types(snapshot, standard):
             if renames:
                 findings.append(Finding(
                     WARNING, "floor types",
-                    u"Floor type %s (%d floors) uses an old name. Run Fix floor types to rename it to %s." % (floor_type.name, len(floor_type.floor_ids), u" or ".join(renames)),
+                    u"Floor type %s (%d floors) uses an old name. Run Fix floor types to rename it to %s.%s" % (
+                        floor_type.name, len(floor_type.floor_ids), u" or ".join(renames), _one_choice_for_all_floors(floor_type, renames)),
                     floor_type.floor_ids))
                 continue
             findings.append(Finding(
@@ -155,3 +156,11 @@ def suggest_kind(name):
         if any(word in lowered for word in words):
             return kind
     return None
+
+
+def _one_choice_for_all_floors(floor_type, renames):
+    """One floor type can cover floors on both sides of the gates; the rename moves them all."""
+    if len(renames) < 2:
+        return u""
+    return (u" All %d floors of this type get the name you choose. If some belong to the other one, "
+            u"duplicate the type and move those floors to the copy first.") % len(floor_type.floor_ids)

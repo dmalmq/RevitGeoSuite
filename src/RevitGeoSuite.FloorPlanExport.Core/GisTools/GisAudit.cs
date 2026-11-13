@@ -200,7 +200,7 @@ public static class GisAudit
                     yield return new GisAuditFinding(
                         GisAuditSeverity.Warning,
                         "floor types",
-                        $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name. Run Fix floor types to rename it to {string.Join(" or ", renames)}.",
+                        $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name. Run Fix floor types to rename it to {string.Join(" or ", renames)}.{OneChoiceForAllFloors(floorType, renames)}",
                         floorType.FloorIds);
                     continue;
                 }
@@ -213,6 +213,12 @@ public static class GisAudit
             }
         }
     }
+
+    // One floor type can cover floors on both sides of the gates; the rename moves them all.
+    private static string OneChoiceForAllFloors(FloorTypeInfo floorType, IReadOnlyList<string> renames) =>
+        renames.Count > 1
+            ? $" All {floorType.FloorIds.Count} floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first."
+            : string.Empty;
 
     private static IEnumerable<GisAuditFinding> AuditFloors(ModelSnapshot snapshot, GisToolStandard standard)
     {

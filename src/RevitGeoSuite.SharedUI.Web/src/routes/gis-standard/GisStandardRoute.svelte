@@ -11,7 +11,7 @@
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Segmented, SummaryStrip, Table, type Tone } from '$lib/kit'
   import { ToolSheet, format, refreshReadiness } from '$lib/shell'
-  import { initiallyTicked, proposalKey, toggled } from '$lib/gisStandard/fixSelection'
+  import { allFloorsHint, initiallyTicked, proposalKey, toggled } from '$lib/gisStandard/fixSelection'
   import AppliedBanner from './AppliedBanner.svelte'
   import DriftPanel from './DriftPanel.svelte'
   import ParametersPanel from './ParametersPanel.svelte'
@@ -224,6 +224,11 @@
                       {#if proposal.newName}
                         <div class="truncate text-small text-muted-foreground" title={proposal.newName}>
                           {format($t('GisStandard.Fix.RenamesTo', 'renames to {0}'), proposal.newName)}
+                        </div>
+                      {/if}
+                      {#if (candidateCounts.get(proposal.floorTypeId) ?? 0) > 1}
+                        <div class="whitespace-normal text-small text-muted-foreground">
+                          {allFloorsHint($t('GisStandard.Fix.AllFloors', 'All {0} floors of this type become {1}. If some belong to the other choice, duplicate the type for those floors first.'), proposal)}
                         </div>
                       {/if}
                     </td>
