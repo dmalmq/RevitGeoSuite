@@ -800,7 +800,7 @@ internal sealed class StairVisibilityResolver
             {
                 Parameter? baseOffsetParam = stairs.get_Parameter(BuiltInParameter.STAIRS_BASE_OFFSET);
                 double baseOffset = baseOffsetParam?.AsDouble() ?? 0d;
-                return baseLevel.Elevation + baseOffset;
+                return baseLevel.ProjectElevation + baseOffset;
             }
         }
         catch (Exception)
@@ -826,7 +826,7 @@ internal sealed class StairVisibilityResolver
 
     private bool TryGetViewCutElevationFeet(ViewPlan view, out double cutElevationFeet)
     {
-        cutElevationFeet = view.GenLevel?.Elevation ?? 0d;
+        cutElevationFeet = view.GenLevel?.ProjectElevation ?? 0d;
         try
         {
             PlanViewRange viewRange = view.GetViewRange();
@@ -838,7 +838,7 @@ internal sealed class StairVisibilityResolver
                 return false;
             }
 
-            cutElevationFeet = cutLevel.Elevation + offset;
+            cutElevationFeet = cutLevel.ProjectElevation + offset;
             return true;
         }
         catch (Exception)
