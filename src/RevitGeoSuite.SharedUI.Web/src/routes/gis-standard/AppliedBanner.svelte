@@ -14,14 +14,21 @@
     onclose
   }: { title: string; log: string[]; skipped: string[]; skippedTitle: string; undoHint?: string; onclose: () => void } = $props()
   const changes = $derived(log.filter((line) => !line.startsWith(' ')).length)
+  const notes = $derived(log.filter((line) => line.startsWith(' ')).map((line) => line.trim()))
 </script>
 
-<Banner tone={skipped.length ? 'warning' : 'success'} {title} {onclose}>
+<Banner tone={skipped.length || notes.length ? 'warning' : 'success'} {title} {onclose}>
   {undoHint ?? $t('GisStandard.UndoHint', 'One Undo in Revit takes the whole change back.')}
   {#if skipped.length}
     <p class="mt-1">{skippedTitle}</p>
     <ul class="ml-4 max-h-40 list-disc overflow-y-auto text-small">
       {#each skipped as line, index (index)}<li>{line}</li>{/each}
+    </ul>
+  {/if}
+  {#if notes.length}
+    <p class="mt-1">{$t('GisStandard.Notes', 'Revit\'s notes on these changes:')}</p>
+    <ul class="ml-4 max-h-40 list-disc overflow-y-auto text-small">
+      {#each notes as line, index (index)}<li>{line}</li>{/each}
     </ul>
   {/if}
   {#if log.length}
