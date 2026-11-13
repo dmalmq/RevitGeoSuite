@@ -124,6 +124,7 @@ internal sealed class Commands
             throw new FileNotFoundException("No model at this path.", path);
         }
 
+        List<string> unloaded = UnloadMissingReferences(path);
         return api.Run(app =>
         {
             var options = new OpenOptions { Audit = false };
@@ -134,19 +135,70 @@ internal sealed class Commands
 
             Document document = app.OpenAndActivateDocument(ModelPathUtils.ConvertUserVisiblePathToModelPath(path), options, false).Document;
 
-            // A detached model has no path until it is saved, so the runner could not tell it from any
-            // other open document. Save it once as its own central next to the copy: it then has a
-            // path in the run folder and no tie to the original central model.
-            if (document.IsWorkshared && string.IsNullOrEmpty(document.PathName))
+            // Revit names a detached model "<name>_detached.rvt" with no folder, which resolves against
+            // Revit's working directory, not the run folder. Save it once, by full path, as its own
+            // central next to the copy: it then lives in the run folder with no tie to the original.
+            string folder = Path.GetDirectoryName(path)!;
+            if (document.IsWorkshared && (document.IsDetached || !InFolder(document.PathName, folder)))
             {
-                string detached = TestRoot.Require(root, Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "-detached.rvt"));
+                string detached = TestRoot.Require(root, Path.Combine(folder, Path.GetFileNameWithoutExtension(path) + "-detached.rvt"));
                 var save = new SaveAsOptions { OverwriteExistingFile = true, MaximumBackups = 1 };
                 save.SetWorksharingOptions(new WorksharingSaveAsOptions { SaveAsCentral = true });
                 document.SaveAs(detached, save);
             }
 
-            return Describe(document);
+            Dictionary<string, object?> described = Describe(document);
+            described["unloadedReferences"] = unloaded;
+            return described;
         }, Slow);
+    }
+
+    // A link whose file is not on this PC makes Revit ask on open ("could not find or read"). Mark each
+    // such link in the copy as not to be loaded before opening, so no dialog is left to chance, and
+    // return what was unloaded for the report. Only the copy in the test folder is ever written.
+    private static List<string> UnloadMissingReferences(string path)
+    {
+        var unloaded = new List<string>();
+        ModelPath model = ModelPathUtils.ConvertUserVisiblePathToModelPath(path);
+        TransmissionData? data = TransmissionData.ReadTransmissionData(model);
+        if (data == null)
+        {
+            return unloaded;
+        }
+
+        foreach (ElementId id in data.GetAllExternalFileReferenceIds())
+        {
+            ExternalFileReference reference = data.GetLastSavedReferenceData(id);
+            string target = ModelPathUtils.ConvertModelPathToUserVisiblePath(reference.GetAbsolutePath());
+            if (reference.GetLinkedFileStatus() == LinkedFileStatus.Unloaded || (target.Length > 0 && File.Exists(target)))
+            {
+                continue;
+            }
+
+            data.SetDesiredReferenceData(id, reference.GetPath(), reference.PathType, false);
+            unloaded.Add($"{reference.ExternalFileReferenceType}: {target}");
+        }
+
+        if (unloaded.Count > 0)
+        {
+            data.IsTransmitted = true;
+            TransmissionData.WriteTransmissionData(model, data);
+        }
+
+        return unloaded;
+    }
+
+    private static bool InFolder(string path, string folder)
+    {
+        try
+        {
+            return path.Length > 0 && Path.IsPathRooted(path)
+                && string.Equals(Path.GetDirectoryName(Path.GetFullPath(path))?.TrimEnd('\\'), Path.GetFullPath(folder).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private Dictionary<string, object?> Activate(Dictionary<string, object?> request)

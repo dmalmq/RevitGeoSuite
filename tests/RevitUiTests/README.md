@@ -67,6 +67,12 @@ cd C:\dev\RevitGeoSuite
 
 The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder also holds the screenshots, the CSVs, and the model copy. The exit code is 0 when no step failed.
 
+- **A stopped run fails.** When the run stops early, for example because the active model is not the run's copy, the report gets a failed `STOP` step, says FAIL, and the exit code is 1.
+- **Revit closes on every exit.** `-StartRevit` closes the Revit it started when the runner ends, however it ends. It stops the process, which closes without saving and cannot meet a "save changes?" prompt.
+- **Revit starts in `C:\dev\revit-test`.** Revit names a detached model `<name>_detached.rvt` without a folder. The test host therefore saves the detached copy once, by full path, as `<copy>-detached.rvt` in the run folder.
+- **Missing links are unloaded first.** Before the model is opened, every link whose file is not on the PC is marked not to load in the run's copy, so Revit has no "could not find or read" question to ask. The report header lists those links, and any dialog Revit showed while opening.
+- **No pyRevit test extension by default.** The KanizuGIS pyRevit extension shows a startup dialog on a model that is not set up, so a run loads it only when `-PyRevitExtension` is passed.
+
 | Option | Meaning |
 |---|---|
 | `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn` or `c8-network`. `--script` is the same option. |

@@ -77,6 +77,7 @@ Set-PyRevitExtensions { param($list) $list | Where-Object { "$_" -notmatch '^C:\
 if ($PyRevitExtension -and -not $StartRevit) { throw '-PyRevitExtension needs -StartRevit: the folder is handed to the Revit this script starts.' }
 if ($RgsBuild -and -not $StartRevit) { throw '-RgsBuild needs -StartRevit: the build is handed to the Revit this script starts.' }
 
+$process = $null
 if ($StartRevit) {
     if (Get-Process -Name Revit -ErrorAction SilentlyContinue) {
         Write-Warning 'Revit is already running. The tests only reach a Revit that this script started; close it and run again if the runner cannot connect.'
@@ -111,7 +112,9 @@ if ($StartRevit) {
         Copy-Item $staged $hostManifest -Force
         try {
             $env:REVITGEOSUITE_UITEST = '1'   # inherited by this Revit only; removed again below
-            try { $process = Start-Process -FilePath $revit -PassThru } finally { Remove-Item Env:REVITGEOSUITE_UITEST }
+            # Revit resolves bare file names (such as a detached model's default name) against its working directory: keep that in the test folder.
+            New-Item -ItemType Directory -Force -Path 'C:\dev\revit-test' | Out-Null
+            try { $process = Start-Process -FilePath $revit -WorkingDirectory 'C:\dev\revit-test' -PassThru } finally { Remove-Item Env:REVITGEOSUITE_UITEST }
             Write-Host "Started $revit for UI tests. Waiting for the test host before taking the manifest away again..."
             $deadline = (Get-Date).AddMinutes(15)
             while (-not (Test-HostPipe) -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
@@ -127,10 +130,23 @@ if ($StartRevit) {
 }
 
 . (Join-Path $PSScriptRoot 'Find-DotnetSdk.ps1')
-$dotnet = Find-DotnetSdk
-Write-Host "Using $dotnet"
-& $dotnet build (Join-Path $PSScriptRoot 'RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.csproj') -c Release
-if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
+$exitCode = 1
+try {
+    $dotnet = Find-DotnetSdk
+    Write-Host "Using $dotnet"
+    & $dotnet build (Join-Path $PSScriptRoot 'RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.csproj') -c Release
+    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
 
-& $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @RunnerArgs
-exit $LASTEXITCODE
+    & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @RunnerArgs
+    $exitCode = $LASTEXITCODE
+}
+finally {
+    # The Revit this script started is the tests' own: close it on every way out, without saving.
+    # Stopping the process is the only close that cannot meet a "save changes?" prompt.
+    if ($process -and -not $process.HasExited) {
+        Stop-Process -Id $process.Id -Force
+        Write-Host "Closed the test Revit (process $($process.Id)) without saving."
+    }
+}
+
+exit $exitCode

@@ -43,9 +43,13 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         {
             await RunStepsAsync(revitStartedUtc);
         }
-        catch (NotTheTestCopyException ex)
+        catch (Exception ex)
         {
+            // A stopped run is a failed run: the report says FAIL and the runner exits non-zero.
             report.Header.Add($"RUN STOPPED: {ex.Message}");
+            var stopped = new StepResult("STOP", "The run finished every step it was asked to run");
+            stopped.Check(false, $"The run stopped with {ex.GetType().Name}: {ex.Message}");
+            report.Steps.Add(stopped);
             Console.Error.WriteLine($"Run stopped: {ex.Message}");
         }
     }
@@ -124,7 +128,11 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         Directory.CreateDirectory(folder);
         modelCopy = Path.Combine(folder, Path.GetFileNameWithoutExtension(options.Model) + "-uitest.rvt");
         File.Copy(options.Model, modelCopy, overwrite: true);
+        int beforeOpen = host.LastEvent();
         JsonObject opened = host.Call("open", new { path = modelCopy });
+        report.Header.Add($"Links not on this PC, unloaded in the copy before opening: {(opened["unloadedReferences"]?.AsArray().Count > 0 ? opened["unloadedReferences"]!.ToJsonString() : "none")}.");
+        string dialogs = string.Join(" | ", host.EventsAfter(beforeOpen).Where(item => item.Kind == "dialog").Select(item => $"{item.DialogId}: {item.Message}"));
+        report.Header.Add($"Dialogs while opening: {(dialogs.Length > 0 ? dialogs : "none")}.");
         string copyPath = modelCopy;
         modelCopy = opened["path"]?.GetValue<string>() ?? string.Empty;
         if (!string.Equals(modelCopy, copyPath, StringComparison.OrdinalIgnoreCase))
