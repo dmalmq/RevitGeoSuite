@@ -3,9 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.FloorPlanExport.Core;
+using RevitGeoSuite.FloorPlanExport.Core.Assignments;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
+using RevitGeoSuite.FloorPlanExport.Export;
+using RevitGeoSuite.FloorPlanExport.Extractors;
 
 namespace RevitGeoSuite.FloorPlanExport.GisTools;
 
@@ -168,19 +171,20 @@ public static class ExportViewSetup
         }
     }
 
-    /// <summary>What the export reads from a view, and the category of every family type the standard tags.</summary>
+    /// <summary>What the export reads from a view, and the category of every family the export maps.</summary>
     private static HashSet<long> ExportReadCategoryIds(Document document)
     {
         HashSet<long> ids = new(VisibleModelCategories.Select(category => (long)category));
-        ids.UnionWith(TaggedFamilyCategories(document));
+        ids.UnionWith(MappedFamilyCategories(document));
         return ids;
     }
 
+    /// <summary>The template named <c>GIS Export</c> in any case: Revit view names are unique regardless of case.</summary>
     private static View? FindTemplate(Document document) =>
         new FilteredElementCollector(document)
             .OfClass(typeof(ViewPlan))
             .Cast<ViewPlan>()
-            .FirstOrDefault(view => view.IsTemplate && string.Equals(view.Name, ExportViewPlanner.TemplateName, StringComparison.Ordinal));
+            .FirstOrDefault(view => view.IsTemplate && string.Equals(view.Name, ExportViewPlanner.TemplateName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// The <c>GIS Export</c> template, made from a scratch plan that is deleted again. It shows only
@@ -233,16 +237,46 @@ public static class ExportViewSetup
         return template;
     }
 
-    /// <summary>The category of every family type the standard tags with gis_kind or gis_category, such as an escalator modelled as Mechanical Equipment.</summary>
-    private static IEnumerable<long> TaggedFamilyCategories(Document document) =>
-        new FilteredElementCollector(document)
+    /// <summary>
+    /// The category of every family the export maps, such as an escalator modelled as Mechanical
+    /// Equipment: a type tagged with gis_kind or gis_category, and a placed instance the export
+    /// takes by its gis_kind or category, the family catalog, this PC's family overrides for the
+    /// project, or as an accepted opening.
+    /// </summary>
+    private static IEnumerable<long> MappedFamilyCategories(Document document)
+    {
+        HashSet<long> categories = new(new FilteredElementCollector(document)
             .OfClass(typeof(FamilySymbol))
             .Cast<FamilySymbol>()
             .Where(symbol => symbol.Category != null &&
                 (!string.IsNullOrWhiteSpace(symbol.LookupParameter(GisSharedParameters.GisKind)?.AsString()) ||
                  !string.IsNullOrWhiteSpace(symbol.LookupParameter(GisSharedParameters.GisCategory)?.AsString())))
-            .Select(symbol => symbol.Category.Id.Value)
-            .Distinct();
+            .Select(symbol => symbol.Category.Id.Value));
+
+        string projectKey = DocumentProjectKeyBuilder.Create(document);
+        IReadOnlyDictionary<string, string> overrides = new FamilyCategoryOverrideStore().LoadWithDiagnostics(projectKey).Value;
+        IReadOnlyList<string> acceptedOpenings = new AcceptedOpeningFamilyStore().LoadWithDiagnostics(projectKey).Value;
+        ZoneCatalog catalog = ZoneCatalog.CreateDefault();
+        foreach (FamilyInstance instance in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>())
+        {
+            if (instance.Category == null || categories.Contains(instance.Category.Id.Value))
+            {
+                continue;
+            }
+
+            string familyName = UnitExtractor.GetFamilyName(instance);
+            if (UnitExtractor.HasMappedGisKind(instance) ||
+                UnitExtractor.HasStandardCategory(instance) ||
+                catalog.TryGetFamilyInfo(familyName, out _) ||
+                overrides.ContainsKey(familyName) ||
+                OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpenings))
+            {
+                categories.Add(instance.Category.Id.Value);
+            }
+        }
+
+        return categories;
+    }
 
     private static void SetViewRange(ViewPlan template)
     {
