@@ -243,9 +243,19 @@ public static class GisAudit
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "levels",
-                    $"Level {level.Name} has no {string.Join(" or ", missing)}, so the export guesses it from the level name.",
+                    $"Level {level.Name} has no {string.Join(" or ", missing)}. The export counts a missing ordinal from the other levels and leaves a missing short_name empty.",
                     new[] { level.ElementId });
             }
+        }
+
+        List<LevelInfo> withFloors = snapshot.Levels.Where(level => level.HasFloors).ToList();
+        if (withFloors.Count > 0 && snapshot.Levels.All(level => level.Ordinal is null))
+        {
+            yield return new GisAuditFinding(
+                GisAuditSeverity.Warning,
+                "levels",
+                "No level has an ordinal, so the export takes the level nearest elevation 0 as ground, which is wrong for a model at its real height. Setting the ground floor's ordinal to 0 is enough.",
+                withFloors.Select(level => level.ElementId));
         }
     }
 

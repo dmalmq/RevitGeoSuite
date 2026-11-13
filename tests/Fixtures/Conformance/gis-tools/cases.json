@@ -71,6 +71,35 @@
         ["warning", "families", [27]],
         ["warning", "families", [28]]
       ]
+    },
+    {
+      "name": "no level has an ordinal",
+      "model": {
+        "base": "standard",
+        "levels": [
+          { "id": 1, "name": "1FL", "ordinal": null, "short_name": "1F" },
+          { "id": 2, "name": "B1FL", "ordinal": null, "short_name": "B1" },
+          { "id": 3, "name": "Roof", "ordinal": null, "short_name": "", "has_floors": false }
+        ]
+      },
+      "expected": [
+        ["warning", "levels", [1]],
+        ["warning", "levels", [2]],
+        ["warning", "levels", [1, 2]]
+      ]
+    },
+    {
+      "name": "a level without floors has the only ordinal, so the export counts from it",
+      "model": {
+        "base": "standard",
+        "levels": [
+          { "id": 1, "name": "1FL", "ordinal": null, "short_name": "1F" },
+          { "id": 3, "name": "Roof", "ordinal": 2, "short_name": "", "has_floors": false }
+        ]
+      },
+      "expected": [
+        ["warning", "levels", [1]]
+      ]
     }
   ],
   "floor_type_match": [
