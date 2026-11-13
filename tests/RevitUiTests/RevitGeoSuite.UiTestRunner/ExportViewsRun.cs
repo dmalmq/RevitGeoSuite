@@ -363,6 +363,6 @@ internal sealed record PlanViewRow(
     public bool? CategoryHidden(string category) => Hidden != null && Hidden.TryGetValue(category, out bool? hidden) ? hidden : null;
 }
 
-internal sealed record LevelRow(long Id, string Name, string? LevelId, bool HasFloors);
+internal sealed record LevelRow(long Id, string Name, string? LevelId, bool HasFloors, double? ElevationFt = null);
 
 internal sealed record ViewChoice(string Label, bool Checked);

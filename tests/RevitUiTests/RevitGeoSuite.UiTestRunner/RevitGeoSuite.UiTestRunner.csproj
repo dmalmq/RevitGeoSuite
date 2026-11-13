@@ -29,6 +29,10 @@
     <None Include="..\..\Fixtures\Conformance\gis-drift\8d7f3c1e-0000.gis-drift.json" Link="fixtures\other-model.gis-drift.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- A copy of the C8 sample (tests/Fixtures/Conformance/gis-network on the C8 branch) until Kanizu writes the file. -->
+    <None Update="fixtures\network-sample.gis-network.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- The installer packs bin\Deploy\; test code must never land there. -->

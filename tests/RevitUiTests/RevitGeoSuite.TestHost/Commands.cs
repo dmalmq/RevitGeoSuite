@@ -49,6 +49,7 @@ internal sealed class Commands
                 "floorTypes" => api.Run(FloorTypes, Quick),
                 "views" => api.Run(app => ViewCommands.Views(app, request), Quick),
                 "levels" => api.Run(ViewCommands.Levels, Quick),
+                "views3d" => api.Run(ViewCommands.Views3D, Quick),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
                 "redo" => Post("ID_EDIT_REDO"),
                 "elements" => api.Run(app => FloorCommands.Elements(app, Strings(request, "uniqueIds"), Longs(request, "ids")), Quick),

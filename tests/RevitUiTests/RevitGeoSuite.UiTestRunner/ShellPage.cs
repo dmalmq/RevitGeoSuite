@@ -67,6 +67,42 @@ internal sealed class ShellPage : IAsyncDisposable
         return JsonNode.Parse(json);
     }
 
+    /// <summary>
+    /// Starts a bridge job (a request that replies with a jobId) from inside the page and waits for its
+    /// job.completed result. Throws with the handler's message on job.failed, an error reply or the timeout.
+    /// </summary>
+    public async Task<JsonNode?> JobAsync(string method, object payload, TimeSpan timeout)
+    {
+        const string script = @"([method, payload, timeoutMs]) => new Promise((resolve, reject) => {
+            const id = 'uitest_' + Math.random().toString(36).slice(2);
+            let jobId = null;
+            const early = [];
+            const done = (fn, value) => { clearTimeout(timer); window.chrome.webview.removeEventListener('message', onMessage); fn(value); };
+            const settle = (envelope) => {
+                if (envelope.payload?.jobId !== jobId) return;
+                if (envelope.method === 'job.completed') done(resolve, JSON.stringify(envelope.payload.result ?? null));
+                if (envelope.method === 'job.failed') done(reject, new Error('job failed: ' + envelope.payload.error));
+            };
+            const onMessage = (event) => {
+                const envelope = event.data;
+                if (!envelope) return;
+                if (envelope.kind === 'res' && envelope.id === id) {
+                    if (envelope.error) return done(reject, new Error(envelope.error.code + ': ' + envelope.error.message));
+                    if (!envelope.payload?.jobId) return done(reject, new Error('no job: ' + JSON.stringify(envelope.payload)));
+                    jobId = envelope.payload.jobId;
+                    early.forEach(settle);
+                } else if (envelope.kind === 'evt' && (envelope.method === 'job.completed' || envelope.method === 'job.failed')) {
+                    if (jobId === null) early.push(envelope); else settle(envelope);
+                }
+            };
+            const timer = setTimeout(() => done(reject, new Error('no job.completed within ' + timeoutMs + ' ms')), timeoutMs);
+            window.chrome.webview.addEventListener('message', onMessage);
+            window.chrome.webview.postMessage({ kind: 'req', id, method, payload });
+        })";
+        string json = await Page.EvaluateAsync<string>(script, new object?[] { method, payload, (long)timeout.TotalMilliseconds });
+        return JsonNode.Parse(json);
+    }
+
     public async Task<T> RpcAsync<T>(string method, object? payload = null)
     {
         JsonNode? node = await RpcAsync(method, payload);

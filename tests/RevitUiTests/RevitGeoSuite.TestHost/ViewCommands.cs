@@ -75,10 +75,20 @@ internal static class ViewCommands
                     ["name"] = level.Name,
                     ["levelId"] = level.LookupParameter("level_id")?.AsString(),
                     ["hasFloors"] = floorLevels.Contains(level.Id.Value),
+                    ["elevationFt"] = level.ProjectElevation,
                 })
                 .ToList(),
         };
     }
+
+    /// <summary>Every 3D view that is not a template, by name.</summary>
+    public static Dictionary<string, object?> Views3D(UIApplication app) => new()
+    {
+        ["views"] = new FilteredElementCollector(Active(app)).OfClass(typeof(View3D)).Cast<View3D>()
+            .Where(view => !view.IsTemplate)
+            .Select(view => view.Name)
+            .ToList(),
+    };
 
     public static Dictionary<string, object?> ActivateView(UIApplication app, string name)
     {

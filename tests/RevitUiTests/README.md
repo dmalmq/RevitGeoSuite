@@ -10,6 +10,7 @@ There are eight scenarios. `--scenario` picks one, and `--script` is the same op
 - `b2a` checks the export audit and the template repair (RevitGeoSuite #54): the findings of the topics ids, stairs, escalators, levels and views, Set up model putting back what someone changed in `GIS Export`, a `GIS_` plan without the template, and the duplicate id error of a floor pasted in place. It expects a model on which Set up model has run once, and runs it first when it has not.
 - `c3a-reshape` checks that Review GDB edits reshapes a floor to the GDB outline (RevitGeoSuite #57). It makes its own drift file from its own export, so the build PC runs one command. With `--drift <file>`, it uses that file instead.
 - `c3b-split`, `c3c-merge` and `c3d-hand-drawn` check that Review GDB edits splits a floor by the GDB's pieces, merges floors that the GDB merged, and creates a floor for a unit drawn by hand in the GDB (C3b, C3c, C3d). They prepare themselves the same way.
+- `c8-network` checks the GIS standard page's Network tab, which shows Kanizu's walking network in Revit (C8). It makes its own station folder in the run folder with a Cesium export and writes the C8 sample network there, fitted to two adjacent levels of the model.
 
 ## How it works
 
@@ -66,7 +67,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge` or `c3d-hand-drawn`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn` or `c8-network`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -222,6 +223,36 @@ Each Revit assumption in the C3b evidence table is checked by a step:
 | Deleting a merged floor deletes its hosted elements, and nothing blocks it | C3c.8 |
 
 The commit events of each apply are recorded. One undo step is proven by pressing Undo once, not by counting events. Revit can raise one DocumentChanged event per inner transaction of an assimilated group.
+
+## The c8-network scenario
+
+The script is `/mnt/project-files/revit-template-review/c8/ui-tests/c8-network.md`. It needs a RevitGeoSuite build with the Network tab and a floor plan export profile on the PC, which the Cesium export uses.
+
+```powershell
+.\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit --scenario c8-network --model C:\dev\revit-test\auto\lumine-pristine.rvt
+```
+
+C8.P exports GIS to `<run>\export`. It then exports to Cesium as a station folder at `<run>\station`, coarse, with the first floor plan profile, through the page's bridge. That export gives the model a model id and records `<run>\station` as its station folder, so nothing is written to a real station folder. Next, it picks the adjacent pair of levels, A below B, that both have a `level_id` and a `GIS_` plan, preferring the pair whose lower level has the most floor units. It writes `fixtures\network-sample.gis-network.json` to `<run>\station\gis-network\<model key>.gis-network.json`, with these changes:
+
+- `lvl-1f` becomes A and `lvl-2f` becomes B. `lvl-b1` stays unmatched.
+- `epsg` becomes the export's EPSG.
+- Every position moves so that the sample's (-7130, -34560) lands on the middle of A's largest floor unit.
+
+The sample file is a copy of the C8 conformance sample, until Kanizu writes the file. The expected counts come from the fitted file. For the sample they are "3 link(s), 3 level connector(s) and 1 finding(s) on a floor." and "3 item(s) sit on a level_id …".
+
+| Step | Checks |
+| --- | --- |
+| C8.1 | The Network tab shows the counts line and the unknown-level line. |
+| C8.2 | Show in Revit with `GIS_<A>` active: the button turns into Hide in Revit, and no transaction is committed. A Revit screenshot shows the result for a person to judge. |
+| C8.3, C8.4 | `GIS_<B>` and a 3D view (a `GIS_*` 3D view if there is one): no transaction, plus Revit screenshots. |
+| C8.5 | GIS and Cesium exports with the network shown have the same GeoPackage row counts as those before Show. The tile file counts are recorded. |
+| C8.6 | Link 3 (B's link) is dropped from the file. Switching to A and then B needs no Read again. The screenshots show the result. |
+| C8.7 | `epsg` + 1 and Read again: a page line names both EPSG codes. |
+| C8.8 | `version: 2` and Read again: the banner "… is version 2; this tool reads version 1. Update RevitGeoSuite.". The file is then put back. |
+| C8.9 | The audit has two `network` warnings. The first names no element. |
+| C8.10 | Hide in Revit: the button turns back, no transaction is committed, and screenshots of A and B show the result. |
+
+Showing the network adds no element, because adding an element needs a transaction, and the steps check that none was committed. A person judges what is drawn from the screenshots.
 
 ## What still needs a person
 
