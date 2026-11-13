@@ -59,3 +59,24 @@ public class TestCopyTests
     public void Refuses_a_copy_outside_the_run_folder() =>
         Assert.Contains("not inside the run folder", TestCopy.Problem("/tmp/revit-test/other.rvt", "/tmp/revit-test/other.rvt", Run, false, ""));
 }
+
+public class TestPathsTests
+{
+    [Theory]
+    [InlineData("/tmp/revit-test/run-1/export", "/tmp/revit-test/run-1", true)]
+    [InlineData("/tmp/revit-test/run-1/", "/tmp/revit-test/run-1", true)]
+    [InlineData("/tmp/revit-test/run-10/export", "/tmp/revit-test/run-1", false)]
+    [InlineData("/tmp/revit-test/run-1/../lumine-count/before", "/tmp/revit-test/run-1", false)]
+    [InlineData("/tmp/revit-test/lumine-count/before", "/tmp/revit-test/run-1", false)]
+    public void Only_the_run_folder_is_writable(string path, string folder, bool expected) =>
+        Assert.Equal(expected, TestPaths.IsUnder(path, folder));
+
+    [Theory]
+    [InlineData(@"C:\dev\revit-test\run\export", @"C:\dev\revit-test\run\export", true)]
+    [InlineData(@"c:\dev\revit-test\run\export\ ", @"C:\dev\revit-test\run\export", true)]
+    [InlineData(@"C:\dev\revit-test\lumine-count\before", @"C:\dev\revit-test\run\export", false)]
+    [InlineData("", @"C:\dev\revit-test\run\export", false)]
+    [InlineData(null, @"C:\dev\revit-test\run\export", false)]
+    public void The_field_must_show_the_runs_folder(string? shown, string folder, bool expected) =>
+        Assert.Equal(expected, TestPaths.Same(shown, folder));
+}

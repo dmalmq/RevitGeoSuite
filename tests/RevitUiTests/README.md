@@ -72,6 +72,8 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 - **Revit closes on every exit.** `-StartRevit` closes the Revit it started when the runner ends, however it ends. It stops the process, which closes without saving and cannot meet a "save changes?" prompt.
 - **Revit starts in `C:\dev\revit-test`.** Revit names a detached model `<name>_detached.rvt` without a folder. The test host therefore saves the detached copy once, by full path, as `<copy>-detached.rvt` in the run folder.
 - **Missing links are unloaded first.** Before the model is opened, every link whose file is not on the PC is marked not to load in the run's copy, so Revit has no "could not find or read" question to ask. The report header lists those links, and any dialog Revit showed while opening.
+- **Exports write only to the run folder.** The GeoPackage export page starts on the folder it remembers from the last export, which can be someone's own data. Every export types its own folder under the run folder into the output field (Browse... and the folder picker are the fallback) and reads the field back. When the field shows anything else, the step fails before Preview, so nothing is exported. The page keeps that folder in the roaming `%APPDATA%\RevitGeoSuite\FloorPlanExport\settings.json`; `Run-UiTests.ps1` puts that file and `profiles.json` back as they were when it exits.
+- **A step leaves no dialog behind.** After every step the runner closes any dialog still open in Revit (Cancel, or the window's close) and, after a failure, takes the page back to the GIS standard page. A modal dialog holds Revit's API thread, so without this every later step would time out. A step that left a dialog open fails, and the report lists what was closed.
 - **No pyRevit test extension by default.** The KanizuGIS pyRevit extension shows a startup dialog on a model that is not set up, so a run loads it only when `-PyRevitExtension` is passed.
 
 | Option | Meaning |
@@ -261,6 +263,8 @@ The script is `/mnt/project-files/revit-template-review/c8/ui-tests/c8-network.m
 .\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit --scenario c8-network --model C:\dev\revit-test\auto\lumine-pristine.rvt
 ```
 
+C8.G gives the copy RevitGeoSuite's georeference record, which the Cesium export needs ("3D Tiles export needs a saved CRS and origin"). The GeoPackage export does not read that record, so the other scenarios do not need it; the status bar's "Blocked · Missing geo metadata" does not stop a GeoPackage export. C8.G does what "Confirm existing setup" on the Georeference page does, with EPSG:6677: RevitGeoSuite stores the CRS with the Survey Point and Project Base Point that the model's Site Location and shared coordinates already give, and leaves Revit's coordinates unchanged. The step checks that the Project Base Point is within 5 km of Shinjuku station first, and that the project position and both points are the same afterwards. When the Site Location is not LUMINE's, the step fails with the values it read.
+
 C8.P exports GIS to `<run>\export`. It then exports to Cesium as a station folder at `<run>\station`, coarse, with the first floor plan profile, through the page's bridge. That export gives the model a model id and records `<run>\station` as its station folder, so nothing is written to a real station folder. Next, it picks the adjacent pair of levels, A below B, that both have a `level_id` and a `GIS_` plan, preferring the pair whose lower level has the most floor units. It writes `fixtures\network-sample.gis-network.json` to `<run>\station\gis-network\<model key>.gis-network.json`, with these changes:
 
 - `lvl-1f` becomes A and `lvl-2f` becomes B. `lvl-b1` stays unmatched.
@@ -298,4 +302,4 @@ A scenario is one entry in `GisStandardRun.Scenarios` (name, one-line summary, s
 
 Most checks are a click on the page plus an assertion on what `gisStandard.inspect` or the test host reports. Prefer the role and the visible English text of a control. The runner switches the page to English for the run and switches it back afterwards. When a check needs Revit in a particular state, add it to the `fixture` command rather than editing the pristine model.
 
-The test host runs code in an API context only while Revit is idle. While a file dialog or another modal window is open, use the commands that work on dialogs (`fileDialog`, `windows`, `pressButton`).
+The test host runs code in an API context only while Revit is idle. While a file dialog or another modal window is open, use the commands that work on dialogs (`fileDialog`, `windows`, `pressButton`, `closeDialogs`).

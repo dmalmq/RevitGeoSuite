@@ -103,7 +103,6 @@ internal sealed partial class GisStandardRun
     private async Task A3Export(StepResult step, string name)
     {
         string output = Path.Combine(options.OutputFolder, "a3", name);
-        Directory.CreateDirectory(output);
         await Shell.GoToAsync("/export/geopackage");
         ILocator filter = Shell.Page.GetByPlaceholder("Filter views...");
         await filter.WaitForAsync();
@@ -121,8 +120,7 @@ internal sealed partial class GisStandardRun
         step.Check(await SetExportOption("Packaging", "perLevel"), "Packaging is 'Per level GeoPackage'.");
         step.Check(await SetExportOption("Coordinates", "shared"), "Coordinates are 'Shared coordinates'.");
         step.Check(await SetExportOption("Target EPSG", SharedEpsg.ToString(CultureInfo.InvariantCulture)), $"The EPSG is {SharedEpsg}.");
-        await Shell.Button("Browse...").ClickAsync();
-        host.Call("fileDialog", new { path = output, timeoutMs = 30000 });
+        await SetOutputFolder(step, output);
         await Shell.Button("Preview").ClickAsync();
         bool exported = await ExportNow(step);
         string[] warnings = exported ? (await Shell.Page.Locator("#export-warning-list li").AllInnerTextsAsync()).Select(text => text.Trim()).ToArray() : Array.Empty<string>();

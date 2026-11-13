@@ -22,7 +22,10 @@ internal static class Win32Dialogs
     private const string DialogClass = "#32770";
     private const int FileNameComboId = 1148; // Open and folder dialogs: ComboBoxEx32 > ComboBox > Edit
     private const int SaveFileNameId = 1001;  // Save dialog: ComboBox > Edit
+    private const int FolderNameId = 1152;    // Folder picker ("Select Folder"): the Folder: Edit itself
     private const int OkButtonId = 1;
+    private const int CancelButtonId = 2;
+    private const uint WM_CLOSE = 0x0010;
     private const uint WM_SETTEXT = 0x000C;
     private const uint BM_CLICK = 0x00F5;
 
@@ -56,6 +59,40 @@ internal static class Win32Dialogs
         }
 
         throw new TimeoutException($"No file dialog appeared within {timeoutMs} ms. On screen: {Describe()}");
+    }
+
+    /// <summary>
+    /// Closes every dialog of this process, with its Cancel button when it has one and WM_CLOSE
+    /// otherwise, so that a step that failed with a dialog open does not block the next step.
+    /// </summary>
+    public static Dictionary<string, object?> CloseAll(int timeoutMs)
+    {
+        var closed = new List<Dictionary<string, object?>>();
+        Stopwatch clock = Stopwatch.StartNew();
+        while (Dialogs().Count > 0 && clock.ElapsedMilliseconds < 2000)
+        {
+            Thread.Sleep(200); // a dialog a step just answered may still be on its way out
+        }
+
+        for (List<IntPtr> open = Dialogs(); open.Count > 0 && clock.ElapsedMilliseconds < timeoutMs; open = Dialogs())
+        {
+            IntPtr dialog = open[0];
+            string title = TitleOf(dialog);
+            string text = TextOf(dialog);
+            IntPtr cancel = Descendants(dialog).FirstOrDefault(child => GetDlgCtrlID(child) == CancelButtonId && ClassOf(child) == "Button");
+            if (cancel != IntPtr.Zero)
+            {
+                PostMessage(cancel, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+            }
+            else
+            {
+                PostMessage(dialog, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+            }
+
+            closed.Add(new Dictionary<string, object?> { ["title"] = title, ["text"] = text, ["by"] = cancel != IntPtr.Zero ? "Cancel" : "WM_CLOSE", ["closed"] = WaitClosed(dialog, 5000) });
+        }
+
+        return new Dictionary<string, object?> { ["closed"] = closed, ["stillOpen"] = Dialogs().Select(TitleOf).ToList() };
     }
 
     /// <summary>The visible dialogs of this process, with their title and the text a person would read.</summary>
@@ -125,6 +162,11 @@ internal static class Win32Dialogs
     {
         foreach (IntPtr child in Descendants(dialog).Where(child => ClassOf(child) == "Edit"))
         {
+            if (GetDlgCtrlID(child) == FolderNameId && IsWindowVisible(child))
+            {
+                return child;
+            }
+
             for (IntPtr parent = GetParent(child); parent != IntPtr.Zero && parent != dialog; parent = GetParent(parent))
             {
                 int id = GetDlgCtrlID(parent);

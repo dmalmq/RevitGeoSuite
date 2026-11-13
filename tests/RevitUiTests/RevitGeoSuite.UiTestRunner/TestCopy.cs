@@ -38,3 +38,22 @@ internal static class TestCopy
 }
 
 internal sealed class NotTheTestCopyException(string message) : Exception(message);
+
+/// <summary>Folder checks for anything a run writes: only inside its own run folder.</summary>
+internal static class TestPaths
+{
+    private static readonly char[] Separators = { '\\', '/' };
+
+    /// <summary>True when <paramref name="path"/> is <paramref name="folder"/> or inside it, after resolving "..".</summary>
+    public static bool IsUnder(string path, string folder)
+    {
+        string full = Path.GetFullPath(path).TrimEnd(Separators);
+        string root = Path.GetFullPath(folder).TrimEnd(Separators);
+        return string.Equals(full, root, StringComparison.OrdinalIgnoreCase)
+            || (full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && Separators.Contains(full[root.Length]));
+    }
+
+    /// <summary>True when a path a page shows names the same folder, ignoring case and a trailing separator.</summary>
+    public static bool Same(string? shown, string folder) =>
+        shown != null && string.Equals(shown.Trim().TrimEnd(Separators), folder.TrimEnd(Separators), StringComparison.OrdinalIgnoreCase);
+}

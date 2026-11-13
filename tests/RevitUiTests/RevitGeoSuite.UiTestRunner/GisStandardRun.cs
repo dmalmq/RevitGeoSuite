@@ -174,7 +174,40 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
             await TryShot(step, $"{id}-error");
         }
 
+        await ClearLeftovers(step);
         Console.WriteLine($"  -> {step.Outcome}{(step.Failures.Count > 0 ? ": " + string.Join("; ", step.Failures) : string.Empty)}");
+    }
+
+    /// <summary>
+    /// Leaves nothing of a step for the next one: closes any dialog still open (a modal dialog holds
+    /// Revit's API thread, so every later call would time out) and takes the page back to the GIS
+    /// standard page after a failure. A dialog left open fails the step that left it.
+    /// </summary>
+    private async Task ClearLeftovers(StepResult step)
+    {
+        JsonObject result = host.Call("closeDialogs", new { timeoutMs = 20000 });
+        JsonArray closed = result["closed"]?.AsArray() ?? new JsonArray();
+        if (closed.Count > 0)
+        {
+            step.Check(false, $"The step left {closed.Count} dialog(s) open; closed so the next step starts clean: {closed.ToJsonString()}");
+        }
+
+        if (result["stillOpen"]?.AsArray() is { Count: > 0 } open)
+        {
+            throw new InvalidOperationException($"Dialog(s) {open.ToJsonString()} would not close after step {step.Id}; later steps cannot reach Revit.");
+        }
+
+        if (step.Failures.Count > 0 && shell != null)
+        {
+            try
+            {
+                await Shell.GoToAsync("/gis-standard");
+            }
+            catch (Exception ex)
+            {
+                step.Note($"Could not take the page back to the GIS standard page: {ex.Message}");
+            }
+        }
     }
 
     /// <summary>
@@ -710,12 +743,45 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         string output = Path.Combine(options.OutputFolder, folderName);
-        Directory.CreateDirectory(output);
-        await Shell.Button("Browse...").ClickAsync();
-        host.Call("fileDialog", new { path = output, timeoutMs = 30000 });
+        await SetOutputFolder(step, output);
         await Shell.Button("Preview").ClickAsync();
         step.Note($"Export of {(keepDefaultViews ? "the default view choice" : viewName.Length > 0 ? $"view '{viewName}'" : "all plan views")} to {output}.");
         return output;
+    }
+
+    /// <summary>
+    /// Points the export page's output folder at <paramref name="folder"/>, a fresh folder in this run's
+    /// folder, and reads the field back. The page starts on the folder it remembers from the last export
+    /// (once Daniel's own data), so it types the path, falls back to Browse... and its folder picker, and
+    /// throws before any Preview or Export click when the field shows anything else.
+    /// </summary>
+    private async Task SetOutputFolder(StepResult step, string folder)
+    {
+        if (!TestPaths.IsUnder(folder, options.OutputFolder))
+        {
+            throw new InvalidOperationException($"Refusing output folder {folder}: it is not inside this run's folder {options.OutputFolder}.");
+        }
+
+        Directory.CreateDirectory(folder);
+        ILocator field = Shell.Page.Locator("#floorplan-output-folder");
+        string remembered = await field.InputValueAsync();
+        await field.FillAsync(folder);
+        await field.PressAsync("Tab");
+        string shown = await field.InputValueAsync();
+        if (!TestPaths.Same(shown, folder))
+        {
+            step.Note($"Typing the output folder left the field at '{shown}'; setting it with Browse... instead.");
+            await Shell.Button("Browse...").ClickAsync();
+            host.Call("fileDialog", new { path = folder, timeoutMs = 30000 });
+            shown = await field.InputValueAsync();
+        }
+
+        if (!TestPaths.Same(shown, folder))
+        {
+            throw new InvalidOperationException($"The output folder field shows '{shown}', not this run's {folder}. Nothing was exported.");
+        }
+
+        step.Note($"Output folder: the page offered '{remembered}'; the field now shows {shown}.");
     }
 
     /// <summary>Waits for the export to finish and opens its warning list. False when it failed or never finished.</summary>

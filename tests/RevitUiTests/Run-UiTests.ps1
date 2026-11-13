@@ -108,6 +108,15 @@ function Set-PyRevitExtensions([scriptblock]$Change) {
     Write-Host "pyRevit userextensions: $(ConvertTo-Json -InputObject $new -Compress)"
 }
 
+# The GeoPackage export remembers its last output folder (and profiles) in the roaming %APPDATA%. A test
+# export would leave a C:\dev\revit-test folder there for every PC; the files go back as they were on exit.
+$exportSettings = @{}
+foreach ($name in 'settings.json', 'profiles.json') {
+    $file = Join-Path $env:APPDATA "RevitGeoSuite\FloorPlanExport\$name"
+    $exportSettings[$file] = $null
+    if (Test-Path $file) { $exportSettings[$file] = [IO.File]::ReadAllBytes($file) }
+}
+
 # Test folders (C:\dev\rgs-uitests, C:\dev\revit-test) exist only on the build PC; never leave one in the roaming list.
 Set-PyRevitExtensions { param($list) $list | Where-Object { "$_" -notmatch '^C:\\dev\\(rgs-uitests|revit-test)(\\|$)' } }
 
@@ -189,6 +198,11 @@ finally {
         Stop-Process -Id $process.Id -Force
         Write-Host "Closed the test Revit (process $($process.Id)) without saving."
     }
+    foreach ($file in @($exportSettings.Keys)) {
+        if ($null -eq $exportSettings[$file]) { Remove-Item $file -Force -ErrorAction SilentlyContinue }
+        else { [IO.File]::WriteAllBytes($file, $exportSettings[$file]) }
+    }
+    Write-Host "Put the export's remembered settings back as they were: $($exportSettings.Keys -join ', ')."
 }
 
 exit $exitCode

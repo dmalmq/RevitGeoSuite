@@ -62,6 +62,7 @@ internal sealed class Commands
                 "newFamily" => NewFamily(request),
                 "fileDialog" => Win32Dialogs.FillFileDialog(TestRoot.Require(root, Text(request, "path")), Milliseconds(request)),
                 "windows" => Win32Dialogs.List(),
+                "closeDialogs" => Win32Dialogs.CloseAll(Milliseconds(request)),
                 "pressButton" => Win32Dialogs.Press(Text(request, "button"), Milliseconds(request)),
                 "screenshot" => Screenshot(Text(request, "path")),
                 _ => throw new ArgumentException($"Unknown command '{command}'."),

@@ -20,6 +20,7 @@ internal sealed partial class GisStandardRun
     private async Task NetworkSteps()
     {
         await Step("C8.0", "The model has had Set up model once, so each level has a GIS_ plan", EnsureSetUp);
+        await Step("C8.G", "The copy gets RevitGeoSuite's georeference record from its own coordinates (Confirm existing setup), which the Cesium export needs", EnsureGeoreference);
         await Step("C8.P", "Export GIS and Cesium into a station folder, write the network file for two adjacent levels", PrepareNetwork);
         await Step("C8.1", "The Network tab counts what it can draw and names the items on unknown levels", OpenNetwork);
         await Step("C8.2", "Show in Revit with GIS_<A> active: links and connector squares, with no transaction", ShowNetwork);
