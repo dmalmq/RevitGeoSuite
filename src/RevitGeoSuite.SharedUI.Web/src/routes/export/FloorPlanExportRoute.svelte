@@ -8,6 +8,7 @@
   import type {
     DialogOpenFolderResponse,
     GisAuditFindingItem,
+    GisDriftWaitingResponse,
     GisStandardInspectResponse,
     ExecutionActionResponse,
     ExecutionProgressPayload,
@@ -142,6 +143,7 @@
     }, 1000)
 
     void load()
+    void loadWaitingGdbEdits()
 
     return () => {
       unsubscribe()
@@ -170,6 +172,22 @@
     } finally {
       busy = false
     }
+  }
+
+  // GDB edits from Kanizu that the model does not match yet: an export now would write the model's
+  // values over them, so the page says so at the top. Zero shows nothing.
+  let waitingGdbEdits = 0
+
+  async function loadWaitingGdbEdits() {
+    try {
+      waitingGdbEdits = (await request<GisDriftWaitingResponse>('gisDrift.waiting', {})).count
+    } catch {
+      waitingGdbEdits = 0
+    }
+  }
+
+  function openGdbEdits() {
+    window.location.hash = '#/gis-standard/drift'
   }
 
   function findProfileValue(name: string): ProfileValue {
@@ -849,6 +867,17 @@
         {/if}
       {/snippet}
     </StepBar>
+
+    {#if waitingGdbEdits > 0 && step !== 'export'}
+      <div class="shrink-0 px-5 pb-3">
+        <Banner tone="warning" title={format($t('Exporter.GdbEdits.Title', '{0} GDB edit(s) from Kanizu wait for this model'), waitingGdbEdits)}>
+          {$t('Exporter.GdbEdits.Body', "Review them first. An export now writes the model's values, not the GDB's.")}
+          {#snippet actions()}
+            <Button size="sm" icon="refresh-cw" onclick={openGdbEdits}>{$t('Exporter.GdbEdits.Open', 'Review GDB edits')}</Button>
+          {/snippet}
+        </Banner>
+      </div>
+    {/if}
 
     {#if error && step !== 'export' && !viewError && !outputError && !featureError && !epsgError}
       <div class="shrink-0 px-5 pb-3">

@@ -63,6 +63,32 @@ public sealed class ShapeEdit
         Shape.Label.Length > 0 ? " (" + Shape.Label + ")" : string.Empty);
 }
 
+/// <summary>What a drift file's shapes need: the edits Review GDB edits can apply, what has to be done by hand, and how many shapes still wait.</summary>
+public sealed class ShapePlan
+{
+    public ShapePlan(IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems, int waiting)
+    {
+        Edits = edits;
+        Problems = problems;
+        Waiting = waiting;
+    }
+
+    public static ShapePlan Empty { get; } = new(Array.Empty<ShapeEdit>(), Array.Empty<string>(), 0);
+
+    public IReadOnlyList<ShapeEdit> Edits { get; }
+
+    public IReadOnlyList<string> Problems { get; }
+
+    /// <summary>The file's shapes the model does not match yet: every shape except a reshape whose floor already has the GDB outline.</summary>
+    public int Waiting { get; }
+
+    public void Deconstruct(out IReadOnlyList<ShapeEdit> edits, out IReadOnlyList<string> problems)
+    {
+        edits = Edits;
+        problems = Problems;
+    }
+}
+
 /// <summary>
 /// The shape edits of a drift file that Review GDB edits can apply to floors. An outline comes
 /// back to model feet through the inverse of the export's shared-coordinate transform, so the next
@@ -88,7 +114,7 @@ public static class GisShapeEdits
     /// <param name="floors">The model's floors by UniqueId.</param>
     /// <param name="modelToProject">The export's transform from model feet to the project CRS in metres.</param>
     /// <param name="modelEpsg">The model's project CRS, or 0 when unknown.</param>
-    public static (IReadOnlyList<ShapeEdit> Edits, IReadOnlyList<string> Problems) Plan(
+    public static ShapePlan Plan(
         GisDriftFile file,
         IReadOnlyDictionary<string, ShapeFloor> floors,
         AffineTransform2D modelToProject,
@@ -103,22 +129,23 @@ public static class GisShapeEdits
         List<string> problems = new();
         if (file.Shapes.Count == 0)
         {
-            return (edits, problems);
+            return ShapePlan.Empty;
         }
 
         if (file.Epsg == 0)
         {
             problems.Add($"The drift file names no CRS, so its {file.Shapes.Count} shape edit(s) have no outline. Export to the station with a project CRS set, then let Kanizu apply again.");
-            return (edits, problems);
+            return new ShapePlan(edits, problems, file.Shapes.Count);
         }
 
         if (modelEpsg > 0 && file.Epsg != modelEpsg)
         {
             problems.Add($"The drift file's outlines are in EPSG:{file.Epsg}, but this model's project CRS is EPSG:{modelEpsg}. Its {file.Shapes.Count} shape edit(s) are not applied.");
-            return (edits, problems);
+            return new ShapePlan(edits, problems, file.Shapes.Count);
         }
 
         AffineTransform2D projectToModel = modelToProject.Inverse();
+        int settled = 0;
         foreach (GisDriftShape shape in file.Shapes)
         {
             if (shape.Edit != GisDrift.Reshaped)
@@ -142,6 +169,7 @@ public static class GisShapeEdits
 
             if (SameOutline(floor.Outline, outline))
             {
+                settled++;
                 continue;
             }
 
@@ -154,7 +182,7 @@ public static class GisShapeEdits
             edits.Add(new ShapeEdit(ShapeEditKind.Reshape, shape, floor, outline));
         }
 
-        return (edits, problems);
+        return new ShapePlan(edits, problems, file.Shapes.Count - settled);
     }
 
     /// <summary>The GDB outline in model feet, each ring cleaned of points closer than <see cref="ShortestEdgeFeet"/>; rings left with fewer than 3 points are dropped.</summary>

@@ -11,13 +11,17 @@ using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.Storage;
+using RevitGeoSuite.FloorPlanExport.GisTools;
 using RevitGeoSuite.Shell.Commands;
+using RevitGeoSuite.Shell.Handlers;
 
 namespace RevitGeoSuite.Shell.Standards;
 
 /// <summary>
 /// The standards check outside the export: one notice per model per Revit session when a GIS model
-/// opens behind the standard, and the state on the ribbon's GIS standard button.
+/// opens behind the standard, and the state on the ribbon's GIS standard button, with the count of
+/// GDB edits from Kanizu that wait for the model. The count follows the drift file: it is read
+/// again when the file changes on disk, and after Review GDB edits applies.
 /// </summary>
 internal sealed class GisStandardNotifier
 {
@@ -26,8 +30,13 @@ internal sealed class GisStandardNotifier
     private readonly HashSet<string> _noticedThisSession = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<Document> _pending = new();
     private readonly GisStandardNoticeStore _store = new();
+    private static readonly TimeSpan DriftPollInterval = TimeSpan.FromSeconds(5);
+
     private PushButton? _button;
     private string? _buttonDocumentKey;
+    private string _driftPath = string.Empty;
+    private DateTime _driftWritten;
+    private DateTime _nextDriftPoll;
 
     public static GisStandardNotifier Instance { get; } = new();
 
@@ -95,7 +104,37 @@ internal sealed class GisStandardNotifier
                 Trace.WriteLine($"Kanizu GIS standards check failed: {ex}");
             }
         }
+
+        if (DateTime.UtcNow >= _nextDriftPoll)
+        {
+            _nextDriftPoll = DateTime.UtcNow + DriftPollInterval;
+            if (DriftFileChanged())
+            {
+                Refresh((sender as UIApplication)?.ActiveUIDocument?.Document, force: true);
+            }
+        }
     }
+
+    /// <summary>Whether Kanizu wrote, replaced or removed the drift file the button counted, or wrote one where there was none.</summary>
+    private bool DriftFileChanged()
+    {
+        if (_buttonDocumentKey == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return WrittenAt(_driftPath) != _driftWritten;
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static DateTime WrittenAt(string path) =>
+        path.Length > 0 && System.IO.File.Exists(path) ? System.IO.File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
 
     internal void Refresh(Document? document, bool force)
     {
@@ -113,8 +152,13 @@ internal sealed class GisStandardNotifier
         try
         {
             GisStandardStatus status = GisStandardStateReader.Check(document);
-            _button.ItemText = "GIS standard\n" + status.ShortLabel;
-            _button.ToolTip = status.Summary;
+            (int waiting, string path) = WaitingIn(document);
+            _driftPath = path.Length > 0 ? path : GisDriftSource.Locate(document).ExpectedPath;
+            _driftWritten = WrittenAt(_driftPath);
+            _button.ItemText = "GIS standard\n" + status.ShortLabel + (waiting > 0 ? " · " + WaitingLabel(waiting) : string.Empty);
+            _button.ToolTip = waiting > 0
+                ? $"{status.Summary}\n{WaitingLabel(waiting)} from Kanizu wait for this model. Open GIS standard, then GDB edits, to review them."
+                : status.Summary;
             _buttonDocumentKey = key;
         }
         catch (Exception ex)
@@ -122,6 +166,22 @@ internal sealed class GisStandardNotifier
             Trace.WriteLine($"Kanizu GIS standards check failed: {ex}");
         }
     }
+
+    /// <summary>The waiting GDB edits, or none when the drift file cannot be planned: the state label must still show.</summary>
+    private static (int Count, string Path) WaitingIn(Document document)
+    {
+        try
+        {
+            return GisDriftWork.Waiting(document);
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine($"Counting the waiting GDB edits failed: {ex}");
+            return (0, string.Empty);
+        }
+    }
+
+    internal static string WaitingLabel(int count) => count == 1 ? "1 GDB edit" : $"{count} GDB edits";
 
     private void MaybeNotify(Document document, IntPtr owner)
     {

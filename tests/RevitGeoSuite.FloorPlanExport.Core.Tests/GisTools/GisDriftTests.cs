@@ -130,6 +130,28 @@ public sealed class GisDriftTests
     }
 
     [Fact]
+    public void WaitingCountsEveryRowTheModelDoesNotMatchYet()
+    {
+        var model = Model(new Dictionary<(string, string, string), string>
+        {
+            [("u-1", "name", "instance")] = "北改札",
+            [("u-2", "name", "instance")] = "南改札",
+        });
+        JObject[] rows =
+        {
+            Entry("name", "北改札", uniqueId: "u-1"),
+            Entry("name", "東改札", uniqueId: "u-2"),
+            Entry("name", "西改札", uniqueId: "u-gone"),
+            Entry("height", "3", uniqueId: "u-1"),
+        };
+
+        var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(rows)), model, Standard);
+
+        Assert.Equal(3, GisDrift.Waiting(changes, problems, ShapePlan.Empty));
+        Assert.Equal(0, GisDrift.Waiting(Array.Empty<GisDriftChange>(), Array.Empty<string>(), ShapePlan.Empty));
+    }
+
+    [Fact]
     public void ReadsAFileWrittenByKanizu()
     {
         // Written by Kanizu's DriftFile::save; see tests/Fixtures/Conformance/gis-drift/README.md.

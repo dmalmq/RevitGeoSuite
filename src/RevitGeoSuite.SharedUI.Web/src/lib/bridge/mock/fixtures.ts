@@ -434,6 +434,11 @@ function gisDrift() {
   })
   return {
     'gisDrift.inspect': inspect,
+    // What the ribbon and the export page count: every value change, hand-made row and shape still waiting.
+    'gisDrift.waiting': () => {
+      const shown = inspect({})
+      return { count: shown.changes.length + shown.problems.length + shown.shapes.length, path }
+    },
     'gisDrift.apply': (payload: { changes?: typeof changes }) => {
       accepted = true
       return { log: (payload?.changes ?? []).map((change) => change.label), skipped: [] }

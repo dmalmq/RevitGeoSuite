@@ -15,11 +15,11 @@ namespace RevitGeoSuite.FloorPlanExport.GisTools;
 /// <summary>Reads the model for <see cref="GisShapeEdits"/> and applies its edits, each as one undoable step.</summary>
 public static class ShapeEditWork
 {
-    public static (IReadOnlyList<ShapeEdit> Edits, IReadOnlyList<string> Problems) Plan(Document document, GisDriftFile file)
+    public static ShapePlan Plan(Document document, GisDriftFile file)
     {
         if (file.Shapes.Count == 0)
         {
-            return (Array.Empty<ShapeEdit>(), Array.Empty<string>());
+            return ShapePlan.Empty;
         }
 
         HashSet<string> wanted = new(file.Shapes.Select(shape => shape.UniqueId).Where(id => id.Length > 0), StringComparer.Ordinal);

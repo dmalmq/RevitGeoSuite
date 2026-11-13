@@ -188,6 +188,17 @@ public sealed class GisDriftInspectRequest
     public bool Pick { get; set; }
 }
 
+/// <summary>How many GDB edits in the model's own drift file the model does not match yet.</summary>
+[TsExport]
+public sealed class GisDriftWaitingResponse
+{
+    /// <summary>Value changes, rows to change by hand and shapes still waiting; 0 when there is no drift file.</summary>
+    public int Count { get; set; }
+
+    /// <summary>The drift file counted; empty when the model has none.</summary>
+    public string Path { get; set; } = string.Empty;
+}
+
 /// <summary>The GDB edits a drift file holds for the open model.</summary>
 [TsExport]
 public sealed class GisDriftInspectResponse
