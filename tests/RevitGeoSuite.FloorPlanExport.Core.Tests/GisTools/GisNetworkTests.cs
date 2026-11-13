@@ -154,6 +154,19 @@ public sealed class GisNetworkTests
     }
 
     [Fact]
+    public void SaysOnceWhichKindsKanizuDidNotCheck()
+    {
+        Assert.Empty(Sample().NotChecked);
+        string text = File.ReadAllText(SamplePath()).Replace("\"notChecked\": []", "\"notChecked\": [\"linkThroughWall\", \"later\"]");
+        GisNetworkFile file = GisNetwork.Parse(text);
+        Assert.Equal(new[] { "linkThroughWall", "later" }, file.NotChecked);
+        GisAuditFinding note = GisNetwork.Audit(file, _ => null).Last();
+        Assert.Equal(GisAuditSeverity.Info, note.Severity);
+        Assert.Equal("Kanizu did not check the walking network for: links through walls, later. Generate the network in Kanizu and save it to check them.", note.Message);
+        Assert.Empty(GisNetwork.Parse(text.Replace("\"notChecked\": [\"linkThroughWall\", \"later\"],", string.Empty)).NotChecked);
+    }
+
+    [Fact]
     public void FileNameMatchesTheDriftFiles()
     {
         Assert.Equal("a_b_c.gis-network.json", GisNetwork.FileName("a b|c"));

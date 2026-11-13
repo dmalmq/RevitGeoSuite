@@ -240,6 +240,7 @@
       "detail": "floor 3F has links but no level connector reaches it"
     }
   ],
+  "notChecked": [],
   "notShown": {
     "links": 0,
     "connectors": 0,

@@ -141,7 +141,8 @@ public sealed class GisNetworkFile
         IReadOnlyList<GisNetworkLink> links,
         IReadOnlyList<GisNetworkConnector> connectors,
         IReadOnlyList<GisNetworkFinding> findings,
-        int notShown)
+        int notShown,
+        IReadOnlyList<string>? notChecked = null)
     {
         Model = model;
         BasedOn = basedOn;
@@ -153,6 +154,7 @@ public sealed class GisNetworkFile
         Connectors = connectors;
         Findings = findings;
         NotShown = notShown;
+        NotChecked = notChecked ?? Array.Empty<string>();
     }
 
     public string Model { get; }
@@ -176,6 +178,9 @@ public sealed class GisNetworkFile
 
     /// <summary>Links, connectors and findings Kanizu left out because their floor has no level of this model.</summary>
     public int NotShown { get; }
+
+    /// <summary>Finding kinds Kanizu did not look for when it wrote the file; empty when it checked every kind.</summary>
+    public IReadOnlyList<string> NotChecked { get; }
 }
 
 /// <summary>What each stroke of the network picture shows; the Revit side picks the colour.</summary>
@@ -373,7 +378,8 @@ public static class GisNetwork
             links,
             connectors,
             findings,
-            notShown);
+            notShown,
+            (root["notChecked"] as JArray)?.Select(code => Text(code)).Where(code => code.Length > 0).Distinct(StringComparer.Ordinal).ToList());
     }
 
     /// <summary>Reads a network file, with or without a byte order mark.</summary>
@@ -508,6 +514,13 @@ public static class GisNetwork
             audit.Add(new GisAuditFinding(SeverityOf(finding.Kind), Topic, message, element.HasValue ? new[] { element.Value } : null));
         }
 
+        // A kind Kanizu did not look for is not "none found": say so once, so a clean audit does not mislead.
+        if (file.NotChecked.Count > 0)
+        {
+            string kinds = string.Join(", ", file.NotChecked.Select(kind => Names.TryGetValue(kind, out string? name) ? name : kind));
+            audit.Add(new GisAuditFinding(GisAuditSeverity.Info, Topic, $"Kanizu did not check the walking network for: {kinds}. Generate the network in Kanizu and save it to check them."));
+        }
+
         return audit;
     }
 
@@ -522,6 +535,18 @@ public static class GisNetwork
         ["rampUnjoined"] = "A ramp{0} reaches a floor with no walkway at its end. Check the floor at its top or bottom.",
         ["linkThroughWall"] = "A walking link{0} crosses a wall with no door. Add the door or opening, or move the wall.",
         ["doorWithoutLink"] = "A door{0} leads nowhere in the walking network.",
+    };
+
+    private static readonly Dictionary<string, string> Names = new(StringComparer.Ordinal)
+    {
+        ["transitWithoutLink"] = "stairs, escalators and elevators with no link",
+        ["connectorWithoutElement"] = "level connectors with no element",
+        ["connectorOutsideUnit"] = "connector ends outside a unit",
+        ["floorWithoutConnector"] = "floors no connector reaches",
+        ["rampUnresolved"] = "ramps with an unpaired to_level",
+        ["rampUnjoined"] = "ramps with no walkway at an end",
+        ["linkThroughWall"] = "links through walls",
+        ["doorWithoutLink"] = "doors that lead nowhere",
     };
 
     private static NetworkInk InkOf(string kind) => kind switch
