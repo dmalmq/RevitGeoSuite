@@ -77,6 +77,7 @@ public sealed class GisAuditTests
         IReadOnlyList<GisAuditFinding> findings = Audit(ModelOnStandard(levels: new[]
         {
             new LevelInfo(1, "ルミネ2_3FL", null, "3F"),
+            new LevelInfo(3, "1FL", 0, "1F"),
             new LevelInfo(2, "Roof", null, "", hasFloors: false),
         }));
 
