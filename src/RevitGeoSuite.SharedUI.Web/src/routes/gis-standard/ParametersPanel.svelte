@@ -124,7 +124,10 @@
           </tbody>
         </Table>
       {/if}
-      <ProblemList problems={preview.problems} />
+      <ProblemList
+        problems={preview.problems}
+        title={format($t('GisStandard.Parameters.NotWritten', '{0} edit(s) not written: each line says whether its row or only that cell is skipped'), preview.problems.length)}
+      />
       {#snippet actions()}
         {#if preview && preview.changes.length > 0}
           <Button variant="primary" icon="check" onclick={apply} disabled={working !== null || ticked.length === 0} busy={working === 'apply'}>

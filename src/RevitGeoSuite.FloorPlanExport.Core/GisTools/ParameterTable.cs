@@ -207,9 +207,10 @@ public static class ParameterTable
     public static IReadOnlyList<Dictionary<string, string>> ReadCsv(string path) => ParseCsvText(DecodeCsv(File.ReadAllBytes(path)));
 
     /// <summary>
-    /// The changes the edited rows make, and the problems that keep a cell from being written. A
-    /// row whose element_id is not in the model, a change in a column its kind does not own, and a
-    /// value the standard does not accept are problems; the rest of the file still applies.
+    /// The changes the edited rows make, and one line for each edit that is not written. A row whose
+    /// element_id is not in the model is skipped whole. A change in a column its kind does not own,
+    /// or a value the standard does not accept, skips only that cell; the row's other cells still
+    /// apply. An edit to a column that only describes the element is ignored and listed.
     /// </summary>
     public static (IReadOnlyList<ParameterTableChange> Changes, IReadOnlyList<string> Problems) Diff(
         IEnumerable<IReadOnlyDictionary<string, string>> currentRows,
@@ -243,7 +244,7 @@ public static class ParameterTable
 
             if (!current.TryGetValue(elementId, out IReadOnlyDictionary<string, string>? entry))
             {
-                problems.Add($"Line {number}: element {elementId} is not in the model.");
+                problems.Add($"Line {number}: element {elementId} is not in the model; the row is skipped.");
                 continue;
             }
 
@@ -257,21 +258,27 @@ public static class ParameterTable
 
                 string old = entry.TryGetValue(column, out string? oldValue) ? oldValue : string.Empty;
                 string value = GisToolStandard.Normalize(editedValue);
-                if (value == old || ReadOnlyColumns.Contains(column))
+                if (value == old)
                 {
+                    continue;
+                }
+
+                if (ReadOnlyColumns.Contains(column))
+                {
+                    problems.Add($"Line {number}: {column} only describes the element; the edit is ignored.");
                     continue;
                 }
 
                 if (!Editable.TryGetValue(kind, out IReadOnlyList<string>? owned) || !owned.Contains(column))
                 {
-                    problems.Add($"Line {number}: {column} cannot be set on a {kind} here.");
+                    problems.Add($"Line {number}: {column} cannot be set on a {kind} here; only this cell is skipped.");
                     continue;
                 }
 
                 (string? accepted, string? problem) = CheckValue(column, value, standard);
                 if (problem != null)
                 {
-                    problems.Add($"Line {number}: {problem}");
+                    problems.Add($"Line {number}: {problem} Only this cell is skipped.");
                     continue;
                 }
 

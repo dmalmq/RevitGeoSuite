@@ -132,7 +132,7 @@ public sealed class ParameterTableTests
 
         var (changes, problems) = Diff(edited);
 
-        Assert.Empty(problems);
+        Assert.Equal("Line 5: level only describes the element; the edit is ignored.", Assert.Single(problems));
         Assert.Equal(
             new[] { ("101", "name", "1番線ホーム"), ("101", "category", "Platform"), ("102", "gis_direction", "up"), ("104", "ordinal", "1") },
             changes.Select(change => (change.ElementId, change.Column, change.NewValue)));
@@ -158,7 +158,21 @@ public sealed class ParameterTableTests
         Assert.Contains("sideways", problems[2]);
         Assert.Contains("not a whole number", problems[3]);
         Assert.Contains("appears twice", problems[4]);
-        Assert.Contains("999 is not in the model", problems[5]);
+        Assert.Contains("999 is not in the model; the row is skipped", problems[5]);
+        Assert.All(problems.Take(4), problem => Assert.EndsWith("only this cell is skipped.", problem, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AnInvalidCellSkipsOnlyThatCellAndSaysSo()
+    {
+        List<Dictionary<string, string>> edited = Edited();
+        edited[3]["short_name"] = "8F";
+        edited[3]["ordinal"] = "shop";
+
+        var (changes, problems) = Diff(edited);
+
+        Assert.Equal(new[] { ("104", "short_name", "8F") }, changes.Select(change => (change.ElementId, change.Column, change.NewValue)));
+        Assert.Equal("Line 5: ordinal 'shop' is not a whole number. Only this cell is skipped.", Assert.Single(problems));
     }
 
     [Fact]

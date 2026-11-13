@@ -10,7 +10,7 @@
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Dialog, Table } from '$lib/kit'
   import { format } from '$lib/shell'
-  import { initiallyUnticked, isOtherModel, needsConfirm as confirmFirst } from '$lib/gisStandard/driftReview'
+  import { initiallyUnticked, modelMismatch, needsConfirm as confirmFirst } from '$lib/gisStandard/driftReview'
   import AppliedBanner from './AppliedBanner.svelte'
   import ProblemList from './ProblemList.svelte'
 
@@ -22,7 +22,8 @@
   let confirmOpen = $state(false)
 
   const ticked = $derived((drift?.changes ?? []).filter((_, index) => !unticked.has(index)))
-  const otherModel = $derived(!!drift && isOtherModel(drift))
+  const mismatch = $derived(drift ? modelMismatch(drift) : null)
+  const otherModel = $derived(mismatch !== null)
   const needsConfirm = $derived(!!drift && confirmFirst(drift))
 
   onMount(() => void inspect({ path: '', pick: false }))
@@ -72,9 +73,11 @@
   }
 
   const applyLabel = $derived(
-    otherModel
-      ? format($t('GisStandard.Drift.ApplyOther', 'Accept {0} change(s) from another model'), ticked.length)
-      : format($t('GisStandard.Drift.Apply', 'Accept {0} change(s)'), ticked.length)
+    mismatch === 'no-model-id'
+      ? format($t('GisStandard.Drift.ApplyUnmatched', 'Accept {0} unmatched change(s)'), ticked.length)
+      : mismatch === 'other-model'
+        ? format($t('GisStandard.Drift.ApplyOther', 'Accept {0} change(s) from another model'), ticked.length)
+        : format($t('GisStandard.Drift.Apply', 'Accept {0} change(s)'), ticked.length)
   )
   const empty = (value: string) => (value.length ? value : $t('GisStandard.Empty', '(empty)'))
   const none = $derived($t('GisStandard.Drift.NoModel', '(none)'))
@@ -109,8 +112,18 @@
         {format($t('GisStandard.Drift.From', 'From {0} (applied version {1}).'), drift.path, drift.appliedVersion || '–')}
       </p>
       {#if needsConfirm}
-        <Banner tone="warning" title={otherModel ? $t('GisStandard.Drift.OtherModel', 'This drift file is for another model') : $t('GisStandard.Drift.Picked', 'This drift file was picked by hand')}>
+        <Banner
+          tone="warning"
+          title={mismatch === 'no-model-id'
+            ? $t('GisStandard.Drift.NoModelId', 'This model has no id yet, so the drift file cannot be matched to it')
+            : mismatch === 'other-model'
+              ? $t('GisStandard.Drift.OtherModel', 'This drift file is for another model')
+              : $t('GisStandard.Drift.Picked', 'This drift file was picked by hand')}
+        >
           {format($t('GisStandard.Drift.Models', 'File: {0} · Open model: {1} ({2})'), drift.fileModel || none, drift.modelKey || none, drift.documentTitle)}
+          {#if mismatch === 'no-model-id'}
+            <p class="mt-1">{$t('GisStandard.Drift.NoModelIdHint', 'A model gets its id the first time it is exported to a station. Until then nothing tells which model a drift file belongs to.')}</p>
+          {/if}
           {#if otherModel}
             <p class="mt-1">{$t('GisStandard.Drift.OtherModelHint', 'Rows match elements by their Revit unique id, which a copied model shares with its source. Every row starts unticked: tick only values you know belong to this model.')}</p>
           {/if}
