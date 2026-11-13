@@ -49,8 +49,12 @@ describe('shape edits', () => {
       { uniqueId: 'handDrawn:0', kind: 'create', typeName: 'j ラチ外店舗_床' },
       { uniqueId: 'handDrawn:1', kind: 'create', typeName: '' },
       { uniqueId: 'f-1', kind: 'reshape', typeName: '' }
-    ])
+    ], ['j ラチ外店舗_床'])
     expect(types).toEqual({ 'handDrawn:0': 'j ラチ外店舗_床' })
+  })
+
+  it('asks for a type the model does not have yet', () => {
+    expect(initialShapeTypes([{ uniqueId: 'handDrawn:0', kind: 'create', typeName: 'j ラチ外店舗_床' }], ['j ラチ内店舗_床'])).toEqual({})
   })
 
   it('draws both outlines in one square with north up', () => {

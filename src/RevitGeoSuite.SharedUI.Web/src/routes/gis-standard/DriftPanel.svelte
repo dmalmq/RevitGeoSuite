@@ -44,7 +44,7 @@
       drift = response
       unticked = initiallyUnticked(response)
       shapesUnticked = shapesInitiallyUnticked(response)
-      shapeTypes = initialShapeTypes(response.shapes)
+      shapeTypes = initialShapeTypes(response.shapes, response.shapeFloorTypes)
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
     } finally {
@@ -204,15 +204,18 @@
         </Table>
       {/if}
       {#if drift.shapes.length > 0}
-        <ShapeEditList
-          shapes={drift.shapes}
-          path={drift.path}
-          floorTypes={drift.shapeFloorTypes}
-          bind:unticked={shapesUnticked}
-          bind:types={shapeTypes}
-          disabled={working !== null}
-          onerror={(message) => (error = message)}
-        />
+        <!-- A new read starts a new list, so a preview from the old one is cleared and no button says "Hide". -->
+        {#key drift}
+          <ShapeEditList
+            shapes={drift.shapes}
+            path={drift.path}
+            floorTypes={drift.shapeFloorTypes}
+            bind:unticked={shapesUnticked}
+            bind:types={shapeTypes}
+            disabled={working !== null}
+            onerror={(message) => (error = message)}
+          />
+        {/key}
       {/if}
       <ProblemList problems={drift.problems} />
     {/if}

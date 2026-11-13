@@ -183,6 +183,27 @@ public sealed class GisShapeEditsTests
     }
 
     [Fact]
+    public void AFloorInSeveralPartsIsListedRatherThanRedrawnToOnePart()
+    {
+        // The export writes parts m|a|0 and m|a|1 as two units; redrawing to one would drop the other.
+        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
+            new[] { Shape(GisDrift.Reshaped, "a", Rect(20, 0, 32, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10), Rect(20, 0, 30, 10) }) });
+        Assert.Empty(edits);
+        Assert.Contains("is in 2 separate parts", Assert.Single(problems));
+    }
+
+    [Fact]
+    public void TwoEditsForOneFloorAreBothListed()
+    {
+        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
+            new[] { Shape(GisDrift.Reshaped, "a", Rect(0, 0, 12, 10)), Shape(GisDrift.Reshaped, "a", Rect(0, 0, 14, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }) });
+        Assert.Empty(edits);
+        Assert.Contains("more than one way", Assert.Single(problems));
+    }
+
+    [Fact]
     public void OutlinesInAnotherCrsAreNotApplied()
     {
         (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
@@ -279,6 +300,44 @@ public sealed class GisShapeEditsTests
 
         Assert.Empty(plan.Edits);
         Assert.Equal("unit ショップ split: floor 101 has a slope arrow, so its sketch is not redrawn. Split it in Revit by hand.", Assert.Single(plan.Problems));
+    }
+
+    [Fact]
+    public void ASplitPieceInSeveralPartsIsListed()
+    {
+        GisDriftShape twoParts = new(GisDrift.Split, "m|a|0", "a", "unit", "ショップ", "lvl-1f", "m|a|0", false, Gdb(Rect(5, 0, 7, 10), Rect(8, 0, 10, 10)));
+        ShapePlan plan = Plan(
+            new[] { Piece("a", true, Rect(0, 0, 5, 10)), twoParts },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }, levelId: 7) });
+
+        Assert.Empty(plan.Edits);
+        Assert.Contains("several separate parts in the GDB", Assert.Single(plan.Problems));
+    }
+
+    [Fact]
+    public void ASplitOfAFloorInSeveralPartsIsListed()
+    {
+        ShapePlan plan = Plan(
+            new[] { Piece("a", true, Rect(0, 0, 5, 10)), Piece("a", false, Rect(5, 0, 10, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10), Rect(20, 0, 30, 10) }, levelId: 7) });
+
+        Assert.Empty(plan.Edits);
+        Assert.Contains("is in 2 separate parts", Assert.Single(plan.Problems));
+    }
+
+    [Fact]
+    public void AMergeThatWouldDeleteAFloorInSeveralPartsIsListed()
+    {
+        ShapePlan plan = Plan(
+            new[] { Merged("a", true, Rect(0, 0, 10, 10)), Merged("b", false, null) },
+            new[]
+            {
+                new ShapeFloor("a", 101, new[] { Rect(0, 0, 5, 10) }),
+                new ShapeFloor("b", 102, new[] { Rect(5, 0, 10, 10), Rect(20, 0, 30, 10) }),
+            });
+
+        Assert.Empty(plan.Edits);
+        Assert.Contains("floor 102 is in 2 separate parts", Assert.Single(plan.Problems));
     }
 
     private static GisDriftShape Merged(string uniqueId, bool keeps, Polygon2D? outline) =>
@@ -390,7 +449,8 @@ public sealed class GisShapeEditsTests
         Assert.Empty(plan.Problems);
         ShapeEdit edit = Assert.Single(plan.Edits);
         Assert.Equal(ShapeEditKind.Create, edit.Kind);
-        Assert.Equal("handDrawn:0", edit.Floor.UniqueId);
+        Assert.StartsWith("handDrawn:lvl-1f@", edit.Floor.UniqueId);
+        Assert.Equal(GisShapeEdits.HandDrawnKey(plan.Edits[0].Shape), edit.Floor.UniqueId);
         Assert.Equal(7, edit.Floor.LevelId);
         NewFloor floor = Assert.Single(edit.NewFloors);
         Assert.Equal("j ラチ外店舗_床", floor.TypeName);
