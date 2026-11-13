@@ -116,7 +116,10 @@ internal sealed partial class GisStandardRun
             if (shopSide == null)
             {
                 step.Check(
-                    shop != null && shop.Message.Contains($"rename it to {ShopOutside} or {ShopInside}", StringComparison.Ordinal)
+                    // "rename it to A or B" while neither shop type exists yet; "can be A or B ... choose one" once both do.
+                    shop != null
+                        && (shop.Message.Contains($"rename it to {ShopOutside} or {ShopInside}", StringComparison.Ordinal)
+                            || shop.Message.Contains($"can be {ShopOutside} or {ShopInside}", StringComparison.Ordinal))
                         && Regex.IsMatch(shop.Message, @"All \d+ floors of this type"),
                     $"The {Shop} warning names both shop types and says all its floors get the name chosen (says: {shop?.Message ?? "nothing"}).");
             }
