@@ -87,6 +87,10 @@ internal sealed class TestHostClient : IDisposable
     public List<RevitEvent> EventsAfter(int after) =>
         Call("events", new { after })["events"]!.AsArray().Select(node => RevitEvent.From(node!.AsObject())).ToList();
 
+    /// <summary>The events after <paramref name="after"/> as the test host sends them (added/modified/deleted counts included).</summary>
+    public IEnumerable<string> RawEventsAfter(int after) =>
+        Call("events", new { after })["events"]!.AsArray().Select(node => node!.ToJsonString());
+
     /// <summary>Waits until Revit reports an event that matches, after sequence <paramref name="after"/>.</summary>
     public RevitEvent WaitForEvent(int after, Func<RevitEvent, bool> match, TimeSpan timeout, string what)
     {

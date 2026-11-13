@@ -384,13 +384,31 @@ internal sealed partial class GisStandardRun
 
         // C3a's build says "floor(s) reshaped"; from C3b on, every shape edit says "shape edit(s) applied".
         Regex banner = new($@"^{count} (floor\(s\) reshaped|shape edit\(s\) applied)");
-        if (!step.Check(await Shell.ShowsAsync(Shell.Text(banner), 120000), $"The banner reads '{count} floor(s) reshaped' or '{count} shape edit(s) applied'."))
-        {
-            // Word for word, so a refusal (such as Revit rejecting a SketchEditScope inside a TransactionGroup) reaches the report.
-            string dialogs = string.Join(" | ", host.EventsAfter(seq).Where(item => item.Kind == "dialog").Select(item => $"{item.DialogId}: {item.Message}"));
-            step.Note($"Page messages: {await Shell.AlertTextAsync()}. Revit dialogs: {(dialogs.Length > 0 ? dialogs : "none")}.");
-        }
+        bool applied = await Shell.ShowsAsync(Shell.Text(banner), 120000);
+        await RecordApplyResult(step, seq);
+        step.Check(applied, $"The banner reads '{count} floor(s) reshaped' or '{count} shape edit(s) applied'.");
         return await ReadAppliedLog();
+    }
+
+    /// <summary>
+    /// Word for word, so a refusal or a skipped edit reaches the report: the panel scrolled to the top,
+    /// its banners and every line of their lists, Revit's dialogs, and every Revit event since the
+    /// click as the test host recorded it (kind, names, added/modified/deleted).
+    /// </summary>
+    private async Task RecordApplyResult(StepResult step, int seq)
+    {
+        await Shell.Page.EvaluateAsync("() => document.querySelectorAll('*').forEach(element => { if (element.scrollTop > 0) element.scrollTop = 0; })");
+        await Shell.Page.WaitForTimeoutAsync(500);
+        step.Note($"Page messages: {await Shell.AlertTextAsync()}");
+        foreach (string line in (await Shell.Page.Locator("[role=status] li, [role=alert] li, details li").AllInnerTextsAsync()).Select(text => text.Trim()).Where(text => text.Length > 0))
+        {
+            step.Note($"Panel line: {line}");
+        }
+
+        string dialogs = string.Join(" | ", host.EventsAfter(seq).Where(item => item.Kind == "dialog").Select(item => $"{item.DialogId}: {item.Message}"));
+        step.Note($"Revit dialogs: {(dialogs.Length > 0 ? dialogs : "none")}.");
+        step.Note($"Revit events since Apply: {string.Join(" ", host.RawEventsAfter(seq))}");
+        await Shot(step, $"{step.Id}-apply-result-top");
     }
 
     private async Task PickDrift(string path)
