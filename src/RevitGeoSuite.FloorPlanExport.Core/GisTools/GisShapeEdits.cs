@@ -44,13 +44,37 @@ public enum ShapeEditKind
 }
 
 /// <summary>
+/// A floor a shape edit adds: its outline in model feet, the GDB values it takes over the kept
+/// floor's (parameter name to value), and the standard floor type its GDB category and
+/// restriction name, or null to take the kept floor's type.
+/// </summary>
+public sealed class NewFloor
+{
+    public NewFloor(GisDriftShape piece, IReadOnlyList<Polygon2D> outline, IReadOnlyDictionary<string, string> values, string? typeName)
+    {
+        Piece = piece;
+        Outline = outline;
+        Values = values;
+        TypeName = typeName;
+    }
+
+    public GisDriftShape Piece { get; }
+
+    public IReadOnlyList<Polygon2D> Outline { get; }
+
+    public IReadOnlyDictionary<string, string> Values { get; }
+
+    public string? TypeName { get; }
+}
+
+/// <summary>
 /// One shape edit to apply: the floor it changes, its outline now and the GDB's, all in model feet.
 /// A split also lists the pieces that become new floors beside it.
 /// </summary>
 public sealed class ShapeEdit
 {
     public ShapeEdit(ShapeEditKind kind, GisDriftShape shape, ShapeFloor floor, IReadOnlyList<Polygon2D> outline)
-        : this(kind, shape, floor, outline, Array.Empty<IReadOnlyList<Polygon2D>>(), redrawFloor: true)
+        : this(kind, shape, floor, outline, Array.Empty<NewFloor>(), redrawFloor: true)
     {
     }
 
@@ -59,7 +83,7 @@ public sealed class ShapeEdit
         GisDriftShape shape,
         ShapeFloor floor,
         IReadOnlyList<Polygon2D> outline,
-        IReadOnlyList<IReadOnlyList<Polygon2D>> newFloors,
+        IReadOnlyList<NewFloor> newFloors,
         bool redrawFloor,
         IReadOnlyList<ShapeFloor>? absorbed = null)
     {
@@ -81,8 +105,8 @@ public sealed class ShapeEdit
     /// <summary>The GDB's outline in model feet: the floor's new sketch.</summary>
     public IReadOnlyList<Polygon2D> Outline { get; }
 
-    /// <summary>A split's pieces that no floor has yet, each a new floor of the kept floor's type and level.</summary>
-    public IReadOnlyList<IReadOnlyList<Polygon2D>> NewFloors { get; }
+    /// <summary>A split's pieces that no floor has yet, each a new floor on the kept floor's level.</summary>
+    public IReadOnlyList<NewFloor> NewFloors { get; }
 
     /// <summary>False when the floor already has <see cref="Outline"/> and only new floors are missing, or only absorbed floors are left.</summary>
     public bool RedrawFloor { get; }
@@ -171,11 +195,13 @@ public static class GisShapeEdits
     /// <param name="floors">The model's floors by UniqueId.</param>
     /// <param name="modelToProject">The export's transform from model feet to the project CRS in metres.</param>
     /// <param name="modelEpsg">The model's project CRS, or 0 when unknown.</param>
+    /// <param name="standard">The GIS standard, to turn a new floor's GDB category into a parameter value and a floor type; null takes the kept floor's.</param>
     public static ShapePlan Plan(
         GisDriftFile file,
         IReadOnlyDictionary<string, ShapeFloor> floors,
         AffineTransform2D modelToProject,
-        int modelEpsg)
+        int modelEpsg,
+        GisToolStandard? standard = null)
     {
         if (file is null)
         {
@@ -205,7 +231,7 @@ public static class GisShapeEdits
         int settled = 0;
         foreach (IGrouping<string, GisDriftShape> group in file.Shapes.Where(shape => shape.Edit == GisDrift.Split).GroupBy(shape => shape.Group.Length > 0 ? shape.Group : shape.RevitKey))
         {
-            settled += PlanSplit(group.ToList(), floors, projectToModel, edits, problems);
+            settled += PlanSplit(group.ToList(), floors, projectToModel, standard, edits, problems);
         }
 
         foreach (IGrouping<string, GisDriftShape> group in file.Shapes.Where(shape => shape.Edit == GisDrift.Merged).GroupBy(shape => shape.Group.Length > 0 ? shape.Group : shape.RevitKey))
@@ -261,6 +287,7 @@ public static class GisShapeEdits
         IReadOnlyList<GisDriftShape> pieces,
         IReadOnlyDictionary<string, ShapeFloor> floors,
         AffineTransform2D projectToModel,
+        GisToolStandard? standard,
         List<ShapeEdit> edits,
         List<string> problems)
     {
@@ -279,17 +306,20 @@ public static class GisShapeEdits
         }
 
         List<Polygon2D> outline = ToModel(keeper.Outline, projectToModel);
-        List<List<Polygon2D>> others = pieces.Where(piece => !piece.Keeps).Select(piece => ToModel(piece.Outline, projectToModel)).ToList();
-        if (outline.Count == 0 || others.Any(piece => piece.Count == 0))
+        List<(GisDriftShape Piece, List<Polygon2D> Outline)> others = pieces
+            .Where(piece => !piece.Keeps)
+            .Select(piece => (piece, ToModel(piece.Outline, projectToModel)))
+            .ToList();
+        if (outline.Count == 0 || others.Any(other => other.Outline.Count == 0))
         {
             problems.Add($"{keeper.Describe()}: a piece of this split has no area in the GDB outline.");
             return 0;
         }
 
         bool redraw = !SameOutline(floor.Outline, outline);
-        List<IReadOnlyList<Polygon2D>> missing = others
-            .Where(piece => !floors.Values.Any(other => other.UniqueId != floor.UniqueId && other.LevelId == floor.LevelId && SameOutline(other.Outline, piece)))
-            .Cast<IReadOnlyList<Polygon2D>>()
+        List<NewFloor> missing = others
+            .Where(other => !floors.Values.Any(existing => existing.UniqueId != floor.UniqueId && existing.LevelId == floor.LevelId && SameOutline(existing.Outline, other.Outline)))
+            .Select(other => NewFloorOf(other.Piece, other.Outline, standard, problems))
             .ToList();
         int settled = (redraw ? 0 : 1) + (others.Count - missing.Count);
         if (!redraw && missing.Count == 0)
@@ -372,8 +402,55 @@ public static class GisShapeEdits
             return settled;
         }
 
-        edits.Add(new ShapeEdit(ShapeEditKind.Merge, keeper, floor, outline, Array.Empty<IReadOnlyList<Polygon2D>>(), redraw, absorbed));
+        edits.Add(new ShapeEdit(ShapeEditKind.Merge, keeper, floor, outline, Array.Empty<NewFloor>(), redraw, absorbed));
         return settled;
+    }
+
+    /// <summary>
+    /// A new floor for a piece: the GDB name, alt_name and category the piece carries, as the
+    /// parameters name, short_name and category, and the standard floor type of its category and
+    /// restriction. A field the piece does not carry, or a category the standard does not know,
+    /// leaves the kept floor's value or type.
+    /// </summary>
+    public static NewFloor NewFloorOf(GisDriftShape piece, IReadOnlyList<Polygon2D> outline, GisToolStandard? standard, List<string> problems)
+    {
+        Dictionary<string, string> values = new(StringComparer.Ordinal);
+        if (piece.GdbName.Length > 0)
+        {
+            values["name"] = piece.GdbName;
+        }
+
+        if (piece.GdbAltName.Length > 0)
+        {
+            values["short_name"] = piece.GdbAltName;
+        }
+
+        string? typeName = null;
+        if (piece.GdbCategory.Length > 0 && standard != null)
+        {
+            (string? category, string? problem) = ParameterTable.CheckValue("category", piece.GdbCategory, standard);
+            if (category != null)
+            {
+                values["category"] = category;
+            }
+            else
+            {
+                problems.Add($"{piece.Describe()}: {problem} The new floor takes the kept floor's category.");
+            }
+
+            typeName = StandardTypeFor(piece.GdbCategory, piece.GdbRestriction, standard)?.Name;
+        }
+
+        return new NewFloor(piece, outline, values, typeName);
+    }
+
+    /// <summary>The standard floor type of a GDB category and restriction, spelled as on category rows; null when none matches.</summary>
+    public static StandardFloorType? StandardTypeFor(string category, string restriction, GisToolStandard standard)
+    {
+        string wanted = ImdfRestrictionNormalizer.FloorTypeRestriction(restriction) ?? string.Empty;
+        return standard.FloorTypes.FirstOrDefault(type =>
+            string.Equals(type.GisCategory, category, StringComparison.Ordinal)
+            && (ImdfRestrictionNormalizer.FloorTypeRestriction(type.GisRestriction) ?? string.Empty) == wanted);
     }
 
     /// <summary>The GDB outline in model feet, each ring cleaned of points closer than <see cref="ShortestEdgeFeet"/>; rings left with fewer than 3 points are dropped.</summary>

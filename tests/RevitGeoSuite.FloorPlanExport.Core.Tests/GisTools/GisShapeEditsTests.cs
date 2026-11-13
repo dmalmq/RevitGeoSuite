@@ -220,7 +220,7 @@ public sealed class GisShapeEditsTests
         Assert.Equal(ShapeEditKind.Split, edit.Kind);
         Assert.True(edit.RedrawFloor);
         Assert.True(GisShapeEdits.SameOutline(new[] { Rect(0, 0, 5, 10) }, edit.Outline));
-        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(5, 0, 10, 10) }, Assert.Single(edit.NewFloors)));
+        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(5, 0, 10, 10) }, Assert.Single(edit.NewFloors).Outline));
         Assert.Equal("Split floor 101 (ショップ) into 2 floors by the GDB", edit.Label());
         Assert.Equal(2, plan.Waiting);
     }
@@ -330,6 +330,44 @@ public sealed class GisShapeEditsTests
         Assert.Empty(plan.Edits);
         Assert.Equal("unit ショップ merged: element 102 is not a floor, so the merge does not delete it. Merge it in Revit by hand.", Assert.Single(plan.Problems));
         Assert.Equal(2, plan.Waiting);
+    }
+
+    [Fact]
+    public void ANewFloorTakesThePiecesOwnGdbValuesAndStandardType()
+    {
+        GisDriftShape piece = new(
+            GisDrift.Split, "m|a|0", "a", "unit", "ショップ", "lvl-1f", "m|a|0", false, Gdb(Rect(5, 0, 10, 10)),
+            gdbName: "カフェ", gdbAltName: "カ", gdbCategory: "retail", gdbRestriction: "rachi_nai");
+        List<string> problems = new();
+
+        NewFloor floor = GisShapeEdits.NewFloorOf(piece, new[] { Rect(5, 0, 10, 10) }, GisToolStandard.LoadEmbedded(), problems);
+
+        Assert.Empty(problems);
+        Assert.Equal("カフェ", floor.Values["name"]);
+        Assert.Equal("カ", floor.Values["short_name"]);
+        Assert.Equal("retail", floor.Values["category"]);
+        Assert.Equal("j ラチ内店舗_床", floor.TypeName);
+    }
+
+    [Fact]
+    public void ANewFloorWithoutGdbValuesTakesTheKeptFloors()
+    {
+        NewFloor floor = GisShapeEdits.NewFloorOf(Piece("a", false, Rect(5, 0, 10, 10)), new[] { Rect(5, 0, 10, 10) }, GisToolStandard.LoadEmbedded(), new List<string>());
+
+        Assert.Empty(floor.Values);
+        Assert.Null(floor.TypeName);
+    }
+
+    [Fact]
+    public void ReadsThePiecesGdbValuesKanizuWrites()
+    {
+        GisDriftFile file = GisDrift.Parse(@"{""schema"":""kanizu.gis-drift"",""version"":1,""model"":""m"",""appliedVersion"":""v"",""rows"":[],""epsg"":6677,
+            ""shapes"":[{""edit"":""split"",""revitKey"":""m|a|0"",""uniqueId"":""a"",""layer"":""unit"",""label"":""x"",""levelId"":"""",""group"":""m|a|0"",""keeps"":false,
+            ""gdbName"":""カフェ"",""gdbAltName"":""カ"",""gdbCategory"":""retail"",""gdbRestriction"":""rachi_gai"",
+            ""outline"":{""type"":""Polygon"",""coordinates"":[[[0,0],[1,0],[1,1],[0,0]]]}}]}");
+
+        GisDriftShape shape = Assert.Single(file.Shapes);
+        Assert.Equal(("カフェ", "カ", "retail", "rachi_gai"), (shape.GdbName, shape.GdbAltName, shape.GdbCategory, shape.GdbRestriction));
     }
 
     [Fact]

@@ -56,7 +56,7 @@ public static class ShapeEditWork
             }
         }
 
-        return GisShapeEdits.Plan(file, floors, new SharedCoordinateProjector(document.ActiveProjectLocation).Transform, ModelEpsg(document));
+        return GisShapeEdits.Plan(file, floors, new SharedCoordinateProjector(document.ActiveProjectLocation).Transform, ModelEpsg(document), GisToolStandard.LoadEmbedded());
     }
 
     /// <summary>
@@ -159,20 +159,42 @@ public static class ShapeEditWork
         double z = sketch.SketchPlane.GetPlane().Origin.Z;
         FailOnError failures = new();
         List<ElementId> created = new();
+        List<string> typeNotes = new();
         using (Transaction transaction = new(document, edit.Label()))
         {
             transaction.SetFailureHandlingOptions(transaction.GetFailureHandlingOptions().SetFailuresPreprocessor(failures));
             transaction.Start();
-            foreach (IReadOnlyList<Polygon2D> piece in edit.NewFloors)
+            foreach (NewFloor piece in edit.NewFloors)
             {
-                foreach (Polygon2D polygon in piece)
+                ElementId typeId = keeper.GetTypeId();
+                if (piece.TypeName != null)
+                {
+                    if (FloorTypeNamed(document, piece.TypeName) is FloorType type)
+                    {
+                        typeId = type.Id;
+                    }
+                    else
+                    {
+                        typeNotes.Add($"No floor type {piece.TypeName} in this model, so a new floor has floor {edit.Floor.ElementId}'s type. Run Set up model, then change its type.");
+                    }
+                }
+
+                foreach (Polygon2D polygon in piece.Outline)
                 {
                     List<CurveLoop> loops = new[] { polygon.ExteriorRing }
                         .Concat(polygon.InteriorRings)
                         .Select(ring => CurveLoop.Create(Lines(ring, z).Cast<Curve>().ToList()))
                         .ToList();
-                    Floor floor = Floor.Create(document, loops, keeper.GetTypeId(), keeper.LevelId);
+                    Floor floor = Floor.Create(document, loops, typeId, keeper.LevelId);
                     CopyValues(keeper, floor);
+                    foreach (KeyValuePair<string, string> value in piece.Values)
+                    {
+                        if (floor.LookupParameter(value.Key) is { IsReadOnly: false, StorageType: StorageType.String } parameter)
+                        {
+                            parameter.Set(value.Value);
+                        }
+                    }
+
                     created.Add(floor.Id);
                 }
             }
@@ -185,14 +207,21 @@ public static class ShapeEditWork
         }
 
         List<Floor> made = created.Select(id => document.GetElement(id)).OfType<Floor>().ToList();
-        if (made.Count != created.Count || edit.NewFloors.Any(piece => !made.Any(floor => GisShapeEdits.SameOutline(FloorTopFaces.Read(floor).Outline, piece))))
+        if (made.Count != created.Count || edit.NewFloors.Any(piece => !made.Any(floor => GisShapeEdits.SameOutline(FloorTopFaces.Read(floor).Outline, piece.Outline))))
         {
             throw new InvalidOperationException($"Revit did not keep the GDB outline of every new floor of the split of floor {edit.Floor.ElementId}; nothing changed.");
         }
 
         return failures.Warnings.Distinct().Select(text => "Revit warned: " + text)
-            .Concat(made.Select(floor => $"New floor {floor.Id.Value}, with the type, level and GIS values of floor {edit.Floor.ElementId}."));
+            .Concat(typeNotes.Distinct())
+            .Concat(made.Select(floor => $"New floor {floor.Id.Value} ({floor.Name}) on the level of floor {edit.Floor.ElementId}, with the GDB's values where the drift file gives them and floor {edit.Floor.ElementId}'s otherwise."));
     }
+
+    private static FloorType? FloorTypeNamed(Document document, string name) =>
+        new FilteredElementCollector(document)
+            .OfClass(typeof(FloorType))
+            .Cast<FloorType>()
+            .FirstOrDefault(type => type.Name == name);
 
     /// <summary>The kept floor's height offset and the standard's GIS values that describe a floor, not one element.</summary>
     private static void CopyValues(Floor from, Floor to)
