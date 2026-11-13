@@ -725,7 +725,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     /// Opens GeoPackage Export, ticks one view (or all of them when <paramref name="viewName"/> is
     /// empty), picks a fresh output folder in the run folder and opens the preview. Returns the folder.
     /// </summary>
-    private async Task<string> OpenExport(StepResult step, string viewName, string folderName, bool keepDefaultViews = false)
+    private async Task<string> OpenExport(StepResult step, string viewName, string folderName, bool keepDefaultViews = false, Func<Task>? beforePreview = null)
     {
         await Shell.GoToAsync("/export/geopackage");
         if (keepDefaultViews)
@@ -745,6 +745,11 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
 
         string output = Path.Combine(options.OutputFolder, folderName);
         await SetOutputFolder(step, output);
+        if (beforePreview != null)
+        {
+            await beforePreview();
+        }
+
         await Shell.Button("Preview").ClickAsync();
         step.Note($"Export of {(keepDefaultViews ? "the default view choice" : viewName.Length > 0 ? $"view '{viewName}'" : "all plan views")} to {output}.");
         return output;

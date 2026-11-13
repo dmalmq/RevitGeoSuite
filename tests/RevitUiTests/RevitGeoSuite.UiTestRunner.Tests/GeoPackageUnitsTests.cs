@@ -37,6 +37,7 @@ public class GeoPackageUnitsTests
 
         Assert.Equal(new Dictionary<string, int> { ["1F.gpkg:unit"] = 3, ["1F.gpkg:detail"] = 0 }, GeoPackageTables.RowCounts(folder));
         Assert.Equal((1, 1), GeoPackageTables.VerticalUnitsToLevel(folder));
+        Assert.Equal(new[] { "1F.gpkg:unit  (escalator, level_id , )" }, GeoPackageTables.VerticalUnitsWithoutToLevel(folder));
     }
 
     // A minimal GeoPackage: gpkg_contents plus feature tables. A table given null rows has no

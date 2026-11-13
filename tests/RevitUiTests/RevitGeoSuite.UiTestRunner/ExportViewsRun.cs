@@ -213,8 +213,9 @@ internal sealed partial class GisStandardRun
 
     private async Task DefaultExport(StepResult step)
     {
-        string output = await OpenExport(step, string.Empty, "export-default-views", keepDefaultViews: true);
-        ViewChoice[] choice = await ExportViewChoice();
+        // The view list is read before Preview: the preview step replaces the page's view card.
+        ViewChoice[] choice = Array.Empty<ViewChoice>();
+        string output = await OpenExport(step, string.Empty, "export-default-views", keepDefaultViews: true, beforePreview: async () => choice = await ExportViewChoice());
         string[] ticked = choice.Where(view => view.Checked).Select(view => view.Label).ToArray();
         step.Note($"Preselected: {string.Join(", ", ticked)}.");
         step.Check(ticked.Length > 0 && ticked.All(label => label.StartsWith(GisPrefix, StringComparison.OrdinalIgnoreCase)), "The dialog preselects only GIS_ plans.");
@@ -229,7 +230,23 @@ internal sealed partial class GisStandardRun
         (int with, int without) = GeoPackageTables.VerticalUnitsToLevel(output);
         step.Note($"Stair and escalator units: {with} with to_level, {without} without.");
         step.Check(with + without > 0, "The export has stair or escalator units.");
-        step.Check(without == 0, $"Every stair and escalator unit has a to_level ({without} without).");
+        if (without > 0)
+        {
+            // An empty to_level is the export's answer for a stair it cannot finish (no top level, a
+            // multistorey group, or a top level with no plan in the export), and the export then says why.
+            foreach (string unit in GeoPackageTables.VerticalUnitsWithoutToLevel(output))
+            {
+                step.Note($"No to_level: {unit}");
+            }
+
+            string[] warnings = (await Shell.Page.Locator("#export-warning-list li").AllInnerTextsAsync()).Select(text => text.Trim()).Where(text => text.Contains("to_level", StringComparison.Ordinal)).ToArray();
+            foreach (string warning in warnings)
+            {
+                step.Note($"Export warning: `{warning}`");
+            }
+
+            step.Check(warnings.Length > 0, $"The {without} stair or escalator unit(s) without a to_level come with an export warning that says why ({warnings.Length} to_level warning(s)).");
+        }
         step.Note($"Rows: {Format(GeoPackageTables.RowCounts(output))}");
         await Shot(step, "B1-8-export-done");
         await Shell.GoToAsync("/gis-standard");

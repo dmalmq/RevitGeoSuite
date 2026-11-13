@@ -121,6 +121,32 @@ internal static class GeoPackageTables
         return (with, without);
     }
 
+    /// <summary>Stair and escalator units with an empty to_level: "file:table name (category, level_id, revit_key)".</summary>
+    public static List<string> VerticalUnitsWithoutToLevel(string folder)
+    {
+        var units = new List<string>();
+        foreach (string file in Directory.GetFiles(folder, "*.gpkg", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+        {
+            using var connection = Open(file);
+            foreach (string table in Query(connection, "SELECT table_name FROM gpkg_contents WHERE data_type = 'features'"))
+            {
+                List<string> columns = Query(connection, $"SELECT name FROM pragma_table_info('{table.Replace("'", "''")}')");
+                if (!columns.Contains("category") || !columns.Contains("to_level"))
+                {
+                    continue;
+                }
+
+                string Column(string name) => columns.Contains(name) ? $"COALESCE({name}, '')" : "''";
+                units.AddRange(Query(connection,
+                    $"SELECT {Column("name")} || ' (' || COALESCE(category, '') || ', level_id ' || {Column("level_id")} || ', ' || {Column("revit_key")} || ')' FROM {Quote(table)} " +
+                    "WHERE (category LIKE 'stair%' OR category LIKE 'escalator%') AND COALESCE(to_level, '') = ''")
+                    .Select(unit => $"{Path.GetFileName(file)}:{table} {unit}"));
+            }
+        }
+
+        return units;
+    }
+
     private static SqliteConnection Open(string file)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = file, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
