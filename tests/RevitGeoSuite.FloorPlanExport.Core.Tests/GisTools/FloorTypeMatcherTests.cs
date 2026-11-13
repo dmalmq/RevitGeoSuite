@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using Xunit;
 using static RevitGeoSuite.FloorPlanExport.Core.Tests.GisTools.GisToolsFixtures;
 
@@ -102,5 +103,40 @@ public sealed class FloorTypeMatcherTests
             floors: new[] { new FloorInfo(11, 1, " Walkway"), new FloorInfo(12, 1, "retail"), new FloorInfo(13, 2, "walkway") });
 
         Assert.Equal(new long[] { 11 }, FloorTypeMatcher.EchoFloorIds(model, FloorTypeMatcher.Propose(model, Standard)));
+    }
+
+    [Fact]
+    public void AcceptAppliesOnlyAcceptedTypesAndReportsTheOnesThatNoLongerApply()
+    {
+        List<FloorTypeInfo> floorTypes = FloorTypesAsStandard();
+        floorTypes.Add(new FloorTypeInfo(1, "j 改札内コンコース_床", floorIds: new long[] { 11, 12 }));
+        floorTypes.Add(new FloorTypeInfo(2, "j 店舗_床 (old)", floorIds: new long[] { 13 }));
+        floorTypes.Add(new FloorTypeInfo(3, "j 謎の部屋_床", floorIds: new long[] { 14 }));
+        floorTypes.Add(new FloorTypeInfo(4, "j 待合_床 (fixed)", "walkway", floorIds: new long[] { 15 }));
+        ModelSnapshot model = ModelOnStandard(floorTypes: floorTypes, floors: new[] { new FloorInfo(11, 1, "walkway"), new FloorInfo(13, 2, "walkway") });
+
+        FloorTypeFix fix = FloorTypeMatcher.Accept(model, Standard, new long[] { 1, 1, 3, 4, 999 });
+
+        Assert.Equal(new long[] { 1 }, fix.Proposals.Select(proposal => proposal.FloorType.ElementId));
+        Assert.Equal(new long[] { 11 }, fix.EchoFloorIds);
+        Assert.Equal(
+            new[]
+            {
+                "Floor type j 謎の部屋_床 no longer matches a standard type.",
+                "Floor type j 待合_床 (fixed) no longer needs a fix.",
+                "Floor type 999 is no longer in the model.",
+            },
+            fix.Skipped);
+    }
+
+    [Fact]
+    public void WritingNeedsBothTypeParametersBoundToTypes()
+    {
+        Assert.Equal("", FloorTypeMatcher.WriteBlocker(ModelOnStandard()));
+        Assert.StartsWith("gis_restriction is not bound", FloorTypeMatcher.WriteBlocker(ModelOnStandard(BoundAsStandard("gis_restriction"))));
+
+        List<BoundParameterInfo> instance = BoundAsStandard("gis_category");
+        instance.Add(new BoundParameterInfo("gis_category", null, GisParameterBinding.Instance, new[] { "OST_Floors" }));
+        Assert.StartsWith("gis_category is bound as an instance parameter", FloorTypeMatcher.WriteBlocker(ModelOnStandard(instance)));
     }
 }

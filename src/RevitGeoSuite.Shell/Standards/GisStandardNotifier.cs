@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Events;
 using Autodesk.Revit.UI;
@@ -12,6 +11,7 @@ using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.Storage;
+using RevitGeoSuite.Shell.Commands;
 
 namespace RevitGeoSuite.Shell.Standards;
 
@@ -50,31 +50,6 @@ internal sealed class GisStandardNotifier
         application.Idling -= OnIdling;
     }
 
-    /// <summary>The report the ribbon button shows: the state line and every issue.</summary>
-    public static void ShowReport(Document document)
-    {
-        GisStandardStatus status = GisStandardStateReader.Check(document);
-        StringBuilder text = new();
-        foreach (GisStandardIssue issue in status.Issues)
-        {
-            text.Append(issue.BlocksExport ? "Blocks export: " : issue.Severity == GisStandardIssueSeverity.Error ? "Error: " : "Warning: ")
-                .AppendLine(issue.Message);
-        }
-
-        var dialog = new TaskDialog(Title)
-        {
-            MainInstruction = status.Summary,
-            MainContent = text.Length == 0 ? "Nothing to fix." : text.ToString(),
-            FooterText = HowToUpdate,
-        };
-        dialog.Show();
-        Instance.Refresh(document, force: true);
-    }
-
-    private static string HowToUpdate =>
-        "To update: Kanizu GIS tab (pyRevit) > Set up model shows what it would change and changes nothing until you accept. " +
-        "Without pyRevit, add the KanizuGIS extension from RevitGeoSuite's pyrevit folder first.";
-
     private void OnDocumentOpened(object sender, DocumentOpenedEventArgs e)
     {
         Document? document = e.Document;
@@ -112,7 +87,7 @@ internal sealed class GisStandardNotifier
                 if (document.IsValidObject)
                 {
                     Refresh(document, force: true);
-                    MaybeNotify(document);
+                    MaybeNotify(document, (sender as UIApplication)?.MainWindowHandle ?? IntPtr.Zero);
                 }
             }
             catch (Exception ex)
@@ -122,7 +97,7 @@ internal sealed class GisStandardNotifier
         }
     }
 
-    private void Refresh(Document? document, bool force)
+    internal void Refresh(Document? document, bool force)
     {
         if (_button == null || document == null || document.IsFamilyDocument)
         {
@@ -148,7 +123,7 @@ internal sealed class GisStandardNotifier
         }
     }
 
-    private void MaybeNotify(Document document)
+    private void MaybeNotify(Document document, IntPtr owner)
     {
         string key = ModelKey(document);
         if (!_noticedThisSession.Add(key))
@@ -169,13 +144,13 @@ internal sealed class GisStandardNotifier
             MainContent = string.Join(Environment.NewLine, status.Issues.Take(4).Select(issue => issue.Message)),
             FooterText = $"Model version: {status.ModelVersion?.ToString() ?? "none"}. Current: {status.CurrentVersion}. Oldest exported: {status.OldestSupportedVersion}.",
         };
-        dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Update now", "Shows how to bring the model to the current standard.");
+        dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Update now", "Opens the GIS standard page, which previews every change before it applies it.");
         dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Later", "Asks again the next time Revit opens this model.");
         dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink3, "Skip this version", $"No notice for this model until a standard newer than {GisStandard.Version}.");
         switch (dialog.Show())
         {
             case TaskDialogResult.CommandLink1:
-                TaskDialog.Show(Title, HowToUpdate);
+                GisStandardCommand.OpenPage(owner);
                 break;
             case TaskDialogResult.CommandLink3:
                 try

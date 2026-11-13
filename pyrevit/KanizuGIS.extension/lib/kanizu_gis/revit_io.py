@@ -8,7 +8,7 @@ import System
 from Autodesk.Revit import DB
 
 from kanizu_gis import parameter_table, setup_plan, snapshot
-from kanizu_gis.standards import hex_to_rgb, normalize, rgb_to_hex
+from kanizu_gis.standards import hex_to_rgb, normalize, parse_whole_number, rgb_to_hex
 
 FAMILY_CATEGORIES = [DB.BuiltInCategory.OST_GenericModel, DB.BuiltInCategory.OST_SpecialityEquipment]
 
@@ -34,10 +34,16 @@ def read_string(element, name):
 
 
 def read_integer(element, name):
+    """A whole-number parameter's value, or None. Older models hold ordinal as text; a text value
+    that is a whole number counts, as it does in RevitGeoSuite's export."""
     parameter = element.LookupParameter(name)
-    if parameter is None or not parameter.HasValue or parameter.StorageType != DB.StorageType.Integer:
+    if parameter is None or not parameter.HasValue:
         return None
-    return parameter.AsInteger()
+    if parameter.StorageType == DB.StorageType.Integer:
+        return parameter.AsInteger()
+    if parameter.StorageType == DB.StorageType.String:
+        return parse_whole_number(parameter.AsString())
+    return None
 
 
 def category_name(category):

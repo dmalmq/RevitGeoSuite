@@ -354,6 +354,45 @@ public static class GisDrift
         return (changes, problems);
     }
 
+    /// <summary>
+    /// The planned changes the user ticked, matched by element, parameter, binding and value. A
+    /// ticked change the plan no longer holds (the model or the drift file changed since the
+    /// preview) is listed, not written.
+    /// </summary>
+    public static (IReadOnlyList<GisDriftChange> Changes, IReadOnlyList<string> Skipped) Accept(
+        IReadOnlyList<GisDriftChange> planned,
+        IEnumerable<(string UniqueId, string Parameter, string Binding, string NewValue, string Label)> accepted)
+    {
+        Dictionary<(string, string, string, string), GisDriftChange> byKey = new();
+        foreach (GisDriftChange change in planned)
+        {
+            byKey[(change.UniqueId, change.Parameter, change.Binding, change.NewValue)] = change;
+        }
+
+        List<GisDriftChange> changes = new();
+        List<string> skipped = new();
+        HashSet<(string, string, string, string)> seen = new();
+        foreach ((string uniqueId, string parameter, string binding, string newValue, string label) in accepted)
+        {
+            (string, string, string, string) key = (uniqueId, parameter, binding, newValue);
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            if (byKey.TryGetValue(key, out GisDriftChange? change))
+            {
+                changes.Add(change);
+            }
+            else
+            {
+                skipped.Add($"Skipped {label}: the model or the drift file changed since the preview.");
+            }
+        }
+
+        return (changes, skipped);
+    }
+
     private static bool Same(string parameter, string old, string value)
     {
         if (ParameterTable.IntegerColumns.Contains(parameter))

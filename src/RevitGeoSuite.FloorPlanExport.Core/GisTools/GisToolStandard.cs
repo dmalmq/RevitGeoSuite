@@ -75,6 +75,16 @@ public sealed class GisToolStandard
     /// <summary>The value trimmed, with null read as empty.</summary>
     public static string Normalize(string? value) => value == null ? string.Empty : value.Trim();
 
+    /// <summary>A whole number written as text, as the export reads it, or null.</summary>
+    public static int? ParseWholeNumber(string? text)
+    {
+        string value = Normalize(text);
+        return value.Length > 0 && value.Skip(value[0] is '+' or '-' ? 1 : 0).All(character => character is >= '0' and <= '9') &&
+               int.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int number)
+            ? number
+            : null;
+    }
+
     /// <summary>The red, green and blue of a <c>#RRGGBB</c> colour.</summary>
     public static (byte Red, byte Green, byte Blue) HexToRgb(string hex)
     {

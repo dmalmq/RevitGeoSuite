@@ -304,4 +304,26 @@ public sealed class GisDriftTests
         Assert.True(changes[0].Conflict);
         Assert.Contains("also changed in Revit", changes[0].Label());
     }
+
+    [Fact]
+    public void AcceptKeepsTickedChangesTheFileStillPlansAndListsTheRest()
+    {
+        GisDriftFile file = GisDrift.Parse(Text(new[] { Entry("name", "北改札"), Entry("alt_name", "北", uniqueId: "u-2") }));
+        var model = Model(new Dictionary<(string, string, string), string>
+        {
+            [("u-1", "name", "instance")] = "改札",
+            [("u-2", "short_name", "instance")] = "",
+        });
+        var (planned, _) = GisDrift.Plan(file, model, Standard);
+
+        var (changes, skipped) = GisDrift.Accept(planned, new[]
+        {
+            ("u-1", "name", "instance", "北改札", "a"),
+            ("u-1", "name", "instance", "北改札", "a"),
+            ("u-2", "short_name", "instance", "南", "b"),
+        });
+
+        Assert.Equal(new[] { "u-1" }, changes.Select(change => change.UniqueId));
+        Assert.Contains("Skipped b", Assert.Single(skipped));
+    }
 }

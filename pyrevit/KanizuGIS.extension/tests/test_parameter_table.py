@@ -76,7 +76,7 @@ class DiffTests(unittest.TestCase):
 
         changes, problems = table.diff(model_rows(), edited, self.standard)
 
-        self.assertEqual(problems, [])
+        self.assertEqual(problems, [u"Line 5: level only describes the element; the edit is ignored."])
         self.assertEqual(
             [(change.element_id, change.column, change.new) for change in changes],
             [(u"101", "name", u"1番線ホーム"), (u"101", "category", u"Platform"),
@@ -100,7 +100,19 @@ class DiffTests(unittest.TestCase):
         self.assertIn(u"sideways", problems[2])
         self.assertIn(u"not a whole number", problems[3])
         self.assertIn(u"appears twice", problems[4])
-        self.assertIn(u"999 is not in the model", problems[5])
+        self.assertIn(u"999 is not in the model; the row is skipped", problems[5])
+        for problem in problems[:4]:
+            self.assertTrue(problem.lower().endswith(u"only this cell is skipped."), problem)
+
+    def test_an_invalid_cell_skips_only_that_cell_and_says_so(self):
+        edited = self.edited()
+        edited[3]["short_name"] = u"8F"
+        edited[3]["ordinal"] = u"shop"
+
+        changes, problems = table.diff(model_rows(), edited, self.standard)
+
+        self.assertEqual([(c.element_id, c.column, c.new) for c in changes], [(u"104", "short_name", u"8F")])
+        self.assertEqual(problems, [u"Line 5: ordinal 'shop' is not a whole number. Only this cell is skipped."])
 
     def test_a_missing_column_or_deleted_row_changes_nothing(self):
         edited = [dict((key, value) for key, value in entry.items() if key != "name") for entry in self.edited()[:2]]

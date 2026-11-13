@@ -8,7 +8,10 @@ export const NAV: NavGroup[] = [
   {
     labelKey: 'Nav.Group.SetUp',
     fallback: 'Set up',
-    entries: [{ route: '/georeference', labelKey: 'Nav.Georeference', fallback: 'Georeference', icon: 'map-pin' }]
+    entries: [
+      { route: '/georeference', labelKey: 'Nav.Georeference', fallback: 'Georeference', icon: 'map-pin' },
+      { route: '/gis-standard', labelKey: 'Nav.GisStandard', fallback: 'GIS standard', icon: 'list-checks' }
+    ]
   },
   {
     labelKey: 'Nav.Group.Import',

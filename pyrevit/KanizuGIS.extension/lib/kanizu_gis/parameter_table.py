@@ -103,10 +103,11 @@ def read_csv(path):
 
 
 def diff(current_rows, edited_rows, standard):
-    """The changes the edited rows make, and the problems that keep a cell from being written.
+    """The changes the edited rows make, and one line for each edit that is not written.
 
-    A row whose element_id is not in the model, a change in a column its kind does not own, and a
-    value the standard does not accept are problems; the rest of the file still applies."""
+    A row whose element_id is not in the model is skipped whole. A change in a column its kind does
+    not own, or a value the standard does not accept, skips only that cell; the row's other cells
+    still apply. An edit to a column that only describes the element is ignored and listed."""
     current = dict((entry["element_id"], entry) for entry in current_rows)
     changes = []
     problems = []
@@ -121,7 +122,7 @@ def diff(current_rows, edited_rows, standard):
         seen.add(element_id)
         entry = current.get(element_id)
         if entry is None:
-            problems.append(u"Line %d: element %s is not in the model." % (number, element_id))
+            problems.append(u"Line %d: element %s is not in the model; the row is skipped." % (number, element_id))
             continue
         kind = entry["kind"]
         for column in COLUMNS:
@@ -132,13 +133,14 @@ def diff(current_rows, edited_rows, standard):
             if new == old:
                 continue
             if column in READ_ONLY_COLUMNS:
+                problems.append(u"Line %d: %s only describes the element; the edit is ignored." % (number, column))
                 continue
             if column not in EDITABLE.get(kind, []):
-                problems.append(u"Line %d: %s cannot be set on a %s here." % (number, column, kind))
+                problems.append(u"Line %d: %s cannot be set on a %s here; only this cell is skipped." % (number, column, kind))
                 continue
             value, problem = check_value(column, new, standard)
             if problem:
-                problems.append(u"Line %d: %s" % (number, problem))
+                problems.append(u"Line %d: %s Only this cell is skipped." % (number, problem))
                 continue
             if value != old:
                 changes.append(Change(element_id, kind, column, old, value))
