@@ -136,7 +136,7 @@ public sealed class ExportViewSnapshot
     /// <summary>The name of every view, template or not; a new view's name must not clash.</summary>
     public ISet<string> ViewNames { get; }
 
-    /// <summary>The model XY of every floor outline vertex, in feet.</summary>
+    /// <summary>The XY of every floor outline vertex in the model and its loaded links, in host feet.</summary>
     public IReadOnlyList<Point2D> FloorPoints { get; }
 }
 

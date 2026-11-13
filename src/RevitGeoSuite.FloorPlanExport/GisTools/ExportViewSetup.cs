@@ -67,7 +67,7 @@ public static class ExportViewSetup
             levels,
             plans,
             views.Select(view => view.Name ?? string.Empty),
-            floors.SelectMany(OutlinePoints));
+            FloorPoints(document));
     }
 
     /// <summary>Applies <paramref name="plan"/>. Call inside an open transaction, after the shared parameters are bound.</summary>
@@ -78,11 +78,7 @@ public static class ExportViewSetup
             return;
         }
 
-        IReadOnlyList<Point2D> floorPoints = new FilteredElementCollector(document)
-            .OfClass(typeof(Floor))
-            .Cast<Floor>()
-            .SelectMany(OutlinePoints)
-            .ToList();
+        IReadOnlyList<Point2D> floorPoints = FloorPoints(document).ToList();
 
         View? template = FindTemplate(document);
         if (plan.CreatesTemplate || (plan.NewViews.Count > 0 && template == null))
@@ -272,6 +268,13 @@ public static class ExportViewSetup
             return;
         }
 
+        // The export clips to an assigned scope box before the crop box, so the plan lets go of it.
+        Parameter? scopeBox = view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
+        if (scopeBox != null && !scopeBox.IsReadOnly && scopeBox.AsElementId() != ElementId.InvalidElementId)
+        {
+            scopeBox.Set(ElementId.InvalidElementId);
+        }
+
         ViewCropRegionShapeManager shape = view.GetCropRegionShapeManager();
         if (shape.ShapeSet)
         {
@@ -290,8 +293,40 @@ public static class ExportViewSetup
         view.CropBoxActive = true;
     }
 
-    /// <summary>The model XY of the floor's top face edges, tessellated.</summary>
-    private static IEnumerable<Point2D> OutlinePoints(Floor floor)
+    /// <summary>
+    /// The outline points of every floor in the model and in its loaded Revit links, in host
+    /// coordinates: a linked export clips the link to the host plan's crop too.
+    /// </summary>
+    private static IEnumerable<Point2D> FloorPoints(Document document)
+    {
+        foreach (Floor floor in new FilteredElementCollector(document).OfClass(typeof(Floor)).Cast<Floor>())
+        {
+            foreach (Point2D point in OutlinePoints(floor, Transform.Identity))
+            {
+                yield return point;
+            }
+        }
+
+        foreach (RevitLinkInstance link in new FilteredElementCollector(document).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+        {
+            if (link.GetLinkDocument() is not Document linked)
+            {
+                continue;
+            }
+
+            Transform transform = link.GetTotalTransform();
+            foreach (Floor floor in new FilteredElementCollector(linked).OfClass(typeof(Floor)).Cast<Floor>())
+            {
+                foreach (Point2D point in OutlinePoints(floor, transform))
+                {
+                    yield return point;
+                }
+            }
+        }
+    }
+
+    /// <summary>The XY of the floor's top face edges, tessellated, through <paramref name="transform"/>.</summary>
+    private static IEnumerable<Point2D> OutlinePoints(Floor floor, Transform transform)
     {
         foreach (Reference reference in HostObjectUtils.GetTopFaces(floor))
         {
@@ -304,8 +339,9 @@ public static class ExportViewSetup
             {
                 foreach (Curve curve in loop)
                 {
-                    foreach (XYZ point in curve.Tessellate())
+                    foreach (XYZ local in curve.Tessellate())
                     {
+                        XYZ point = transform.OfPoint(local);
                         yield return new Point2D(point.X, point.Y);
                     }
                 }
