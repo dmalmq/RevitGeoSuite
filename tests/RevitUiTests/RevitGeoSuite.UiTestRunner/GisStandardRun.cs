@@ -130,7 +130,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         File.Copy(options.Model, modelCopy, overwrite: true);
         int beforeOpen = host.LastEvent();
         JsonObject opened = host.Call("open", new { path = modelCopy });
-        report.Header.Add($"Links not on this PC, unloaded in the copy before opening: {(opened["unloadedReferences"]?.AsArray().Count > 0 ? opened["unloadedReferences"]!.ToJsonString() : "none")}.");
+        report.Header.Add($"Revit links not on this PC, before opening the copy: {(opened["unloadedReferences"]?.AsArray().Count > 0 ? opened["unloadedReferences"]!.ToJsonString() : "none")}.");
         string dialogs = string.Join(" | ", host.EventsAfter(beforeOpen).Where(item => item.Kind == "dialog").Select(item => $"{item.DialogId}: {item.Message}"));
         report.Header.Add($"Dialogs while opening: {(dialogs.Length > 0 ? dialogs : "none")}.");
         string copyPath = modelCopy;

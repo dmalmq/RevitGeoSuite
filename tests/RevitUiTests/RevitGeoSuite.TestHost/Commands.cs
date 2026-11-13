@@ -153,39 +153,61 @@ internal sealed class Commands
         }, Slow);
     }
 
-    // A link whose file is not on this PC makes Revit ask on open ("could not find or read"). Mark each
-    // such link in the copy as not to be loaded before opening, so no dialog is left to chance, and
-    // return what was unloaded for the report. Only the copy in the test folder is ever written.
+    // A Revit link whose file is not on this PC makes Revit ask on open ("could not find or read").
+    // Mark each such link in the copy as not to be loaded before opening and return what was done for
+    // the report. Only Revit links are touched; any reference that fails is reported and skipped, and
+    // the host's dialog answer stays the fallback. Only the copy in the test folder is ever written.
     private static List<string> UnloadMissingReferences(string path)
     {
-        var unloaded = new List<string>();
-        ModelPath model = ModelPathUtils.ConvertUserVisiblePathToModelPath(path);
-        TransmissionData? data = TransmissionData.ReadTransmissionData(model);
-        if (data == null)
+        var notes = new List<string>();
+        try
         {
-            return unloaded;
-        }
-
-        foreach (ElementId id in data.GetAllExternalFileReferenceIds())
-        {
-            ExternalFileReference reference = data.GetLastSavedReferenceData(id);
-            string target = ModelPathUtils.ConvertModelPathToUserVisiblePath(reference.GetAbsolutePath());
-            if (reference.GetLinkedFileStatus() == LinkedFileStatus.Unloaded || (target.Length > 0 && File.Exists(target)))
+            ModelPath model = ModelPathUtils.ConvertUserVisiblePathToModelPath(path);
+            TransmissionData? data = TransmissionData.ReadTransmissionData(model);
+            if (data == null)
             {
-                continue;
+                return notes;
             }
 
-            data.SetDesiredReferenceData(id, reference.GetPath(), reference.PathType, false);
-            unloaded.Add($"{reference.ExternalFileReferenceType}: {target}");
-        }
+            bool changed = false;
+            foreach (ElementId id in data.GetAllExternalFileReferenceIds())
+            {
+                try
+                {
+                    ExternalFileReference reference = data.GetLastSavedReferenceData(id);
+                    if (reference.ExternalFileReferenceType != ExternalFileReferenceType.RevitLink || reference.GetLinkedFileStatus() == LinkedFileStatus.Unloaded)
+                    {
+                        continue;
+                    }
 
-        if (unloaded.Count > 0)
+                    string target = ModelPathUtils.ConvertModelPathToUserVisiblePath(reference.GetAbsolutePath());
+                    if (target.Length > 0 && File.Exists(target))
+                    {
+                        continue;
+                    }
+
+                    data.SetDesiredReferenceData(id, reference.GetPath(), reference.PathType, false);
+                    changed = true;
+                    notes.Add($"unloaded Revit link {target}");
+                }
+                catch (Exception ex) when (ex is Autodesk.Revit.Exceptions.ApplicationException or ArgumentException or InvalidOperationException)
+                {
+                    notes.Add($"left reference {id.Value} as it is: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+
+            if (changed)
+            {
+                data.IsTransmitted = true;
+                TransmissionData.WriteTransmissionData(model, data);
+            }
+        }
+        catch (Exception ex) when (ex is Autodesk.Revit.Exceptions.ApplicationException or ArgumentException or InvalidOperationException or IOException)
         {
-            data.IsTransmitted = true;
-            TransmissionData.WriteTransmissionData(model, data);
+            notes.Add($"did not unload links: {ex.GetType().Name}: {ex.Message}");
         }
 
-        return unloaded;
+        return notes;
     }
 
     private static bool InFolder(string path, string folder)
