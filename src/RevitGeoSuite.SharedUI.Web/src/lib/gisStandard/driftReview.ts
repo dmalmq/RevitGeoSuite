@@ -26,3 +26,38 @@ export function initiallyUnticked(drift: Drift): Set<number> {
 export function needsConfirm(drift: Drift): boolean {
   return drift.source === 'picked' || modelMismatch(drift) !== null
 }
+
+/** Shape edits start ticked for the open model's own file and unticked on a mismatch, by floor UniqueId. */
+export function shapesInitiallyUnticked(drift: Drift & Pick<GisDriftInspectResponse, 'shapes'>): Set<string> {
+  return modelMismatch(drift) !== null ? new Set(drift.shapes.map((shape) => shape.uniqueId)) : new Set()
+}
+
+type Rings = number[][][]
+
+/**
+ * One SVG drawing of a shape edit: the floor now and the GDB's outline, scaled into the same
+ * square with north up, centred. Each outline is one path of its rings, filled even-odd so holes show.
+ */
+export function outlineDrawing(before: Rings, after: Rings, size = 160, margin = 8): { viewBox: string; before: string; after: string } {
+  const points = [...before, ...after].flat()
+  if (points.length === 0) return { viewBox: `0 0 ${size} ${size}`, before: '', after: '' }
+  const xs = points.map((point) => point[0])
+  const ys = points.map((point) => point[1])
+  const minX = Math.min(...xs)
+  const maxY = Math.max(...ys)
+  const width = Math.max(...xs) - minX
+  const height = maxY - Math.min(...ys)
+  const span = Math.max(width, height, 1e-6)
+  const scale = (size - 2 * margin) / span
+  // Centre the shorter side.
+  const left = margin + ((span - width) / 2) * scale
+  const top = margin + ((span - height) / 2) * scale
+  const path = (rings: Rings) =>
+    rings
+      .filter((ring) => ring.length >= 3)
+      .map((ring) => 'M' + ring.map(([x, y]) => `${round(left + (x - minX) * scale)} ${round(top + (maxY - y) * scale)}`).join('L') + 'Z')
+      .join('')
+  return { viewBox: `0 0 ${size} ${size}`, before: path(before), after: path(after) }
+}
+
+const round = (value: number) => Math.round(value * 10) / 10

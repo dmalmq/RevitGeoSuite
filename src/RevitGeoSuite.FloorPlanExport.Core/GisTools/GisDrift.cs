@@ -225,8 +225,8 @@ public sealed class GisDriftChange
 /// Accepting a row writes the GDB's value into the Revit parameter the field comes from, so the
 /// next export agrees and the GDB edit survives it. Rows the model already agrees with are left
 /// out, so reading the file twice changes nothing the second time. The file also lists the units
-/// whose shape the GDB changed (<see cref="GisDriftFile.Shapes"/>), which this page does not apply
-/// yet. The format is described in docs/kanizu-link-contract.md.
+/// whose shape the GDB changed (<see cref="GisDriftFile.Shapes"/>); <see cref="GisShapeEdits"/> plans
+/// the ones the page applies. The format is described in docs/kanizu-link-contract.md.
 /// </summary>
 public static class GisDrift
 {

@@ -467,6 +467,7 @@ export interface GisDriftInspectResponse {
   modelKey: string
   path: string
   problems: string[]
+  shapes: GisShapeEditItem[]
   source: string
   stationFolder: string
 }
@@ -551,6 +552,30 @@ export interface GisSelectElementsRequest {
 
 export interface GisSelectElementsResponse {
   selected: number
+}
+
+export interface GisShapeApplyRequest {
+  path: string
+  uniqueIds: string[]
+}
+
+export interface GisShapeEditItem {
+  after: number[][][]
+  before: number[][][]
+  elementId: number
+  feature: string
+  kind: string
+  label: string
+  uniqueId: string
+}
+
+export interface GisShapeShowRequest {
+  path: string
+  uniqueId: string
+}
+
+export interface GisShapeShowResponse {
+  view: string
 }
 
 export interface GisStandardApplyResponse {
@@ -1236,7 +1261,10 @@ export interface RpcMethods {
   'gis.export': { request: GisExportRequest; response: JobStarted }
   'gis.exportOptions': { request: GisExportOptionsRequest; response: GisExportOptionsResponse }
   'gisDrift.apply': { request: GisDriftApplyRequest; response: GisStandardApplyResponse }
+  'gisDrift.applyShapes': { request: GisShapeApplyRequest; response: GisStandardApplyResponse }
+  'gisDrift.clearShape': { request: ExporterEmptyRequest; response: void }
   'gisDrift.inspect': { request: GisDriftInspectRequest; response: GisDriftInspectResponse }
+  'gisDrift.showShape': { request: GisShapeShowRequest; response: GisShapeShowResponse }
   'gisParameters.apply': { request: GisParametersApplyRequest; response: GisStandardApplyResponse }
   'gisParameters.read': { request: GisStandardEmptyRequest; response: GisParametersReadResponse }
   'gisParameters.write': { request: GisStandardEmptyRequest; response: GisParametersWriteResponse }
