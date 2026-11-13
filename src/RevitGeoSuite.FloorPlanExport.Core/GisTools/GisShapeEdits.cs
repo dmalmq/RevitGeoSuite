@@ -71,6 +71,9 @@ public sealed class ShapeEdit
 /// </summary>
 public static class GisShapeEdits
 {
+    /// <summary>The reason <see cref="ShapeFloor.CannotEdit"/> gives for a floor with arcs or splines in its boundary.</summary>
+    public const string CurvedEdges = "has curved edges, which the GDB's straight-segment outline would replace with short lines";
+
     /// <summary>Outlines closer than this everywhere are the same.</summary>
     public const double SameOutlineMetres = 0.01;
 

@@ -39,7 +39,8 @@ public static class ShapeEditWork
     /// Redraws the floor's sketch as the edit's outline. The floor keeps its UniqueId, so its
     /// revit_key, id and parameters stay. One undo step named after the edit.
     /// </summary>
-    public static void Apply(Document document, ShapeEdit edit)
+    /// <returns>What Revit warned about, and the elements that hung on the floor and are gone after it, one line each.</returns>
+    public static IReadOnlyList<string> Apply(Document document, ShapeEdit edit)
     {
         if (document.GetElement(edit.Floor.UniqueId) is not Floor floor || document.GetElement(floor.SketchId) is not Sketch sketch)
         {
@@ -48,6 +49,12 @@ public static class ShapeEditWork
 
         HashSet<ElementId> boundary = ProfileCurveIds(sketch);
         double z = sketch.SketchPlane.GetPlane().Origin.Z;
+        List<(ElementId Id, string Name)> dependents = floor.GetDependentElements(null)
+            .Where(id => id != floor.Id && id != sketch.Id && !boundary.Contains(id))
+            .Select(id => (id, Describe(document.GetElement(id))))
+            .Where(entry => entry.Item2.Length > 0)
+            .ToList();
+        FailOnError failures = new();
         SketchEditScope scope = new(document, edit.Label());
         scope.Start(sketch.Id);
         try
@@ -74,7 +81,7 @@ public static class ShapeEditWork
                 }
             }
 
-            scope.Commit(new FailOnError());
+            scope.Commit(failures);
         }
         finally
         {
@@ -87,9 +94,27 @@ public static class ShapeEditWork
         // An error in Revit's sketch check rolls the edit back without an exception: read the floor again.
         if (document.GetElement(edit.Floor.UniqueId) is not Floor after || !GisShapeEdits.SameOutline(FloorTopFaces.Read(after).Outline, edit.Outline))
         {
-            throw new InvalidOperationException($"Revit refused the new outline of floor {edit.Floor.ElementId}; the floor is unchanged.");
+            string why = failures.Errors.Count > 0 ? ": " + string.Join(" ", failures.Errors.Distinct()) : string.Empty;
+            throw new InvalidOperationException($"Revit refused the new outline of floor {edit.Floor.ElementId}; the floor is unchanged{why}");
         }
+
+        List<string> notes = failures.Warnings.Distinct().Select(text => "Revit warned: " + text).ToList();
+        notes.AddRange(dependents
+            .Where(entry => document.GetElement(entry.Id) == null)
+            .Select(entry => $"Revit deleted {entry.Name} {entry.Id.Value}, which hung on the floor outside its new outline."));
+        return notes;
     }
+
+    /// <summary>A named element that depends on the floor (an opening, a hosted family), or empty for sketch parts and internals.</summary>
+    private static string Describe(Element? element) =>
+        element switch
+        {
+            Opening => "opening",
+            FamilyInstance instance => $"{instance.Symbol?.FamilyName ?? "family"} ({instance.Category?.Name ?? "element"})",
+            null => string.Empty,
+            _ when element.Category?.CategoryType == CategoryType.Model => element.Category.Name,
+            _ => string.Empty,
+        };
 
     /// <summary>The level's GIS_ plan, else any plan of the level, to preview a shape edit in.</summary>
     public static ViewPlan? PlanViewOf(Document document, ElementId levelId)
@@ -113,6 +138,12 @@ public static class ShapeEditWork
         if (floor.GetSlabShapeEditor() is { IsEnabled: true })
         {
             return "has shape-edited points";
+        }
+
+        // The GDB holds polylines: redrawing would turn every arc into short segments, also where the GDB left it alone.
+        if (sketch.Profile.Cast<CurveArray>().Any(loop => loop.Cast<Curve>().Any(curve => curve is not Line)))
+        {
+            return GisShapeEdits.CurvedEdges;
         }
 
         HashSet<ElementId> boundary = ProfileCurveIds(sketch);
@@ -161,24 +192,35 @@ public static class ShapeEditWork
         }
     }
 
-    /// <summary>Lets warnings through and rolls the edit back on an error, so a sketch Revit cannot close changes nothing.</summary>
+    /// <summary>
+    /// Records every warning's text and lets it through; rolls the edit back on an error, so a
+    /// sketch Revit cannot close changes nothing. The texts go into the apply result.
+    /// </summary>
     private sealed class FailOnError : IFailuresPreprocessor
     {
+        public List<string> Warnings { get; } = new();
+
+        public List<string> Errors { get; } = new();
+
         public FailureProcessingResult PreprocessFailures(FailuresAccessor failuresAccessor)
         {
+            bool error = false;
             foreach (FailureMessageAccessor failure in failuresAccessor.GetFailureMessages())
             {
+                string text = failure.GetDescriptionText();
                 if (failure.GetSeverity() == FailureSeverity.Warning)
                 {
+                    Warnings.Add(text);
                     failuresAccessor.DeleteWarning(failure);
                 }
                 else
                 {
-                    return FailureProcessingResult.ProceedWithRollBack;
+                    Errors.Add(text);
+                    error = true;
                 }
             }
 
-            return FailureProcessingResult.Continue;
+            return error ? FailureProcessingResult.ProceedWithRollBack : FailureProcessingResult.Continue;
         }
     }
 }

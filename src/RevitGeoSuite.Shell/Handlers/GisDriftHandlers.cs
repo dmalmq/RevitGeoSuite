@@ -197,8 +197,9 @@ public sealed class GisShapeApplyHandler : IRpcHandler
 
                 try
                 {
-                    ShapeEditWork.Apply(doc, edit);
+                    IReadOnlyList<string> notes = ShapeEditWork.Apply(doc, edit);
                     log.Add(edit.Label());
+                    log.AddRange(notes.Select(note => "  " + note));
                 }
                 catch (Exception error) when (error is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or ArgumentException)
                 {

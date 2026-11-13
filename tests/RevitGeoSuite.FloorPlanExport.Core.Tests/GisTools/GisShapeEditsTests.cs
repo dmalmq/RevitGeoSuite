@@ -139,6 +139,19 @@ public sealed class GisShapeEditsTests
     }
 
     [Fact]
+    public void AFloorWithCurvedEdgesIsListedRatherThanFlattened()
+    {
+        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
+            new[] { Shape(GisDrift.Reshaped, "a", Rect(0, 0, 12, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }, GisShapeEdits.CurvedEdges) });
+
+        Assert.Empty(edits);
+        Assert.Equal(
+            "unit ショップ reshaped: floor 101 has curved edges, which the GDB's straight-segment outline would replace with short lines, so its sketch is not redrawn. Reshape it in Revit by hand.",
+            Assert.Single(problems));
+    }
+
+    [Fact]
     public void OutlinesInAnotherCrsAreNotApplied()
     {
         (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
