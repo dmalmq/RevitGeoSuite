@@ -152,6 +152,16 @@
       "expected_needs_fix": [1]
     },
     {
+      "name": "an old shop type that states its side is left alone once that side's name is taken",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j ラチ外店舗_床"],
+        "floor_types_extra": [{ "id": 1, "name": "j 店舗_床", "gis_category": "retail", "gis_restriction": "rachi_nai", "floor_ids": [11] }]
+      },
+      "expected_proposals": [],
+      "expected_needs_fix": []
+    },
+    {
       "name": "one current shop name taken leaves the other as the rename",
       "model": {
         "base": "standard",
@@ -209,6 +219,15 @@
         "floor_types_extra": [{ "id": 1, "name": "smoking room", "gis_category": "smokingarea", "floor_ids": [11] }]
       },
       "expected_lines": []
+    },
+    {
+      "name": "an old shop type that states its side does not hold the other side's name back",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j ラチ外店舗_床"],
+        "floor_types_extra": [{ "id": 1, "name": "j 店舗_床", "gis_category": "retail", "gis_restriction": "rachi_nai", "floor_ids": [11] }]
+      },
+      "expected_lines": ["Create floor type j ラチ外店舗_床 (retail, rachi_gai, GIS_facilities)"]
     },
     {
       "name": "an unused old name does not hold a current name back",

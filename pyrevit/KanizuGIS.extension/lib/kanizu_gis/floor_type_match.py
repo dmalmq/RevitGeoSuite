@@ -87,9 +87,18 @@ def former_targets(name, standard):
 
 
 def free_targets(floor_type, snapshot, standard):
-    """The current names an old-named type could take that no floor type in the model has yet."""
-    return [name for name in former_targets(floor_type.name, standard)
-            if snapshot.floor_type_by_name(name) is None]
+    """The current names an old-named type could take that no floor type in the model has yet. A
+    type that already states its gate side can only take the name of that side."""
+    return [candidate.name for candidate in _former_candidates(floor_type, standard)
+            if snapshot.floor_type_by_name(candidate.name) is None]
+
+
+def _former_candidates(floor_type, standard):
+    former = _resolve(standard, former_targets(floor_type.name, standard))
+    if not former:
+        return former
+    side = floor_type.gis_restriction if floor_type.gis_restriction in ("rachi_nai", "rachi_gai") else _side(zone_name(floor_type.name))
+    return _narrow_by_side(former, side)
 
 
 def needs_fix(floor_type, snapshot, standard):
@@ -125,12 +134,11 @@ def candidates(floor_type, snapshot, standard):
     for candidate in standard.floor_types:
         if zone_name(candidate.name) == zone:
             return [Proposal(floor_type, candidate, _restriction(zone, candidate), "name")]
-    former = _resolve(standard, former_targets(floor_type.name, standard))
+    former = _former_candidates(floor_type, standard)
     if former:
-        side = floor_type.gis_restriction if floor_type.gis_restriction in ("rachi_nai", "rachi_gai") else _side(zone)
         return [Proposal(floor_type, candidate, _restriction(zone, candidate), "old name",
                          candidate.name if snapshot.floor_type_by_name(candidate.name) is None else None)
-                for candidate in _narrow_by_side(former, side)]
+                for candidate in former]
     for required, excluded, targets in RULES:
         if all(word in zone for word in required) and not any(word in zone for word in excluded):
             matched = _resolve(standard, targets)

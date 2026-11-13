@@ -199,7 +199,7 @@ public static class SetupPlanner
         HashSet<string> awaitingRename = new(
             snapshot.FloorTypes
                 .Where(entry => entry.FloorIds.Count > 0)
-                .SelectMany(entry => standard.FormerTargets(entry.Name)),
+                .SelectMany(entry => FloorTypeMatcher.FreeTargets(entry, snapshot, standard)),
             StringComparer.Ordinal);
         List<FloorTypeSetupStep> floorTypes = new();
         foreach (StandardFloorType floorType in standard.FloorTypes)

@@ -143,9 +143,22 @@ public static class FloorTypeMatcher
         return !standard.IsKnownCategory(floorType.GisCategory) || FreeTargets(floorType, snapshot, standard).Count > 0;
     }
 
-    /// <summary>The current names an old-named type could take that no floor type in the model has yet.</summary>
+    /// <summary>
+    /// The current names an old-named type could take that no floor type in the model has yet. A
+    /// type that already states its gate side can only take the name of that side.
+    /// </summary>
     public static IReadOnlyList<string> FreeTargets(FloorTypeInfo floorType, ModelSnapshot snapshot, GisToolStandard standard) =>
-        standard.FormerTargets(floorType.Name).Where(name => snapshot.FloorTypeByName(name) is null).ToList();
+        FormerCandidates(floorType, standard)
+            .Select(standardType => standardType.Name)
+            .Where(name => snapshot.FloorTypeByName(name) is null)
+            .ToList();
+
+    private static List<StandardFloorType> FormerCandidates(FloorTypeInfo floorType, GisToolStandard standard)
+    {
+        List<StandardFloorType> former = Resolve(standard, standard.FormerTargets(floorType.Name));
+        string side = floorType.GisRestriction is "rachi_nai" or "rachi_gai" ? floorType.GisRestriction : Side(ZoneName(floorType.Name));
+        return former.Count > 0 ? NarrowBySide(former, side) : former;
+    }
 
     /// <summary>The proposals for every floor type that needs a fix and matches a standard type, most floors first.</summary>
     public static IReadOnlyList<FloorTypeProposal> Propose(ModelSnapshot snapshot, GisToolStandard standard)
@@ -259,11 +272,10 @@ public static class FloorTypeMatcher
             }
         }
 
-        List<StandardFloorType> former = Resolve(standard, standard.FormerTargets(floorType.Name));
+        List<StandardFloorType> former = FormerCandidates(floorType, standard);
         if (former.Count > 0)
         {
-            string side = floorType.GisRestriction is "rachi_nai" or "rachi_gai" ? floorType.GisRestriction : Side(zone);
-            return NarrowBySide(former, side)
+            return former
                 .Select(standardType => new FloorTypeProposal(
                     floorType,
                     standardType,

@@ -86,7 +86,7 @@ def plan_setup(snapshot, standard):
     awaiting_rename = set()
     for entry in snapshot.floor_types:
         if entry.floor_ids:
-            awaiting_rename.update(floor_type_match.former_targets(entry.name, standard))
+            awaiting_rename.update(floor_type_match.free_targets(entry, snapshot, standard))
 
     floor_types = []
     for floor_type in standard.floor_types:
