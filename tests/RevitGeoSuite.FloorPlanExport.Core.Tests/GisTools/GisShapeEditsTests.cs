@@ -85,6 +85,13 @@ public sealed class GisShapeEditsTests
     }
 
     [Fact]
+    public void TheGapBetweenTwoOutlinesIsInMetres()
+    {
+        Assert.Equal(0.25, GisShapeEdits.GapMetres(new[] { Rect(0, 0, 10, 10) }, new[] { Rect(0.25, 0, 10.25, 10) }), 6);
+        Assert.Equal(double.PositiveInfinity, GisShapeEdits.GapMetres(new[] { Rect(0, 0, 10, 10) }, Array.Empty<Polygon2D>()));
+    }
+
+    [Fact]
     public void AFloorThatAlreadyHasTheOutlineIsLeftOut()
     {
         // Within 5 mm: what a GDB round trip leaves.
