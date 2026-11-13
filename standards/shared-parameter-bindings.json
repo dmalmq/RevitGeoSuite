@@ -142,7 +142,8 @@
       "binding": "type",
       "categories": [
         "OST_GenericModel",
-        "OST_SpecialityEquipment"
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
       ],
       "user_modifiable": true
     },

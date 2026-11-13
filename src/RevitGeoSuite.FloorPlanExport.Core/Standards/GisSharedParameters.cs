@@ -96,6 +96,7 @@ public static class GisSharedParameters
     private const string SpecialtyEquipment = "OST_SpecialityEquipment";
     private const string Levels = "OST_Levels";
     private const string Doors = "OST_Doors";
+    private const string MechanicalEquipment = "OST_MechanicalEquipment";
 
     /// <summary>The categories that make unit features: floors, rooms, stairs and the escalator and fixture families.</summary>
     private static readonly string[] UnitCategories = { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment };
@@ -183,7 +184,7 @@ public static class GisSharedParameters
             new Guid("26b16279-ebcb-4baa-9a7e-b07addf4e5b4"),
             GisParameterDataType.Text,
             GisParameterBinding.Type,
-            FamilyCategories,
+            new[] { GenericModel, SpecialtyEquipment, MechanicalEquipment },
             "Levels an elevator of this type stops at, by level name or short_name, separated by commas. Empty means the levels of the elevator objects in the same plan spot."),
         new GisParameterDefinition(
             GisDoor,

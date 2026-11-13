@@ -109,6 +109,13 @@ public sealed class GisStandardTests
     }
 
     [Fact]
+    public void LevelsServed_IsBoundToMechanicalEquipment_WhereLumineDrawsItsElevators()
+    {
+        Assert.True(GisSharedParameters.TryGet(GisSharedParameters.GisLevelsServed, out GisParameterDefinition definition));
+        Assert.Equal(new[] { "OST_GenericModel", "OST_SpecialityEquipment", "OST_MechanicalEquipment" }, definition.Categories);
+    }
+
+    [Fact]
     public void FloorTypes_UseTheThemeColourOfTheirArea()
     {
         KanizuColorTheme theme = KanizuColorTheme.LoadEmbedded();
