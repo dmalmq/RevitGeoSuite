@@ -51,6 +51,8 @@ internal sealed class Commands
                 "levels" => api.Run(ViewCommands.Levels, Quick),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
                 "redo" => Post("ID_EDIT_REDO"),
+                "elements" => api.Run(app => FloorCommands.Elements(app, Strings(request, "uniqueIds"), Longs(request, "ids")), Quick),
+                "floorScan" => api.Run(FloorCommands.FloorScan, TimeSpan.FromMinutes(5)),
                 "fixture" => Fixture(request),
                 "newFamily" => NewFamily(request),
                 "fileDialog" => Win32Dialogs.FillFileDialog(TestRoot.Require(root, Text(request, "path")), Milliseconds(request)),
@@ -281,7 +283,8 @@ internal sealed class Commands
     /// Puts the test copy into the state a step needs, in one transaction named
     /// <see cref="FixtureTransaction"/>: renames element types (renames: [{from, to}]), sets text
     /// parameters (values: [{id, name, value}]), edits views and view templates (views: see
-    /// <see cref="ViewCommands.Edit"/>) and copies elements in place (copyInPlace: [ids]).
+    /// <see cref="ViewCommands.Edit"/>), copies elements in place (copyInPlace: [ids]) and cuts
+    /// floor openings (openingNearEast: [{floor, insetM, sizeM}], see <see cref="FloorCommands.OpeningNearEast"/>).
     /// Only ever runs on a document inside the test folder.
     /// </summary>
     public const string FixtureTransaction = "UI test: fixture";
@@ -292,6 +295,7 @@ internal sealed class Commands
         List<Dictionary<string, object?>> values = Objects(request, "values");
         List<Dictionary<string, object?>> viewEdits = Objects(request, "views");
         long[] copies = Longs(request, "copyInPlace");
+        List<Dictionary<string, object?>> openings = Objects(request, "openingNearEast");
         return api.Run(app =>
         {
             Document document = app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");
@@ -333,6 +337,14 @@ internal sealed class Commands
             }
 
             log.AddRange(ViewCommands.CopyInPlace(document, copies));
+            foreach (Dictionary<string, object?> opening in openings)
+            {
+                log.Add(FloorCommands.OpeningNearEast(
+                    document,
+                    Convert.ToInt64(opening["floor"], CultureInfo.InvariantCulture),
+                    Convert.ToDouble(opening["insetM"], CultureInfo.InvariantCulture),
+                    Convert.ToDouble(opening["sizeM"], CultureInfo.InvariantCulture)));
+            }
 
             if (transaction.Commit() != TransactionStatus.Committed)
             {

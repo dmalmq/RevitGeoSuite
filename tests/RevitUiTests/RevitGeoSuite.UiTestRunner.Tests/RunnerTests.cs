@@ -83,9 +83,13 @@ public class RunOptionsTests
     public void Picks_the_script()
     {
         Assert.Equal(RunOptions.GisStandardScript, RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt" }).Script);
-        Assert.Equal(RunOptions.FloorTypesScript, RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "floor-types" }).Script);
-        Assert.Equal(RunOptions.ExportViewsScript, RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "b1" }).Script);
-        Assert.Equal(RunOptions.ExportAuditScript, RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "b2a" }).Script);
+        Assert.Equal("floor-types", RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "floor-types" }).Script);
+        Assert.Equal("b1", RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "b1" }).Script);
+        Assert.Equal("b2a", RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "b2a" }).Script);
+        RunOptions reshape = RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--scenario", "c3a-reshape", "--drift", "/tmp/revit-test/r.gis-drift.json" });
+        Assert.Equal("c3a-reshape", reshape.Script);
+        Assert.Equal(Path.GetFullPath("/tmp/revit-test/r.gis-drift.json"), reshape.Drift);
+        Assert.All(GisStandardRun.Scenarios, scenario => Assert.Contains(scenario.Name, RunOptions.Usage));
         Assert.Equal(Path.GetFullPath("/tmp/revit-test/before"), RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--baseline-export", "/tmp/revit-test/before" }).BaselineExport);
         Assert.Throws<ArgumentException>(() => RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "everything" }));
     }

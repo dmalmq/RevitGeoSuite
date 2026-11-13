@@ -62,48 +62,14 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
             }
 
             string language = await Shell.UseEnglishAsync();
-            if (options.Script != RunOptions.GisStandardScript)
-            {
-                try
-                {
-                    await (options.Script switch
-                    {
-                        RunOptions.FloorTypesScript => FloorTypeSteps(),
-                        RunOptions.ExportViewsScript => ExportViewSteps(),
-                        _ => ExportAuditSteps(),
-                    });
-                }
-                finally
-                {
-                    await Shell.RestoreLanguageAsync(language);
-                }
-
-                return;
-            }
-
             try
             {
-                await Step("2", "Set up model card shows what it would do", SetupPreview);
-                await Step("3", "Apply Set up model", ApplySetup);
-                await Step("4", "Undo Set up model, then Check again", UndoSetup);
-                await Step("5", "Apply Set up model twice: the second run has nothing to do", SetupTwice);
-                await Step("6", "Fix floor types with one row unticked", FixFloorTypes);
-                await Step("7", "Undo Fix floor types, then Check again", UndoFix);
-                await Step("8", "Select buttons select and show the elements", SelectButtons);
-                await Step("10", "Parameters: Write CSV", WriteCsv);
-                await Step("11", "Parameters: read an Excel-edited CSV", ReadEditedCsv);
-                await Step("12", "Parameters: write, Undo, read again", WriteParameters);
-                await Step("13", "GDB edits tab", DriftTab);
-                await Step("14", "Pick a drift file for another model", OtherModelDrift);
-                await Step("15", "Accept a real GDB edit, then Undo", RealDrift);
-                await Step("16", "GeoPackage export asks before exporting with audit errors", ExportGate);
+                await Scenarios.Single(scenario => scenario.Name == options.Script).Steps(this);
             }
             finally
             {
                 await Shell.RestoreLanguageAsync(language);
             }
-
-            await Step("9", "GIS standard with a family open", step => { FamilyOpen(step); return Task.CompletedTask; });
         }
         finally
         {
@@ -112,6 +78,38 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
                 await shell.DisposeAsync();
             }
         }
+    }
+
+    /// <summary>
+    /// Every script the runner knows, by its --scenario name. A new scenario is one entry here and a
+    /// partial file with its steps; step 1 (open the page) and the English page come with every one.
+    /// </summary>
+    internal static readonly IReadOnlyList<Scenario> Scenarios = new Scenario[]
+    {
+        new("gis-standard", "the GIS standard page script (run 2), steps 2-16.", run => run.GisStandardSteps()),
+        new("floor-types", "floor type standard 2, old names renamed by Fix floor types.", run => run.FloorTypeSteps()),
+        new("b1", "Set up model adds the GIS export views (template, plans, crops, level_id).", run => run.ExportViewSteps()),
+        new("b2a", "the export audit (ids, stairs, escalators, levels, views) and template repair.", run => run.ExportAuditSteps()),
+        new("c3a-reshape", "Review GDB edits reshapes a floor to the GDB outline (RevitGeoSuite #57).", run => run.ReshapeSteps()),
+    };
+
+    private async Task GisStandardSteps()
+    {
+        await Step("2", "Set up model card shows what it would do", SetupPreview);
+        await Step("3", "Apply Set up model", ApplySetup);
+        await Step("4", "Undo Set up model, then Check again", UndoSetup);
+        await Step("5", "Apply Set up model twice: the second run has nothing to do", SetupTwice);
+        await Step("6", "Fix floor types with one row unticked", FixFloorTypes);
+        await Step("7", "Undo Fix floor types, then Check again", UndoFix);
+        await Step("8", "Select buttons select and show the elements", SelectButtons);
+        await Step("10", "Parameters: Write CSV", WriteCsv);
+        await Step("11", "Parameters: read an Excel-edited CSV", ReadEditedCsv);
+        await Step("12", "Parameters: write, Undo, read again", WriteParameters);
+        await Step("13", "GDB edits tab", DriftTab);
+        await Step("14", "Pick a drift file for another model", OtherModelDrift);
+        await Step("15", "Accept a real GDB edit, then Undo", RealDrift);
+        await Step("16", "GeoPackage export asks before exporting with audit errors", ExportGate);
+        await Step("9", "GIS standard with a family open", step => { FamilyOpen(step); return Task.CompletedTask; });
     }
 
     public IReadOnlyList<string> TransactionsSeen => transactionsSeen;
@@ -889,3 +887,5 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     private static string Describe(Dictionary<long, string?> names) =>
         string.Join(", ", names.Select(pair => $"{pair.Key}: {pair.Value ?? "(none)"}"));
 }
+
+internal sealed record Scenario(string Name, string Summary, Func<GisStandardRun, Task> Steps);

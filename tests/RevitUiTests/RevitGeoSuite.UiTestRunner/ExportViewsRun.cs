@@ -268,6 +268,12 @@ internal sealed partial class GisStandardRun
         await Shell.Button($"Apply {before.SetupLines.Length} change(s)").ClickAsync();
         step.Check(await Shell.ShowsAsync(Shell.Text("Set up model applied"), 120000), "Green banner 'Set up model applied'.");
         ExpectEvent(step, seq, "commit", SetupTransaction);
+        return await ReadAppliedLog();
+    }
+
+    /// <summary>The change list of the green "applied" banner (one line per change), which sits folded in its details.</summary>
+    private async Task<string[]> ReadAppliedLog()
+    {
         ILocator changes = Shell.Page.Locator("details")
             .Filter(new() { Has = Shell.Page.Locator("summary", new() { HasTextRegex = new Regex(@"^\s*\d+ change\(s\)\s*$") }) })
             .Locator("li");

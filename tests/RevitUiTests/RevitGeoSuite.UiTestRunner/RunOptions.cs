@@ -4,15 +4,15 @@ namespace RevitGeoSuite.UiTestRunner;
 internal sealed record RunOptions
 {
     public const string GisStandardScript = "gis-standard";
-    public const string FloorTypesScript = "floor-types";
-    public const string ExportViewsScript = "b1";
-    public const string ExportAuditScript = "b2a";
 
     /// <summary>A GDB export folder from before Set up model, for B1's count comparison.</summary>
     public string BaselineExport { get; init; } = string.Empty;
 
-    /// <summary>Which test script to run: the GIS standard page (run 2) or the floor type standard 2 renames.</summary>
+    /// <summary>Which scenario to run, by its name in <see cref="GisStandardRun.Scenarios"/>.</summary>
     public string Script { get; init; } = GisStandardScript;
+
+    /// <summary>c3a-reshape: a drift file to use instead of the one the scenario makes from its own export.</summary>
+    public string Drift { get; init; } = string.Empty;
 
     public string Model { get; init; } = string.Empty;
     public string OutputFolder { get; init; } = string.Empty;
@@ -37,14 +37,13 @@ internal sealed record RunOptions
 
     public bool Runs(string step) => Steps == null || Steps.Contains(step);
 
-    public const string Usage = """
+    public static string Usage => """
         RevitGeoSuite.UiTestRunner --model <pristine detached copy .rvt> [options]
 
-          --script <name>        gis-standard (default): the GIS standard page script, steps 1-16.
-                                 floor-types: floor type standard 2, old names renamed by Fix floor types.
-                                 b1: Set up model adds the GIS export views (template, plans, crops, level_id).
-                                 b2a: the export audit (ids, stairs, escalators, levels, views) and template repair.
+          --scenario <name>      Which scenario to run (--script is the same). Default gis-standard.
+        {ScenarioList}
           --baseline-export <dir> b1: an export folder made before Set up model, to compare counts with.
+          --drift <file>         c3a-reshape: use this drift file instead of making one from the run's own export.
           --model <path>         Pristine detached copy of the test model, under the test folder (C:\dev\revit-test).
                                  The runner copies it for each run and never saves either file.
           --out <folder>         Where the report, screenshots, CSVs and the model copy go.
@@ -57,7 +56,7 @@ internal sealed record RunOptions
                                  more. Default: the two renames from run 2 (smoking room, Baby room).
           --revit-year <year>    Revit version whose journals are checked. Default 2024.
           --devtools-file <path> DevToolsActivePort file of RevitGeoSuite's WebView2, if not the default.
-        """;
+        """.Replace("{ScenarioList}", string.Join(Environment.NewLine, GisStandardRun.Scenarios.Select(scenario => $"                         {scenario.Name}: {scenario.Summary}")));
 
     public static RunOptions Parse(string[] args)
     {
@@ -69,7 +68,8 @@ internal sealed record RunOptions
             string Value() => index + 1 < args.Length ? args[++index] : throw new ArgumentException($"{name} needs a value.");
             options = name switch
             {
-                "--script" => options with { Script = ScriptName(Value()) },
+                "--script" or "--scenario" => options with { Script = ScenarioName(Value()) },
+                "--drift" => options with { Drift = Path.GetFullPath(Value()) },
                 "--baseline-export" => options with { BaselineExport = Path.GetFullPath(Value()) },
                 "--model" => options with { Model = Path.GetFullPath(Value()) },
                 "--out" => options with { OutputFolder = Path.GetFullPath(Value()) },
@@ -97,10 +97,10 @@ internal sealed record RunOptions
         return options;
     }
 
-    private static string ScriptName(string value) =>
-        value is GisStandardScript or FloorTypesScript or ExportViewsScript or ExportAuditScript
+    private static string ScenarioName(string value) =>
+        GisStandardRun.Scenarios.Any(scenario => scenario.Name == value)
             ? value
-            : throw new ArgumentException($"Unknown script '{value}'. Use {GisStandardScript}, {FloorTypesScript}, {ExportViewsScript} or {ExportAuditScript}.");
+            : throw new ArgumentException($"Unknown scenario '{value}'. Use one of: {string.Join(", ", GisStandardRun.Scenarios.Select(scenario => scenario.Name))}.");
 
     private static RunOptions AddRename(RunOptions options, List<(string, string)> renames, string value)
     {
@@ -118,7 +118,7 @@ internal sealed record RunOptions
     public void RequireInside(string root)
     {
         string prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        foreach ((string what, string path) in new[] { ("--model", Model), ("--out", OutputFolder) })
+        foreach ((string what, string path) in new[] { ("--model", Model), ("--out", OutputFolder), ("--drift", Drift) }.Where(pair => pair.Item2.Length > 0))
         {
             if (!Path.GetFullPath(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {

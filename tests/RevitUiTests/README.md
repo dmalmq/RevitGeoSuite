@@ -2,12 +2,13 @@
 
 These tests drive RevitGeoSuite inside a running Revit on the build PC, the way a person does: they click the ribbon and the page's buttons, answer the file dialogs, press Undo, and check what Revit and the page report. A run writes a report with pass or fail for each step, screenshots, and the Revit journal check. A person only looks at the screenshots.
 
-There are four scripts:
+There are five scenarios. `--scenario` picks one, and `--script` is the same option.
 
 - `gis-standard` (the default) is the GIS standard page test, run 2 of the M2/M3 Revit test. Steps 1 to 16 are automated. Step 15 uses a generated drift file until Kanizu writes a real one for the model.
 - `floor-types` checks floor type standard 2 (RevitGeoSuite #52). Set up model leaves old-named floor types alone. The audit names each old name. Fix floor types renames the old names, and a shop type takes one of the two shop types. The export carries the new categories and restrictions. It needs a build with #52 installed.
 - `b1` checks that Set up model adds the GIS export views (RevitGeoSuite #53): the `GIS Export` view template, a `GIS_` plan for each level with floors, the crops, and a `level_id` on every level. The default export then takes only the `GIS_` plans, and every stair and escalator unit has a `to_level`.
 - `b2a` checks the export audit and the template repair (RevitGeoSuite #54): the findings of the topics ids, stairs, escalators, levels and views, Set up model putting back what someone changed in `GIS Export`, a `GIS_` plan without the template, and the duplicate id error of a floor pasted in place. It expects a model on which Set up model has run once, and runs it first when it has not.
+- `c3a-reshape` checks that Review GDB edits reshapes a floor to the GDB outline (RevitGeoSuite #57). It makes its own drift file from its own export, so the build PC runs one command. With `--drift <file>`, it uses that file instead.
 
 ## How it works
 
@@ -55,7 +56,8 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--script <name>` | `gis-standard` (the default), `floor-types`, `b1` or `b2a`. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a` or `c3a-reshape`. `--script` is the same option. |
+| `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
 | `--steps 1,2,10` | Runs only these steps. The steps build on each other, so a subset is for debugging. |
@@ -133,12 +135,41 @@ Each step id starts with `B1.`, so `--steps 1,B1.2,B1.3` runs those steps. Step 
 
 Not checked: a template that someone else made and named `GIS Export` is taken as Set up's own template. Revit view names are unique, so there is only ever one, but the runner cannot tell them apart.
 
+## The c3a-reshape scenario
+
+```powershell
+.\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit --scenario c3a-reshape --model C:\dev\revit-test\auto\lumine-pristine.rvt
+```
+
+The scenario does the check list's Prepare part itself. It exports the GeoPackage with the default view choice to `<run>\export`. It reads the floor units of that export and picks the first retail floor, or else the first walkway floor, whose sketch has no arc and no extra sketch line. It then writes `<run>\reshape.gis-drift.json` with that floor's east edge 1.0 m further east. The runner has its own copy of `make_reshape_fixture.py` in `ReshapeFixture.cs`, so the build PC needs no Python. On the same export, both give the same drift file.
+
+| Step | Check |
+|---|---|
+| C3a.0 | If Set up model has something to do, it runs, so each level has a `GIS_` plan. |
+| C3a.P | The export, the drift file, and floor F: its UniqueId, element id, type and bounding box. |
+| C3a.1 | Picking the file shows "Shape edits (1)". The card names F's element id, and its dashed outline is wider than the grey one. `gisDrift.inspect` lists no problem about shapes. |
+| C3a.2 | "Show in Revit" makes a `GIS_` plan the active view, and no transaction commits. A Revit screenshot shows the outlines. |
+| C3a.3 | "Hide in Revit": no transaction, and a Revit screenshot without the outlines. |
+| C3a.4 | "Apply 1 shape edit(s)", confirming the dialog if one opens. The banner reads "1 floor(s) reshaped". A commit named `Reshape floor <id> (<label>) to the GDB outline` arrives, and no commit has another name. F keeps its UniqueId, element id and type, and its box changes. The box change is recorded in model feet. The project CRS east the fixture grew is not model X on a rotated model, so the 1 cm check is in C3a.7. |
+| C3a.5 | The shape edit card is gone after the apply, and after another Check again. |
+| C3a.6 | One Undo gives the `undo` event of that name, and F's box is back. |
+| C3a.7 | Redo, then an export to `<run>\export2`. F's exported outline is the GDB outline within 1 cm. This is the largest distance from a vertex of either outline to the other's edges. |
+| C3a.8 | A floor with a slope arrow or another extra sketch line, given a reshape, shows up in the problems with that reason, and no card appears. Not run when no exported floor has one. |
+| C3a.9 | This step finds a floor H with an opening or a hosted family within 1 m of its east edge. If no floor has one, a fixture cuts a 0.4 m opening 0.75 m west of the east edge of a retail floor. The step shrinks H's east edge 1.5 m and applies the shrink. Each "Revit deleted … <id> …" line names an element that is gone, and no element still there is listed. The report records what Revit did to each dependent (deleted, or kept) and each "Revit warned:" line. Undo brings every dependent back. |
+| C3a.10 | A floor with an arc in its sketch, given a reshape, shows up in the problems with the curved-edges reason. No card appears, and the floor does not change. Not run when no exported floor has an arc. |
+
+East is the project CRS east the export writes. The test host computes it from the active project location, the same way RevitGeoSuite's `SharedCoordinateProjector` does.
+
 ## What still needs a person
 
 - Looking at the screenshots. The text checks are automated, but layout and look are not.
 - The one-time setup above, the Revit sign-in, and the licence prompts.
 - Anything on the original or central model.
 - The pyRevit tab's dialogs (step F7).
+
+## Adding a scenario
+
+A scenario is one entry in `GisStandardRun.Scenarios` (name, one-line summary, steps method) and a partial file with its steps, like `ReshapeRun.cs`. `--scenario`, the usage text and the name check all read that list. Step 1 (open the page) and the English page come with every scenario. Give step ids a prefix, such as `C3b.1`, so `--steps` can pick them. To reuse a shared step, call it from the new steps method, as `c3a-reshape` does with Set up model (`EnsureSetUp`), `OpenExport` and `ExportNow`.
 
 ## Adding a test
 
