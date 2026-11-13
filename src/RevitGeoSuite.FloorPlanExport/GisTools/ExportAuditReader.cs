@@ -37,10 +37,11 @@ public static class ExportAuditReader
             ReadIds(document),
             levels.Select(level => new AuditIdValue(level.Id.Value, ModelSnapshotReader.ReadText(level, GisSharedParameters.LevelId))),
             ReadFloors(document),
-            ReadWaysIn(document, stairs, families));
+            ReadWaysIn(document, stairs, families),
+            levels.Select(level => new KeyValuePair<long, double>(level.Id.Value, level.ProjectElevation)));
     }
 
-    /// <summary>Every floor with the unit category the export resolves for it, its top outline and how far its top rises.</summary>
+    /// <summary>Every floor with the unit category the export resolves for it, its top outline and the height of its top's lowest and highest point.</summary>
     private static IEnumerable<LayoutFloor> ReadFloors(Document document)
     {
         string projectKey = DocumentProjectKeyBuilder.Create(document);
@@ -60,56 +61,12 @@ public static class ExportAuditReader
                     NullIfEmpty(ModelSnapshotReader.ReadText(type, GisSharedParameters.GisCategory)),
                     NullIfEmpty(ModelSnapshotReader.ReadText(type, GisSharedParameters.GisRestriction)),
                     setUp));
-            (List<Polygon2D> outline, double rise) = TopOutline(floor);
+            (List<Polygon2D> outline, double low, double high) = FloorTopFaces.Read(floor);
             if (outline.Count > 0)
             {
-                yield return new LayoutFloor(floor.Id.Value, floor.LevelId.Value, category.ZoneInfo.Category, outline, rise);
+                yield return new LayoutFloor(floor.Id.Value, floor.LevelId.Value, category.ZoneInfo.Category, outline, low, high);
             }
         }
-    }
-
-    /// <summary>The floor's top faces as polygons (the longest loop of each face is its outline) and the rise between their lowest and highest point.</summary>
-    private static (List<Polygon2D> Outline, double Rise) TopOutline(Floor floor)
-    {
-        List<Polygon2D> polygons = new();
-        double low = double.MaxValue;
-        double high = double.MinValue;
-        foreach (Reference reference in HostObjectUtils.GetTopFaces(floor))
-        {
-            if (floor.GetGeometryObjectFromReference(reference) is not Face face)
-            {
-                continue;
-            }
-
-            List<List<Point2D>> loops = new();
-            foreach (CurveLoop loop in face.GetEdgesAsCurveLoops())
-            {
-                List<Point2D> ring = new();
-                foreach (Curve curve in loop)
-                {
-                    IList<XYZ> points = curve.Tessellate();
-                    for (int index = 0; index < points.Count - 1; index++)
-                    {
-                        ring.Add(new Point2D(points[index].X, points[index].Y));
-                        low = Math.Min(low, points[index].Z);
-                        high = Math.Max(high, points[index].Z);
-                    }
-                }
-
-                if (ring.Count >= 3)
-                {
-                    loops.Add(ring);
-                }
-            }
-
-            if (loops.Count > 0)
-            {
-                List<List<Point2D>> ordered = loops.OrderByDescending(ring => Math.Abs(Area(ring))).ToList();
-                polygons.Add(new Polygon2D(ordered[0], ordered.Skip(1).Cast<IReadOnlyList<Point2D>>().ToList()));
-            }
-        }
-
-        return (polygons, polygons.Count == 0 ? 0 : high - low);
     }
 
     /// <summary>Doors, windows and accepted openings on their level, and each stair's and escalator's footprint on both of its levels.</summary>
@@ -155,19 +112,6 @@ public static class ExportAuditReader
             new(box.Max.X, box.Max.Y),
             new(box.Min.X, box.Max.Y),
         };
-    }
-
-    private static double Area(IReadOnlyList<Point2D> ring)
-    {
-        double sum = 0;
-        for (int index = 0; index < ring.Count; index++)
-        {
-            Point2D a = ring[index];
-            Point2D b = ring[(index + 1) % ring.Count];
-            sum += (a.X * b.Y) - (b.X * a.Y);
-        }
-
-        return sum / 2;
     }
 
     private static string? NullIfEmpty(string value) => value.Length == 0 ? null : value;

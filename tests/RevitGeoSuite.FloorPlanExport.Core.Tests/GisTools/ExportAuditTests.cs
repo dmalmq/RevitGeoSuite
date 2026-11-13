@@ -216,4 +216,46 @@ public sealed class ExportAuditTests
         Assert.Null(Top(33.0));
         Assert.Null(Top(50.0));
     }
+
+    // Levels B1FL, 1FL and 2FL at their Level.ProjectElevation: -5.05, 0 and 4.15 m.
+    private static IReadOnlyList<GisAuditFinding> Slope(double lowMetres, double highMetres)
+    {
+        const double Feet = 1 / 0.3048;
+        Polygon2D square = new(new[] { new Point2D(0, 0), new Point2D(10 * Feet, 0), new Point2D(10 * Feet, 10 * Feet), new Point2D(0, 10 * Feet) });
+        return ExportAudit.Run(new ExportAuditSnapshot(
+            Views(),
+            floors: new[] { new LayoutFloor(501, 2, "ramp", new[] { square }, lowMetres * Feet, highMetres * Feet) },
+            openings: new[] { new LayoutOpening(601, 2, new[] { new Point2D(Feet, 0), new Point2D(2 * Feet, 0), new Point2D(2 * Feet, 0.1 * Feet) }) },
+            levelElevations: new Dictionary<long, double> { [1] = -5.05 * Feet, [2] = 0, [3] = 4.15 * Feet }))
+            .Where(finding => finding.Topic == "floors")
+            .ToList();
+    }
+
+    [Theory]
+    [InlineData(0.0, 4.1)]
+    [InlineData(0.0, 0.2)]
+    public void ASlopeThatReachesALevelOrStaysOnItsOwnHasNoFinding(double low, double high)
+    {
+        Assert.Empty(Slope(low, high));
+    }
+
+    [Fact]
+    public void AHalfLevelSlopeIsReportedWithItsFarEndAndTheNearestLevel()
+    {
+        GisAuditFinding finding = Assert.Single(Slope(0.0, 2.95));
+
+        Assert.Equal(GisAuditSeverity.Info, finding.Severity);
+        Assert.Equal(new long[] { 501 }, finding.ElementIds);
+        Assert.Equal(
+            "Floor 501 (ramp) on level 1FL leads to +2.95 m against its level, which is on no level: the nearest level is 2FL, 1.20 m from it. Its unit gets no to_level, so the network does not link it to another level.",
+            finding.Message);
+    }
+
+    [Fact]
+    public void ASlopeWithNeitherEndOnItsLevelIsReportedWithBothEnds()
+    {
+        Assert.Equal(
+            "Floor 501 (ramp) on level 1FL runs from +0.40 m to +4.15 m against its level, so neither end is on it and the export does not guess where it leads. Its unit gets no to_level. Set its level and offset so its lower or upper end sits on its level.",
+            Assert.Single(Slope(0.4, 4.15)).Message);
+    }
 }

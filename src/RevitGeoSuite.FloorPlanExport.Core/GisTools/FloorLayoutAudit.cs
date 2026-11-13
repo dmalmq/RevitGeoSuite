@@ -11,13 +11,14 @@ namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 /// <summary>A floor as the export takes it: its level, its resolved unit category, its top outline in feet, and how far its top rises.</summary>
 public sealed class LayoutFloor
 {
-    public LayoutFloor(long elementId, long levelId, string category, IEnumerable<Polygon2D> outline, double riseFeet = 0)
+    public LayoutFloor(long elementId, long levelId, string category, IEnumerable<Polygon2D> outline, double lowFeet = 0, double highFeet = 0)
     {
         ElementId = elementId;
         LevelId = levelId;
         Category = GisToolStandard.Normalize(category).ToLowerInvariant();
         Outline = outline.ToList();
-        RiseFeet = riseFeet;
+        LowFeet = lowFeet;
+        HighFeet = highFeet;
     }
 
     public long ElementId { get; }
@@ -28,8 +29,14 @@ public sealed class LayoutFloor
 
     public IReadOnlyList<Polygon2D> Outline { get; }
 
+    /// <summary>The top face's lowest point, in feet, in the model coordinates of Level.ProjectElevation.</summary>
+    public double LowFeet { get; }
+
+    /// <summary>The top face's highest point, in feet, in the model coordinates of Level.ProjectElevation.</summary>
+    public double HighFeet { get; }
+
     /// <summary>The top face's highest point above its lowest, in feet; 0 for a level floor.</summary>
-    public double RiseFeet { get; }
+    public double RiseFeet => HighFeet - LowFeet;
 }
 
 /// <summary>A way onto a floor on one level (a door, window, accepted opening, or a stair or escalator end): the corners of its plan footprint, in feet.</summary>
@@ -79,8 +86,6 @@ public static class FloorLayoutAudit
     /// <summary>More findings of one kind on one level than this become one finding for the level.</summary>
     public const int GroupAbove = 10;
 
-    public const string SlopeCategory = "ramp";
-
     private const double MetresPerFoot = 0.3048;
 
     private static readonly HashSet<string> Walkable = new(StringComparer.Ordinal) { "walkway", "platform", "ramp" };
@@ -122,7 +127,7 @@ public static class FloorLayoutAudit
                 .Select(entry => new Measured(new[] { entry.Floor.ElementId }, 0, entry.Floor.Category))
                 .ToList();
             List<Measured> slopes = level
-                .Where(floor => floor.RiseFeet * MetresPerFoot > SlopeRiseMetres && floor.Category != SlopeCategory)
+                .Where(floor => floor.RiseFeet * MetresPerFoot > SlopeRiseMetres && floor.Category != VerticalCirculation.SlopeCategory)
                 .Select(floor => new Measured(new[] { floor.ElementId }, floor.RiseFeet * MetresPerFoot, floor.Category))
                 .ToList();
 

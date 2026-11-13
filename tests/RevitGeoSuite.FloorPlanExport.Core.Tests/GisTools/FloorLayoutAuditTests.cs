@@ -21,7 +21,7 @@ public sealed class FloorLayoutAuditTests
     });
 
     private static LayoutFloor Floor(long id, string category, Polygon2D outline, double riseMetres = 0, long level = 1) =>
-        new(id, level, category, new[] { outline }, riseMetres * Feet);
+        new(id, level, category, new[] { outline }, 0, riseMetres * Feet);
 
     private static LayoutOpening Door(long id, double x, double y, long level = 1) =>
         new(id, level, new[] { new Point2D(x * Feet, y * Feet), new Point2D((x + 0.9) * Feet, y * Feet), new Point2D((x + 0.9) * Feet, (y + 0.1) * Feet) });
