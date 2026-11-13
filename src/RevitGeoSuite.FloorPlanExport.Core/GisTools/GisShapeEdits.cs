@@ -334,16 +334,19 @@ public static class GisShapeEdits
     }
 
     /// <summary>Whether two outlines in model feet are within <see cref="SameOutlineMetres"/> of each other everywhere.</summary>
-    public static bool SameOutline(IReadOnlyList<Polygon2D> a, IReadOnlyList<Polygon2D> b)
+    public static bool SameOutline(IReadOnlyList<Polygon2D> a, IReadOnlyList<Polygon2D> b) => GapMetres(a, b) <= SameOutlineMetres;
+
+    /// <summary>How far apart two outlines in model feet are at their farthest, in metres; infinite when only one has area.</summary>
+    public static double GapMetres(IReadOnlyList<Polygon2D> a, IReadOnlyList<Polygon2D> b)
     {
         NtsGeometry? left = Shape(a);
         NtsGeometry? right = Shape(b);
         if (left == null || right == null)
         {
-            return left == null && right == null;
+            return left == null && right == null ? 0 : double.PositiveInfinity;
         }
 
-        return DiscreteHausdorffDistance.Distance(left, right, 0.25) <= SameOutlineMetres;
+        return DiscreteHausdorffDistance.Distance(left, right, 0.25);
     }
 
     private static List<Point2D> Clean(IEnumerable<Point2D> points)
