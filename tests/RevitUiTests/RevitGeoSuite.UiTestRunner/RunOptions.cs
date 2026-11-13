@@ -5,6 +5,11 @@ internal sealed record RunOptions
 {
     public const string GisStandardScript = "gis-standard";
     public const string FloorTypesScript = "floor-types";
+    public const string ExportViewsScript = "b1";
+    public const string ExportAuditScript = "b2a";
+
+    /// <summary>A GDB export folder from before Set up model, for B1's count comparison.</summary>
+    public string BaselineExport { get; init; } = string.Empty;
 
     /// <summary>Which test script to run: the GIS standard page (run 2) or the floor type standard 2 renames.</summary>
     public string Script { get; init; } = GisStandardScript;
@@ -37,6 +42,9 @@ internal sealed record RunOptions
 
           --script <name>        gis-standard (default): the GIS standard page script, steps 1-16.
                                  floor-types: floor type standard 2, old names renamed by Fix floor types.
+                                 b1: Set up model adds the GIS export views (template, plans, crops, level_id).
+                                 b2a: the export audit (ids, stairs, escalators, levels, views) and template repair.
+          --baseline-export <dir> b1: an export folder made before Set up model, to compare counts with.
           --model <path>         Pristine detached copy of the test model, under the test folder (C:\dev\revit-test).
                                  The runner copies it for each run and never saves either file.
           --out <folder>         Where the report, screenshots, CSVs and the model copy go.
@@ -62,6 +70,7 @@ internal sealed record RunOptions
             options = name switch
             {
                 "--script" => options with { Script = ScriptName(Value()) },
+                "--baseline-export" => options with { BaselineExport = Path.GetFullPath(Value()) },
                 "--model" => options with { Model = Path.GetFullPath(Value()) },
                 "--out" => options with { OutputFolder = Path.GetFullPath(Value()) },
                 "--steps" => options with { Steps = Value().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet() },
@@ -89,7 +98,9 @@ internal sealed record RunOptions
     }
 
     private static string ScriptName(string value) =>
-        value is GisStandardScript or FloorTypesScript ? value : throw new ArgumentException($"Unknown script '{value}'. Use {GisStandardScript} or {FloorTypesScript}.");
+        value is GisStandardScript or FloorTypesScript or ExportViewsScript or ExportAuditScript
+            ? value
+            : throw new ArgumentException($"Unknown script '{value}'. Use {GisStandardScript}, {FloorTypesScript}, {ExportViewsScript} or {ExportAuditScript}.");
 
     private static RunOptions AddRename(RunOptions options, List<(string, string)> renames, string value)
     {

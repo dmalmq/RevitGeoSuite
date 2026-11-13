@@ -71,6 +71,72 @@ internal static class GeoPackageUnits
     private static void Add(Dictionary<string, int> counts, string key) => counts[key] = counts.TryGetValue(key, out int count) ? count + 1 : 1;
 }
 
+internal static class GeoPackageTables
+{
+    /// <summary>Rows per feature table, keyed "file.gpkg:table", across every GeoPackage under the folder.</summary>
+    public static Dictionary<string, int> RowCounts(string folder)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (string file in Directory.GetFiles(folder, "*.gpkg", SearchOption.AllDirectories))
+        {
+            using var connection = Open(file);
+            foreach (string table in Query(connection, "SELECT table_name FROM gpkg_contents WHERE data_type = 'features'"))
+            {
+                counts[$"{Path.GetFileName(file)}:{table}"] = int.Parse(Query(connection, $"SELECT COUNT(*) FROM {Quote(table)}").Single());
+            }
+        }
+
+        return counts;
+    }
+
+    /// <summary>Stair and escalator units with and without a to_level, in every unit table that has the column.</summary>
+    public static (int With, int Without) VerticalUnitsToLevel(string folder)
+    {
+        int with = 0, without = 0;
+        foreach (string file in Directory.GetFiles(folder, "*.gpkg", SearchOption.AllDirectories))
+        {
+            using var connection = Open(file);
+            foreach (string table in Query(connection, "SELECT table_name FROM gpkg_contents WHERE data_type = 'features'"))
+            {
+                List<string> columns = Query(connection, $"SELECT name FROM pragma_table_info('{table.Replace("'", "''")}')");
+                if (!columns.Contains("category") || !columns.Contains("to_level"))
+                {
+                    continue;
+                }
+
+                string vertical = $"SELECT COUNT(*) FROM {Quote(table)} WHERE (category LIKE 'stair%' OR category LIKE 'escalator%')";
+                with += int.Parse(Query(connection, vertical + " AND COALESCE(to_level, '') <> ''").Single());
+                without += int.Parse(Query(connection, vertical + " AND COALESCE(to_level, '') = ''").Single());
+            }
+        }
+
+        return (with, without);
+    }
+
+    private static SqliteConnection Open(string file)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = file, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+        connection.Open();
+        return connection;
+    }
+
+    private static string Quote(string table) => "\"" + table.Replace("\"", "\"\"") + "\"";
+
+    private static List<string> Query(SqliteConnection connection, string sql)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        using SqliteDataReader reader = command.ExecuteReader();
+        var values = new List<string>();
+        while (reader.Read())
+        {
+            values.Add(Convert.ToString(reader.GetValue(0), System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
+        }
+
+        return values;
+    }
+}
+
 internal sealed record UnitCounts(IReadOnlyDictionary<string, int> Categories, IReadOnlyDictionary<string, int> Restrictions, IReadOnlyList<string> Tables)
 {
     public int Category(string name) => Categories.TryGetValue(name, out int count) ? count : 0;

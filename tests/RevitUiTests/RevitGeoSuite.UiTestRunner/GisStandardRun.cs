@@ -17,6 +17,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     private const string FixTransaction = "Kanizu GIS: Fix floor types";
     private const string ParametersTransaction = "Kanizu GIS: Parameters";
     private const string DriftTransaction = "Kanizu GIS: Review GDB edits";
+    private const string FixtureTransaction = "UI test: fixture";
     private const string JapaneseName = "北改札内コンコース";
     private const string TestShortName = "UT";
 
@@ -61,11 +62,16 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
             }
 
             string language = await Shell.UseEnglishAsync();
-            if (options.Script == RunOptions.FloorTypesScript)
+            if (options.Script != RunOptions.GisStandardScript)
             {
                 try
                 {
-                    await FloorTypeSteps();
+                    await (options.Script switch
+                    {
+                        RunOptions.FloorTypesScript => FloorTypeSteps(),
+                        RunOptions.ExportViewsScript => ExportViewSteps(),
+                        _ => ExportAuditSteps(),
+                    });
                 }
                 finally
                 {
@@ -674,10 +680,14 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     /// Opens GeoPackage Export, ticks one view (or all of them when <paramref name="viewName"/> is
     /// empty), picks a fresh output folder in the run folder and opens the preview. Returns the folder.
     /// </summary>
-    private async Task<string> OpenExport(StepResult step, string viewName, string folderName)
+    private async Task<string> OpenExport(StepResult step, string viewName, string folderName, bool keepDefaultViews = false)
     {
         await Shell.GoToAsync("/export/geopackage");
-        if (viewName.Length > 0)
+        if (keepDefaultViews)
+        {
+            await Shell.Page.GetByPlaceholder("Filter views...").WaitForAsync();
+        }
+        else if (viewName.Length > 0)
         {
             await Shell.Page.GetByPlaceholder("Filter views...").FillAsync(viewName);
             await Shell.Button("Clear all").ClickAsync();
@@ -693,7 +703,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         await Shell.Button("Browse...").ClickAsync();
         host.Call("fileDialog", new { path = output, timeoutMs = 30000 });
         await Shell.Button("Preview").ClickAsync();
-        step.Note($"Export of {(viewName.Length > 0 ? $"view '{viewName}'" : "all plan views")} to {output}.");
+        step.Note($"Export of {(keepDefaultViews ? "the default view choice" : viewName.Length > 0 ? $"view '{viewName}'" : "all plan views")} to {output}.");
         return output;
     }
 

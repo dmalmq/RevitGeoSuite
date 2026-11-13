@@ -2,10 +2,12 @@
 
 These tests drive RevitGeoSuite inside a running Revit on the build PC, the way a person does: they click the ribbon and the page's buttons, answer the file dialogs, press Undo, and check what Revit and the page report. A run writes a report with pass or fail for each step, screenshots, and the Revit journal check. A person only looks at the screenshots.
 
-There are two scripts:
+There are four scripts:
 
 - `gis-standard` (the default) is the GIS standard page test, run 2 of the M2/M3 Revit test. Steps 1 to 16 are automated. Step 15 uses a generated drift file until Kanizu writes a real one for the model.
 - `floor-types` checks floor type standard 2 (RevitGeoSuite #52). Set up model leaves old-named floor types alone. The audit names each old name. Fix floor types renames the old names, and a shop type takes one of the two shop types. The export carries the new categories and restrictions. It needs a build with #52 installed.
+- `b1` checks that Set up model adds the GIS export views (RevitGeoSuite #53): the `GIS Export` view template, a `GIS_` plan for each level with floors, the crops, and a `level_id` on every level. The default export then takes only the `GIS_` plans, and every stair and escalator unit has a `to_level`.
+- `b2a` checks the export audit and the template repair (RevitGeoSuite #54): the findings of the topics ids, stairs, escalators, levels and views, Set up model putting back what someone changed in `GIS Export`, a `GIS_` plan without the template, and the duplicate id error of a floor pasted in place. It expects a model on which Set up model has run once, and runs it first when it has not.
 
 ## How it works
 
@@ -53,11 +55,12 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--script <name>` | `gis-standard` (the default) or `floor-types`. |
+| `--script <name>` | `gis-standard` (the default), `floor-types`, `b1` or `b2a`. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
 | `--steps 1,2,10` | Runs only these steps. The steps build on each other, so a subset is for debugging. |
-| `--export-view <name>` | The plan view for step 16. Without it, step 16 does not run. In `floor-types`, it limits step F6 to this view. Without it, F6 exports all plan views. |
+| `--export-view <name>` | The plan view for step 16. Without it, step 16 does not run. In `floor-types`, it limits step F6 to this view. Without it, F6 exports all plan views. In `b2a`, it is the view step B2.8 exports. Without it, B2.8 keeps the default view choice. |
+| `--baseline-export <folder>` | `b1` only: an export of the same views made before Set up model, with the run 2 build. Step B1.9 compares the row count of every feature table with it. Without it, B1.9 does not run. |
 | `--excel` | Step 10 also saves the CSV again through the real Excel, then reads it back. Needs Excel. |
 | `--real-drift` | Step 15 uses the model's own Kanizu drift file instead of a generated one. |
 | `--rename-type "a=>b"` | Before step 6, renames floor type a to b, so the name rules match it. This happens only when fewer than two proposals start ticked, as on floor type standard 1. Repeat the option for more renames. The defaults are the two renames from run 2. |
@@ -96,6 +99,39 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 | F5 | After Check again, no old-name warning is left and nothing more is proposed for those types. Set up model now offers to create j ラチ内店舗_床. |
 | F6 | The export's unit tables have shop units with restriction rachi_gai and roof units with category unenclosedarea. |
 | F7 | Not run: the pyRevit Fix floor types dialog is still a manual check. |
+
+## The b1 script
+
+Each step id starts with `B1.`, so `--steps 1,B1.2,B1.3` runs those steps. Step 1 opens the page and is always needed.
+
+| Step | Check |
+|---|---|
+| B1.1 | Records the `GIS_` plans with their levels, crops and templates, whether `GIS Export` exists, the levels that hold floors, and the levels without a `level_id`. |
+| B1.2 | The Set up lines hold `Create view template GIS Export` (unless the model has it), a `Create plan GIS_… for level <level>` line for each level with floors and no `GIS_` plan, a `Crop plan … to the floors` line for each `GIS_` plan with its crop off, and `Give N level(s) a level_id: …`. `The crop holds every floor plus 5 m: about W m by H m` is under 1 km each way. |
+| B1.3 | Apply gives the banner and the `Kanizu GIS: Set up model` commit. The change list has `Created view template GIS Export`, a `Created plan` line for each new plan, a `Cropped plan` line for each crop, and `Gave N level(s) a level_id`. |
+| B1.4 | After Check again, no view, crop or `level_id` line is left. |
+| B1.5 | `GIS Export` is Coarse, Coordination, cut plane 1200 mm, bottom and view depth 0 at the level. Each new `GIS_` plan uses it, with its crop on. Every level has a `level_id`, and every level with floors has a `GIS_` plan. |
+| B1.6 | Opens two `GIS_` plans in Revit and takes a screenshot of each. A person checks them. |
+| B1.7 | One Undo gives the `undo` event, and the B1.1 Set up lines are back. Redo gives the `redo` event, and nothing about views is left. |
+| B1.8 | The export page preselects only `GIS_` plans, and all of them. The export finishes, and every stair and escalator unit has a `to_level`. The report lists the counts with and without one, and the rows per table. |
+| B1.9 | With `--baseline-export`, every feature table has the same row count as the baseline, or the report lists the differences. |
+
+## The b2a script
+
+| Step | Check |
+|---|---|
+| B2.0 | If Set up model has something to do, it runs, so the model is as B1 leaves it. |
+| B2.1 | Records each finding of the topics ids, stairs, escalators, levels and views: severity, message and the number of elements. There is no views finding. |
+| B2.2 | For the first finding of each topic that has elements, its Select button selects exactly those elements in Revit. A Revit screenshot of the first one. |
+| B2.3 | A fixture hides Floors, shows the line style `<Thin Lines>` (`<細線>`) and shows Walls in `GIS Export`. The Set up lines hold `Update view template GIS Export: …`, which shows Floors, hides Thin Lines and says nothing about Walls. A views warning names the same changes. |
+| B2.4 | Apply gives the commit, and the change list has `Updated view template GIS Export: …` with the same changes. In the template, Floors are shown, Thin Lines hidden, and Walls still shown. |
+| B2.5 | After Check again, there is no `Update view template` line, no views finding, and nothing to set up. |
+| B2.6 | One Undo puts the template back as B2.3 left it (Floors hidden). Redo shows Floors again. |
+| B2.7 | A fixture sets one `GIS_` plan's view template to None. A views finding names the plan, and no Set up line mentions it. Undo gives the template back. |
+| B2.8 | A fixture copies a floor onto itself, as Paste Aligned to Same Place does. If the floor has no `id`, the same fixture gives it one first, because a copy only shares an id its original has. The audit has one ids error `2 elements share id …` with both element ids. The export asks about the audit errors, and the dialog is closed. Undo removes the copy, and the error is gone. |
+| B2.9 | Records each stairs and escalators finding. A person judges whether each message is right. |
+
+Not checked: a template that someone else made and named `GIS Export` is taken as Set up's own template. Revit view names are unique, so there is only ever one, but the runner cannot tell them apart.
 
 ## What still needs a person
 

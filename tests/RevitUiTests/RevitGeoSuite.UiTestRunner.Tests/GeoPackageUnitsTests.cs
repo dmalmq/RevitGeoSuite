@@ -21,6 +21,24 @@ public class GeoPackageUnitsTests
         Assert.Equal(2, counts.Tables.Count);
     }
 
+    [Fact]
+    public void Counts_rows_per_table_and_vertical_units_with_and_without_to_level()
+    {
+        string folder = Directory.CreateTempSubdirectory("uitest-gpkg").FullName;
+        string file = Path.Combine(folder, "1F.gpkg");
+        Write(file, ("unit", new[] { ("stairs", (string?)null), ("escalator", null), ("shop", null) }), ("detail", null));
+        using (var connection = new SqliteConnection($"Data Source={file};Pooling=False"))
+        {
+            connection.Open();
+            Execute(connection, "ALTER TABLE unit ADD COLUMN to_level TEXT");
+            Execute(connection, "UPDATE unit SET to_level = 'L2' WHERE category = 'stairs'");
+            Execute(connection, "UPDATE unit SET to_level = '' WHERE category = 'escalator'");
+        }
+
+        Assert.Equal(new Dictionary<string, int> { ["1F.gpkg:unit"] = 3, ["1F.gpkg:detail"] = 0 }, GeoPackageTables.RowCounts(folder));
+        Assert.Equal((1, 1), GeoPackageTables.VerticalUnitsToLevel(folder));
+    }
+
     // A minimal GeoPackage: gpkg_contents plus feature tables. A table given null rows has no
     // category/restriction columns and must be skipped.
     private static void Write(string path, params (string Table, (string, string?)[]? Rows)[] tables)

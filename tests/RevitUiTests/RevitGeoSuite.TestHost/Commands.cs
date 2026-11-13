@@ -47,6 +47,10 @@ internal sealed class Commands
                 "params" => Params(request),
                 "uniqueIds" => UniqueIds(request),
                 "floorTypes" => api.Run(FloorTypes, Quick),
+                "views" => api.Run(app => ViewCommands.Views(app, request), Quick),
+                "levels" => api.Run(ViewCommands.Levels, Quick),
+                "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
+                "redo" => Post("ID_EDIT_REDO"),
                 "fixture" => Fixture(request),
                 "newFamily" => NewFamily(request),
                 "fileDialog" => Win32Dialogs.FillFileDialog(TestRoot.Require(root, Text(request, "path")), Milliseconds(request)),
@@ -243,6 +247,9 @@ internal sealed class Commands
         Dictionary<long, int> floors = new FilteredElementCollector(document).OfClass(typeof(Floor)).WhereElementIsNotElementType()
             .GroupBy(floor => floor.GetTypeId().Value)
             .ToDictionary(group => group.Key, group => group.Count());
+        Dictionary<long, long> firstFloor = new FilteredElementCollector(document).OfClass(typeof(Floor)).WhereElementIsNotElementType()
+            .GroupBy(floor => floor.GetTypeId().Value)
+            .ToDictionary(group => group.Key, group => group.Min(floor => floor.Id.Value));
         return new Dictionary<string, object?>
         {
             ["floorTypes"] = new FilteredElementCollector(document).OfClass(typeof(FloorType)).Cast<FloorType>()
@@ -251,6 +258,7 @@ internal sealed class Commands
                     ["id"] = type.Id.Value,
                     ["name"] = type.Name,
                     ["floors"] = floors.TryGetValue(type.Id.Value, out int count) ? count : 0,
+                    ["firstFloor"] = firstFloor.TryGetValue(type.Id.Value, out long first) ? first : null,
                 })
                 .ToList(),
         };
@@ -271,8 +279,10 @@ internal sealed class Commands
 
     /// <summary>
     /// Puts the test copy into the state a step needs, in one transaction named
-    /// <see cref="FixtureTransaction"/>: renames element types (renames: [{from, to}]) and sets text
-    /// parameters (values: [{id, name, value}]). Only ever runs on the per-run copy.
+    /// <see cref="FixtureTransaction"/>: renames element types (renames: [{from, to}]), sets text
+    /// parameters (values: [{id, name, value}]), edits views and view templates (views: see
+    /// <see cref="ViewCommands.Edit"/>) and copies elements in place (copyInPlace: [ids]).
+    /// Only ever runs on a document inside the test folder.
     /// </summary>
     public const string FixtureTransaction = "UI test: fixture";
 
@@ -280,6 +290,8 @@ internal sealed class Commands
     {
         List<Dictionary<string, object?>> renames = Objects(request, "renames");
         List<Dictionary<string, object?>> values = Objects(request, "values");
+        List<Dictionary<string, object?>> viewEdits = Objects(request, "views");
+        long[] copies = Longs(request, "copyInPlace");
         return api.Run(app =>
         {
             Document document = app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");
@@ -314,6 +326,13 @@ internal sealed class Commands
                 parameter.Set(value.TryGetValue("value", out object? text) ? Convert.ToString(text, CultureInfo.InvariantCulture) ?? string.Empty : string.Empty);
                 log.Add($"set {id} {name}");
             }
+
+            foreach (Dictionary<string, object?> edit in viewEdits)
+            {
+                log.AddRange(ViewCommands.Edit(document, edit));
+            }
+
+            log.AddRange(ViewCommands.CopyInPlace(document, copies));
 
             if (transaction.Commit() != TransactionStatus.Committed)
             {
