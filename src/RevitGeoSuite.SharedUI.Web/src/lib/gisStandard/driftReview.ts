@@ -36,8 +36,11 @@ export function shapesInitiallyUnticked(drift: Drift & Pick<GisDriftInspectRespo
  * The floor type each hand-drawn unit starts with: the standard type its GDB category and
  * restriction name, when Kanizu wrote them. A unit without one has no entry, so the page asks.
  */
-export function initialShapeTypes(shapes: Pick<GisShapeEditItem, 'uniqueId' | 'kind' | 'typeName'>[]): Record<string, string> {
-  return Object.fromEntries(shapes.filter((shape) => shape.kind === 'create' && shape.typeName).map((shape) => [shape.uniqueId, shape.typeName]))
+export function initialShapeTypes(shapes: Pick<GisShapeEditItem, 'uniqueId' | 'kind' | 'typeName'>[], floorTypes: string[]): Record<string, string> {
+  // A type the model does not have yet would show as no choice while Apply is enabled: ask instead.
+  return Object.fromEntries(
+    shapes.filter((shape) => shape.kind === 'create' && shape.typeName && floorTypes.includes(shape.typeName)).map((shape) => [shape.uniqueId, shape.typeName])
+  )
 }
 
 type Rings = number[][][]

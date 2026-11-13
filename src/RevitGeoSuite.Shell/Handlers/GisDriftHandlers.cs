@@ -142,7 +142,7 @@ public sealed class GisShapeShowHandler : IRpcHandler
                 return (object?)new GisShapeShowResponse();
             }
 
-            double z = (floor != null ? FloorTopZ(floor) : (doc.GetElement(levelId) as Level)?.Elevation ?? 0) + 0.15;
+            double z = (floor != null ? FloorTopZ(floor) : (doc.GetElement(levelId) as Level)?.ProjectElevation ?? 0) + 0.15;
             List<OverlayLine> lines = edit.Absorbed.Select(floor => floor.Outline).Prepend(edit.Floor.Outline).SelectMany(outline => Lines(outline, z, new Color(128, 128, 128)))
                 .Concat(edit.NewFloors.Select(piece => piece.Outline).Prepend(edit.Outline).SelectMany(outline => Lines(outline, z, new Color(234, 88, 12))))
                 .ToList();
