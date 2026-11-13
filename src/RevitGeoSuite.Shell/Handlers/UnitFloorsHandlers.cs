@@ -290,7 +290,7 @@ internal static class UnitFloorsWork
                 List<CurveLoop> loops = new();
                 foreach (NtsPolygon polygon in unit.Polygons)
                 {
-                    loops.AddRange(ToCurveLoops(polygon, prepared.Reference, level.Elevation));
+                    loops.AddRange(ToCurveLoops(polygon, prepared.Reference, level.ProjectElevation));
                 }
 
                 Floor? floor = TryCreate(doc, loops, typeId, level.Id);

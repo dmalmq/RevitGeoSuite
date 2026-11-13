@@ -30,9 +30,9 @@ public sealed class SetupPlannerTests
 
         Assert.Equal(12, plan.Parameters.Count(step => step.Action == ParameterSetupAction.Bind));
         Assert.Equal(Standard.Materials.Count, plan.Materials.Count);
-        Assert.Equal(12, plan.FloorTypes.Count(step => step.Action == SetupAction.Create));
+        Assert.Equal(21, plan.FloorTypes.Count(step => step.Action == SetupAction.Create));
         Assert.True(plan.SetsVersion);
-        Assert.Contains("Set gis_standard_version (none) to 1", SetupPlanner.Describe(plan));
+        Assert.Contains("Set gis_standard_version (none) to 2", SetupPlanner.Describe(plan));
     }
 
     [Fact]

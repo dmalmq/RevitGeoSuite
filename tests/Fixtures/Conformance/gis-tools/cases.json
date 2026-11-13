@@ -29,6 +29,23 @@
       "expected": [ ["warning", "parameters", []], ["warning", "parameters", []], ["info", "parameters", []] ]
     },
     {
+      "name": "an old floor type name is a warning that names the rename",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j 喫煙所_床"],
+        "floor_types_extra": [{ "id": 1, "name": "smoking room", "gis_category": "smokingarea", "floor_ids": [11] }]
+      },
+      "expected": [ ["warning", "floor types", [11]] ]
+    },
+    {
+      "name": "an old floor type name with a category and no free current name is clean",
+      "model": {
+        "base": "standard",
+        "floor_types_extra": [{ "id": 1, "name": "Roof", "gis_category": "unenclosedarea", "floor_ids": [11] }]
+      },
+      "expected": []
+    },
+    {
       "name": "floor types, floors, levels and families together",
       "model": {
         "base": "standard",
@@ -71,32 +88,196 @@
         ["warning", "families", [27]],
         ["warning", "families", [28]]
       ]
+    },
+    {
+      "name": "no level has an ordinal",
+      "model": {
+        "base": "standard",
+        "levels": [
+          { "id": 1, "name": "1FL", "ordinal": null, "short_name": "1F" },
+          { "id": 2, "name": "B1FL", "ordinal": null, "short_name": "B1" },
+          { "id": 3, "name": "Roof", "ordinal": null, "short_name": "", "has_floors": false }
+        ]
+      },
+      "expected": [
+        ["warning", "levels", [1]],
+        ["warning", "levels", [2]],
+        ["warning", "levels", [1, 2]]
+      ]
+    },
+    {
+      "name": "a level without floors has the only ordinal, so the export counts from it",
+      "model": {
+        "base": "standard",
+        "levels": [
+          { "id": 1, "name": "1FL", "ordinal": null, "short_name": "1F" },
+          { "id": 3, "name": "Roof", "ordinal": 2, "short_name": "", "has_floors": false }
+        ]
+      },
+      "expected": [
+        ["warning", "levels", [1]]
+      ]
     }
   ],
   "floor_type_match": [
-    { "name": "j 改札内コンコース_床", "expected": ["j ラチ内コンコース_床", "rachi_nai", "words in the name"] },
-    { "name": "j 改札外通路コンコース_床", "expected": ["j ラチ外コンコース_床", "rachi_gai", "words in the name"] },
-    { "name": "j 新幹線ホーム(JR東)_床", "expected": ["j 新幹線ホーム_床", "rachi_nai", "words in the name"] },
-    { "name": "j 在来線ホーム_床", "expected": ["j ホーム_床", "rachi_nai", "words in the name"] },
-    { "name": "j ラチ内コンコース(JR東海新幹線)_床", "expected": ["j 新幹線コンコース_床", "rachi_nai", "words in the name"] },
-    { "name": "j 新幹線待合室_床", "expected": ["j 待合室_床", "", "words in the name"] },
-    { "name": "j 緑の窓口_床", "expected": ["j みどりの窓口_床", "", "words in the name"] },
-    { "name": "j 駅務室_床", "expected": ["j 駅事務室_床", "", "words in the name"] },
-    { "name": "j 男子トイレ2_床", "expected": ["j 男子トイレ_床", "", "words in the name"] },
-    { "name": "j 多目的トイレ（東）_床", "expected": ["j 多目的トイレ_床", "", "words in the name"] },
-    { "name": "j ラチ内店舗_床", "expected": ["j 店舗_床", "rachi_nai", "words in the name"] },
-    { "name": "j 改札外店舗_床", "expected": ["j 店舗_床", "rachi_gai", "words in the name"] },
-    { "name": "j 店舗_床 古い", "expected": ["j 店舗_床", "", "words in the name"] },
-    { "name": " 店舗 ", "expected": ["j 店舗_床", "", "name"] },
-    { "name": "ラチ外コンコース_床", "expected": ["j ラチ外コンコース_床", "rachi_gai", "name"] },
-    { "name": "Generic 150mm", "expected": null },
-    { "name": "j 謎の部屋_床", "expected": null }
+    { "name": "j 改札内コンコース_床", "expected": [["j ラチ内コンコース_床", "rachi_nai", "words in the name"]] },
+    { "name": "j 改札外通路コンコース_床", "expected": [["j ラチ外コンコース_床", "rachi_gai", "words in the name"]] },
+    { "name": "j 新幹線ホーム(JR東)_床", "expected": [["j 新幹線ホーム_床", "rachi_nai", "words in the name"]] },
+    { "name": "j 在来線ホーム_床", "expected": [["j ホーム_床", "rachi_nai", "words in the name"]] },
+    { "name": "j ラチ内コンコース(JR東海新幹線)_床", "expected": [["j 新幹線コンコース_床", "rachi_nai", "words in the name"]] },
+    { "name": "j 新幹線待合室_床", "expected": [["j 待合室_床", "", "words in the name"]] },
+    { "name": "j 緑の窓口_床", "expected": [["j みどりの窓口_床", "", "words in the name"]] },
+    { "name": "j 駅務室_床", "expected": [["j 駅事務室_床", "", "words in the name"]] },
+    { "name": "j 男子トイレ2_床", "expected": [["j 男子トイレ_床", "", "words in the name"]] },
+    { "name": "j 多目的トイレ（東）_床", "expected": [["j 多目的トイレ_床", "", "words in the name"]] },
+    { "name": "j ラチ内店舗_床", "expected": [["j ラチ内店舗_床", "rachi_nai", "name"]] },
+    { "name": "j 改札外店舗_床", "expected": [["j ラチ外店舗_床", "rachi_gai", "words in the name"]] },
+    { "name": "j 店舗_床 古い", "expected": [["j ラチ外店舗_床", "rachi_gai", "words in the name"], ["j ラチ内店舗_床", "rachi_nai", "words in the name"]] },
+    { "name": "j 店舗_床", "expected": [["j ラチ外店舗_床", "rachi_gai", "old name"], ["j ラチ内店舗_床", "rachi_nai", "old name"]] },
+    { "name": " 店舗 ", "expected": [["j ラチ外店舗_床", "rachi_gai", "old name"], ["j ラチ内店舗_床", "rachi_nai", "old name"]] },
+    { "name": "smoking room", "expected": [["j 喫煙所_床", "", "old name"]] },
+    { "name": "Baby room", "expected": [["j ベビー休憩室_床", "", "old name"]] },
+    { "name": "Roof", "expected": [["j 屋外_床", "", "old name"]] },
+    { "name": "other", "expected": [["j その他_床", "", "old name"]] },
+    { "name": "j その他_床", "expected": [["j その他_床", "", "name"]] },
+    { "name": "j その他の部屋_床", "expected": [["j その他_床", "", "words in the name"]] },
+    { "name": "j ラチ外スロープ_床", "expected": [["j ラチ外スロープ_床", "rachi_gai", "name"]] },
+    { "name": "j 改札内スロープ(東)_床", "expected": [["j ラチ内スロープ_床", "rachi_nai", "words in the name"]] },
+    { "name": "j スロープ_床", "expected": [["j ラチ外スロープ_床", "rachi_gai", "words in the name"], ["j ラチ内スロープ_床", "rachi_nai", "words in the name"]] },
+    { "name": "j 案内カウンター_床", "expected": [["j 案内所_床", "", "words in the name"]] },
+    { "name": "j 喫煙室_床", "expected": [["j 喫煙所_床", "", "words in the name"]] },
+    { "name": "j 授乳室_床", "expected": [["j ベビー休憩室_床", "", "words in the name"]] },
+    { "name": "j 屋上広場_床", "expected": [["j 屋外_床", "", "words in the name"]] },
+    { "name": "j 道路横_床", "expected": [["j 道路_床", "", "words in the name"]] },
+    { "name": "ラチ外コンコース_床", "expected": [["j ラチ外コンコース_床", "rachi_gai", "name"]] },
+    { "name": "Generic 150mm", "expected": [] },
+    { "name": "j 謎の部屋_床", "expected": [] }
+  ],
+  "fix_floor_types": [
+    {
+      "name": "a model on the standard has nothing to fix",
+      "model": { "base": "standard" },
+      "expected_proposals": [],
+      "expected_needs_fix": []
+    },
+    {
+      "name": "an old shop name with both shop names free offers each and renames to it",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j ラチ外店舗_床", "j ラチ内店舗_床"],
+        "floor_types_extra": [{ "id": 1, "name": "j 店舗_床", "gis_category": "retail", "floor_ids": [11, 12] }]
+      },
+      "expected_proposals": [[1, "j ラチ外店舗_床", "j ラチ外店舗_床"], [1, "j ラチ内店舗_床", "j ラチ内店舗_床"]],
+      "expected_needs_fix": [1]
+    },
+    {
+      "name": "the old shop type's own restriction picks the side",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j ラチ外店舗_床", "j ラチ内店舗_床"],
+        "floor_types_extra": [{ "id": 1, "name": "j 店舗_床", "gis_category": "retail", "gis_restriction": "rachi_nai", "floor_ids": [11] }]
+      },
+      "expected_proposals": [[1, "j ラチ内店舗_床", "j ラチ内店舗_床"]],
+      "expected_needs_fix": [1]
+    },
+    {
+      "name": "an old shop type that states its side is left alone once that side's name is taken",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j ラチ外店舗_床"],
+        "floor_types_extra": [{ "id": 1, "name": "j 店舗_床", "gis_category": "retail", "gis_restriction": "rachi_nai", "floor_ids": [11] }]
+      },
+      "expected_proposals": [],
+      "expected_needs_fix": []
+    },
+    {
+      "name": "an old shop type with no side stays fixable when both current names are taken, until it states a side",
+      "model": {
+        "base": "standard",
+        "floor_types_extra": [
+          { "id": 1, "name": "j 店舗_床", "gis_category": "retail", "floor_ids": [11] },
+          { "id": 2, "name": "店舗", "gis_category": "retail", "gis_restriction": "rachi_gai", "floor_ids": [12] }
+        ]
+      },
+      "expected_proposals": [[1, "j ラチ外店舗_床", ""], [1, "j ラチ内店舗_床", ""]],
+      "expected_needs_fix": [1]
+    },
+    {
+      "name": "one current shop name taken leaves the other as the rename",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j ラチ内店舗_床"],
+        "floor_types_extra": [{ "id": 1, "name": "j 店舗_床", "gis_category": "retail", "floor_ids": [11] }]
+      },
+      "expected_proposals": [[1, "j ラチ外店舗_床", ""], [1, "j ラチ内店舗_床", "j ラチ内店舗_床"]],
+      "expected_needs_fix": [1]
+    },
+    {
+      "name": "an old name whose current name is taken and that has a category is left alone",
+      "model": {
+        "base": "standard",
+        "floor_types_extra": [{ "id": 1, "name": "smoking room", "gis_category": "smokingarea", "floor_ids": [11] }]
+      },
+      "expected_proposals": [],
+      "expected_needs_fix": []
+    },
+    {
+      "name": "an old name whose current name is taken and that has no category gets the parameters without a rename",
+      "model": {
+        "base": "standard",
+        "floor_types_extra": [{ "id": 1, "name": "smoking room", "floor_ids": [11] }]
+      },
+      "expected_proposals": [[1, "j 喫煙所_床", ""]],
+      "expected_needs_fix": [1]
+    },
+    {
+      "name": "a type already renamed to the current name is clean",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j 屋外_床"],
+        "floor_types_extra": [{ "id": 1, "name": "j 屋外_床", "gis_category": "unenclosedarea", "floor_ids": [11] }]
+      },
+      "expected_proposals": [],
+      "expected_needs_fix": []
+    }
   ],
   "setup_plan": [
     {
       "name": "a model on the standard needs nothing",
       "model": { "base": "standard" },
       "expected_lines": []
+    },
+    {
+      "name": "a missing standard type is created",
+      "model": { "base": "standard", "standard_type_skip": ["j 喫煙所_床"] },
+      "expected_lines": ["Create floor type j 喫煙所_床 (smokingarea, GIS_restricted)"]
+    },
+    {
+      "name": "an in-use old name keeps its current name free",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j 喫煙所_床"],
+        "floor_types_extra": [{ "id": 1, "name": "smoking room", "gis_category": "smokingarea", "floor_ids": [11] }]
+      },
+      "expected_lines": []
+    },
+    {
+      "name": "an old shop type that states its side does not hold the other side's name back",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j ラチ外店舗_床"],
+        "floor_types_extra": [{ "id": 1, "name": "j 店舗_床", "gis_category": "retail", "gis_restriction": "rachi_nai", "floor_ids": [11] }]
+      },
+      "expected_lines": ["Create floor type j ラチ外店舗_床 (retail, rachi_gai, GIS_facilities)"]
+    },
+    {
+      "name": "an unused old name does not hold a current name back",
+      "model": {
+        "base": "standard",
+        "standard_type_skip": ["j 喫煙所_床"],
+        "floor_types_extra": [{ "id": 1, "name": "smoking room", "gis_category": "smokingarea", "floor_ids": [] }]
+      },
+      "expected_lines": ["Create floor type j 喫煙所_床 (smokingarea, GIS_restricted)"]
     },
     {
       "name": "legacy GUID, wrong binding, a drifted type and material, echoes, first stamp",
@@ -126,7 +307,7 @@
         "Recolour material GIS_free_area, #000000 to #FFFFFF",
         "Update floor type j ラチ外コンコース_床: gis_category (empty) to walkway; material Concrete to GIS_free_area",
         "Clear the category of 2 floors that only repeats their type (written by an older export)",
-        "Set gis_standard_version (none) to 1"
+        "Set gis_standard_version (none) to 2"
       ]
     }
   ],

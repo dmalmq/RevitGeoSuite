@@ -21,7 +21,7 @@ class AuditTests(unittest.TestCase):
 
     def test_flags_an_older_standard(self):
         findings = self.run_audit(standard_version="0")
-        self.assertIn("current one is 1", findings[0].message)
+        self.assertIn("current one is 2", findings[0].message)
 
     def test_flags_a_missing_parameter_and_a_legacy_guid(self):
         bound = helpers.bound_as_standard(self.standard, skip=("gis_kind", "name"))
@@ -48,6 +48,7 @@ class AuditTests(unittest.TestCase):
     def test_flags_levels_with_floors_but_no_ordinal(self):
         findings = self.run_audit(levels=[
             snapshot.LevelInfo(1, u"ルミネ2_3FL", None, u"3F"),
+            snapshot.LevelInfo(3, u"1FL", 0, u"1F"),
             snapshot.LevelInfo(2, u"Roof", None, u"", has_floors=False),
         ])
         self.assertEqual(1, len(findings))

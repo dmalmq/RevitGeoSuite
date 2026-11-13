@@ -113,7 +113,7 @@ public sealed class GisStandardTests
         KanizuColorTheme theme = KanizuColorTheme.LoadEmbedded();
         FloorTypeStandard standard = FloorTypeStandard.LoadEmbedded();
 
-        Assert.Equal(12, standard.FloorTypes.Count);
+        Assert.Equal(21, standard.FloorTypes.Count);
         foreach (StandardFloorType floorType in standard.FloorTypes)
         {
             Assert.Equal(theme.GetArea(floorType.Area).Hex, floorType.FillHex);
@@ -129,7 +129,10 @@ public sealed class GisStandardTests
     [InlineData("j ラチ外コンコース_床", "walkway", "rachi_gai", "#FFFFFF")]
     [InlineData("j ラチ内コンコース_床", "walkway", "rachi_nai", "#F2F7FB")]
     [InlineData("j 新幹線ホーム_床", "platform", "rachi_nai", "#E5EFF7")]
-    [InlineData("j 店舗_床", "retail", null, "#DDEBEC")]
+    [InlineData("j ラチ外店舗_床", "retail", "rachi_gai", "#DDEBEC")]
+    [InlineData("j ラチ内店舗_床", "retail", "rachi_nai", "#DDEBEC")]
+    [InlineData("j ラチ内スロープ_床", "ramp", "rachi_nai", "#F2F7FB")]
+    [InlineData("j 屋外_床", "unenclosedarea", null, "#F2F2F2")]
     [InlineData("j 多目的トイレ_床", "restroom.unisex", null, "#DDEBEC")]
     [InlineData("j 駅事務室_床", "nonpublic", null, "#F2F2F2")]
     public void FloorTypes_CarryTheAgreedCategoryRestrictionAndFill(string name, string category, string? restriction, string fill)

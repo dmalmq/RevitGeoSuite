@@ -422,6 +422,11 @@ export interface GeoreferenceRevertResponse {
   summary: string
 }
 
+export interface GisAcceptedProposal {
+  floorTypeId: number
+  standardTypeName: string
+}
+
 export interface GisAuditFindingItem {
   elementIds: number[]
   message: string
@@ -495,7 +500,7 @@ export interface GisExportRequest {
 }
 
 export interface GisFixFloorTypesRequest {
-  floorTypeIds: number[]
+  accepted: GisAcceptedProposal[]
 }
 
 export interface GisFloorTypeProposalItem {
@@ -505,6 +510,7 @@ export interface GisFloorTypeProposalItem {
   gisCategory: string
   gisRestriction: string
   material: string
+  newName: string
   reason: string
   standardTypeName: string
 }

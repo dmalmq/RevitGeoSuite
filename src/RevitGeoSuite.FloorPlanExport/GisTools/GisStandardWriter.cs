@@ -52,8 +52,8 @@ public static class GisStandardWriter
     }
 
     /// <summary>
-    /// Writes each proposal's gis_category, gis_restriction and material onto its floor type, and
-    /// clears <paramref name="echoFloorIds"/>' own category, which only repeats the new one.
+    /// Writes each proposal's gis_category, gis_restriction and material onto its floor type, renames
+    /// an old-named type when the proposal carries a new name, and clears <paramref name="echoFloorIds"/>' own category, which only repeats the new one.
     /// </summary>
     public static IReadOnlyList<string> ApplyProposals(Document document, IReadOnlyList<FloorTypeProposal> proposals, IReadOnlyList<long> echoFloorIds)
     {
@@ -69,6 +69,11 @@ public static class GisStandardWriter
                 SetTypeValues(floorType, proposal.GisCategory, proposal.GisRestriction, materials.TryGetValue(proposal.Material, out ElementId? id) ? id : null);
                 string restriction = proposal.GisRestriction.Length > 0 ? ", gis_restriction " + proposal.GisRestriction : string.Empty;
                 log.Add($"{proposal.FloorType.Name}: gis_category {proposal.GisCategory}{restriction}");
+                if (proposal.NewName != null)
+                {
+                    floorType.Name = proposal.NewName;
+                    log.Add($"Renamed {proposal.FloorType.Name} to {proposal.NewName}");
+                }
             }
 
             if (echoFloorIds.Count > 0)
