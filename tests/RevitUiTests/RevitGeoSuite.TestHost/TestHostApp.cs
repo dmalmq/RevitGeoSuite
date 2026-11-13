@@ -1,5 +1,7 @@
 using System;
 using System.Diagnostics;
+using System.IO;
+using System.Reflection;
 using Autodesk.Revit.UI;
 
 namespace RevitGeoSuite.TestHost;
@@ -23,8 +25,20 @@ public sealed class TestHostApp : IExternalApplication
     /// </summary>
     internal const string EnableVariable = "REVITGEOSUITE_UITEST";
 
+    /// <summary>
+    /// A RevitGeoSuite build folder (with RevitGeoSuite.Shell.dll) that the test host starts inside
+    /// this Revit, the way Revit starts an add-in from its manifest. Revit only asks "Always Load" for
+    /// the DLL a manifest names, so an unsigned PR build started this way never prompts: the one
+    /// trusted DLL stays the loader. Run-UiTests.ps1 -RgsBuild sets it for that Revit process only.
+    /// </summary>
+    internal const string RgsVariable = "REVITGEOSUITE_UITEST_RGS";
+
+    /// <summary>What happened to the RevitGeoSuite build named by <see cref="RgsVariable"/>, for the report.</summary>
+    internal static string RgsStatus { get; private set; } = "none requested";
+
     private EventRecorder? recorder;
     private PipeServer? server;
+    private IExternalApplication? rgs;
 
     public Result OnStartup(UIControlledApplication application)
     {
@@ -44,11 +58,46 @@ public sealed class TestHostApp : IExternalApplication
         var commands = new Commands(api, recorder, TestRoot.Resolve());
         server = new PipeServer(commands.Handle, () => recorder.Armed = false);
         server.Start();
+        StartRgs(application);
         return Result.Succeeded;
+    }
+
+    private void StartRgs(UIControlledApplication application)
+    {
+        string folder = Environment.GetEnvironmentVariable(RgsVariable) ?? string.Empty;
+        if (folder.Length == 0)
+        {
+            return;
+        }
+
+        string path = Path.Combine(folder, "RevitGeoSuite.Shell.dll");
+        try
+        {
+            // LoadFrom: its dependencies resolve from the same folder, and the ribbon commands Revit
+            // later loads from this path get this same assembly, so they share its state.
+            Assembly shell = Assembly.LoadFrom(path);
+            rgs = (IExternalApplication)Activator.CreateInstance(shell.GetType("RevitGeoSuite.Shell.App", throwOnError: true));
+            Result result = rgs.OnStartup(application);
+            RgsStatus = $"{path} ({shell.GetName().Version}, built {File.GetLastWriteTimeUtc(path):yyyy-MM-dd HH:mm} UTC): OnStartup {result}";
+        }
+        catch (Exception ex)
+        {
+            RgsStatus = $"{path} failed to start: {ex.GetType().Name}: {ex.Message}";
+            Trace.WriteLine($"RevitGeoSuite.TestHost: {RgsStatus}\n{ex}");
+        }
     }
 
     public Result OnShutdown(UIControlledApplication application)
     {
+        try
+        {
+            rgs?.OnShutdown(application);
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine($"RevitGeoSuite.TestHost: RevitGeoSuite shutdown failed: {ex}");
+        }
+
         server?.Stop();
         if (recorder != null)
         {

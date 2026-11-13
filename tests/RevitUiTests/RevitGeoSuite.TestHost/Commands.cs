@@ -92,6 +92,8 @@ internal sealed class Commands
             ["webViewArguments"] = Environment.GetEnvironmentVariable(TestHostApp.WebViewArgumentsVariable),
             ["revit"] = api.Run(app => app.Application.VersionNumber + " " + app.Application.VersionBuild, Quick),
             ["testHost"] = HostBuild(),
+            ["rgs"] = TestHostApp.RgsStatus,
+            ["rgsLoaded"] = AppDomain.CurrentDomain.GetAssemblies().Where(assembly => assembly.GetName().Name == "RevitGeoSuite.Shell").Select(assembly => assembly.Location).ToList(),
         };
     }
 

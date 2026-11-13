@@ -13,10 +13,15 @@
   Nothing of the tests stays where Revit or a roaming profile looks. -StartRevit copies the test
   host's manifest (from Install-TestHost.ps1's folder) into %APPDATA%\Autodesk\Revit\Addins\<year>,
   starts Revit, and deletes the manifest again as soon as the test host's pipe is up, or when Revit
-  exits or 15 minutes pass. -RgsBuild <folder> does the same for a RevitGeoSuite build that is not
-  installed (a PR build): it copies the folder to -RgsTarget (C:\dev\revit-test\rgs\<year>) and hands Revit a
-  manifest for it for this one start. It refuses when another RevitGeoSuite manifest is installed,
-  because Revit cannot load two add-ins with the same id.
+  exits or -StartMinutes (5) pass. If the test host is not up by then, or Revit exits first (a modal
+  start-up prompt is the usual cause), it writes a FAIL report with the journal's dialog lines to a run
+  folder of its own, closes Revit and exits 1.
+
+  -RgsBuild <folder> runs a RevitGeoSuite build that is not installed (a PR build) with no prompt: it
+  copies the folder to -RgsTarget (C:\dev\revit-test\rgs\<year>) and the test host starts
+  RevitGeoSuite.Shell.App from there inside Revit (REVITGEOSUITE_UITEST_RGS, this Revit only). Revit
+  sees no manifest for it, so it never asks Always Load. It refuses when RevitGeoSuite is installed,
+  because two copies would build the same ribbon.
 
   -PyRevitExtension <folder> adds a pyRevit extension folder to userextensions in
   %APPDATA%\pyRevit\pyRevit_config.ini for the same window and takes it out again. pyRevit reads the
@@ -30,6 +35,7 @@ param(
     [string]$RgsTarget = "C:\dev\revit-test\rgs\$RevitYear",
     [string]$RgsBuild = '',
     [string]$PyRevitExtension = '',
+    [int]$StartMinutes = 5,
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$RunnerArgs
 )
 
@@ -47,6 +53,37 @@ function Test-HostPipe {
 # A run that was stopped half way may have left a manifest behind; never let one stay.
 foreach ($stale in $hostManifest, $rgsManifest) {
     if (Test-Path $stale) { Remove-Item $stale -Force; Write-Host "Removed a manifest an earlier run left: $stale" }
+}
+
+# Revit never brought the test host up: write a FAIL report in a run folder of its own, with the
+# dialogs the journal shows (a modal prompt is the usual cause), so the run is never silent.
+function Write-StartFailure([string]$Why, [datetime]$Since) {
+    $folder = Join-Path 'C:\dev\revit-test\auto' (Get-Date -Format 'yyyyMMdd-HHmmss')
+    New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    $journals = Join-Path $env:LOCALAPPDATA "Autodesk\Revit\Autodesk Revit $RevitYear\Journals"
+    $lines = @(Get-ChildItem $journals -Filter 'journal.*.txt' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -ge $Since.AddMinutes(-1) } |
+        ForEach-Object {
+            $file = $_
+            $stream = [IO.FileStream]::new($file.FullName, 'Open', 'Read', 'ReadWrite, Delete')
+            try { $text = [IO.StreamReader]::new($stream).ReadToEnd() } finally { $stream.Dispose() }
+            $text -split "`n" | Where-Object { $_ -match 'Dialog' } | ForEach-Object { "$($file.Name): $($_.Trim())" }
+        } | Select-Object -Last 20)
+    $report = @(
+        '# RevitGeoSuite UI test report', '',
+        "RUN STOPPED: $Why.", '',
+        '**FAIL**: 0 passed, 1 failed, 0 not run.', '',
+        '| Step | Title | Result |', '|---|---|---|',
+        '| START | Revit starts and the test host answers | **FAIL** |', '',
+        '## START. Revit starts and the test host answers: **FAIL**', '',
+        "- FAILED: $Why.",
+        "- Dialogs in the journal since the start: $(if ($lines.Count -eq 0) { 'none' } else { '' })"
+    ) + ($lines | ForEach-Object { "  - ``$_``" })
+    $path = Join-Path $folder 'report.md'
+    [IO.File]::WriteAllLines($path, [string[]]$report, [Text.UTF8Encoding]::new($false))
+    Write-Host "Run stopped: $Why."
+    Write-Host "Report: $path"
+    return $path
 }
 
 $pyRevitConfig = Join-Path $env:APPDATA 'pyRevit\pyRevit_config.ini'
@@ -78,6 +115,7 @@ if ($PyRevitExtension -and -not $StartRevit) { throw '-PyRevitExtension needs -S
 if ($RgsBuild -and -not $StartRevit) { throw '-RgsBuild needs -StartRevit: the build is handed to the Revit this script starts.' }
 
 $process = $null
+$startFailure = $null
 if ($StartRevit) {
     if (Get-Process -Name Revit -ErrorAction SilentlyContinue) {
         Write-Warning 'Revit is already running. The tests only reach a Revit that this script started; close it and run again if the runner cannot connect.'
@@ -97,11 +135,7 @@ if ($StartRevit) {
             if (Test-Path $rgs) { Remove-Item $rgs -Recurse -Force }
             New-Item -ItemType Directory -Force -Path $rgs | Out-Null
             Copy-Item (Join-Path $RgsBuild '*') $rgs -Recurse -Force
-            $template = Get-Content (Join-Path $repo 'install\RevitGeoSuite.addin.template') -Raw
-            [IO.File]::WriteAllText($rgsManifest, $template.Replace('C:\ProgramData\Autodesk\Revit\Addins\__REVIT_YEAR__\RevitGeoSuite\RevitGeoSuite.Shell.dll', [Security.SecurityElement]::Escape((Join-Path $rgs 'RevitGeoSuite.Shell.dll'))), [Text.UTF8Encoding]::new($false))
-            if (-not (Select-String -Path $rgsManifest -SimpleMatch $rgs -Quiet)) { throw "The RevitGeoSuite manifest template changed; $rgsManifest does not name $rgs." }
-            $handed += $rgsManifest
-            Write-Host "RevitGeoSuite for this run: $RgsBuild, copied to $rgs."
+            Write-Host "RevitGeoSuite for this run: $RgsBuild, copied to $rgs; the test host starts it inside Revit."
         }
 
         if ($PyRevitExtension) {
@@ -110,15 +144,21 @@ if ($StartRevit) {
         }
 
         Copy-Item $staged $hostManifest -Force
+        $startedAt = Get-Date
         try {
             $env:REVITGEOSUITE_UITEST = '1'   # inherited by this Revit only; removed again below
+            if ($RgsBuild) { $env:REVITGEOSUITE_UITEST_RGS = $rgs }
             # Revit resolves bare file names (such as a detached model's default name) against its working directory: keep that in the test folder.
             New-Item -ItemType Directory -Force -Path 'C:\dev\revit-test' | Out-Null
-            try { $process = Start-Process -FilePath $revit -WorkingDirectory 'C:\dev\revit-test' -PassThru } finally { Remove-Item Env:REVITGEOSUITE_UITEST }
+            try { $process = Start-Process -FilePath $revit -WorkingDirectory 'C:\dev\revit-test' -PassThru } finally { Remove-Item Env:REVITGEOSUITE_UITEST; Remove-Item Env:REVITGEOSUITE_UITEST_RGS -ErrorAction SilentlyContinue }
             Write-Host "Started $revit for UI tests. Waiting for the test host before taking the manifest away again..."
-            $deadline = (Get-Date).AddMinutes(15)
+            $deadline = (Get-Date).AddMinutes($StartMinutes)
             while (-not (Test-HostPipe) -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
                 Start-Sleep -Seconds 2
+            }
+            if (-not (Test-HostPipe)) {
+                $why = if ($process.HasExited) { "Revit exited (code $($process.ExitCode)) before the test host was up" } else { "the test host was not up $StartMinutes minutes after Revit started" }
+                $startFailure = Write-StartFailure $why $startedAt
             }
         }
         finally {
@@ -132,13 +172,15 @@ if ($StartRevit) {
 . (Join-Path $PSScriptRoot 'Find-DotnetSdk.ps1')
 $exitCode = 1
 try {
-    $dotnet = Find-DotnetSdk
-    Write-Host "Using $dotnet"
-    & $dotnet build (Join-Path $PSScriptRoot 'RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.csproj') -c Release
-    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
+    if (-not $startFailure) {
+        $dotnet = Find-DotnetSdk
+        Write-Host "Using $dotnet"
+        & $dotnet build (Join-Path $PSScriptRoot 'RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.csproj') -c Release
+        if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
 
-    & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @RunnerArgs
-    $exitCode = $LASTEXITCODE
+        & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @RunnerArgs
+        $exitCode = $LASTEXITCODE
+    }
 }
 finally {
     # The Revit this script started is the tests' own: close it on every way out, without saving.
