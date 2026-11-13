@@ -266,6 +266,12 @@ public static class GisShapeEdits
                 continue;
             }
 
+            if (!CanSketch(outline))
+            {
+                problems.Add($"{shape.Describe()}: {CrossesItself}");
+                continue;
+            }
+
             if (floor.CannotEdit != null)
             {
                 problems.Add($"{shape.Describe()}: floor {floor.ElementId} {floor.CannotEdit}, so its sketch is not redrawn. Reshape it in Revit by hand.");
@@ -554,6 +560,14 @@ public static class GisShapeEdits
     private static double Distance(Point2D a, Point2D b) => Math.Sqrt(((a.X - b.X) * (a.X - b.X)) + ((a.Y - b.Y) * (a.Y - b.Y)));
 
     /// <summary>The outline as one geometry in metres.</summary>
+    /// <summary>Why an outline is not drawn: Revit cannot close a sketch whose lines cross.</summary>
+    public const string CrossesItself = "the GDB outline crosses itself or has a hole outside it, which Revit cannot sketch. Fix it in the GDB, or change the floor in Revit by hand.";
+
+    /// <summary>Whether every polygon is valid as drawn: no ring crosses itself or another, and every hole lies inside its outline.</summary>
+    public static bool CanSketch(IReadOnlyList<Polygon2D> outline) =>
+        outline.All(polygon => Ring(polygon.ExteriorRing) is LinearRing shell &&
+            Factory.CreatePolygon(shell, polygon.InteriorRings.Select(Ring).Where(ring => ring != null).Select(ring => ring!).ToArray()).IsValid);
+
     private static NtsGeometry? Shape(IReadOnlyList<Polygon2D> outline)
     {
         List<NtsGeometry> parts = new();
