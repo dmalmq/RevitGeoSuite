@@ -152,6 +152,27 @@ public sealed class GisShapeEditsTests
     }
 
     [Fact]
+    public void AFloorInSeveralPartsIsListedRatherThanRedrawnToOnePart()
+    {
+        // The export writes parts m|a|0 and m|a|1 as two units; redrawing to one would drop the other.
+        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
+            new[] { Shape(GisDrift.Reshaped, "a", Rect(20, 0, 32, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10), Rect(20, 0, 30, 10) }) });
+        Assert.Empty(edits);
+        Assert.Contains("is in 2 separate parts", Assert.Single(problems));
+    }
+
+    [Fact]
+    public void TwoEditsForOneFloorAreBothListed()
+    {
+        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
+            new[] { Shape(GisDrift.Reshaped, "a", Rect(0, 0, 12, 10)), Shape(GisDrift.Reshaped, "a", Rect(0, 0, 14, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }) });
+        Assert.Empty(edits);
+        Assert.Contains("more than one way", Assert.Single(problems));
+    }
+
+    [Fact]
     public void OutlinesInAnotherCrsAreNotApplied()
     {
         (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(

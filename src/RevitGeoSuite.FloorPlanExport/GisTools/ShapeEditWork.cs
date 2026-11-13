@@ -42,6 +42,26 @@ public static class ShapeEditWork
     /// <returns>What Revit warned about, and the elements that hung on the floor and are gone after it, one line each.</returns>
     public static IReadOnlyList<string> Apply(Document document, ShapeEdit edit)
     {
+        // In a group, so an outline Revit takes but draws differently is rolled back and the floor is truly unchanged.
+        using TransactionGroup group = new(document, edit.Label());
+        group.Start();
+        try
+        {
+            IReadOnlyList<string> notes = Redraw(document, edit);
+            group.Assimilate();
+            return notes;
+        }
+        finally
+        {
+            if (group.HasStarted() && !group.HasEnded())
+            {
+                group.RollBack();
+            }
+        }
+    }
+
+    private static IReadOnlyList<string> Redraw(Document document, ShapeEdit edit)
+    {
         if (document.GetElement(edit.Floor.UniqueId) is not Floor floor || document.GetElement(floor.SketchId) is not Sketch sketch)
         {
             throw new InvalidOperationException($"Floor {edit.Floor.ElementId} or its sketch is gone.");

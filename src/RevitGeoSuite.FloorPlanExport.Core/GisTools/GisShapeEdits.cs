@@ -151,10 +151,32 @@ public static class GisShapeEdits
                 continue;
             }
 
+            if (floor.Outline.Count > 1)
+            {
+                problems.Add($"{shape.Describe()}: floor {floor.ElementId} {InParts(floor)}");
+                continue;
+            }
+
             edits.Add(new ShapeEdit(ShapeEditKind.Reshape, shape, floor, outline));
         }
 
-        return (edits, problems);
+        return (OnePerFloor(edits, problems), problems);
+    }
+
+    /// <summary>Why a floor in several parts is not redrawn: the export writes each part as its own unit, and one part's outline would replace them all.</summary>
+    public static string InParts(ShapeFloor floor) =>
+        $"is in {floor.Outline.Count} separate parts, which the GDB holds as separate units; redrawing it to one of them would drop the others. Change it in Revit by hand.";
+
+    // Two edits for one floor cannot both apply: neither is offered.
+    private static List<ShapeEdit> OnePerFloor(List<ShapeEdit> edits, List<string> problems)
+    {
+        HashSet<string> twice = new(edits.GroupBy(edit => edit.Floor.UniqueId, StringComparer.Ordinal).Where(group => group.Count() > 1).Select(group => group.Key), StringComparer.Ordinal);
+        foreach (ShapeEdit edit in edits.Where(edit => twice.Contains(edit.Floor.UniqueId)).GroupBy(edit => edit.Floor.UniqueId).Select(group => group.First()))
+        {
+            problems.Add($"Floor {edit.Floor.ElementId}: the GDB changed it in more than one way, so none of its edits is applied. Change it in Revit by hand.");
+        }
+
+        return edits.Where(edit => !twice.Contains(edit.Floor.UniqueId)).ToList();
     }
 
     /// <summary>The GDB outline in model feet, each ring cleaned of points closer than <see cref="ShortestEdgeFeet"/>; rings left with fewer than 3 points are dropped.</summary>
