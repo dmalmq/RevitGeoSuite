@@ -284,6 +284,9 @@ public static class ShapeEditWork
         {
             using (Transaction transaction = new(document, edit.Label()))
             {
+                FailureHandlingOptions options = transaction.GetFailureHandlingOptions();
+                options.SetFailuresPreprocessor(failures);
+                transaction.SetFailureHandlingOptions(options);
                 transaction.Start();
                 document.Delete(boundary);
                 SketchPlane plane = sketch.SketchPlane;
@@ -314,19 +317,27 @@ public static class ShapeEditWork
             }
         }
 
-        // An error in Revit's sketch check rolls the edit back without an exception: read the floor again.
-        if (document.GetElement(edit.Floor.UniqueId) is not Floor after || !GisShapeEdits.SameOutline(FloorTopFaces.Read(after).Outline, edit.Outline))
+        // An error in Revit's sketch check rolls the edit back without an exception, and the rollback brings the old boundary lines back.
+        if (failures.Errors.Count > 0 || boundary.Any(id => document.GetElement(id) != null) || document.GetElement(edit.Floor.UniqueId) is not Floor after)
         {
             string why = failures.Errors.Count > 0 ? ": " + string.Join(" ", failures.Errors.Distinct()) : string.Empty;
             throw new InvalidOperationException($"Revit refused the new outline of floor {edit.Floor.ElementId}; the floor is unchanged{why}");
         }
 
         List<string> notes = failures.Warnings.Distinct().Select(text => "Revit warned: " + text).ToList();
+        double gap = GisShapeEdits.GapMetres(FloorTopFaces.Read(after).Outline, edit.Outline);
+        if (gap > GisShapeEdits.SameOutlineMetres)
+        {
+            notes.Add($"The floor's top face is up to {Centimetres(gap)} off the GDB outline, most likely where another element joins or cuts it; the next export keeps that difference.");
+        }
+
         notes.AddRange(dependents
             .Where(entry => document.GetElement(entry.Id) == null)
             .Select(entry => $"Revit deleted {entry.Name} {entry.Id.Value}, which hung on the floor outside its new outline."));
         return notes;
     }
+
+    private static string Centimetres(double metres) => double.IsInfinity(metres) ? "the whole outline" : $"{metres * 100:F0} cm";
 
     /// <summary>A named element that depends on the floor (an opening, a hosted family), or empty for sketch parts and internals.</summary>
     private static string Describe(Element? element) =>
