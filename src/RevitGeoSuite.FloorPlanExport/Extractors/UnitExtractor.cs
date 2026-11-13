@@ -220,6 +220,8 @@ public sealed class UnitExtractor
 
         // Create features for each base polygon extracted from the floor.
         List<Polygon2D> allPolygons = basePolygons;
+        bool slope = string.Equals(zoneInfo.Category, VerticalCirculation.SlopeCategory, StringComparison.OrdinalIgnoreCase);
+        string? slopeToLevel = slope ? ResolveSlopeToLevel(floor, levelId, warnings) : null;
 
         if (allPolygons.Count == 1)
         {
@@ -239,6 +241,7 @@ public sealed class UnitExtractor
                     rawFloorTypeName,
                     viewName),
             };
+            features = slope ? features.Select(feature => WithDirection(feature, VerticalCirculation.Both, slopeToLevel)).ToList() : features;
             return true;
         }
 
@@ -269,8 +272,40 @@ public sealed class UnitExtractor
                     partIndex: i));
         }
 
-        features = created;
+        features = slope ? created.Select(feature => WithDirection(feature, VerticalCirculation.Both, slopeToLevel)).ToList() : created;
         return true;
+    }
+
+    /// <summary>
+    /// A slope floor's other level, from its top face's ends against the levels' ProjectElevation.
+    /// Null when it rises too little, when neither end sits on its own level, or when the far end
+    /// sits between levels; the audit reports the last two. Never the floor's own level.
+    /// </summary>
+    private string? ResolveSlopeToLevel(Floor floor, string levelId, ICollection<string> warnings)
+    {
+        (List<Polygon2D> outline, double low, double high) = FloorTopFaces.Read(floor);
+        if (outline.Count == 0)
+        {
+            return null;
+        }
+
+        SlopeReach<long> reach = VerticalCirculation.SlopeToLevel(
+            floor.LevelId.Value,
+            low,
+            high,
+            new FilteredElementCollector(_document)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .Select(level => new KeyValuePair<long, double>(level.Id.Value, level.ProjectElevation)));
+        if (reach.ToLevel is not long target)
+        {
+            return null;
+        }
+
+        // A linked slope's far level maps to the host level at its height, which could be the
+        // view's own level when the link's levels do not line up with the host's.
+        string? toLevel = GetLevelExportId(new ElementId(target), warnings);
+        return string.Equals(toLevel, levelId, StringComparison.Ordinal) ? null : toLevel;
     }
 
     public bool TryCreateFloorUnit(

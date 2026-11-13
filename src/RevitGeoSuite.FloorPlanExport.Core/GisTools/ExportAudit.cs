@@ -99,7 +99,8 @@ public sealed class ExportAuditSnapshot
         IEnumerable<AuditIdValue>? elementIds = null,
         IEnumerable<AuditIdValue>? levelIds = null,
         IEnumerable<LayoutFloor>? floors = null,
-        IEnumerable<LayoutOpening>? openings = null)
+        IEnumerable<LayoutOpening>? openings = null,
+        IEnumerable<KeyValuePair<long, double>>? levelElevations = null)
     {
         Views = views ?? throw new ArgumentNullException(nameof(views));
         Stairs = (stairs ?? Array.Empty<AuditStair>()).ToList();
@@ -108,6 +109,7 @@ public sealed class ExportAuditSnapshot
         LevelIds = (levelIds ?? Array.Empty<AuditIdValue>()).ToList();
         Floors = (floors ?? Array.Empty<LayoutFloor>()).ToList();
         Openings = (openings ?? Array.Empty<LayoutOpening>()).ToList();
+        LevelElevations = (levelElevations ?? Array.Empty<KeyValuePair<long, double>>()).ToList();
     }
 
     public ExportViewSnapshot Views { get; }
@@ -127,6 +129,9 @@ public sealed class ExportAuditSnapshot
 
     /// <summary>Every way onto a floor, for <see cref="FloorLayoutAudit"/>.</summary>
     public IReadOnlyList<LayoutOpening> Openings { get; }
+
+    /// <summary>Every level's Level.ProjectElevation in feet, the coordinates of the floors' heights.</summary>
+    public IReadOnlyList<KeyValuePair<long, double>> LevelElevations { get; }
 }
 
 /// <summary>
@@ -158,8 +163,51 @@ public static class ExportAudit
         findings.AddRange(EndsWithoutGisPlan(snapshot, LevelName));
         findings.AddRange(Template(snapshot.Views));
         findings.AddRange(FloorLayoutAudit.Run(snapshot.Floors, snapshot.Openings, LevelName));
+        findings.AddRange(SlopesWithoutToLevel(snapshot, LevelName));
         return findings.OrderBy(finding => (int)finding.Severity).ToList();
     }
+
+    /// <summary>
+    /// Slope floors that rise like a level change but get no to_level: neither end sits on their own
+    /// level, or the far end sits between levels. The export leaves to_level empty rather than guess.
+    /// </summary>
+    private static IEnumerable<GisAuditFinding> SlopesWithoutToLevel(ExportAuditSnapshot snapshot, Func<long, string> levelName)
+    {
+        const double MetresPerFoot = 0.3048;
+        foreach (LayoutFloor floor in snapshot.Floors.Where(floor => floor.Category == VerticalCirculation.SlopeCategory))
+        {
+            SlopeReach<long> reach = VerticalCirculation.SlopeToLevel(floor.LevelId, floor.LowFeet, floor.HighFeet, snapshot.LevelElevations);
+            string near = Metres(reach.NearEndFeet * MetresPerFoot);
+            string far = Metres(reach.FarEndFeet * MetresPerFoot);
+            string nearest = reach.NearestLevel is long other
+                ? string.Format(CultureInfo.InvariantCulture, "the nearest level is {0}, {1:0.00} m from it", levelName(other), reach.NearestDistanceFeet * MetresPerFoot)
+                : "there is no other level";
+            string? message = reach.Outcome switch
+            {
+                SlopeOutcome.OwnLevelAtNeitherEnd => string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Floor {0} (ramp) on level {1} runs from {2} to {3} against its level, so neither end is on it and the export does not guess where it leads. Its unit gets no to_level. Set its level and offset so its lower or upper end sits on its level.",
+                    floor.ElementId,
+                    levelName(floor.LevelId),
+                    near,
+                    far),
+                SlopeOutcome.FarEndBetweenLevels => string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Floor {0} (ramp) on level {1} leads to {2} against its level, which is on no level: {3}. Its unit gets no to_level, so the network does not link it to another level.",
+                    floor.ElementId,
+                    levelName(floor.LevelId),
+                    far,
+                    nearest),
+                _ => null,
+            };
+            if (message != null)
+            {
+                yield return new GisAuditFinding(GisAuditSeverity.Info, "floors", message, new[] { floor.ElementId });
+            }
+        }
+    }
+
+    private static string Metres(double value) => value.ToString("+0.00 m;-0.00 m;0.00 m", CultureInfo.InvariantCulture);
 
     /// <summary>Whether the export takes the family for an escalator: by gis_kind, else by category, else by its name.</summary>
     public static bool IsEscalator(string? gisKind, string? gisCategory, string familyName, string typeName)
