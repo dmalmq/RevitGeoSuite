@@ -14,7 +14,7 @@ namespace RevitGeoSuite.UiTestRunner;
 internal sealed partial class GisStandardRun
 {
     private const double GrowM = 1.0;
-    private const double ShrinkM = -1.5;
+    private const double ShrinkBandM = 1.5;
     private const string SlopeArrow = "has a slope arrow or other sketch line besides its boundary";
     private const string CurvedEdges = "has curved edges, which the GDB's straight-segment outline would replace with short lines";
 
@@ -54,7 +54,7 @@ internal sealed partial class GisStandardRun
         string path = options.Drift;
         if (path.Length == 0)
         {
-            HashSet<string> notEditable = FloorScan().Where(floor => floor.HasArc || floor.ExtraSketchLines).Select(floor => floor.UniqueId).ToHashSet();
+            HashSet<string> notEditable = FloorScan().Where(floor => floor.HasArc || floor.ExtraSketchLines || floor.ShapeEdited).Select(floor => floor.UniqueId).ToHashSet();
             List<FloorUnit> editable = exportedUnits.Where(unit => !notEditable.Contains(unit.UniqueId)).ToList();
             FloorUnit? unit = ReshapeFixture.Pick(editable, "retail") ?? ReshapeFixture.Pick(editable, "walkway");
             if (!step.Check(unit != null, "The export has a retail (or walkway) floor unit whose sketch can be redrawn."))
@@ -62,7 +62,7 @@ internal sealed partial class GisStandardRun
                 return;
             }
 
-            path = WriteDrift("reshape.gis-drift.json", unit!, GrowM);
+            path = WriteDrift("reshape.gis-drift.json", unit!, ReshapeFixture.Grow(unit!, GrowM));
             step.Note($"Wrote {path}: floor unit '{unit!.Name}' ({unit.Category}), east edge {GrowM} m east, EPSG:{unit.Epsg}.");
         }
         else
@@ -87,11 +87,12 @@ internal sealed partial class GisStandardRun
         ILocator card = Shell.Page.GetByTestId("shape-edit");
         step.Check(await Shell.ShowsAsync(Shell.Text("Shape edits (1)"), 60000), "The page shows 'Shape edits (1)'.");
         step.Check(await Shell.ShowsAsync(card.GetByText($"Reshape floor {reshapeBefore!.Id}")), $"The card names floor F's element id {reshapeBefore.Id}.");
-        JsonElement widths = await card.First.EvaluateAsync<JsonElement>(
-            "card => [...card.querySelectorAll('svg path')].map(path => ({ dashed: !!path.getAttribute('stroke-dasharray'), width: path.getBBox().width }))");
-        double grey = widths.EnumerateArray().Where(path => !path.GetProperty("dashed").GetBoolean()).Select(path => path.GetProperty("width").GetDouble()).DefaultIfEmpty(0).Max();
-        double orange = widths.EnumerateArray().Where(path => path.GetProperty("dashed").GetBoolean()).Select(path => path.GetProperty("width").GetDouble()).DefaultIfEmpty(0).Max();
-        step.Check(orange > grey, $"The dashed GDB outline is wider than the grey one (drawing widths {orange:0.#} and {grey:0.#}).");
+        // The drawing is in model feet, so on a rotated model an east grow need not widen it; it always adds area.
+        JsonElement paths = await card.First.EvaluateAsync<JsonElement>(
+            "card => [...card.querySelectorAll('svg path')].map(path => { const box = path.getBBox(); return { dashed: !!path.getAttribute('stroke-dasharray'), area: box.width * box.height }; })");
+        double grey = paths.EnumerateArray().Where(path => !path.GetProperty("dashed").GetBoolean()).Select(path => path.GetProperty("area").GetDouble()).DefaultIfEmpty(0).Max();
+        double orange = paths.EnumerateArray().Where(path => path.GetProperty("dashed").GetBoolean()).Select(path => path.GetProperty("area").GetDouble()).DefaultIfEmpty(0).Max();
+        step.Check(orange > grey, $"The dashed GDB outline's box is larger than the grey one's (drawing areas {orange:0.#} and {grey:0.#}).");
         JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path = reshape.Path, pick = false });
         string[] problems = Problems(drift);
         step.Check(!problems.Any(problem => problem.Contains(reshape.UniqueId, StringComparison.Ordinal) || problem.Contains("shape edit", StringComparison.OrdinalIgnoreCase)),
@@ -111,7 +112,9 @@ internal sealed partial class GisStandardRun
         step.Check(await Shell.ShowsAsync(Shell.Button("Hide in Revit"), 30000), "The button turns into 'Hide in Revit'.");
         JsonObject state = host.Call("state");
         string view = state["viewName"]?.GetValue<string>() ?? string.Empty;
-        step.Check(view.StartsWith("GIS_", StringComparison.OrdinalIgnoreCase), $"The active view is a GIS_ plan ({view}).");
+        string? level = FloorScan().FirstOrDefault(floor => floor.UniqueId == reshape!.UniqueId)?.Level;
+        string? viewLevel = Views().FirstOrDefault(plan => !plan.IsTemplate && plan.Name == view)?.Level;
+        step.Check(view.StartsWith("GIS_", StringComparison.OrdinalIgnoreCase) && viewLevel == level, $"The active view is the GIS_ plan of F's level {level} ({view}, level {viewLevel}).");
         step.Note($"Zoom corners: {state["zoom"]?.ToJsonString()}; floor F box {Box(reshapeBefore!)}.");
         NoCommit(step, seq);
         RevitShot(step, "C3a-2-outlines-shown");
@@ -142,7 +145,6 @@ internal sealed partial class GisStandardRun
 
         int seq = host.LastEvent();
         string[] log = await ApplyShapes(step, 1);
-        step.Check(await Shell.ShowsAsync(Shell.Text("1 floor(s) reshaped"), 5000), "The banner reads '1 floor(s) reshaped'.");
         step.Note($"Log: {string.Join(" / ", log)}");
         string name = ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label);
         ExpectEvent(step, seq, "commit", name);
@@ -221,7 +223,7 @@ internal sealed partial class GisStandardRun
 
     private async Task SlopeArrowFloor(StepResult step)
     {
-        FloorScanRow? floor = FloorScan().FirstOrDefault(row => row.ExtraSketchLines && !row.HasArc && Unit(row.UniqueId) != null);
+        FloorScanRow? floor = FloorScan().FirstOrDefault(row => row.ExtraSketchLines && !row.HasArc && !row.ShapeEdited && Unit(row.UniqueId) != null);
         if (floor == null)
         {
             step.NotRun("No exported floor has a slope arrow or other extra sketch line.");
@@ -249,7 +251,17 @@ internal sealed partial class GisStandardRun
                 return;
             }
 
-            JsonObject fixture = host.Call("fixture", new { openingNearEast = new[] { new { floor = target!.Id, insetM = 0.75, sizeM = 0.4 } } });
+            JsonObject fixture;
+            try
+            {
+                fixture = host.Call("fixture", new { openingInEastBand = new[] { new { floor = target!.Id, bandM = 1.0, sizeM = 0.4 } } });
+            }
+            catch (TestHostException ex)
+            {
+                step.NotRun($"No floor has an opening or hosted family within 1 m of its east edge, and the opening fixture failed on floor {target!.Id}: {ex.Message}");
+                return;
+            }
+
             step.Note($"No floor has an opening or hosted family within 1 m of its east edge, so the fixture cut one: {fixture["log"]?.ToJsonString()}.");
             floor = FloorScan().First(row => row.Id == target.Id);
         }
@@ -258,7 +270,7 @@ internal sealed partial class GisStandardRun
         DependentRow[] dependents = h.Dependents;
         step.Note($"H = floor {h.Id} ({h.UniqueId}, level {h.Level}). Dependents: {string.Join("; ", dependents.Select(item => $"{item.Id} {item.Name} ({item.Category}) {Metres(item.WestOfEdgeM)} west of the east edge"))}.");
         FloorUnit unit = Unit(h.UniqueId)!;
-        string path = WriteDrift("shrink.gis-drift.json", unit, ShrinkM);
+        string path = WriteDrift("shrink.gis-drift.json", unit, ReshapeFixture.ShrinkEast(unit, ShrinkBandM));
         await PickDrift(path);
         if (!step.Check(await Shell.ShowsAsync(Shell.Text("Shape edits (1)"), 60000), "The shrink file shows one shape edit."))
         {
@@ -283,7 +295,7 @@ internal sealed partial class GisStandardRun
         foreach (DependentRow item in dependents)
         {
             string fate = !exists[item.Id] ? (deleted.ContainsKey(item.Id) ? "deleted, and listed" : "deleted, NOT listed") : "kept";
-            step.Note($"Revit did: {item.Name} {item.Id} ({Metres(item.WestOfEdgeM)} west of the old east edge, {-ShrinkM} m strip removed): {fate}.");
+            step.Note($"Revit did: {item.Name} {item.Id} ({Metres(item.WestOfEdgeM)} west of the old east edge, a {ShrinkBandM} m band removed): {fate}.");
         }
 
         foreach (string warning in warned)
@@ -302,7 +314,7 @@ internal sealed partial class GisStandardRun
 
     private async Task CurvedFloor(StepResult step)
     {
-        FloorScanRow? floor = FloorScan().FirstOrDefault(row => row.HasArc && Unit(row.UniqueId) != null);
+        FloorScanRow? floor = FloorScan().FirstOrDefault(row => row.HasArc && !row.ShapeEdited && Unit(row.UniqueId) != null);
         if (floor == null)
         {
             step.NotRun("No exported floor has an arc in its sketch.");
@@ -316,7 +328,8 @@ internal sealed partial class GisStandardRun
 
     private async Task ExpectProblem(StepResult step, FloorScanRow floor, string fileName, string reason)
     {
-        string path = WriteDrift(fileName, Unit(floor.UniqueId)!, GrowM);
+        FloorUnit unit = Unit(floor.UniqueId)!;
+        string path = WriteDrift(fileName, unit, ReshapeFixture.Grow(unit, GrowM));
         step.Note($"Floor {floor.Id} ({floor.UniqueId}): {path}.");
         await PickDrift(path);
         JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
@@ -337,7 +350,7 @@ internal sealed partial class GisStandardRun
             await Shell.Page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = label, Exact = true }).ClickAsync();
         }
 
-        step.Check(await Shell.ShowsAsync(Shell.Text(new Regex(@"\d+ floor\(s\) reshaped")), 120000), "A 'floor(s) reshaped' banner.");
+        step.Check(await Shell.ShowsAsync(Shell.Text($"{count} floor(s) reshaped"), 120000), $"The banner reads '{count} floor(s) reshaped' (saw: {await Shell.AlertTextAsync()}).");
         return await ReadAppliedLog();
     }
 
@@ -349,10 +362,10 @@ internal sealed partial class GisStandardRun
         await Shell.Page.WaitForTimeoutAsync(1000);
     }
 
-    private string WriteDrift(string fileName, FloorUnit unit, double growM)
+    private string WriteDrift(string fileName, FloorUnit unit, IReadOnlyList<IReadOnlyList<(double X, double Y)>> outline)
     {
         string path = Path.Combine(options.OutputFolder, fileName);
-        File.WriteAllText(path, ReshapeFixture.DriftJson(unit, ReshapeFixture.Grow(unit, growM)));
+        File.WriteAllText(path, ReshapeFixture.DriftJson(unit, outline));
         return path;
     }
 
@@ -386,7 +399,7 @@ internal sealed partial class GisStandardRun
 
     private FloorUnit? Unit(string uniqueId) => ReshapeFixture.Pick(exportedUnits, string.Empty, uniqueId);
 
-    private bool Redrawable(FloorScanRow row) => !row.HasArc && !row.ExtraSketchLines && Unit(row.UniqueId) != null;
+    private bool Redrawable(FloorScanRow row) => !row.HasArc && !row.ExtraSketchLines && !row.ShapeEdited && Unit(row.UniqueId) != null;
 
     private static bool NearEast(DependentRow item) => item.WestOfEdgeM is >= 0 and <= 1;
 
@@ -437,6 +450,6 @@ internal sealed record ReshapeShape(string Path, string UniqueId, string Label, 
 
 internal sealed record ElementRow(string Key, bool Exists, long? Id, string? UniqueId, string? Category, long? TypeId, string? TypeName, double[]? Min, double[]? Max);
 
-internal sealed record FloorScanRow(long Id, string UniqueId, string? Level, bool HasArc, bool ExtraSketchLines, DependentRow[] Dependents);
+internal sealed record FloorScanRow(long Id, string UniqueId, string? Level, bool HasArc, bool ExtraSketchLines, bool ShapeEdited, DependentRow[] Dependents);
 
 internal sealed record DependentRow(long Id, string? Category, string? Name, double? WestOfEdgeM);

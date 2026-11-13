@@ -70,6 +70,45 @@ internal static class ReshapeFixture
         return rings;
     }
 
+    /// <summary>
+    /// The unit cut back to everything at least <paramref name="bandM"/> west of its easternmost point: a
+    /// band the full height of the floor, also on a floor whose edges do not run north-south. Rings left
+    /// with fewer than 3 points are dropped.
+    /// </summary>
+    public static List<List<(double X, double Y)>> ShrinkEast(FloorUnit unit, double bandM)
+    {
+        double limit = unit.Rings[0].Max(point => point.X) - bandM;
+        return unit.Rings.Select(ring => ClipWest(ring, limit)).Where(ring => ring.Count >= 4).ToList();
+    }
+
+    // Sutherland-Hodgman against x <= limit; the result is closed, its last point repeating the first.
+    private static List<(double X, double Y)> ClipWest(IReadOnlyList<(double X, double Y)> ring, double limit)
+    {
+        var open = ring.Count > 1 && ring[0] == ring[^1] ? ring.Take(ring.Count - 1).ToList() : ring.ToList();
+        var clipped = new List<(double X, double Y)>();
+        for (int index = 0; index < open.Count; index++)
+        {
+            (double X, double Y) a = open[index], b = open[(index + 1) % open.Count];
+            bool aIn = a.X <= limit, bIn = b.X <= limit;
+            if (aIn)
+            {
+                clipped.Add(a);
+            }
+
+            if (aIn != bIn)
+            {
+                clipped.Add((limit, a.Y + (b.Y - a.Y) * (limit - a.X) / (b.X - a.X)));
+            }
+        }
+
+        if (clipped.Count > 0)
+        {
+            clipped.Add(clipped[0]);
+        }
+
+        return clipped;
+    }
+
     public static string DriftJson(FloorUnit unit, IReadOnlyList<IReadOnlyList<(double X, double Y)>> outline, string model = "")
     {
         var coordinates = new JsonArray(outline.Select(ring => (JsonNode)new JsonArray(ring.Select(point => (JsonNode)new JsonArray(point.X, point.Y)).ToArray())).ToArray());

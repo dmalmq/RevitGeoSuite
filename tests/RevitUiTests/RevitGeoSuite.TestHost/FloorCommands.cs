@@ -54,6 +54,7 @@ internal static class FloorCommands
                 ["uniqueId"] = floor.UniqueId,
                 ["level"] = document.GetElement(floor.LevelId)?.Name,
                 ["hasArc"] = sketch != null && sketch.Profile.Cast<CurveArray>().Any(loop => loop.Cast<Curve>().Any(curve => curve is not Line)),
+                ["shapeEdited"] = floor.GetSlabShapeEditor() is { IsEnabled: true },
                 ["extraSketchLines"] = sketch != null && sketch.GetAllElements().Any(id => !boundary.Contains(id) && document.GetElement(id) is CurveElement),
                 ["dependents"] = floor.GetDependentElements(null)
                     .Select(document.GetElement)
@@ -73,42 +74,55 @@ internal static class FloorCommands
     }
 
     /// <summary>
-    /// Cuts a square opening of <paramref name="sizeM"/> into the floor, its centre <paramref name="insetM"/>
-    /// west of the middle of the floor's easternmost sketch points. Runs inside the fixture transaction.
+    /// Cuts a square opening of <paramref name="sizeM"/> into the floor, wholly inside the floor and
+    /// wholly within the band <paramref name="bandM"/> wide west of its east edge, which a shrink by
+    /// that much removes. Runs inside the fixture transaction.
     /// </summary>
-    public static string OpeningNearEast(Document document, long floorId, double insetM, double sizeM)
+    public static string OpeningInEastBand(Document document, long floorId, double bandM, double sizeM)
     {
         Floor floor = document.GetElement(new ElementId(floorId)) as Floor ?? throw new ArgumentException($"No floor {floorId}.");
         Sketch sketch = document.GetElement(floor.SketchId) as Sketch ?? throw new InvalidOperationException($"Floor {floorId} has no sketch.");
         Projector projector = new(document.ActiveProjectLocation);
         List<XYZ> vertices = Vertices(sketch).ToList();
         double edge = vertices.Max(projector.East);
-        List<XYZ> eastmost = vertices.Where(point => edge - projector.East(point) < 1e-6).ToList();
-        XYZ middle = new(eastmost.Average(point => point.X), eastmost.Average(point => point.Y), sketch.SketchPlane.GetPlane().Origin.Z);
+        double z = sketch.SketchPlane.GetPlane().Origin.Z;
         XYZ east = projector.EastInModel;
         XYZ north = new(-east.Y, east.X, 0);
-        XYZ centre = middle - east * (insetM / FeetToMetres);
         double half = sizeM / 2 / FeetToMetres;
-        XYZ[] corners =
+        double step = 0.1 / FeetToMetres;
+        XYZ[]? square = null;
+        for (double x = vertices.Min(point => point.X); square == null && x <= vertices.Max(point => point.X); x += step)
         {
-            centre - east * half - north * half,
-            centre + east * half - north * half,
-            centre + east * half + north * half,
-            centre - east * half + north * half,
-        };
-        if (!corners.All(corner => Inside(corner, sketch)))
+            for (double y = vertices.Min(point => point.Y); square == null && y <= vertices.Max(point => point.Y); y += step)
+            {
+                XYZ centre = new(x, y, z);
+                XYZ[] corners =
+                {
+                    centre - east * half - north * half,
+                    centre + east * half - north * half,
+                    centre + east * half + north * half,
+                    centre - east * half + north * half,
+                };
+                if (corners.All(corner => edge - projector.East(corner) is > 0.05 && edge - projector.East(corner) < bandM - 0.05 && Inside(corner, sketch)))
+                {
+                    square = corners;
+                }
+            }
+        }
+
+        if (square == null)
         {
-            throw new InvalidOperationException($"A {sizeM} m opening {insetM} m west of floor {floorId}'s east edge would not lie inside the floor.");
+            throw new InvalidOperationException($"No {sizeM} m square fits inside floor {floorId} within {bandM} m of its east edge.");
         }
 
         var profile = new CurveArray();
-        for (int index = 0; index < corners.Length; index++)
+        for (int index = 0; index < square.Length; index++)
         {
-            profile.Append(Line.CreateBound(corners[index], corners[(index + 1) % corners.Length]));
+            profile.Append(Line.CreateBound(square[index], square[(index + 1) % square.Length]));
         }
 
         Opening opening = document.Create.NewOpening(floor, profile, true);
-        return $"cut opening {opening.Id.Value} into floor {floorId}, {insetM} m west of its east edge";
+        return $"cut opening {opening.Id.Value} into floor {floorId}, within {bandM} m of its east edge";
     }
 
     private static Dictionary<string, object?> Describe(string key, Element? element)

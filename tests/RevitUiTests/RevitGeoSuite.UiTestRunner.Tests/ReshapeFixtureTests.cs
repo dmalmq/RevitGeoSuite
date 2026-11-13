@@ -33,6 +33,18 @@ public class ReshapeFixtureTests
     }
 
     [Fact]
+    public void Shrink_cuts_a_band_off_the_east_side_also_when_the_east_end_is_a_single_corner()
+    {
+        var diamond = new FloorUnit("m|d|0", "d", "diamond", "L1", "retail", 6677, new[] { new (double, double)[] { (0, 0), (5, -5), (10, 0), (5, 5), (0, 0) } });
+        var square = new FloorUnit("m|s|0", "s", "square", "L1", "retail", 6677, new[] { Square });
+
+        List<List<(double X, double Y)>> cut = ReshapeFixture.ShrinkEast(diamond, 1.5);
+
+        Assert.Equal(new (double, double)[] { (0, 0), (5, -5), (8.5, -1.5), (8.5, 1.5), (5, 5), (0, 0) }, cut[0]);
+        Assert.True(ReshapeFixture.Distance(ReshapeFixture.ShrinkEast(square, 1.5), ReshapeFixture.Grow(square, -1.5)) < 1e-9);
+    }
+
+    [Fact]
     public void Distance_is_zero_for_the_same_shape_however_its_edges_are_split_and_catches_a_two_centimetre_shift()
     {
         var outline = new List<IReadOnlyList<(double X, double Y)>> { Square };

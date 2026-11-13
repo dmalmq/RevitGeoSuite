@@ -141,21 +141,21 @@ Not checked: a template that someone else made and named `GIS Export` is taken a
 .\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit --scenario c3a-reshape --model C:\dev\revit-test\auto\lumine-pristine.rvt
 ```
 
-The scenario does the check list's Prepare part itself. It exports the GeoPackage with the default view choice to `<run>\export`. It reads the floor units of that export and picks the first retail floor, or else the first walkway floor, whose sketch has no arc and no extra sketch line. It then writes `<run>\reshape.gis-drift.json` with that floor's east edge 1.0 m further east. The runner has its own copy of `make_reshape_fixture.py` in `ReshapeFixture.cs`, so the build PC needs no Python. On the same export, both give the same drift file.
+The scenario does the check list's Prepare part itself. It exports the GeoPackage with the default view choice to `<run>\export`. It reads the floor units of that export and picks the first retail floor, or else the first walkway floor, whose sketch has no arc, no extra sketch line and no shape-edited points. It then writes `<run>\reshape.gis-drift.json` with that floor's east edge 1.0 m further east. The runner has its own copy of `make_reshape_fixture.py` in `ReshapeFixture.cs`, so the build PC needs no Python. On the same export, both give the same drift file.
 
 | Step | Check |
 |---|---|
 | C3a.0 | If Set up model has something to do, it runs, so each level has a `GIS_` plan. |
 | C3a.P | The export, the drift file, and floor F: its UniqueId, element id, type and bounding box. |
-| C3a.1 | Picking the file shows "Shape edits (1)". The card names F's element id, and its dashed outline is wider than the grey one. `gisDrift.inspect` lists no problem about shapes. |
-| C3a.2 | "Show in Revit" makes a `GIS_` plan the active view, and no transaction commits. A Revit screenshot shows the outlines. |
+| C3a.1 | Picking the file shows "Shape edits (1)". The card names F's element id, and the box of its dashed outline is larger than the grey one's. `gisDrift.inspect` lists no problem about shapes. |
+| C3a.2 | "Show in Revit" makes the `GIS_` plan of F's level the active view, and no transaction commits. A Revit screenshot shows the outlines. |
 | C3a.3 | "Hide in Revit": no transaction, and a Revit screenshot without the outlines. |
 | C3a.4 | "Apply 1 shape edit(s)", confirming the dialog if one opens. The banner reads "1 floor(s) reshaped". A commit named `Reshape floor <id> (<label>) to the GDB outline` arrives, and no commit has another name. F keeps its UniqueId, element id and type, and its box changes. The box change is recorded in model feet. The project CRS east the fixture grew is not model X on a rotated model, so the 1 cm check is in C3a.7. |
 | C3a.5 | The shape edit card is gone after the apply, and after another Check again. |
 | C3a.6 | One Undo gives the `undo` event of that name, and F's box is back. |
 | C3a.7 | Redo, then an export to `<run>\export2`. F's exported outline is the GDB outline within 1 cm. This is the largest distance from a vertex of either outline to the other's edges. |
 | C3a.8 | A floor with a slope arrow or another extra sketch line, given a reshape, shows up in the problems with that reason, and no card appears. Not run when no exported floor has one. |
-| C3a.9 | This step finds a floor H with an opening or a hosted family within 1 m of its east edge. If no floor has one, a fixture cuts a 0.4 m opening 0.75 m west of the east edge of a retail floor. The step shrinks H's east edge 1.5 m and applies the shrink. Each "Revit deleted … <id> …" line names an element that is gone, and no element still there is listed. The report records what Revit did to each dependent (deleted, or kept) and each "Revit warned:" line. Undo brings every dependent back. |
+| C3a.9 | This step finds a floor H with an opening or a hosted family within 1 m of its east edge. If no floor has one, a fixture cuts a 0.4 m opening into a retail floor, inside the 1 m band along its east edge. The step cuts the 1.5 m band along H's east side off its outline and applies it. This is a band, not the check list's `--grow -1.5`: on a floor whose east end is one corner, moving that corner would cut off only a triangle, which can miss the dependent. The banner must read "1 floor(s) reshaped". Each "Revit deleted … <id> …" line names an element that is gone, and no element still there is listed. The report records what Revit did to each dependent (deleted, or kept) and each "Revit warned:" line. Undo brings every dependent back. |
 | C3a.10 | A floor with an arc in its sketch, given a reshape, shows up in the problems with the curved-edges reason. No card appears, and the floor does not change. Not run when no exported floor has an arc. |
 
 East is the project CRS east the export writes. The test host computes it from the active project location, the same way RevitGeoSuite's `SharedCoordinateProjector` does.
