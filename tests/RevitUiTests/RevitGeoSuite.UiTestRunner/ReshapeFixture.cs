@@ -62,9 +62,19 @@ internal static class ReshapeFixture
     public static FloorUnit? Pick(IEnumerable<FloorUnit> units, string category, string uniqueId = "") =>
         units.FirstOrDefault(unit => uniqueId.Length > 0 ? unit.UniqueId == uniqueId : unit.Category == category);
 
-    /// <summary>The unit's exterior ring with its easternmost points moved <paramref name="growM"/> east (negative: west); holes stay.</summary>
+    /// <summary>
+    /// The unit moved <paramref name="growM"/> east (negative: west). When its east side is one straight
+    /// segment (exactly two easternmost points, next to each other), only that edge moves, so the floor
+    /// grows; otherwise, as on a floor with a notch at an east corner, moving the corner points alone
+    /// would make the ring cross itself, so the whole outline, holes included, is shifted.
+    /// </summary>
     public static List<List<(double X, double Y)>> Grow(FloorUnit unit, double growM)
     {
+        if (!EastIsOneEdge(unit))
+        {
+            return unit.Rings.Select(ring => ring.Select(point => (point.X + growM, point.Y)).ToList()).ToList();
+        }
+
         double east = unit.Rings[0].Max(point => point.X);
         var rings = new List<List<(double X, double Y)>>
         {
@@ -72,6 +82,16 @@ internal static class ReshapeFixture
         };
         rings.AddRange(unit.Rings.Skip(1).Select(ring => ring.ToList()));
         return rings;
+    }
+
+    /// <summary>True when the exterior ring's easternmost points are exactly two neighbouring vertices.</summary>
+    public static bool EastIsOneEdge(FloorUnit unit)
+    {
+        IReadOnlyList<(double X, double Y)> ring = unit.Rings[0];
+        int count = ring.Count > 1 && ring[0] == ring[^1] ? ring.Count - 1 : ring.Count;
+        double east = ring.Take(count).Max(point => point.X);
+        int[] at = Enumerable.Range(0, count).Where(index => Math.Abs(ring[index].X - east) < 1e-6).ToArray();
+        return at.Length == 2 && (at[1] - at[0] == 1 || (at[0] == 0 && at[1] == count - 1));
     }
 
     /// <summary>

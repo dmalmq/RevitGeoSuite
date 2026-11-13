@@ -42,11 +42,12 @@ internal static class GeoPackageUnits
     }
 
     /// <summary>
-    /// The unit table's restriction column: the export writes "restrict" (the GIS field list's name);
-    /// "restriction" is accepted for files written before that.
+    /// The unit table's column for the side of the ticket gates (rachi_nai, rachi_gai). The export
+    /// writes it as gis_restriction and leaves it out of restrict, which keeps only other restrictions
+    /// (ImdfRestrictionNormalizer); restrict and the older restriction are read when gis_restriction is missing.
     /// </summary>
     public static string? RestrictionColumn(IReadOnlyCollection<string> columns) =>
-        columns.Contains("restrict") ? "restrict" : columns.Contains("restriction") ? "restriction" : null;
+        new[] { "gis_restriction", "restrict", "restriction" }.FirstOrDefault(columns.Contains);
 
     private static IEnumerable<string> FeatureTables(SqliteConnection connection)
     {

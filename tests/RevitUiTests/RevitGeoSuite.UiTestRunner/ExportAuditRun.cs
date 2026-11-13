@@ -54,7 +54,9 @@ internal sealed partial class GisStandardRun
     private async Task AuditTopicCounts(StepResult step)
     {
         InspectReply model = await Inspect();
-        foreach (string topic in AuditTopics)
+        string[] others = model.Findings.Select(finding => finding.Topic).Distinct().Where(topic => !AuditTopics.Contains(topic)).OrderBy(topic => topic, StringComparer.Ordinal).ToArray();
+        step.Note($"Topics with findings on the page: {string.Join(", ", model.Findings.Select(finding => finding.Topic).Distinct())}; besides the B2 list: {(others.Length > 0 ? string.Join(", ", others) : "none")}.");
+        foreach (string topic in AuditTopics.Concat(others))
         {
             FindingItem[] found = model.Findings.Where(finding => finding.Topic == topic).ToArray();
             step.Note($"{topic}: {found.Length} finding(s){(found.Length > 0 ? ": " : string.Empty)}{string.Join(" | ", found.Select(finding => $"{finding.Severity} '{finding.Message}' ({finding.ElementIds.Length} element(s))"))}");

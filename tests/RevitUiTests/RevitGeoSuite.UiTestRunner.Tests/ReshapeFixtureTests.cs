@@ -159,4 +159,19 @@ public class ReshapeFixtureTests
         command.CommandText = sql;
         command.ExecuteNonQuery();
     }
+
+    [Fact]
+    public void Shifts_the_whole_outline_when_the_east_side_has_a_notch()
+    {
+        // A floor with a notch at its north-east corner whose far corner is the one easternmost point:
+        // moving that point alone 1 m east makes the ring cross itself.
+        var ring = new List<(double X, double Y)> { (0, 0), (9.5, 0), (9.5, 8), (9, 8), (9, 9), (10, 10), (0, 10), (0, 0) };
+        var notched = new FloorUnit("m|n|0", "n", "notched", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)ring });
+        var square = new FloorUnit("m|s|0", "s", "square", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)new List<(double X, double Y)> { (0, 0), (10, 0), (10, 10), (0, 10), (0, 0) } });
+
+        Assert.False(ReshapeFixture.EastIsOneEdge(notched));
+        Assert.Equal(ring.Select(point => (point.X + 1, point.Y)), ReshapeFixture.Grow(notched, 1)[0]);
+        Assert.True(ReshapeFixture.EastIsOneEdge(square));
+        Assert.Equal(new[] { (0.0, 0.0), (11.0, 0.0), (11.0, 10.0), (0.0, 10.0), (0.0, 0.0) }, ReshapeFixture.Grow(square, 1)[0]);
+    }
 }

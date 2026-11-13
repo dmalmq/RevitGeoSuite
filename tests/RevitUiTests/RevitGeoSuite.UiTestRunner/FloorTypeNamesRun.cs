@@ -281,7 +281,7 @@ internal sealed partial class GisStandardRun
         List<string> inUse = OldNamesInUse(typesBefore);
         if (inUse.Contains(Shop))
         {
-            step.Check(units.Restriction("rachi_gai") > 0, $"Shop units carry restriction rachi_gai ({units.Restriction("rachi_gai")} unit(s)).");
+            step.Check(units.Restriction("rachi_gai") > 0, $"Shop units carry gis_restriction rachi_gai ({units.Restriction("rachi_gai")} unit(s)).");
         }
 
         if (inUse.Contains("Roof"))

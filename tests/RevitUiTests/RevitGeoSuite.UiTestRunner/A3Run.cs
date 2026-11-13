@@ -25,7 +25,8 @@ internal sealed partial class GisStandardRun
     {
         await Step("A3.0", "Set up model (it binds the new parameters)", EnsureSetUp);
         await Step("A3.A", "Rule A: gis_levels_served, gis_door and gis_access_con bound as type parameters; name includes Doors", A3Bindings);
-        await Step("A3.1", "List the elevator objects by shaft; E is the lowest object of the first shaft on two or more levels", A3Elevators);
+        await Step("A3.P", "Export 'probe' with the span settings, to find the elements the export makes elevator units of", step => A3Export(step, "probe"));
+        await Step("A3.1", "List the probe's elevator elements by shaft; E is the lowest object of the first shaft on two or more levels", A3Elevators);
         await Step("A3.2", "Export 'span': GeoPackage per level, the Copy 1 views, shared coordinates", step => A3Export(step, "span"));
         await Step("A3.3", "Pick the test door from the span export; fill it, and set E's gis_levels_served to two levels and ZZ", A3Fill);
         await Step("A3.4", "Export 'override' with the same settings", step => A3Export(step, "override"));
@@ -56,8 +57,21 @@ internal sealed partial class GisStandardRun
 
     private Task A3Elevators(StepResult step)
     {
-        a3.Elevators = host.Call("elevators")["elevators"].Deserialize<ElevatorRow[]>(Web) ?? Array.Empty<ElevatorRow>();
-        if (!step.Check(a3.Elevators.Length > 0, $"The model has family instances whose type has gis_kind or gis_category 'elevator' ({a3.Elevators.Length})."))
+        // The export finds elevators through gis_kind/gis_category and its built-in family catalog (LUMINE's
+        // "j EV" is one), and any kind of element can be an elevator unit, so the list comes from the
+        // export's own elevator rows: each row's revit_key names the element.
+        if (!a3.Exports.TryGetValue("probe", out A3Output? probe))
+        {
+            step.NotRun("The probe export did not finish.");
+            return Task.CompletedTask;
+        }
+
+        string[] uniqueIds = ElevatorUnits(probe.Folder).Select(A3Fixture.UniqueId).Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+        JsonObject reply = host.Call("elevators", new { uniqueIds });
+        a3.Elevators = reply["elevators"].Deserialize<ElevatorRow[]>(Web) ?? Array.Empty<ElevatorRow>();
+        JsonArray missing = reply["missing"]?.AsArray() ?? new JsonArray();
+        step.Note($"The probe export has elevator units for {uniqueIds.Length} element(s); {a3.Elevators.Length} found in the model{(missing.Count > 0 ? $", not found: {missing.ToJsonString()}" : string.Empty)}.");
+        if (!step.Check(a3.Elevators.Length > 0, $"The export makes elevator units of elements of this model ({a3.Elevators.Length})."))
         {
             return Task.CompletedTask;
         }
@@ -69,7 +83,7 @@ internal sealed partial class GisStandardRun
             foreach (ElevatorRow elevator in a3.Shafts[shaft].OrderBy(item => item.ZMinM))
             {
                 step.Note($"Shaft {shaft + 1}: elevator {elevator.Id}, {elevator.Family} / {elevator.Type} (type {elevator.TypeId}, {elevator.Category}), level {elevator.Level}, "
-                    + $"X {Metres(elevator.XMinM)} to {Metres(elevator.XMaxM)}, Y {Metres(elevator.YMinM)} to {Metres(elevator.YMaxM)}, Z {Metres(elevator.ZMinM)} to {Metres(elevator.ZMaxM)}, gis_levels_served '{elevator.LevelsServed}'.");
+                    + $"level ProjectElevation {Metres(elevator.LevelElevationFt * 0.3048)}, X {Metres(elevator.XMinM)} to {Metres(elevator.XMaxM)}, Y {Metres(elevator.YMinM)} to {Metres(elevator.YMaxM)}, Z {Metres(elevator.ZMinM)} to {Metres(elevator.ZMaxM)}, gis_levels_served '{elevator.LevelsServed}'.");
             }
         }
 
@@ -89,7 +103,7 @@ internal sealed partial class GisStandardRun
         int[] shared = Enumerable.Range(0, a3.Shafts.Length).Where(index => a3.Shafts[index] != a3.EShaft && a3.Shafts[index].Any(elevator => elevator.TypeId == a3.E.TypeId)).Select(index => index + 1).ToArray();
         step.Note($"E = elevator {a3.E.Id} ({a3.E.Family} / {a3.E.Type}, level {a3.E.Level}), the lowest of shaft {Array.IndexOf(a3.Shafts, a3.EShaft) + 1} ({a3.EShaft!.Length} object(s)).");
         step.Note(shared.Length == 0 ? "No other shaft uses E's type." : $"Shaft(s) {string.Join(", ", shared)} also use E's type, so the override reaches them too.");
-        var empty = a3.EShaft!.Where(elevator => !string.IsNullOrEmpty(elevator.LevelsServed)).Select(elevator => elevator.TypeId).Distinct()
+        var empty = a3.EShaft!.Where(elevator => !string.IsNullOrEmpty(elevator.LevelsServed)).Select(elevator => elevator.TypeId).Where(type => type > 0).Distinct()
             .Select(type => new { id = type, name = "gis_levels_served", value = string.Empty }).ToArray();
         if (empty.Length > 0)
         {
@@ -398,7 +412,7 @@ internal sealed record A3Output(string Folder, string[] Warnings);
 
 internal sealed record ElevatorRow(
     long Id, string UniqueId, long TypeId, string? Family, string? Type, string? Category, string? Level, long? LevelElementId,
-    double? XMinM, double? XMaxM, double? YMinM, double? YMaxM, double? ZMinM, double? ZMaxM, string? LevelsServed)
+    double? XMinM, double? XMaxM, double? YMinM, double? YMaxM, double? ZMinM, double? ZMaxM, string? LevelsServed, double? LevelElevationFt = null)
 {
     public PlanBox Box => new(XMinM ?? 0, YMinM ?? 0, XMaxM ?? 0, YMaxM ?? 0);
 }

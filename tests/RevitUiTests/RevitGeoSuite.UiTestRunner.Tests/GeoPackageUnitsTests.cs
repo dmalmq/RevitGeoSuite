@@ -77,9 +77,10 @@ public class GeoPackageUnitsTests
     }
 
     [Theory]
+    [InlineData(new[] { "fid", "category", "restrict", "gis_restriction" }, "gis_restriction")]
     [InlineData(new[] { "fid", "category", "restrict" }, "restrict")]
     [InlineData(new[] { "fid", "category", "restriction" }, "restriction")]
     [InlineData(new[] { "fid", "category" }, null)]
-    public void Reads_the_restrict_column_the_export_writes(string[] columns, string? expected) =>
+    public void Reads_the_gate_side_column_the_export_writes(string[] columns, string? expected) =>
         Assert.Equal(expected, GeoPackageUnits.RestrictionColumn(columns));
 }

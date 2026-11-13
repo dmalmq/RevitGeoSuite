@@ -51,7 +51,7 @@ internal sealed class Commands
                 "levels" => api.Run(ViewCommands.Levels, Quick),
                 "views3d" => api.Run(ViewCommands.Views3D, Quick),
                 "bindings" => api.Run(app => ModelCommands.Bindings(app, Strings(request, "names")), Quick),
-                "elevators" => api.Run(ModelCommands.Elevators, Quick),
+                "elevators" => api.Run(app => ModelCommands.Elevators(app, Strings(request, "uniqueIds")), Quick),
                 "doors" => api.Run(ModelCommands.Doors, Quick),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
                 "redo" => PostOrPress("ID_EDIT_REDO", "Redo", "やり直し"),

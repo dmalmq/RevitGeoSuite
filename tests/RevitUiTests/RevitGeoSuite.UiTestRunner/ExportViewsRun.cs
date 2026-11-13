@@ -328,7 +328,7 @@ internal sealed partial class GisStandardRun
             while (card && card.querySelectorAll('input[type=checkbox]').length === 0) card = card.parentElement;
             if (!card) return [];
             return [...card.querySelectorAll('input[type=checkbox]')].map(box => ({
-                label: (box.closest('label')?.innerText ?? box.getAttribute('aria-label') ?? '').trim(),
+                label: (box.closest('label')?.innerText ?? box.getAttribute('aria-label') ?? '').trim().split('\n')[0].trim(),
                 checked: box.checked
             }));
         }");

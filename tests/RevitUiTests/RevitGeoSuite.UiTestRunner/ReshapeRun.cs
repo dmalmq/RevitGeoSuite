@@ -58,7 +58,7 @@ internal sealed partial class GisStandardRun
             }
 
             path = WriteDrift("reshape.gis-drift.json", unit!, ReshapeFixture.Reshaped(unit!, ReshapeFixture.Grow(unit!, GrowM)));
-            step.Note($"Wrote {path}: floor unit '{unit!.Name}' ({unit.Category}), east edge {GrowM} m east, EPSG:{unit.Epsg}.");
+            step.Note($"Wrote {path}: floor unit '{unit!.Name}' ({unit.Category}), {(ReshapeFixture.EastIsOneEdge(unit) ? "east edge" : "whole outline (its east side is not one straight edge)")} {GrowM} m east, EPSG:{unit.Epsg}.");
         }
         else
         {
@@ -240,11 +240,17 @@ internal sealed partial class GisStandardRun
         FloorScanRow? floor = scan.FirstOrDefault(row => Redrawable(row) && row.Dependents.Any(NearEast));
         if (floor == null)
         {
-            FloorScanRow? target = scan.Where(Redrawable).FirstOrDefault(row => Unit(row.UniqueId)?.Category == "retail");
-            if (!step.Check(target != null, "A retail floor whose sketch can be redrawn takes a fixture opening."))
+            // LUMINE has one large floor per zone type per level, so its retail floors are in several parts
+            // and none is a single-polygon unit; a walkway floor takes the opening then.
+            FloorScanRow? target = scan.Where(Redrawable).FirstOrDefault(row => Unit(row.UniqueId)?.Category == "retail")
+                ?? scan.Where(Redrawable).FirstOrDefault(row => Unit(row.UniqueId)?.Category == "walkway");
+            if (target == null)
             {
+                step.NotRun("No retail or walkway floor whose sketch can be redrawn is a single-polygon unit in the export (multi-part floors are refused), so no floor can take the fixture opening.");
                 return;
             }
+
+            step.Note($"The fixture opening goes on {Unit(target.UniqueId)!.Category} floor {target.Id}.");
 
             JsonObject fixture;
             try
@@ -353,6 +359,21 @@ internal sealed partial class GisStandardRun
     {
         int seq = host.LastEvent();
         string label = $"Apply {count} shape edit(s)";
+        if (await Shell.Button(label).CountAsync() == 0)
+        {
+            // A model with no id yet (no station export) cannot be matched to the drift file, so the
+            // page starts every shape edit unticked: tick them, as a person who knows the file would.
+            ILocator unticked = Shell.Page.GetByTestId("shape-edits").GetByRole(AriaRole.Checkbox, new() { Checked = false });
+            int ticked = 0;
+            while (await unticked.CountAsync() > 0 && ticked < count)
+            {
+                await unticked.First.CheckAsync();
+                ticked++;
+            }
+
+            step.Note($"The shape edits started unticked (the page: the model has no id yet, so the drift file cannot be matched to it); ticked {ticked}.");
+        }
+
         await Shell.Button(label).ClickAsync();
         ILocator confirm = Shell.Page.GetByTestId("drift-confirm");
         if (await Shell.ShowsAsync(confirm, 3000))

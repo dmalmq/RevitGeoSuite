@@ -26,7 +26,7 @@ internal static class ModelCommands
                     ["name"] = definition.Name,
                     ["binding"] = binding is TypeBinding ? "type" : "instance",
                     ["categories"] = binding.Categories.Cast<Category>()
-                        .Select(category => Enum.IsDefined(typeof(BuiltInCategory), (int)category.Id.Value) ? ((BuiltInCategory)(int)category.Id.Value).ToString() : category.Name)
+                        .Select(category => BuiltInName(category))
                         .OrderBy(name => name, StringComparer.Ordinal)
                         .ToList(),
                 };
@@ -40,43 +40,68 @@ internal static class ModelCommands
     }
 
     /// <summary>
-    /// Every family instance whose type has gis_kind or gis_category "elevator", by element id: family,
-    /// type, host level, bounding box in metres and the type's gis_levels_served.
+    /// Elevator objects with their plan box, height and host level. With <paramref name="uniqueIds"/>
+    /// (the export's elevator unit rows), exactly those elements, of any kind (family instances,
+    /// floors, rooms); without, the family instances whose type has gis_kind or gis_category 'elevator'.
     /// </summary>
-    public static Dictionary<string, object?> Elevators(UIApplication app)
+    public static Dictionary<string, object?> Elevators(UIApplication app, string[] uniqueIds)
     {
         Document document = Active(app);
         var elevators = new List<Dictionary<string, object?>>();
-        foreach (FamilyInstance instance in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>().OrderBy(item => item.Id.Value))
+        var missing = new List<string>();
+        if (uniqueIds.Length > 0)
         {
-            ElementType? type = document.GetElement(instance.GetTypeId()) as ElementType;
-            if (type == null || !(IsElevator(type, "gis_kind") || IsElevator(type, "gis_category")))
+            foreach (string uniqueId in uniqueIds.Distinct())
             {
-                continue;
-            }
+                Element? element = document.GetElement(uniqueId);
+                if (element == null)
+                {
+                    missing.Add(uniqueId);
+                    continue;
+                }
 
-            BoundingBoxXYZ? box = instance.get_BoundingBox(null);
-            elevators.Add(new Dictionary<string, object?>
+                elevators.Add(ElevatorRow(document, element));
+            }
+        }
+        else
+        {
+            foreach (FamilyInstance instance in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>().OrderBy(item => item.Id.Value))
             {
-                ["id"] = instance.Id.Value,
-                ["uniqueId"] = instance.UniqueId,
-                ["typeId"] = type.Id.Value,
-                ["family"] = instance.Symbol?.FamilyName,
-                ["type"] = type.Name,
-                ["category"] = instance.Category?.Name,
-                ["level"] = document.GetElement(instance.LevelId)?.Name,
-                ["levelElementId"] = instance.LevelId == ElementId.InvalidElementId ? null : instance.LevelId.Value,
-                ["xMinM"] = box == null ? null : box.Min.X * FeetToMetres,
-                ["xMaxM"] = box == null ? null : box.Max.X * FeetToMetres,
-                ["yMinM"] = box == null ? null : box.Min.Y * FeetToMetres,
-                ["yMaxM"] = box == null ? null : box.Max.Y * FeetToMetres,
-                ["zMinM"] = box == null ? null : box.Min.Z * FeetToMetres,
-                ["zMaxM"] = box == null ? null : box.Max.Z * FeetToMetres,
-                ["levelsServed"] = type.LookupParameter("gis_levels_served")?.AsString(),
-            });
+                if (document.GetElement(instance.GetTypeId()) is ElementType type && (IsElevator(type, "gis_kind") || IsElevator(type, "gis_category")))
+                {
+                    elevators.Add(ElevatorRow(document, instance));
+                }
+            }
         }
 
-        return new Dictionary<string, object?> { ["elevators"] = elevators };
+        return new Dictionary<string, object?> { ["elevators"] = elevators, ["missing"] = missing };
+    }
+
+    private static Dictionary<string, object?> ElevatorRow(Document document, Element element)
+    {
+        ElementType? type = document.GetElement(element.GetTypeId()) as ElementType;
+        BoundingBoxXYZ? box = element.get_BoundingBox(null);
+        ElementId levelId = element.LevelId;
+        Level? level = document.GetElement(levelId) as Level;
+        return new Dictionary<string, object?>
+        {
+            ["id"] = element.Id.Value,
+            ["uniqueId"] = element.UniqueId,
+            ["typeId"] = type?.Id.Value ?? -1,
+            ["family"] = (element as FamilyInstance)?.Symbol?.FamilyName ?? type?.FamilyName,
+            ["type"] = type?.Name,
+            ["category"] = element.Category?.Name,
+            ["level"] = level?.Name,
+            ["levelElementId"] = level == null ? null : levelId.Value,
+            ["levelElevationFt"] = level?.ProjectElevation,
+            ["xMinM"] = box == null ? null : box.Min.X * FeetToMetres,
+            ["xMaxM"] = box == null ? null : box.Max.X * FeetToMetres,
+            ["yMinM"] = box == null ? null : box.Min.Y * FeetToMetres,
+            ["yMaxM"] = box == null ? null : box.Max.Y * FeetToMetres,
+            ["zMinM"] = box == null ? null : box.Min.Z * FeetToMetres,
+            ["zMaxM"] = box == null ? null : box.Max.Z * FeetToMetres,
+            ["levelsServed"] = type?.LookupParameter("gis_levels_served")?.AsString(),
+        };
     }
 
     /// <summary>Every door instance by element id, with its UniqueId, type and family.</summary>
@@ -97,6 +122,13 @@ internal static class ModelCommands
                 })
                 .ToList(),
         };
+    }
+
+    // BuiltInCategory is backed by long from Revit 2024 on; Enum.ToObject converts to whatever it is.
+    private static string BuiltInName(Category category)
+    {
+        object value = Enum.ToObject(typeof(BuiltInCategory), category.Id.Value);
+        return Enum.IsDefined(typeof(BuiltInCategory), value) ? value.ToString()! : category.Name;
     }
 
     private static bool IsElevator(Element type, string parameter) =>

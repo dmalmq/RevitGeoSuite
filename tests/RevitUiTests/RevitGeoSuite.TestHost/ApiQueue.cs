@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using Autodesk.Revit.UI;
 
@@ -42,7 +43,19 @@ internal sealed class ApiQueue : IExternalEventHandler
             throw new InvalidOperationException($"Revit refused the request ({raised}).");
         }
 
-        if (!done.Task.Wait(timeout))
+        bool finished;
+        try
+        {
+            finished = done.Task.Wait(timeout);
+        }
+        catch (AggregateException failed) when (failed.InnerException != null)
+        {
+            // Task.Wait wraps the work's exception; callers catch the real one (InvalidOperationException, say).
+            ExceptionDispatchInfo.Capture(failed.InnerException).Throw();
+            throw;
+        }
+
+        if (!finished)
         {
             abandoned = true;
             throw new TimeoutException($"Revit did not run the request within {timeout.TotalSeconds:0} s. Is a dialog open?");
