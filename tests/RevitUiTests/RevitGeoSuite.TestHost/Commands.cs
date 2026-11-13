@@ -43,7 +43,7 @@ internal sealed class Commands
                 "state" => api.Run(State, Quick),
                 "post" => Post(Text(request, "id")),
                 "ribbon" => Post($"CustomCtrl_%CustomCtrl_%{Text(request, "tab")}%{Text(request, "panel")}%{Text(request, "button")}"),
-                "undo" => Post("ID_EDIT_UNDO"),
+                "undo" => PostOrPress("ID_EDIT_UNDO", "Undo", "元に戻す"),
                 "params" => Params(request),
                 "uniqueIds" => UniqueIds(request),
                 "floorTypes" => api.Run(FloorTypes, Quick),
@@ -54,7 +54,7 @@ internal sealed class Commands
                 "elevators" => api.Run(ModelCommands.Elevators, Quick),
                 "doors" => api.Run(ModelCommands.Doors, Quick),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
-                "redo" => Post("ID_EDIT_REDO"),
+                "redo" => PostOrPress("ID_EDIT_REDO", "Redo", "やり直し"),
                 "elements" => api.Run(app => FloorCommands.Elements(app, Strings(request, "uniqueIds"), Longs(request, "ids")), Quick),
                 "firstOf" => api.Run(app => FloorCommands.FirstOf(app, Text(request, "category")), Quick),
                 "floorScan" => api.Run(FloorCommands.FloorScan, TimeSpan.FromMinutes(5)),
@@ -286,6 +286,25 @@ internal sealed class Commands
         return state;
     }
 
+    /// <summary>
+    /// Undo and Redo: posts the command, and when Revit refuses the post, presses the same button on the
+    /// Quick Access Toolbar through UI Automation (on this pipe thread, so Revit's UI thread is free to
+    /// answer). A greyed-out button means Revit has nothing to undo, which the error then says.
+    /// </summary>
+    private Dictionary<string, object?> PostOrPress(string id, params string[] buttonNames)
+    {
+        try
+        {
+            return Post(id);
+        }
+        catch (InvalidOperationException refused) when (refused.Message.Contains("cannot run"))
+        {
+            Dictionary<string, object?> pressed = Win32Dialogs.PressMainWindowButton(buttonNames, refused.Message);
+            pressed["last"] = recorder.LastSequence;
+            return pressed;
+        }
+    }
+
     private Dictionary<string, object?> Post(string id) => api.Run(app =>
     {
         RevitCommandId command = RevitCommandId.LookupCommandId(id)
@@ -393,6 +412,12 @@ internal sealed class Commands
             TestRoot.Require(root, document.PathName);
             var log = new List<string>();
             using var transaction = new Transaction(document, FixtureTransaction);
+            // A fixture can raise warnings on purpose (a floor copied in place: "identical instances in
+            // the same place"). Shown at commit, Revit's warning dialog would hold the API thread, so
+            // warnings are taken off and logged; errors still fail the commit.
+            var warnings = new FixtureWarnings();
+            FailureHandlingOptions options = transaction.GetFailureHandlingOptions();
+            transaction.SetFailureHandlingOptions(options.SetFailuresPreprocessor(warnings).SetClearAfterRollback(true));
             transaction.Start();
             foreach (Dictionary<string, object?> rename in renames)
             {
@@ -445,9 +470,10 @@ internal sealed class Commands
 
             if (transaction.Commit() != TransactionStatus.Committed)
             {
-                throw new InvalidOperationException("Revit did not commit the fixture.");
+                throw new InvalidOperationException($"Revit did not commit the fixture. {string.Join(" ", warnings.Errors)}");
             }
 
+            log.AddRange(warnings.Removed.Select(text => $"removed Revit warning: {text}"));
             return new Dictionary<string, object?> { ["log"] = log };
         }, Quick);
     }

@@ -133,6 +133,34 @@ internal static class Win32Dialogs
         throw new TimeoutException($"No dialog with a '{button}' button within {timeoutMs} ms. On screen: {Describe()}");
     }
 
+    /// <summary>
+    /// Invokes the first enabled button of Revit's main window named one of <paramref name="names"/>
+    /// (the Quick Access Toolbar's Undo, for example). Throws, naming what it found, when none is enabled.
+    /// </summary>
+    public static Dictionary<string, object?> PressMainWindowButton(string[] names, string why)
+    {
+        IntPtr window = Process.GetCurrentProcess().MainWindowHandle;
+        if (window == IntPtr.Zero)
+        {
+            throw new InvalidOperationException($"{why} Revit's main window is not available to press {names[0]} instead.");
+        }
+
+        Condition named = new OrCondition(names.Select(name => (Condition)new PropertyCondition(AutomationElement.NameProperty, name)).Concat(new[] { Condition.FalseCondition }).ToArray());
+        AutomationElementCollection found = AutomationElement.FromHandle(window).FindAll(TreeScope.Descendants, named);
+        var seen = new List<string>();
+        foreach (AutomationElement element in found)
+        {
+            seen.Add($"{element.Current.ControlType.ProgrammaticName} '{element.Current.Name}' enabled={element.Current.IsEnabled}");
+            if (element.Current.IsEnabled && element.TryGetCurrentPattern(InvokePattern.Pattern, out object pattern))
+            {
+                ((InvokePattern)pattern).Invoke();
+                return new Dictionary<string, object?> { ["pressed"] = element.Current.Name, ["why"] = why };
+            }
+        }
+
+        throw new InvalidOperationException($"{why} No enabled '{string.Join("' or '", names)}' button to press instead (found: {(seen.Count == 0 ? "none" : string.Join("; ", seen))}).");
+    }
+
     /// <summary>Saves a PNG of Revit's main window as it is on screen.</summary>
     public static void CaptureMainWindow(string path)
     {
