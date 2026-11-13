@@ -80,7 +80,25 @@ def _audit_floor_types(snapshot, standard):
                 ERROR, "floor types",
                 u"Floor type %s has gis_category '%s', which is not a unit category. Its floors export by name instead." % (floor_type.name, category),
                 floor_type.floor_ids))
-        elif floor_type_match.needs_fix(floor_type, standard):
+        elif floor_type_match.needs_fix(floor_type, snapshot, standard):
+            renames = floor_type_match.free_targets(floor_type, snapshot, standard)
+            if renames:
+                findings.append(Finding(
+                    WARNING, "floor types",
+                    u"Floor type %s (%d floors) uses an old name. Run Fix floor types to rename it to %s.%s" % (
+                        floor_type.name, len(floor_type.floor_ids), u" or ".join(renames), _one_choice_for_all_floors(floor_type, renames)),
+                    floor_type.floor_ids))
+                continue
+            undecided = floor_type_match.undecided_targets(floor_type, standard)
+            if undecided:
+                findings.append(Finding(
+                    WARNING, "floor types",
+                    (u"Floor type %s (%d floors) uses an old name that can be %s. Run Fix floor types to choose one. "
+                     u"All %d floors of this type follow the choice. If some belong to the other one, duplicate the "
+                     u"type and move those floors to the copy first.") % (
+                        floor_type.name, len(floor_type.floor_ids), u" or ".join(undecided), len(floor_type.floor_ids)),
+                    floor_type.floor_ids))
+                continue
             findings.append(Finding(
                 WARNING, "floor types",
                 u"Floor type %s (%d floors) has no gis_category, so its floors export by type name. Run Fix floor types." % (floor_type.name, len(floor_type.floor_ids)),
@@ -154,3 +172,11 @@ def suggest_kind(name):
         if any(word in lowered for word in words):
             return kind
     return None
+
+
+def _one_choice_for_all_floors(floor_type, renames):
+    """One floor type can cover floors on both sides of the gates; the rename moves them all."""
+    if len(renames) < 2:
+        return u""
+    return (u" All %d floors of this type get the name you choose. If some belong to the other one, "
+            u"duplicate the type and move those floors to the copy first.") % len(floor_type.floor_ids)

@@ -15,7 +15,7 @@ public sealed class UnitFloorPlannerTests
     [Fact]
     public void EachUnitTakesTheTypeOfTheFloorUnderMostOfIt()
     {
-        HostFloorOutline shops = Host("shops", "j 店舗_床", Box(0, 0, 20, 10));
+        HostFloorOutline shops = Host("shops", "j ラチ外店舗_床", Box(0, 0, 20, 10));
         HostFloorOutline concourse = Host("concourse", "j ラチ外コンコース_床", Box(20, 0, 40, 10));
         UnitFloorSource left = new("1", Box(0, 0, 10, 10));
         UnitFloorSource right = new("2", Box(10, 0, 20, 10));
@@ -35,7 +35,7 @@ public sealed class UnitFloorPlannerTests
     [Fact]
     public void AFloorCoveredByTheNewFloorsIsReplaceable_APartlyCoveredOneIsNot()
     {
-        HostFloorOutline shops = Host("shops", "j 店舗_床", Box(0, 0, 20, 10));
+        HostFloorOutline shops = Host("shops", "j ラチ外店舗_床", Box(0, 0, 20, 10));
         HostFloorOutline concourse = Host("concourse", "j ラチ外コンコース_床", Box(20, 0, 40, 10));
         UnitFloorSource[] units =
         {
@@ -58,7 +58,7 @@ public sealed class UnitFloorPlannerTests
     [Fact]
     public void AUnitWithNoFloorUnderItIsKeptWithoutAHost()
     {
-        HostFloorOutline shops = Host("shops", "j 店舗_床", Box(0, 0, 10, 10));
+        HostFloorOutline shops = Host("shops", "j ラチ外店舗_床", Box(0, 0, 10, 10));
         UnitFloorSource outside = new("9", Box(50, 50, 55, 55));
 
         PlannedUnitFloor planned = Assert.Single(UnitFloorPlanner.Plan(new[] { outside }, new[] { shops }).Units);
@@ -71,7 +71,7 @@ public sealed class UnitFloorPlannerTests
     [Fact]
     public void DuplicateKeysAndNonPolygonsGetNoFloor()
     {
-        HostFloorOutline shops = Host("shops", "j 店舗_床", Box(0, 0, 10, 10));
+        HostFloorOutline shops = Host("shops", "j ラチ外店舗_床", Box(0, 0, 10, 10));
         UnitFloorSource[] units =
         {
             new("a", Box(0, 0, 5, 5)),
@@ -90,7 +90,7 @@ public sealed class UnitFloorPlannerTests
     [Fact]
     public void MultiPolygonUnitsKeepEveryPartAndDropSlivers()
     {
-        HostFloorOutline shops = Host("shops", "j 店舗_床", Box(0, 0, 30, 10));
+        HostFloorOutline shops = Host("shops", "j ラチ外店舗_床", Box(0, 0, 30, 10));
         MultiPolygon unit = Factory.CreateMultiPolygon(new[]
         {
             Box(0, 0, 10, 10),
@@ -112,7 +112,7 @@ public sealed class UnitFloorPlannerTests
         {
             new Coordinate(0, 0), new Coordinate(10, 10), new Coordinate(10, 0), new Coordinate(0, 10), new Coordinate(0, 0),
         });
-        HostFloorOutline shops = Host("shops", "j 店舗_床", Box(0, 0, 10, 10));
+        HostFloorOutline shops = Host("shops", "j ラチ外店舗_床", Box(0, 0, 10, 10));
 
         PlannedUnitFloor planned = Assert.Single(UnitFloorPlanner.Plan(new[] { new UnitFloorSource("x", bowTie) }, new[] { shops }).Units);
 
@@ -141,7 +141,7 @@ public sealed class UnitFloorPlannerTests
         Assert.Equal(16, polygons[2].Area, 6);
 
         // A unit in the second region takes this floor's type; one in the opening does not.
-        HostFloorOutline shops = Host("shops", "j 店舗_床", Factory.CreateMultiPolygon(polygons.ToArray()));
+        HostFloorOutline shops = Host("shops", "j ラチ外店舗_床", Factory.CreateMultiPolygon(polygons.ToArray()));
         UnitFloorPlan plan = UnitFloorPlanner.Plan(
             new[] { new UnitFloorSource("in-second", Box(31, 1, 39, 9)), new UnitFloorSource("in-opening", Box(5.5, 5.5, 7.5, 14.5)) },
             new[] { shops });

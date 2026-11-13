@@ -73,7 +73,10 @@ public sealed class GisFloorTypeProposalItem
 
     public string Material { get; set; } = string.Empty;
 
-    /// <summary>name (the zone names are equal) or words (words in the name).</summary>
+    /// <summary>The standard name Fix floor types renames the floor type to; empty when the name stays.</summary>
+    public string NewName { get; set; } = string.Empty;
+
+    /// <summary>name (the zone names are equal), oldName (a former name) or words (words in the name).</summary>
     public string Reason { get; set; } = string.Empty;
 }
 
@@ -88,11 +91,20 @@ public sealed class GisUnmatchedFloorTypeItem
     public long[] FloorIds { get; set; } = Array.Empty<long>();
 }
 
-/// <summary>Payload of <c>gisStandard.fixFloorTypes</c>: the floor types whose proposal the user accepted.</summary>
+/// <summary>One accepted proposal: a floor type and the standard type it becomes.</summary>
+[TsExport]
+public sealed class GisAcceptedProposal
+{
+    public long FloorTypeId { get; set; }
+
+    public string StandardTypeName { get; set; } = string.Empty;
+}
+
+/// <summary>Payload of <c>gisStandard.fixFloorTypes</c>: the proposals the user accepted.</summary>
 [TsExport]
 public sealed class GisFixFloorTypesRequest
 {
-    public long[] FloorTypeIds { get; set; } = Array.Empty<long>();
+    public GisAcceptedProposal[] Accepted { get; set; } = Array.Empty<GisAcceptedProposal>();
 }
 
 /// <summary>What <c>gisStandard.setup</c> or <c>gisStandard.fixFloorTypes</c> changed, one line per change.</summary>

@@ -192,8 +192,30 @@ public static class GisAudit
                     $"Floor type {floorType.Name} has gis_category '{category}', which is not a unit category. Its floors export by name instead.",
                     floorType.FloorIds);
             }
-            else if (FloorTypeMatcher.NeedsFix(floorType, standard))
+            else if (FloorTypeMatcher.NeedsFix(floorType, snapshot, standard))
             {
+                IReadOnlyList<string> renames = FloorTypeMatcher.FreeTargets(floorType, snapshot, standard);
+                if (renames.Count > 0)
+                {
+                    yield return new GisAuditFinding(
+                        GisAuditSeverity.Warning,
+                        "floor types",
+                        $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name. Run Fix floor types to rename it to {string.Join(" or ", renames)}.{OneChoiceForAllFloors(floorType, renames)}",
+                        floorType.FloorIds);
+                    continue;
+                }
+
+                IReadOnlyList<string> undecided = FloorTypeMatcher.UndecidedTargets(floorType, standard);
+                if (undecided.Count > 0)
+                {
+                    yield return new GisAuditFinding(
+                        GisAuditSeverity.Warning,
+                        "floor types",
+                        $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name that can be {string.Join(" or ", undecided)}. Run Fix floor types to choose one. All {floorType.FloorIds.Count} floors of this type follow the choice. If some belong to the other one, duplicate the type and move those floors to the copy first.",
+                        floorType.FloorIds);
+                    continue;
+                }
+
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "floor types",
@@ -202,6 +224,12 @@ public static class GisAudit
             }
         }
     }
+
+    // One floor type can cover floors on both sides of the gates; the rename moves them all.
+    private static string OneChoiceForAllFloors(FloorTypeInfo floorType, IReadOnlyList<string> renames) =>
+        renames.Count > 1
+            ? $" All {floorType.FloorIds.Count} floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first."
+            : string.Empty;
 
     private static IEnumerable<GisAuditFinding> AuditFloors(ModelSnapshot snapshot, GisToolStandard standard)
     {

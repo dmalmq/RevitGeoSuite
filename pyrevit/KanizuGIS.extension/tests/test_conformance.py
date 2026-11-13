@@ -37,6 +37,7 @@ def build_model(spec, standard):
         for key in ("gis_category", "gis_restriction", "material"):
             if key in edit:
                 setattr(target, key, edit[key])
+    floor_types = [entry for entry in floor_types if entry.name not in spec.get("standard_type_skip", [])]
     for entry in spec.get("floor_types_extra", []):
         floor_types.append(snapshot.FloorTypeInfo(
             entry["id"], entry["name"], entry.get("gis_category", ""), entry.get("gis_restriction", ""),
@@ -72,10 +73,25 @@ class ConformanceTests(unittest.TestCase):
 
     def test_floor_type_match(self):
         for case in self.cases["floor_type_match"]:
-            proposal = floor_type_match.propose_one(
-                snapshot.FloorTypeInfo(900, case["name"], "", "", "", [1, 2, 3]), self.standard)
-            actual = None if proposal is None else [proposal.standard_type.name, proposal.gis_restriction, proposal.reason]
+            actual = [[proposal.standard_type.name, proposal.gis_restriction, proposal.reason]
+                      for proposal in floor_type_match.candidates(
+                          snapshot.FloorTypeInfo(900, case["name"], "", "", "", [1, 2, 3]),
+                          snapshot.ModelSnapshot(), self.standard)]
             self.assertEqual(case["expected"], actual, case["name"])
+
+    def test_fix_floor_types(self):
+        for case in self.cases["fix_floor_types"]:
+            model = build_model(case["model"], self.standard)
+            self.assertEqual(
+                case["expected_proposals"],
+                [[proposal.floor_type.element_id, proposal.standard_type.name, proposal.new_name or ""]
+                 for proposal in floor_type_match.propose(model, self.standard)],
+                case["name"])
+            self.assertEqual(
+                case["expected_needs_fix"],
+                [floor_type.element_id for floor_type in model.floor_types
+                 if floor_type_match.needs_fix(floor_type, model, self.standard)],
+                case["name"])
 
     def test_setup_plan(self):
         for case in self.cases["setup_plan"]:
