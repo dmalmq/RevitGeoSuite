@@ -160,7 +160,7 @@ public sealed class GisShapeEditsTests
                 Shape(GisDrift.Reshaped, "same", Rect(0, 0, 10, 10)),
                 Shape(GisDrift.Reshaped, "wider", Rect(0, 0, 12, 10)),
                 Shape(GisDrift.Reshaped, "no-floor", Rect(0, 0, 12, 10)),
-                Shape(GisDrift.Split, "split", Rect(0, 0, 5, 10)),
+                Shape(GisDrift.Merged, "merged", Rect(0, 0, 5, 10)),
             },
             new[]
             {
@@ -198,11 +198,97 @@ public sealed class GisShapeEditsTests
     public void EditsAppliedInALaterStepAreListed()
     {
         (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
-            new[] { Shape(GisDrift.Split, "a", Rect(0, 0, 5, 10)) },
+            new[] { Shape(GisDrift.Merged, "a", Rect(0, 0, 5, 10)) },
             new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }) });
 
         Assert.Empty(edits);
         Assert.Contains("not applied by Review GDB edits yet", Assert.Single(problems));
+    }
+
+    private static GisDriftShape Piece(string uniqueId, bool keeps, Polygon2D outline) =>
+        new(GisDrift.Split, "m|" + uniqueId + "|0", uniqueId, "unit", "ショップ", "lvl-1f", "m|" + uniqueId + "|0", keeps, Gdb(outline));
+
+    [Fact]
+    public void ASplitRedrawsTheKeptFloorAndAddsTheOtherPieces()
+    {
+        ShapePlan plan = Plan(
+            new[] { Piece("a", true, Rect(0, 0, 5, 10)), Piece("a", false, Rect(5, 0, 10, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }, levelId: 7) });
+
+        Assert.Empty(plan.Problems);
+        ShapeEdit edit = Assert.Single(plan.Edits);
+        Assert.Equal(ShapeEditKind.Split, edit.Kind);
+        Assert.True(edit.RedrawFloor);
+        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(0, 0, 5, 10) }, edit.Outline));
+        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(5, 0, 10, 10) }, Assert.Single(edit.NewFloors)));
+        Assert.Equal("Split floor 101 (ショップ) into 2 floors by the GDB", edit.Label());
+        Assert.Equal(2, plan.Waiting);
+    }
+
+    [Fact]
+    public void ASplitTheModelAlreadyHasOffersNothing()
+    {
+        ShapePlan plan = Plan(
+            new[] { Piece("a", true, Rect(0, 0, 5, 10)), Piece("a", false, Rect(5, 0, 10, 10)) },
+            new[]
+            {
+                new ShapeFloor("a", 101, new[] { Rect(0, 0, 5, 10) }, levelId: 7),
+                new ShapeFloor("b", 102, new[] { Rect(5, 0, 10, 10) }, levelId: 7),
+            });
+
+        Assert.Empty(plan.Edits);
+        Assert.Empty(plan.Problems);
+        Assert.Equal(0, plan.Waiting);
+    }
+
+    [Fact]
+    public void AFloorWithThePieceOnAnotherLevelIsNotThePiece()
+    {
+        ShapePlan plan = Plan(
+            new[] { Piece("a", true, Rect(0, 0, 5, 10)), Piece("a", false, Rect(5, 0, 10, 10)) },
+            new[]
+            {
+                new ShapeFloor("a", 101, new[] { Rect(0, 0, 5, 10) }, levelId: 7),
+                new ShapeFloor("b", 102, new[] { Rect(5, 0, 10, 10) }, levelId: 8),
+            });
+
+        ShapeEdit edit = Assert.Single(plan.Edits);
+        Assert.False(edit.RedrawFloor);
+        Assert.Single(edit.NewFloors);
+        Assert.Equal(1, plan.Waiting);
+    }
+
+    [Fact]
+    public void ASplitWithoutOneKeptPieceIsListed()
+    {
+        ShapePlan plan = Plan(
+            new[] { Piece("a", false, Rect(0, 0, 5, 10)), Piece("a", false, Rect(5, 0, 10, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }, levelId: 7) });
+
+        Assert.Empty(plan.Edits);
+        Assert.Contains("0 pieces of this split that keep the floor", Assert.Single(plan.Problems));
+        Assert.Equal(2, plan.Waiting);
+    }
+
+    [Fact]
+    public void ASplitOfAFloorThatCannotBeRedrawnIsListed()
+    {
+        ShapePlan plan = Plan(
+            new[] { Piece("a", true, Rect(0, 0, 5, 10)), Piece("a", false, Rect(5, 0, 10, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }, "has a slope arrow", levelId: 7) });
+
+        Assert.Empty(plan.Edits);
+        Assert.Equal("unit ショップ split: floor 101 has a slope arrow, so its sketch is not redrawn. Split it in Revit by hand.", Assert.Single(plan.Problems));
+    }
+
+    [Fact]
+    public void NewFloorsTakeTheFloorsGisValuesButNotItsIds()
+    {
+        Assert.Contains("name", GisShapeEdits.CopiedToNewFloors);
+        Assert.Contains("category", GisShapeEdits.CopiedToNewFloors);
+        Assert.Contains("short_name", GisShapeEdits.CopiedToNewFloors);
+        Assert.DoesNotContain("id", GisShapeEdits.CopiedToNewFloors);
+        Assert.DoesNotContain("gis_key", GisShapeEdits.CopiedToNewFloors);
     }
 
     [Fact]
@@ -210,14 +296,16 @@ public sealed class GisShapeEditsTests
     {
         GisDriftFile file = GisDrift.Read(Path.Combine(Path.GetDirectoryName(SourceFile())!, "..", "..", "Fixtures", "Conformance", "gis-drift", "8d7f3c1e-0000.gis-drift.json"));
 
-        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = GisShapeEdits.Plan(
+        ShapePlan plan = GisShapeEdits.Plan(
             file,
             new Dictionary<string, ShapeFloor>(),
             ModelToProject,
             file.Epsg);
 
-        Assert.Empty(edits);
-        Assert.Equal(file.Shapes.Count, problems.Count);
+        // One line per shape, except the split's two pieces, which share one.
+        Assert.Empty(plan.Edits);
+        Assert.Equal(file.Shapes.Count - 1, plan.Problems.Count);
+        Assert.Equal(file.Shapes.Count, plan.Waiting);
     }
 
     private static string SourceFile([CallerFilePath] string path = "") => path;

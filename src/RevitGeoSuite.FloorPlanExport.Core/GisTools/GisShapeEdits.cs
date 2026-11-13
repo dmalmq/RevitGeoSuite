@@ -7,18 +7,20 @@ using NetTopologySuite.Geometries;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
 /// <summary>A floor a shape edit can change: its outline in model feet, and why Revit cannot edit its sketch, if it cannot.</summary>
 public sealed class ShapeFloor
 {
-    public ShapeFloor(string uniqueId, long elementId, IEnumerable<Polygon2D> outline, string? cannotEdit = null)
+    public ShapeFloor(string uniqueId, long elementId, IEnumerable<Polygon2D> outline, string? cannotEdit = null, long levelId = 0)
     {
         UniqueId = uniqueId;
         ElementId = elementId;
         Outline = outline.ToList();
         CannotEdit = cannotEdit;
+        LevelId = levelId;
     }
 
     public string UniqueId { get; }
@@ -29,22 +31,42 @@ public sealed class ShapeFloor
 
     /// <summary>Why the floor's sketch cannot be redrawn (a slope arrow, shape-edited points), or null.</summary>
     public string? CannotEdit { get; }
+
+    /// <summary>The floor's Revit level, so a split piece can be found among the floors beside its keeper.</summary>
+    public long LevelId { get; }
 }
 
 public enum ShapeEditKind
 {
     Reshape,
+    Split,
 }
 
-/// <summary>One shape edit to apply: the floor it changes, its outline now and the GDB's, both in model feet.</summary>
+/// <summary>
+/// One shape edit to apply: the floor it changes, its outline now and the GDB's, all in model feet.
+/// A split also lists the pieces that become new floors beside it.
+/// </summary>
 public sealed class ShapeEdit
 {
     public ShapeEdit(ShapeEditKind kind, GisDriftShape shape, ShapeFloor floor, IReadOnlyList<Polygon2D> outline)
+        : this(kind, shape, floor, outline, Array.Empty<IReadOnlyList<Polygon2D>>(), redrawFloor: true)
+    {
+    }
+
+    public ShapeEdit(
+        ShapeEditKind kind,
+        GisDriftShape shape,
+        ShapeFloor floor,
+        IReadOnlyList<Polygon2D> outline,
+        IReadOnlyList<IReadOnlyList<Polygon2D>> newFloors,
+        bool redrawFloor)
     {
         Kind = kind;
         Shape = shape;
         Floor = floor;
         Outline = outline;
+        NewFloors = newFloors;
+        RedrawFloor = redrawFloor;
     }
 
     public ShapeEditKind Kind { get; }
@@ -56,11 +78,19 @@ public sealed class ShapeEdit
     /// <summary>The GDB's outline in model feet: the floor's new sketch.</summary>
     public IReadOnlyList<Polygon2D> Outline { get; }
 
-    public string Label() => string.Format(
-        CultureInfo.InvariantCulture,
-        "Reshape floor {0}{1} to the GDB outline",
-        Floor.ElementId,
-        Shape.Label.Length > 0 ? " (" + Shape.Label + ")" : string.Empty);
+    /// <summary>A split's pieces that no floor has yet, each a new floor of the kept floor's type and level.</summary>
+    public IReadOnlyList<IReadOnlyList<Polygon2D>> NewFloors { get; }
+
+    /// <summary>False when the floor already has <see cref="Outline"/> and only new floors are missing.</summary>
+    public bool RedrawFloor { get; }
+
+    public string Label()
+    {
+        string name = Shape.Label.Length > 0 ? " (" + Shape.Label + ")" : string.Empty;
+        return Kind == ShapeEditKind.Split
+            ? string.Format(CultureInfo.InvariantCulture, "Split floor {0}{1} into {2} floors by the GDB", Floor.ElementId, name, NewFloors.Count + 1)
+            : string.Format(CultureInfo.InvariantCulture, "Reshape floor {0}{1} to the GDB outline", Floor.ElementId, name);
+    }
 }
 
 /// <summary>What a drift file's shapes need: the edits Review GDB edits can apply, what has to be done by hand, and how many shapes still wait.</summary>
@@ -99,6 +129,16 @@ public static class GisShapeEdits
 {
     /// <summary>The reason <see cref="ShapeFloor.CannotEdit"/> gives for a floor with arcs or splines in its boundary.</summary>
     public const string CurvedEdges = "has curved edges, which the GDB's straight-segment outline would replace with short lines";
+
+    /// <summary>
+    /// The standard's floor instance parameters a split's new floors take from the kept floor:
+    /// name, category, level and the like. Not <c>id</c> or <c>gis_key</c>, which name one element.
+    /// </summary>
+    public static IReadOnlyList<string> CopiedToNewFloors { get; } = GisSharedParameters.All
+        .Where(definition => definition.Binding == GisParameterBinding.Instance && definition.Categories.Contains("OST_Floors"))
+        .Select(definition => definition.Name)
+        .Where(name => name != "id" && name != "gis_key")
+        .ToList();
 
     /// <summary>Outlines closer than this everywhere are the same.</summary>
     public const double SameOutlineMetres = 0.01;
@@ -146,7 +186,12 @@ public static class GisShapeEdits
 
         AffineTransform2D projectToModel = modelToProject.Inverse();
         int settled = 0;
-        foreach (GisDriftShape shape in file.Shapes)
+        foreach (IGrouping<string, GisDriftShape> group in file.Shapes.Where(shape => shape.Edit == GisDrift.Split).GroupBy(shape => shape.Group.Length > 0 ? shape.Group : shape.RevitKey))
+        {
+            settled += PlanSplit(group.ToList(), floors, projectToModel, edits, problems);
+        }
+
+        foreach (GisDriftShape shape in file.Shapes.Where(shape => shape.Edit != GisDrift.Split))
         {
             if (shape.Edit != GisDrift.Reshaped)
             {
@@ -183,6 +228,61 @@ public static class GisShapeEdits
         }
 
         return new ShapePlan(edits, problems, file.Shapes.Count - settled);
+    }
+
+    /// <summary>
+    /// Plans one split: the kept floor takes its piece's outline, and each other piece becomes a new
+    /// floor unless a floor on the same level already has its outline. Returns how many of the
+    /// group's pieces the model already matches.
+    /// </summary>
+    private static int PlanSplit(
+        IReadOnlyList<GisDriftShape> pieces,
+        IReadOnlyDictionary<string, ShapeFloor> floors,
+        AffineTransform2D projectToModel,
+        List<ShapeEdit> edits,
+        List<string> problems)
+    {
+        List<GisDriftShape> keepers = pieces.Where(piece => piece.Keeps).ToList();
+        if (keepers.Count != 1)
+        {
+            problems.Add($"{pieces[0].Describe()}: the drift file has {keepers.Count} pieces of this split that keep the floor, not 1. Split it in Revit by hand.");
+            return 0;
+        }
+
+        GisDriftShape keeper = keepers[0];
+        if (!floors.TryGetValue(keeper.UniqueId, out ShapeFloor? floor))
+        {
+            problems.Add($"{keeper.Describe()}: no floor in this model has unique id {keeper.UniqueId}. Units from rooms and families are split in Revit by hand.");
+            return 0;
+        }
+
+        List<Polygon2D> outline = ToModel(keeper.Outline, projectToModel);
+        List<List<Polygon2D>> others = pieces.Where(piece => !piece.Keeps).Select(piece => ToModel(piece.Outline, projectToModel)).ToList();
+        if (outline.Count == 0 || others.Any(piece => piece.Count == 0))
+        {
+            problems.Add($"{keeper.Describe()}: a piece of this split has no area in the GDB outline.");
+            return 0;
+        }
+
+        bool redraw = !SameOutline(floor.Outline, outline);
+        List<IReadOnlyList<Polygon2D>> missing = others
+            .Where(piece => !floors.Values.Any(other => other.UniqueId != floor.UniqueId && other.LevelId == floor.LevelId && SameOutline(other.Outline, piece)))
+            .Cast<IReadOnlyList<Polygon2D>>()
+            .ToList();
+        int settled = (redraw ? 0 : 1) + (others.Count - missing.Count);
+        if (!redraw && missing.Count == 0)
+        {
+            return settled;
+        }
+
+        if (redraw && floor.CannotEdit != null)
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {floor.CannotEdit}, so its sketch is not redrawn. Split it in Revit by hand.");
+            return settled;
+        }
+
+        edits.Add(new ShapeEdit(ShapeEditKind.Split, keeper, floor, outline, missing, redraw));
+        return settled;
     }
 
     /// <summary>The GDB outline in model feet, each ring cleaned of points closer than <see cref="ShortestEdgeFeet"/>; rings left with fewer than 3 points are dropped.</summary>

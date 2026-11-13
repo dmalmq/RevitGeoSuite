@@ -1,7 +1,7 @@
 <!--
   The shape edits of a drift file: floors whose outline someone changed in the GDB. Each one is drawn
   first (the floor now in grey, the GDB's outline in orange) and can be shown over the floor's plan
-  in Revit before anything changes. Applying redraws each ticked floor's sketch as its own undo step.
+  in Revit before anything changes. Applying redraws each ticked floor's sketch, and adds a split's new floors, each edit as its own undo step.
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte'
@@ -76,7 +76,11 @@
           <Checkbox checked={!unticked.has(shape.uniqueId)} {disabled} onchange={(event) => toggle(shape.uniqueId, event.currentTarget.checked)} aria-label={shape.label} />
           <span class="min-w-0">
             <span class="block truncate" title={shape.label}>{shape.feature}</span>
-            <span class="block text-small text-muted-foreground">{format($t('GisStandard.Shapes.Reshape', 'Reshape floor {0}'), shape.elementId)}</span>
+            <span class="block text-small text-muted-foreground">
+              {shape.kind === 'split'
+                ? format($t('GisStandard.Shapes.Split', 'Split floor {0} into {1} floors'), shape.elementId, shape.floors)
+                : format($t('GisStandard.Shapes.Reshape', 'Reshape floor {0}'), shape.elementId)}
+            </span>
           </span>
         </label>
         <svg viewBox={drawing.viewBox} class="aspect-square w-full rounded bg-muted/40" role="img" aria-label={shape.label}>

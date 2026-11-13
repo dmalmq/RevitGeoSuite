@@ -140,7 +140,7 @@ public sealed class GisShapeShowHandler : IRpcHandler
 
             double z = FloorTopZ(floor) + 0.15;
             List<OverlayLine> lines = Lines(edit.Floor.Outline, z, new Color(128, 128, 128))
-                .Concat(Lines(edit.Outline, z, new Color(234, 88, 12)))
+                .Concat(edit.NewFloors.Prepend(edit.Outline).SelectMany(outline => Lines(outline, z, new Color(234, 88, 12))))
                 .ToList();
             OutlineOverlay.Show(view, lines);
             if (uiDocument.ActiveView.Id != view.Id)
@@ -245,12 +245,13 @@ internal static class GisDriftWork
     public static GisShapeEditItem Item(ShapeEdit edit) => new()
     {
         UniqueId = edit.Floor.UniqueId,
-        Kind = "reshape",
+        Kind = edit.Kind == ShapeEditKind.Split ? "split" : "reshape",
+        Floors = edit.NewFloors.Count + 1,
         ElementId = edit.Floor.ElementId,
         Feature = edit.Shape.Label.Length > 0 ? edit.Shape.Label : edit.Floor.UniqueId,
         Label = edit.Label(),
         Before = Rings(edit.Floor.Outline),
-        After = Rings(edit.Outline),
+        After = edit.NewFloors.Prepend(edit.Outline).SelectMany(Rings).ToArray(),
     };
 
     private static double[][][] Rings(IReadOnlyList<Polygon2D> outline) =>

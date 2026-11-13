@@ -28,7 +28,22 @@ public static class ShapeEditWork
         {
             if (document.GetElement(uniqueId) is Floor floor)
             {
-                floors[uniqueId] = new ShapeFloor(uniqueId, floor.Id.Value, FloorTopFaces.Read(floor).Outline, WhyNotEditable(document, floor));
+                floors[uniqueId] = new ShapeFloor(uniqueId, floor.Id.Value, FloorTopFaces.Read(floor).Outline, WhyNotEditable(document, floor), floor.LevelId.Value);
+            }
+        }
+
+        // A split's pieces lie inside the floor it splits: the floors there are the ones a piece may already be.
+        foreach (Floor splitFloor in file.Shapes
+            .Where(shape => shape.Edit == GisDrift.Split && shape.Keeps)
+            .Select(shape => document.GetElement(shape.UniqueId))
+            .OfType<Floor>())
+        {
+            foreach (Floor beside in FloorsOver(document, splitFloor))
+            {
+                if (!floors.ContainsKey(beside.UniqueId))
+                {
+                    floors[beside.UniqueId] = new ShapeFloor(beside.UniqueId, beside.Id.Value, FloorTopFaces.Read(beside).Outline, levelId: beside.LevelId.Value);
+                }
             }
         }
 
@@ -36,11 +51,136 @@ public static class ShapeEditWork
     }
 
     /// <summary>
-    /// Redraws the floor's sketch as the edit's outline. The floor keeps its UniqueId, so its
-    /// revit_key, id and parameters stay. One undo step named after the edit.
+    /// Applies one shape edit as one undo step named after it. A reshape redraws the floor's
+    /// sketch, so the floor keeps its UniqueId, revit_key, id and parameters. A split redraws the
+    /// kept floor to its piece and adds a floor for each other piece, with the kept floor's type,
+    /// level, offset and GIS values; the next Kanizu apply pairs each piece with its new floor.
     /// </summary>
-    /// <returns>What Revit warned about, and the elements that hung on the floor and are gone after it, one line each.</returns>
+    /// <returns>What Revit warned about, the elements gone with the old outline, and the new floors, one line each.</returns>
     public static IReadOnlyList<string> Apply(Document document, ShapeEdit edit)
+    {
+        if (edit.Kind == ShapeEditKind.Reshape)
+        {
+            return Redraw(document, edit);
+        }
+
+        using TransactionGroup group = new(document, edit.Label());
+        group.Start();
+        try
+        {
+            List<string> notes = edit.RedrawFloor ? Redraw(document, edit).ToList() : new List<string>();
+            notes.AddRange(AddFloors(document, edit));
+            group.Assimilate();
+            return notes;
+        }
+        finally
+        {
+            if (group.HasStarted() && !group.HasEnded())
+            {
+                group.RollBack();
+            }
+        }
+    }
+
+    /// <summary>A floor for each piece of a split that no floor has yet, in one transaction, read back to check Revit kept each outline.</summary>
+    private static IEnumerable<string> AddFloors(Document document, ShapeEdit edit)
+    {
+        if (document.GetElement(edit.Floor.UniqueId) is not Floor keeper || document.GetElement(keeper.SketchId) is not Sketch sketch)
+        {
+            throw new InvalidOperationException($"Floor {edit.Floor.ElementId} or its sketch is gone.");
+        }
+
+        double z = sketch.SketchPlane.GetPlane().Origin.Z;
+        FailOnError failures = new();
+        List<ElementId> created = new();
+        using (Transaction transaction = new(document, edit.Label()))
+        {
+            transaction.SetFailureHandlingOptions(transaction.GetFailureHandlingOptions().SetFailuresPreprocessor(failures));
+            transaction.Start();
+            foreach (IReadOnlyList<Polygon2D> piece in edit.NewFloors)
+            {
+                foreach (Polygon2D polygon in piece)
+                {
+                    List<CurveLoop> loops = new[] { polygon.ExteriorRing }
+                        .Concat(polygon.InteriorRings)
+                        .Select(ring => CurveLoop.Create(Lines(ring, z).Cast<Curve>().ToList()))
+                        .ToList();
+                    Floor floor = Floor.Create(document, loops, keeper.GetTypeId(), keeper.LevelId);
+                    CopyValues(keeper, floor);
+                    created.Add(floor.Id);
+                }
+            }
+
+            if (transaction.Commit() != TransactionStatus.Committed)
+            {
+                string why = failures.Errors.Count > 0 ? ": " + string.Join(" ", failures.Errors.Distinct()) : string.Empty;
+                throw new InvalidOperationException($"Revit refused the new floors of the split of floor {edit.Floor.ElementId}; nothing changed{why}");
+            }
+        }
+
+        List<Floor> made = created.Select(id => document.GetElement(id)).OfType<Floor>().ToList();
+        if (made.Count != created.Count || edit.NewFloors.Any(piece => !made.Any(floor => GisShapeEdits.SameOutline(FloorTopFaces.Read(floor).Outline, piece))))
+        {
+            throw new InvalidOperationException($"Revit did not keep the GDB outline of every new floor of the split of floor {edit.Floor.ElementId}; nothing changed.");
+        }
+
+        return failures.Warnings.Distinct().Select(text => "Revit warned: " + text)
+            .Concat(made.Select(floor => $"New floor {floor.Id.Value}, with the type, level and GIS values of floor {edit.Floor.ElementId}."));
+    }
+
+    /// <summary>The kept floor's height offset and the standard's GIS values that describe a floor, not one element.</summary>
+    private static void CopyValues(Floor from, Floor to)
+    {
+        Copy(from.get_Parameter(BuiltInParameter.FLOOR_HEIGHTABOVELEVEL_PARAM), to.get_Parameter(BuiltInParameter.FLOOR_HEIGHTABOVELEVEL_PARAM));
+        Copy(from.get_Parameter(BuiltInParameter.FLOOR_PARAM_IS_STRUCTURAL), to.get_Parameter(BuiltInParameter.FLOOR_PARAM_IS_STRUCTURAL));
+        foreach (string name in GisShapeEdits.CopiedToNewFloors)
+        {
+            Copy(from.LookupParameter(name), to.LookupParameter(name));
+        }
+    }
+
+    private static void Copy(Parameter? from, Parameter? to)
+    {
+        if (from == null || to == null || to.IsReadOnly || !from.HasValue || from.StorageType != to.StorageType)
+        {
+            return;
+        }
+
+        switch (from.StorageType)
+        {
+            case StorageType.String:
+                to.Set(from.AsString() ?? string.Empty);
+                break;
+            case StorageType.Integer:
+                to.Set(from.AsInteger());
+                break;
+            case StorageType.Double:
+                to.Set(from.AsDouble());
+                break;
+            case StorageType.ElementId:
+                to.Set(from.AsElementId());
+                break;
+        }
+    }
+
+    /// <summary>The floors on the floor's level whose bounding boxes meet its own.</summary>
+    private static IEnumerable<Floor> FloorsOver(Document document, Floor floor)
+    {
+        BoundingBoxXYZ? box = floor.get_BoundingBox(null);
+        if (box == null)
+        {
+            return Enumerable.Empty<Floor>();
+        }
+
+        return new FilteredElementCollector(document)
+            .OfClass(typeof(Floor))
+            .WherePasses(new BoundingBoxIntersectsFilter(new Outline(box.Min, box.Max)))
+            .Cast<Floor>()
+            .Where(other => other.LevelId == floor.LevelId && other.Id != floor.Id);
+    }
+
+    /// <summary>Redraws the floor's sketch as the edit's outline, as one SketchEditScope.</summary>
+    private static IReadOnlyList<string> Redraw(Document document, ShapeEdit edit)
     {
         if (document.GetElement(edit.Floor.UniqueId) is not Floor floor || document.GetElement(floor.SketchId) is not Sketch sketch)
         {

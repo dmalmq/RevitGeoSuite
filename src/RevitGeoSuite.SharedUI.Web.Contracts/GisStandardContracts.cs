@@ -242,8 +242,11 @@ public sealed class GisShapeEditItem
     /// <summary>The floor's UniqueId: what the page sends back to show or apply the edit.</summary>
     public string UniqueId { get; set; } = string.Empty;
 
-    /// <summary>reshape</summary>
+    /// <summary>reshape or split</summary>
     public string Kind { get; set; } = string.Empty;
+
+    /// <summary>A split's floors once applied: the kept floor and each new one. 1 for a reshape.</summary>
+    public int Floors { get; set; } = 1;
 
     public long ElementId { get; set; }
 
@@ -255,7 +258,7 @@ public sealed class GisShapeEditItem
     /// <summary>The floor's outline now: rings of [x, y] in metres, model coordinates.</summary>
     public double[][][] Before { get; set; } = Array.Empty<double[][]>();
 
-    /// <summary>The GDB's outline: rings of [x, y] in metres, model coordinates.</summary>
+    /// <summary>The GDB's outline, and a split's new floors: rings of [x, y] in metres, model coordinates.</summary>
     public double[][][] After { get; set; } = Array.Empty<double[][]>();
 }
 
