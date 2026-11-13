@@ -80,7 +80,14 @@ def _audit_floor_types(snapshot, standard):
                 ERROR, "floor types",
                 u"Floor type %s has gis_category '%s', which is not a unit category. Its floors export by name instead." % (floor_type.name, category),
                 floor_type.floor_ids))
-        elif floor_type_match.needs_fix(floor_type, standard):
+        elif floor_type_match.needs_fix(floor_type, snapshot, standard):
+            renames = floor_type_match.free_targets(floor_type, snapshot, standard)
+            if renames:
+                findings.append(Finding(
+                    WARNING, "floor types",
+                    u"Floor type %s (%d floors) uses an old name. Run Fix floor types to rename it to %s." % (floor_type.name, len(floor_type.floor_ids), u" or ".join(renames)),
+                    floor_type.floor_ids))
+                continue
             findings.append(Finding(
                 WARNING, "floor types",
                 u"Floor type %s (%d floors) has no gis_category, so its floors export by type name. Run Fix floor types." % (floor_type.name, len(floor_type.floor_ids)),

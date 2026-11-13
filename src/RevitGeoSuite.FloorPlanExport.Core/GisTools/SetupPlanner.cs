@@ -194,12 +194,24 @@ public static class SetupPlanner
             }
         }
 
+        // An in-use old-named type is renamed to its current name by Fix floor types, so creating a
+        // second type with that name now would take the name it needs.
+        HashSet<string> awaitingRename = new(
+            snapshot.FloorTypes
+                .Where(entry => entry.FloorIds.Count > 0)
+                .SelectMany(entry => standard.FormerTargets(entry.Name)),
+            StringComparer.Ordinal);
         List<FloorTypeSetupStep> floorTypes = new();
         foreach (StandardFloorType floorType in standard.FloorTypes)
         {
             FloorTypeInfo? existing = snapshot.FloorTypeByName(floorType.Name);
             if (existing is null)
             {
+                if (awaitingRename.Contains(floorType.Name))
+                {
+                    continue;
+                }
+
                 floorTypes.Add(new FloorTypeSetupStep(floorType.Name, SetupAction.Create, floorType));
                 continue;
             }

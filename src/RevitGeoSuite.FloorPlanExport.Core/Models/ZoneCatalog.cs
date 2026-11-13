@@ -131,7 +131,9 @@ public sealed class ZoneCatalog
             new ZoneInfo("nonpublic", "F3F3F3", null),
             "Other",
             "Miscellaneous",
-            "Other / miscellaneous");
+            "Other / miscellaneous",
+            "その他",
+            "駅事務室");
 
         AddZoneAliases(
             zones,
@@ -158,9 +160,41 @@ public sealed class ZoneCatalog
             new ZoneInfo("outdoors", "FFFFFF", null),
             "Exterior",
             "Outdoor",
-            "Roof",
             "Grounds",
             "Exterior / grounds");
+
+        AddZoneAliases(
+            zones,
+            new ZoneInfo("unenclosedarea", "FAFAFA", null),
+            "屋外",
+            "Roof");
+
+        AddZoneAliases(
+            zones,
+            new ZoneInfo("smokingarea", "E2D9D9", null),
+            "喫煙所");
+
+        AddZoneAliases(
+            zones,
+            new ZoneInfo("mothersroom", "FFE0F0", null),
+            "ベビー休憩室");
+
+        // The bare name comes first so the category lookup for ramp keeps no restriction, as before
+        // the gate-side names below existed.
+        AddZoneAliases(
+            zones,
+            new ZoneInfo("ramp", "E9E9E9", null),
+            "スロープ");
+
+        AddZoneAliases(
+            zones,
+            new ZoneInfo("ramp", "E9E9E9", "rachi_gai"),
+            "ラチ外スロープ");
+
+        AddZoneAliases(
+            zones,
+            new ZoneInfo("ramp", "E9E9E9", "rachi_nai"),
+            "ラチ内スロープ");
 
         AddZoneAliases(
             zones,

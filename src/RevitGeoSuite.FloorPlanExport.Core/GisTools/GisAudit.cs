@@ -192,8 +192,19 @@ public static class GisAudit
                     $"Floor type {floorType.Name} has gis_category '{category}', which is not a unit category. Its floors export by name instead.",
                     floorType.FloorIds);
             }
-            else if (FloorTypeMatcher.NeedsFix(floorType, standard))
+            else if (FloorTypeMatcher.NeedsFix(floorType, snapshot, standard))
             {
+                IReadOnlyList<string> renames = FloorTypeMatcher.FreeTargets(floorType, snapshot, standard);
+                if (renames.Count > 0)
+                {
+                    yield return new GisAuditFinding(
+                        GisAuditSeverity.Warning,
+                        "floor types",
+                        $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name. Run Fix floor types to rename it to {string.Join(" or ", renames)}.",
+                        floorType.FloorIds);
+                    continue;
+                }
+
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "floor types",

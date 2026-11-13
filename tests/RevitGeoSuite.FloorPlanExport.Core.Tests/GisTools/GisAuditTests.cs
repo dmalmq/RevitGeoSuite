@@ -26,7 +26,7 @@ public sealed class GisAuditTests
     [Fact]
     public void FlagsAnOlderStandard()
     {
-        Assert.Contains("current one is 1", Audit(ModelOnStandard(standardVersion: "0"))[0].Message);
+        Assert.Contains("current one is 2", Audit(ModelOnStandard(standardVersion: "0"))[0].Message);
     }
 
     [Fact]
