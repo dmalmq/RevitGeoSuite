@@ -632,8 +632,8 @@ public sealed class OpeningExtractor
         }
 
         const double toleranceFeet = 1.0d;
-        return level.Elevation >= box.Min.Z - toleranceFeet &&
-               level.Elevation <= box.Max.Z + toleranceFeet;
+        return level.ProjectElevation >= box.Min.Z - toleranceFeet &&
+               level.ProjectElevation <= box.Max.Z + toleranceFeet;
     }
 
     private static bool TryNormalize(double x, double y, out Point2D normalized)
