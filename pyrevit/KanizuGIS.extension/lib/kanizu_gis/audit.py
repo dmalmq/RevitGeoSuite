@@ -115,7 +115,7 @@ def _audit_levels(snapshot):
                 u"Level %s has no %s. The export counts a missing ordinal from the other levels and leaves a missing short_name empty." % (level.name, " or ".join(missing)),
                 [level.element_id]))
     with_floors = [level for level in snapshot.levels if level.has_floors]
-    if with_floors and all(level.ordinal is None for level in with_floors):
+    if with_floors and all(level.ordinal is None for level in snapshot.levels):
         findings.append(Finding(
             WARNING, "levels",
             u"No level has an ordinal, so the export takes the level nearest elevation 0 as ground, which is wrong for a model at its real height. Setting the ground floor's ordinal to 0 is enough.",

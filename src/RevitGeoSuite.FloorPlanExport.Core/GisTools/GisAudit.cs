@@ -249,7 +249,7 @@ public static class GisAudit
         }
 
         List<LevelInfo> withFloors = snapshot.Levels.Where(level => level.HasFloors).ToList();
-        if (withFloors.Count > 0 && withFloors.All(level => level.Ordinal is null))
+        if (withFloors.Count > 0 && snapshot.Levels.All(level => level.Ordinal is null))
         {
             yield return new GisAuditFinding(
                 GisAuditSeverity.Warning,
