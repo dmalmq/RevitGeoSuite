@@ -299,9 +299,9 @@ function gisStandard(scenario: MockScenario) {
   let fixed = false
   const inspect = (): GisStandardInspectResponse => ({
     documentTitle: 'TokyoStation_Concourse.rvt',
-    standardVersion: 1,
-    modelVersion: setUp ? '1' : '',
-    exportSummary: setUp ? 'On the current Kanizu GIS standard (version 1).' : 'Not set up with the Kanizu GIS standard.',
+    standardVersion: 2,
+    modelVersion: setUp ? '2' : '',
+    exportSummary: setUp ? 'On the current Kanizu GIS standard (version 2).' : 'Not set up with the Kanizu GIS standard.',
     exportBlockers: [],
     findings: [
       ...(setUp ? [] : [{ severity: 'warning', topic: 'standard', message: 'The model has not been set up with the Kanizu GIS standard. Run Set up model.', elementIds: [] }]),
@@ -309,7 +309,7 @@ function gisStandard(scenario: MockScenario) {
         ? []
         : [
             { severity: 'warning', topic: 'floor types', message: 'Floor type 1F ラチ内 床 (14 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: range(301, 14) },
-            { severity: 'warning', topic: 'floor types', message: 'Floor type 店舗_床 (6 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: range(331, 6) }
+            { severity: 'warning', topic: 'floor types', message: 'Floor type j 店舗_床 (6 floors) uses an old name. Run Fix floor types to rename it to j ラチ外店舗_床 or j ラチ内店舗_床.', elementIds: range(331, 6) }
           ]),
       { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
       { severity: 'error', topic: 'families', message: "Lift : A has gis_kind 'lift', which the export does not know; its instances export as plain fixtures.", elementIds: [501] },
@@ -326,15 +326,16 @@ function gisStandard(scenario: MockScenario) {
           'Create material GIS_ラチ内コンコース #F2E6C9',
           'Create material GIS_店舗 #F7C6A3',
           'Create floor type j ラチ内コンコース_床 (walkway, rachi_nai, GIS_ラチ内コンコース)',
-          'Create floor type j 店舗_床 (retail, GIS_店舗)',
-          'Set gis_standard_version 1'
+          'Create floor type j ラチ外スロープ_床 (ramp, rachi_gai, GIS_ラチ外コンコース)',
+          'Set gis_standard_version 2'
         ],
     proposals:
       !setUp || fixed
         ? []
         : [
-            { floorTypeId: 201, floorTypeName: '1F ラチ内 床', floorCount: 14, standardTypeName: 'j ラチ内コンコース_床', gisCategory: 'walkway', gisRestriction: 'rachi_nai', material: 'GIS_ラチ内コンコース', reason: 'words' },
-            { floorTypeId: 202, floorTypeName: '店舗_床', floorCount: 6, standardTypeName: 'j 店舗_床', gisCategory: 'retail', gisRestriction: '', material: 'GIS_店舗', reason: 'name' }
+            { floorTypeId: 201, floorTypeName: '1F ラチ内 床', floorCount: 14, standardTypeName: 'j ラチ内コンコース_床', gisCategory: 'walkway', gisRestriction: 'rachi_nai', material: 'GIS_ラチ内コンコース', newName: '', reason: 'words' },
+            { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ外店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_gai', material: 'GIS_店舗', newName: 'j ラチ外店舗_床', reason: 'oldName' },
+            { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ内店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_nai', material: 'GIS_店舗', newName: 'j ラチ内店舗_床', reason: 'oldName' }
           ],
     unmatched: [{ floorTypeId: 203, name: '機械室', floorIds: [321, 322] }],
     fixBlocker: setUp ? '' : 'gis_category is not bound yet. Run Set up model first.'
@@ -343,12 +344,21 @@ function gisStandard(scenario: MockScenario) {
     'gisStandard.inspect': inspect,
     'gisStandard.setup': () => {
       setUp = true
-      return { log: ['Bound gis_category', 'Bound gis_restriction', 'Material GIS_店舗 #F7C6A3', 'Created floor type j 店舗_床 from j 床', 'gis_standard_version = 1'], skipped: [] }
+      return { log: ['Bound gis_category', 'Bound gis_restriction', 'Material GIS_店舗 #F7C6A3', 'Created floor type j 店舗_床 from j 床', 'gis_standard_version = 2'], skipped: [] }
     },
-    'gisStandard.fixFloorTypes': (payload: { floorTypeIds?: number[] }) => {
+    'gisStandard.fixFloorTypes': (payload: { accepted?: { floorTypeId: number; standardTypeName: string }[] }) => {
       fixed = true
-      const names: Record<number, string> = { 201: '1F ラチ内 床: gis_category walkway, gis_restriction rachi_nai', 202: '店舗_床: gis_category retail' }
-      return { log: (payload?.floorTypeIds ?? []).map((id) => names[id] ?? `Floor type ${id}`), skipped: [] }
+      const names: Record<number, string> = {
+        201: '1F ラチ内 床: gis_category walkway, gis_restriction rachi_nai',
+        202: 'j 店舗_床: gis_category retail'
+      }
+      return {
+        log: (payload?.accepted ?? []).flatMap(({ floorTypeId, standardTypeName }) => [
+          names[floorTypeId] ?? `Floor type ${floorTypeId}`,
+          ...(floorTypeId === 202 ? [`Renamed j 店舗_床 to ${standardTypeName}`] : [])
+        ]),
+        skipped: []
+      }
     },
     'gisStandard.select': (payload: { elementIds?: number[] }) => ({ selected: payload?.elementIds?.length ?? 0 }),
     ...gisParameters(),
