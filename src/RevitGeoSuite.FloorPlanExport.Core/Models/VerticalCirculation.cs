@@ -129,16 +129,18 @@ public static class VerticalCirculation
 
     private static readonly char[] LevelListSeparators = { ',', '、', '，', ';', '；', '\n' };
 
+    /// <summary>Two elevator objects are one shaft when their plan footprints overlap by at least this share of the smaller one.</summary>
+    public const double ShaftOverlapShare = 0.5d;
+
     /// <summary>
-    /// The export ids of the levels an elevator stops at, lowest first. With <paramref name="levelsServed"/>
+    /// The export ids of the levels a shaft's elevator stops at, lowest first. With <paramref name="levelsServed"/>
     /// (the type's <c>gis_levels_served</c>: level names or short names) those levels, and names that
-    /// match no level go to <paramref name="unknownNames"/>. Without it, the levels whose elevation lies
-    /// within the car's height span, and nothing when that is fewer than two.
+    /// match no level go to <paramref name="unknownNames"/>. Without it, the levels each car in the shaft
+    /// stands on or spans, and nothing when that is fewer than two.
     /// </summary>
     public static IReadOnlyList<string> ResolveLevelsServed(
         IReadOnlyList<ElevatorStop> levels,
-        double bottomMeters,
-        double topMeters,
+        IEnumerable<ElevatorCar> shaft,
         string? levelsServed,
         ICollection<string> unknownNames)
     {
@@ -168,9 +170,8 @@ public static class VerticalCirculation
         }
         else
         {
-            List<ElevatorStop> spanned = levels
-                .Where(level => level.ElevationMeters >= bottomMeters - StopBelowToleranceMeters &&
-                                level.ElevationMeters <= topMeters - MinimumCarHeightMeters)
+            List<ElevatorStop> spanned = shaft
+                .SelectMany(car => levels.Where(level => car.StopsAt(level.ElevationMeters)))
                 .ToList();
             stops = spanned.Select(level => level.ExportId).Distinct(StringComparer.Ordinal).Count() < 2
                 ? Enumerable.Empty<ElevatorStop>()
@@ -181,6 +182,42 @@ public static class VerticalCirculation
             .OrderBy(level => level.ElevationMeters)
             .Select(level => level.ExportId)
             .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Groups elevator objects into shafts: objects drawn one per floor in the same plan spot are one
+    /// elevator. Two objects join when their footprints overlap by <see cref="ShaftOverlapShare"/> of the
+    /// smaller one, and joining is transitive. Cars side by side in a bank do not overlap, so stay apart.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<ElevatorCar>> GroupShafts(IReadOnlyList<ElevatorCar> cars)
+    {
+        int[] parent = Enumerable.Range(0, cars.Count).ToArray();
+        int Root(int i)
+        {
+            while (parent[i] != i)
+            {
+                parent[i] = parent[parent[i]];
+                i = parent[i];
+            }
+
+            return i;
+        }
+
+        for (int i = 0; i < cars.Count; i++)
+        {
+            for (int j = i + 1; j < cars.Count; j++)
+            {
+                if (cars[i].SharesShaftWith(cars[j]))
+                {
+                    parent[Root(i)] = Root(j);
+                }
+            }
+        }
+
+        return Enumerable.Range(0, cars.Count)
+            .GroupBy(Root)
+            .Select(group => (IReadOnlyList<ElevatorCar>)group.Select(i => cars[i]).ToList())
             .ToList();
     }
 
@@ -321,5 +358,57 @@ public sealed class ElevatorStop
     {
         return string.Equals(Name.Trim(), name, StringComparison.OrdinalIgnoreCase) ||
                (!string.IsNullOrWhiteSpace(ShortName) && string.Equals(ShortName!.Trim(), name, StringComparison.OrdinalIgnoreCase));
+    }
+}
+
+/// <summary>One elevator object: its plan footprint and height span, in metres in model coordinates.</summary>
+public sealed class ElevatorCar
+{
+    public ElevatorCar(long id, double minX, double minY, double maxX, double maxY, double bottom, double top)
+    {
+        Id = id;
+        MinX = minX;
+        MinY = minY;
+        MaxX = maxX;
+        MaxY = maxY;
+        Bottom = bottom;
+        Top = top;
+    }
+
+    public long Id { get; }
+
+    public double MinX { get; }
+
+    public double MinY { get; }
+
+    public double MaxX { get; }
+
+    public double MaxY { get; }
+
+    public double Bottom { get; }
+
+    public double Top { get; }
+
+    private double Area => Math.Max(0d, MaxX - MinX) * Math.Max(0d, MaxY - MinY);
+
+    /// <summary>
+    /// A level at or just under the car's bottom, up to the highest level the car still reaches
+    /// <see cref="VerticalCirculation.MinimumCarHeightMeters"/> above. A car drawn on one floor stops at
+    /// that floor even when it is drawn shorter than that.
+    /// </summary>
+    public bool StopsAt(double levelElevation)
+    {
+        double highest = Math.Max(
+            Top - VerticalCirculation.MinimumCarHeightMeters,
+            Bottom + VerticalCirculation.StopBelowToleranceMeters);
+        return levelElevation >= Bottom - VerticalCirculation.StopBelowToleranceMeters && levelElevation <= highest;
+    }
+
+    public bool SharesShaftWith(ElevatorCar other)
+    {
+        double overlap = Math.Max(0d, Math.Min(MaxX, other.MaxX) - Math.Max(MinX, other.MinX)) *
+                         Math.Max(0d, Math.Min(MaxY, other.MaxY) - Math.Max(MinY, other.MinY));
+        double smaller = Math.Min(Area, other.Area);
+        return smaller > 0d && overlap >= VerticalCirculation.ShaftOverlapShare * smaller;
     }
 }

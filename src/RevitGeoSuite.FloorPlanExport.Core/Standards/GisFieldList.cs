@@ -60,7 +60,7 @@ public sealed class GisFieldList
             Core("unit", "level_id", "レベルID", "The level the unit is on."),
             Core("unit", VerticalCirculation.DirectionAttributeName, "方向", "Travel direction of a stair, escalator or moving walkway.", values: direction),
             Core("unit", VerticalCirculation.ToLevelAttributeName, "行先レベル", "The level a stair or escalator leads to."),
-            Core("unit", VerticalCirculation.LevelsServedAttributeName, "停止レベル", "The levels an elevator stops at: level ids, lowest first, separated by commas. From gis_levels_served, else the levels the car spans.", length: 2000),
+            Core("unit", VerticalCirculation.LevelsServedAttributeName, "停止レベル", "The levels an elevator stops at: level ids, lowest first, separated by commas. From gis_levels_served, else the levels of the elevator objects in the same plan spot.", length: 2000),
             Core("unit", "source", "ソース", "What the unit was made from."),
             Core("unit", "display_point", "表示点", "Label point."),
             Core("unit", "preview_fill_color", "プレビュー色", "Fill colour in the preview."),

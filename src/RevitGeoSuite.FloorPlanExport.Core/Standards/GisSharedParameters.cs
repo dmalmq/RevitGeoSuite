@@ -184,7 +184,7 @@ public static class GisSharedParameters
             GisParameterDataType.Text,
             GisParameterBinding.Type,
             FamilyCategories,
-            "Levels an elevator of this type stops at, by level name or short_name, separated by commas. Empty means the levels the car spans."),
+            "Levels an elevator of this type stops at, by level name or short_name, separated by commas. Empty means the levels of the elevator objects in the same plan spot."),
         new GisParameterDefinition(
             GisDoor,
             new Guid("e413bbb1-dab0-4acd-9b16-eeac608dca9b"),

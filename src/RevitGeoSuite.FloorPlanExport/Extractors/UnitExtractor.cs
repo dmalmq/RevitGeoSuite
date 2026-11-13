@@ -46,6 +46,7 @@ public sealed class UnitExtractor
     private readonly ZoneCatalog _zoneCatalog;
     private readonly IExportMetadataProvider _metadataProvider;
     private IReadOnlyList<ElevatorStop>? _elevatorStops;
+    private IReadOnlyDictionary<long, IReadOnlyList<ElevatorCar>>? _elevatorShafts;
     private const double FeetToMeters = 0.3048d;
     private readonly FloorCategoryResolver _floorCategoryResolver;
     private readonly RoomCategoryResolver _roomCategoryResolver;
@@ -976,22 +977,28 @@ public sealed class UnitExtractor
     }
 
     /// <summary>
-    /// The elevator's stops as a comma-separated list of level ids: the type's gis_levels_served,
-    /// else the levels the car's height spans. Null, with a warning, when neither gives two.
+    /// The elevator's stops as a comma-separated list of level ids: gis_levels_served on the type of
+    /// any object in its shaft, else the levels the shaft's objects stand on or span. Null, with a
+    /// warning, when neither gives two.
     /// </summary>
     private string? ResolveLevelsServed(FamilyInstance elevator, ICollection<string> warnings)
     {
         IReadOnlyList<ElevatorStop> levels = _elevatorStops ??= CollectElevatorStops(warnings);
-        BoundingBoxXYZ? box = elevator.get_BoundingBox(null);
-        string? levelsServed = ReadStringParameter(elevator, GisSharedParameters.GisLevelsServed);
+        IReadOnlyDictionary<long, IReadOnlyList<ElevatorCar>> shafts = _elevatorShafts ??= CollectElevatorShafts();
+        if (!shafts.TryGetValue(elevator.Id.Value, out IReadOnlyList<ElevatorCar>? shaft))
+        {
+            shaft = ToElevatorCar(elevator) is { } car ? new[] { car } : Array.Empty<ElevatorCar>();
+        }
+
+        string? levelsServed = ReadStringParameter(elevator, GisSharedParameters.GisLevelsServed) ??
+            shaft.OrderBy(car => car.Bottom)
+                .Select(car => _document.GetElement(new ElementId(car.Id)) as FamilyInstance)
+                .Select(other => other == null ? null : ReadStringParameter(other, GisSharedParameters.GisLevelsServed))
+                .FirstOrDefault(value => value != null);
         List<string> unknown = new();
-        IReadOnlyList<string> stops = VerticalCirculation.ResolveLevelsServed(
-            levels,
-            (box?.Min.Z ?? 0d) * FeetToMeters,
-            (box?.Max.Z ?? 0d) * FeetToMeters,
-            levelsServed,
-            unknown);
-        string label = $"Elevator {elevator.Id.Value} ({GetFamilyName(elevator)})";
+        IReadOnlyList<string> stops = VerticalCirculation.ResolveLevelsServed(levels, shaft, levelsServed, unknown);
+        long shaftId = shaft.Count == 0 ? elevator.Id.Value : shaft.Min(car => car.Id);
+        string label = $"Elevator {shaftId} ({GetFamilyName(elevator)})";
         if (unknown.Count > 0)
         {
             AddOnce(warnings, $"{label}: gis_levels_served names {string.Join(", ", unknown)}, which match no level name or short_name in this export.");
@@ -1001,13 +1008,54 @@ public sealed class UnitExtractor
         {
             if (levelsServed == null)
             {
-                AddOnce(warnings, $"{label} spans fewer than two exported levels, so levels_served is empty. Set gis_levels_served on its type.");
+                AddOnce(warnings, $"{label} has no elevator object in the same plan spot on another exported level, so levels_served is empty. Set gis_levels_served on its type.");
             }
 
             return null;
         }
 
         return string.Join(",", stops);
+    }
+
+    /// <summary>Every elevator object in the model, grouped into shafts by plan position, read once per extractor.</summary>
+    private IReadOnlyDictionary<long, IReadOnlyList<ElevatorCar>> CollectElevatorShafts()
+    {
+        List<ElevatorCar> cars = new();
+        foreach (FamilyInstance instance in new FilteredElementCollector(_document).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>())
+        {
+            if (TryResolveFamilyUnitZoneInfo(instance, out _, out ZoneInfo zoneInfo) &&
+                string.Equals(zoneInfo.Category, VerticalCirculation.ElevatorCategory, StringComparison.OrdinalIgnoreCase) &&
+                ToElevatorCar(instance) is { } car)
+            {
+                cars.Add(car);
+            }
+        }
+
+        Dictionary<long, IReadOnlyList<ElevatorCar>> byCar = new();
+        foreach (IReadOnlyList<ElevatorCar> shaft in VerticalCirculation.GroupShafts(cars))
+        {
+            foreach (ElevatorCar car in shaft)
+            {
+                byCar[car.Id] = shaft;
+            }
+        }
+
+        return byCar;
+    }
+
+    private static ElevatorCar? ToElevatorCar(FamilyInstance elevator)
+    {
+        BoundingBoxXYZ? box = elevator.get_BoundingBox(null);
+        return box == null
+            ? null
+            : new ElevatorCar(
+                elevator.Id.Value,
+                box.Min.X * FeetToMeters,
+                box.Min.Y * FeetToMeters,
+                box.Max.X * FeetToMeters,
+                box.Max.Y * FeetToMeters,
+                box.Min.Z * FeetToMeters,
+                box.Max.Z * FeetToMeters);
     }
 
     /// <summary>The levels with an export id, read once per extractor: every elevator asks for them.</summary>

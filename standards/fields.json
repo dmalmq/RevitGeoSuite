@@ -212,7 +212,7 @@
         "kind": "core"
       },
       "owner": "revit",
-      "description": "The levels an elevator stops at: level ids, lowest first, separated by commas. From gis_levels_served, else the levels the car spans."
+      "description": "The levels an elevator stops at: level ids, lowest first, separated by commas. From gis_levels_served, else the levels of the elevator objects in the same plan spot."
     },
     {
       "layer": "unit",
