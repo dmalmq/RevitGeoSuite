@@ -5,6 +5,7 @@ The plan only adds and updates. It never deletes, never rebinds a parameter the 
 holds under another GUID, and never changes the type of a floor, so every element keeps its
 UniqueId and its revit_key.
 """
+from kanizu_gis import floor_type_match
 
 # Parameter actions
 BIND = "bind"
@@ -80,10 +81,19 @@ def plan_setup(snapshot, standard):
         elif existing.color != material.fill:
             materials.append(MaterialStep(material.name, UPDATE, material.fill, existing.color))
 
+    # An in-use old-named type is renamed to its current name by Fix floor types, so creating a
+    # second type with that name now would take the name it needs.
+    awaiting_rename = set()
+    for entry in snapshot.floor_types:
+        if entry.floor_ids:
+            awaiting_rename.update(floor_type_match.free_targets(entry, snapshot, standard))
+
     floor_types = []
     for floor_type in standard.floor_types:
         existing = snapshot.floor_type_by_name(floor_type.name)
         if existing is None:
+            if floor_type.name in awaiting_rename:
+                continue
             floor_types.append(FloorTypeStep(floor_type.name, CREATE, floor_type))
             continue
         changes = []

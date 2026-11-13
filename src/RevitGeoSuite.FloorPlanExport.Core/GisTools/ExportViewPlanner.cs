@@ -84,7 +84,7 @@ public sealed class ExportViewLevel
     public bool HasLevelId { get; }
 }
 
-/// <summary>A floor plan in the model: its level, its crop frame, its crop when the crop is on, and its view template.</summary>
+/// <summary>A floor plan in the model: its level, its crop frame, its crop when the crop is on and one rectangle, and its view template.</summary>
 public sealed class ExportPlanView
 {
     public ExportPlanView(long elementId, string name, long levelId, ViewFrame frame, CropRect? activeCrop, long? templateId = null)
@@ -305,9 +305,10 @@ public sealed class ExportViewPlan
 /// every level that holds floors and has none, one crop around every floor on all <c>GIS_</c>
 /// plans, and a <c>level_id</c> on every level, so a stair's or escalator's far level always has an
 /// id. It adds and never deletes. A crop that already holds every floor is left as it is, so a
-/// wider crop someone set stays. On an existing template it puts back only the visibility the
-/// template owns: what the export reads is shown and line styles not named <c>GIS_</c> are hidden.
-/// Anything else someone turned on stays on, and the <c>GIS_</c> plans' own settings are not touched.
+/// wider crop someone set stays. A shaped or split crop counts as off and becomes one rectangle.
+/// On an existing template it puts back only the visibility the template owns: what the export
+/// reads is shown and line styles not named <c>GIS_</c> are hidden. Anything else someone turned
+/// on stays on, and the <c>GIS_</c> plans' own settings are not touched.
 /// </summary>
 public static class ExportViewPlanner
 {

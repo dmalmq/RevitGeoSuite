@@ -7,10 +7,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { request } from '$lib/bridge/rpc'
-  import type { GisAuditFindingItem, GisStandardApplyResponse, GisStandardInspectResponse } from '$lib/bridge/contracts.generated'
+  import type { GisAuditFindingItem, GisFloorTypeProposalItem, GisStandardApplyResponse, GisStandardInspectResponse } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Segmented, SummaryStrip, Table, type Tone } from '$lib/kit'
   import { ToolSheet, format, refreshReadiness } from '$lib/shell'
+  import { allFloorsHint, initiallyTicked, proposalKey, toggled } from '$lib/gisStandard/fixSelection'
   import AppliedBanner from './AppliedBanner.svelte'
   import DriftPanel from './DriftPanel.svelte'
   import ParametersPanel from './ParametersPanel.svelte'
@@ -23,11 +24,16 @@
   let applying = $state<'setup' | 'fix' | null>(null)
   let error = $state<string | null>(null)
   let applied = $state<{ title: string; log: string[]; skipped: string[] } | null>(null)
-  let rejected = $state<Set<number>>(new Set())
+  let ticked = $state<Set<string>>(new Set())
 
   const findings = $derived(model?.findings ?? [])
   const count = (severity: string) => findings.filter((finding) => finding.severity === severity).length
-  const accepted = $derived((model?.proposals ?? []).filter((proposal) => !rejected.has(proposal.floorTypeId)))
+  const accepted = $derived((model?.proposals ?? []).filter((proposal) => ticked.has(proposalKey(proposal))))
+  const candidateCounts = $derived.by(() => {
+    const counts = new Map<number, number>()
+    for (const proposal of model?.proposals ?? []) counts.set(proposal.floorTypeId, (counts.get(proposal.floorTypeId) ?? 0) + 1)
+    return counts
+  })
   const busy = $derived(loading || applying !== null)
 
   const SEVERITY: Record<string, { tone: Tone; key: string; fallback: string }> = {
@@ -43,7 +49,7 @@
     error = null
     try {
       model = await request('gisStandard.inspect', {})
-      rejected = new Set()
+      ticked = initiallyTicked(model.proposals)
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
     } finally {
@@ -59,7 +65,7 @@
       const response: GisStandardApplyResponse =
         kind === 'setup'
           ? await request('gisStandard.setup', {})
-          : await request('gisStandard.fixFloorTypes', { floorTypeIds: accepted.map((proposal) => proposal.floorTypeId) })
+          : await request('gisStandard.fixFloorTypes', { accepted: accepted.map((proposal) => ({ floorTypeId: proposal.floorTypeId, standardTypeName: proposal.standardTypeName })) })
       applied = {
         title:
           kind === 'setup'
@@ -77,11 +83,8 @@
     await inspect()
   }
 
-  function toggle(id: number, checked: boolean) {
-    const next = new Set(rejected)
-    if (checked) next.delete(id)
-    else next.add(id)
-    rejected = next
+  function toggle(proposal: GisFloorTypeProposalItem, checked: boolean) {
+    ticked = toggled(model?.proposals ?? [], ticked, proposal, checked)
   }
 
   async function select(ids: number[]) {
@@ -178,7 +181,7 @@
           {/snippet}
         </Card>
 
-        <Card title={$t('GisStandard.Fix.Title', 'Fix floor types')} description={$t('GisStandard.Fix.Description', 'Gives each floor type without a category the category of the standard type it matches. Floors keep their type.')}>
+        <Card title={$t('GisStandard.Fix.Title', 'Fix floor types')} description={$t('GisStandard.Fix.Description', 'Gives each floor type without a category the category of the standard type it matches, and renames a type that has an old name. Floors keep their type.')}>
           {#if model.fixBlocker}
             <Banner tone="warning">{model.fixBlocker}</Banner>
           {:else if model.proposals.length === 0}
@@ -194,13 +197,13 @@
                 </tr>
               </thead>
               <tbody>
-                {#each model.proposals as proposal (proposal.floorTypeId)}
+                {#each model.proposals as proposal (proposalKey(proposal))}
                   <tr>
                     <td>
                       <Checkbox
-                        checked={!rejected.has(proposal.floorTypeId)}
-                        onchange={(event) => toggle(proposal.floorTypeId, event.currentTarget.checked)}
-                        aria-label={proposal.floorTypeName}
+                        checked={ticked.has(proposalKey(proposal))}
+                        onchange={(event) => toggle(proposal, event.currentTarget.checked)}
+                        aria-label={`${proposal.floorTypeName} to ${proposal.standardTypeName}`}
                       />
                     </td>
                     <td class="max-w-0"><div class="truncate" title={proposal.floorTypeName}>{proposal.floorTypeName}</div></td>
@@ -211,8 +214,23 @@
                         <span class="font-mono text-muted-foreground">{proposal.gisCategory}{proposal.gisRestriction ? `, ${proposal.gisRestriction}` : ''}</span>
                         {#if proposal.reason === 'words'}
                           <Chip tone="info" title={$t('GisStandard.Fix.ByWordsHint', 'Matched by words in the name, not the whole name. Check it.')}>{$t('GisStandard.Fix.ByWords', 'by words')}</Chip>
+                        {:else if proposal.reason === 'oldName'}
+                          <Chip tone="warning" title={$t('GisStandard.Fix.OldNameHint', 'An old floor type name. The standard has a new name for it.')}>{$t('GisStandard.Fix.OldName', 'old name')}</Chip>
+                        {/if}
+                        {#if (candidateCounts.get(proposal.floorTypeId) ?? 0) > 1}
+                          <Chip tone="neutral" title={$t('GisStandard.Fix.ChooseOneHint', 'This floor type fits more than one standard type. Tick the one it is.')}>{$t('GisStandard.Fix.ChooseOne', 'choose one')}</Chip>
                         {/if}
                       </div>
+                      {#if proposal.newName}
+                        <div class="truncate text-small text-muted-foreground" title={proposal.newName}>
+                          {format($t('GisStandard.Fix.RenamesTo', 'renames to {0}'), proposal.newName)}
+                        </div>
+                      {/if}
+                      {#if (candidateCounts.get(proposal.floorTypeId) ?? 0) > 1}
+                        <div class="whitespace-normal text-small text-muted-foreground">
+                          {allFloorsHint($t('GisStandard.Fix.AllFloors', 'All {0} floors of this type become {1}. If some belong to the other choice, duplicate the type for those floors first.'), proposal)}
+                        </div>
+                      {/if}
                     </td>
                   </tr>
                 {/each}

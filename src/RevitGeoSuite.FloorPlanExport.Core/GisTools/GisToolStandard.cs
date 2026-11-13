@@ -22,8 +22,10 @@ public sealed class GisToolStandard
         IReadOnlyList<StandardMaterial> materials,
         IReadOnlyList<StandardFloorType> floorTypes,
         IEnumerable<string> knownCategories,
-        string outlineHex)
+        string outlineHex,
+        IReadOnlyList<FormerFloorTypeName>? formerNames = null)
     {
+        FormerNames = formerNames ?? Array.Empty<FormerFloorTypeName>();
         Version = version;
         Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
         Materials = materials ?? throw new ArgumentNullException(nameof(materials));
@@ -44,6 +46,8 @@ public sealed class GisToolStandard
 
     public string OutlineHex { get; }
 
+    public IReadOnlyList<FormerFloorTypeName> FormerNames { get; }
+
     /// <summary>The standard this build ships.</summary>
     public static GisToolStandard LoadEmbedded()
     {
@@ -54,7 +58,8 @@ public sealed class GisToolStandard
             floorTypes.Materials,
             floorTypes.FloorTypes,
             FloorTypeStandard.KnownCategories,
-            floorTypes.OutlineHex);
+            floorTypes.OutlineHex,
+            floorTypes.FormerNames);
     }
 
     public GisParameterDefinition? Parameter(string name) =>
@@ -67,6 +72,24 @@ public sealed class GisToolStandard
     {
         string trimmed = (name ?? string.Empty).Trim();
         return FloorTypes.FirstOrDefault(floorType => floorType.Name == trimmed);
+    }
+
+    /// <summary>
+    /// The standard names a floor type called <paramref name="name"/> is an old name for, or none
+    /// when it is not an old name. A name is old when its zone equals a former name's zone, ignoring
+    /// case, and it is not itself a standard name.
+    /// </summary>
+    public IReadOnlyList<string> FormerTargets(string? name)
+    {
+        if (FloorType(name) != null)
+        {
+            return Array.Empty<string>();
+        }
+
+        string zone = FloorTypeMatcher.ZoneName(name);
+        FormerFloorTypeName? former = FormerNames.FirstOrDefault(entry =>
+            string.Equals(FloorTypeMatcher.ZoneName(entry.Name), zone, StringComparison.OrdinalIgnoreCase));
+        return former?.Now ?? Array.Empty<string>();
     }
 
     /// <summary>True for a unit category the export accepts, ignoring case and surrounding spaces.</summary>

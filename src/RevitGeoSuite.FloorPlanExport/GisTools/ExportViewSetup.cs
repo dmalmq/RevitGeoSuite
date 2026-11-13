@@ -33,6 +33,7 @@ public static class ExportViewSetup
         BuiltInCategory.OST_Rooms,
         BuiltInCategory.OST_ShaftOpening,
         BuiltInCategory.OST_Lines,
+        BuiltInCategory.OST_RvtLinks,
     };
 
     public static ExportViewSnapshot Read(Document document)
@@ -58,7 +59,7 @@ public static class ExportViewSetup
                 view.Name ?? string.Empty,
                 view.GenLevel.Id.Value,
                 FrameOf(view),
-                view.CropBoxActive ? CropOf(view) : null,
+                view.CropBoxActive && IsRectangular(view) ? CropOf(view) : null,
                 view.ViewTemplateId == ElementId.InvalidElementId ? null : view.ViewTemplateId.Value))
             .ToList();
 
@@ -305,11 +306,29 @@ public static class ExportViewSetup
         return new CropRect(box.Min.X, box.Min.Y, box.Max.X, box.Max.Y);
     }
 
+    /// <summary>Whether the crop is one rectangle: Revit ignores a new crop box on a shaped or split crop.</summary>
+    private static bool IsRectangular(View view)
+    {
+        ViewCropRegionShapeManager shape = view.GetCropRegionShapeManager();
+        return !shape.ShapeSet && !shape.Split;
+    }
+
     private static void SetCrop(View view, CropRect? crop)
     {
         if (crop is not CropRect rect)
         {
             return;
+        }
+
+        ViewCropRegionShapeManager shape = view.GetCropRegionShapeManager();
+        if (shape.ShapeSet)
+        {
+            shape.RemoveCropRegionShape();
+        }
+
+        if (shape.Split)
+        {
+            shape.RemoveSplit();
         }
 
         BoundingBoxXYZ box = view.CropBox;

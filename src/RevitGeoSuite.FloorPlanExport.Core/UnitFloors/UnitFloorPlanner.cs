@@ -145,7 +145,7 @@ public sealed class UnitFloorPlan
 
 /// <summary>
 /// Plans one Revit floor per GIS unit polygon. Each unit takes the type of the existing floor that
-/// covers most of it, so categories carried by floor type names (for example <c>j 店舗_床</c>) follow
+/// covers most of it, so categories carried by floor type names (for example <c>j ラチ外店舗_床</c>, which is outside the gates, or <c>j ラチ内店舗_床</c>, which is inside) follow
 /// the unit. Existing floors that the new ones cover almost completely are marked replaceable.
 /// Pure geometry with no Revit dependency, so it is unit tested; coordinates are metres in the
 /// project CRS on both sides.

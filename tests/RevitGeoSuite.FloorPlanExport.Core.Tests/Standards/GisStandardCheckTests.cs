@@ -16,9 +16,9 @@ public sealed class GisStandardCheckTests
             .ToList();
     }
 
-    private static GisStandardModelState SetUpModel(string version = "1") => new()
+    private static GisStandardModelState SetUpModel(string? version = null) => new()
     {
-        StandardVersionText = version,
+        StandardVersionText = version ?? GisStandard.Version.ToString(),
         BoundParameters = AllStandard(),
         GisViewCount = 3,
     };
@@ -135,9 +135,10 @@ public sealed class GisStandardCheckTests
 
     [Theory]
     [InlineData("0", GisStandardState.Unsupported, true)]
-    [InlineData("2", GisStandardState.NewerThanTools, false)]
+    [InlineData("1", GisStandardState.UpdateAvailable, false)]
+    [InlineData("3", GisStandardState.NewerThanTools, false)]
     [InlineData("v1", GisStandardState.Unreadable, false)]
-    [InlineData(" 1 ", GisStandardState.Current, false)]
+    [InlineData(" 2 ", GisStandardState.Current, false)]
     public void TheVersionStampDecidesTheState(string version, GisStandardState expected, bool blocks)
     {
         GisStandardStatus status = GisStandardCheck.Check(SetUpModel(version));

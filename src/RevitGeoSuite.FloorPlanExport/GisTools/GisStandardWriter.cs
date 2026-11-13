@@ -29,7 +29,7 @@ public static class GisStandardWriter
             .Concat(views.LevelIds.Select(level => level.ElementId))
             .Concat(views.Repair is TemplateRepair repair ? new[] { repair.TemplateId } : Array.Empty<long>())
             .Concat(plan.Materials.Select(step => MaterialId(document, step.Name)).Where(id => id.HasValue).Select(id => id!.Value))
-            .Concat(new[] { document.ProjectInformation.Id.Value }));
+            .Concat(plan.SetsVersion ? new[] { document.ProjectInformation.Id.Value } : Array.Empty<long>()));
         List<string> log = new();
         InTransaction(document, SetupTransactionName, () =>
         {
@@ -56,8 +56,8 @@ public static class GisStandardWriter
     }
 
     /// <summary>
-    /// Writes each proposal's gis_category, gis_restriction and material onto its floor type, and
-    /// clears <paramref name="echoFloorIds"/>' own category, which only repeats the new one.
+    /// Writes each proposal's gis_category, gis_restriction and material onto its floor type, renames
+    /// an old-named type when the proposal carries a new name, and clears <paramref name="echoFloorIds"/>' own category, which only repeats the new one.
     /// </summary>
     public static IReadOnlyList<string> ApplyProposals(Document document, IReadOnlyList<FloorTypeProposal> proposals, IReadOnlyList<long> echoFloorIds)
     {
@@ -73,6 +73,11 @@ public static class GisStandardWriter
                 SetTypeValues(floorType, proposal.GisCategory, proposal.GisRestriction, materials.TryGetValue(proposal.Material, out ElementId? id) ? id : null);
                 string restriction = proposal.GisRestriction.Length > 0 ? ", gis_restriction " + proposal.GisRestriction : string.Empty;
                 log.Add($"{proposal.FloorType.Name}: gis_category {proposal.GisCategory}{restriction}");
+                if (proposal.NewName != null)
+                {
+                    floorType.Name = proposal.NewName;
+                    log.Add($"Renamed {proposal.FloorType.Name} to {proposal.NewName}");
+                }
             }
 
             if (echoFloorIds.Count > 0)

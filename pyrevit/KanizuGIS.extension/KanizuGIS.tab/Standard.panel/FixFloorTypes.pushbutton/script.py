@@ -35,8 +35,13 @@ class ProposalItem(forms.TemplateListItem):
         return self.item.label()
 
 
+# A type with several candidates (a shop's gate side) starts unticked: choosing one is the point.
+candidate_counts = {}
+for proposal in proposals:
+    candidate_counts[proposal.floor_type.element_id] = candidate_counts.get(proposal.floor_type.element_id, 0) + 1
+
 selected = forms.SelectFromList.show(
-    [ProposalItem(proposal, checked=True) for proposal in proposals],
+    [ProposalItem(proposal, checked=candidate_counts[proposal.floor_type.element_id] == 1) for proposal in proposals],
     title=u"Fix floor types / 床タイプの修正",
     multiselect=True,
     button_name=u"Apply to selected types")
@@ -44,8 +49,13 @@ if not selected:
     script.exit()
 
 output.print_md(u"## Fix floor types / 床タイプの修正")
-revit_io.apply_proposals(doc, standard, selected, lambda message: output.print_md(u"- " + message),
-                         floor_type_match.echo_floor_ids(snapshot, selected))
+accepted, skipped = floor_type_match.accept(
+    snapshot, standard, [(proposal.floor_type.element_id, proposal.standard_type.name) for proposal in selected])
+if accepted:
+    revit_io.apply_proposals(doc, standard, accepted, lambda message: output.print_md(u"- " + message),
+                             floor_type_match.echo_floor_ids(snapshot, accepted))
+for message in skipped:
+    output.print_md(u"- Skipped: " + message)
 if left:
     output.print_md(u"### Not matched, decide by hand / 手動で判断")
     for floor_type in left:
