@@ -59,17 +59,16 @@ public static class ShapeEditWork
     /// <returns>What Revit warned about, the elements gone with the old outline, and the new floors, one line each.</returns>
     public static IReadOnlyList<string> Apply(Document document, ShapeEdit edit)
     {
-        if (edit.Kind == ShapeEditKind.Reshape)
-        {
-            return Redraw(document, edit);
-        }
-
+        // Every kind in a group, so an outline Revit takes but draws differently is rolled back and nothing changes.
         using TransactionGroup group = new(document, edit.Label());
         group.Start();
         try
         {
             List<string> notes = edit.RedrawFloor ? Redraw(document, edit).ToList() : new List<string>();
-            notes.AddRange(AddFloors(document, edit));
+            if (edit.NewFloors.Count > 0)
+            {
+                notes.AddRange(AddFloors(document, edit));
+            }
             group.Assimilate();
             return notes;
         }

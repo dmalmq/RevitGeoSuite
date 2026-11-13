@@ -197,7 +197,10 @@
         </Table>
       {/if}
       {#if drift.shapes.length > 0}
-        <ShapeEditList shapes={drift.shapes} path={drift.path} bind:unticked={shapesUnticked} disabled={working !== null} onerror={(message) => (error = message)} />
+        <!-- A new read starts a new list, so a preview from the old one is cleared and no button says "Hide". -->
+        {#key drift}
+          <ShapeEditList shapes={drift.shapes} path={drift.path} bind:unticked={shapesUnticked} disabled={working !== null} onerror={(message) => (error = message)} />
+        {/key}
       {/if}
       <ProblemList problems={drift.problems} />
     {/if}
