@@ -156,6 +156,7 @@ public static class ShapeEditWork
         double z = sketch.SketchPlane.GetPlane().Origin.Z;
         FailOnError failures = new();
         List<ElementId> created = new();
+        List<Polygon2D> drawn = new();
         List<string> typeNotes = new();
         using (Transaction transaction = new(document, edit.Label()))
         {
@@ -193,6 +194,7 @@ public static class ShapeEditWork
                     }
 
                     created.Add(floor.Id);
+                    drawn.Add(polygon);
                 }
             }
 
@@ -204,13 +206,14 @@ public static class ShapeEditWork
         }
 
         List<Floor> made = created.Select(id => document.GetElement(id)).OfType<Floor>().ToList();
-        if (made.Count != created.Count || edit.NewFloors.Any(piece => !made.Any(floor => GisShapeEdits.SameOutline(FloorTopFaces.Read(floor).Outline, piece.Outline))))
+        if (made.Count != created.Count)
         {
-            throw new InvalidOperationException($"Revit did not keep the GDB outline of every new floor of the split of floor {edit.Floor.ElementId}; nothing changed.");
+            throw new InvalidOperationException($"Revit did not keep every new floor of the split of floor {edit.Floor.ElementId}; nothing changed.");
         }
 
         return failures.Warnings.Distinct().Select(text => "Revit warned: " + text)
             .Concat(typeNotes.Distinct())
+            .Concat(made.Zip(drawn, (floor, polygon) => TopFaceGap(floor, new[] { polygon })).SelectMany(note => note))
             .Concat(made.Select(floor => $"New floor {floor.Id.Value} ({floor.Name}) on the level of floor {edit.Floor.ElementId}, with the GDB's values where the drift file gives them and floor {edit.Floor.ElementId}'s otherwise."));
     }
 
@@ -325,16 +328,22 @@ public static class ShapeEditWork
         }
 
         List<string> notes = failures.Warnings.Distinct().Select(text => "Revit warned: " + text).ToList();
-        double gap = GisShapeEdits.GapMetres(FloorTopFaces.Read(after).Outline, edit.Outline);
-        if (gap > GisShapeEdits.SameOutlineMetres)
-        {
-            notes.Add($"The floor's top face is up to {Centimetres(gap)} off the GDB outline, most likely where another element joins or cuts it; the next export keeps that difference.");
-        }
+        notes.AddRange(TopFaceGap(after, edit.Outline));
 
         notes.AddRange(dependents
             .Where(entry => document.GetElement(entry.Id) == null)
             .Select(entry => $"Revit deleted {entry.Name} {entry.Id.Value}, which hung on the floor outside its new outline."));
         return notes;
+    }
+
+    /// <summary>A note when Revit drew the floor's top face away from the GDB outline, most likely where another element joins or cuts it.</summary>
+    private static IEnumerable<string> TopFaceGap(Floor floor, IReadOnlyList<Polygon2D> outline)
+    {
+        double gap = GisShapeEdits.GapMetres(FloorTopFaces.Read(floor).Outline, outline);
+        if (gap > GisShapeEdits.SameOutlineMetres)
+        {
+            yield return $"Floor {floor.Id.Value}'s top face is up to {Centimetres(gap)} off the GDB outline, most likely where another element joins or cuts it; the next export keeps that difference.";
+        }
     }
 
     private static string Centimetres(double metres) => double.IsInfinity(metres) ? "the whole outline" : $"{metres * 100:F0} cm";
