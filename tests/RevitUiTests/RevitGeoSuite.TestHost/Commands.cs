@@ -89,7 +89,15 @@ internal sealed class Commands
             ["armed"] = recorder.Armed,
             ["webViewArguments"] = Environment.GetEnvironmentVariable(TestHostApp.WebViewArgumentsVariable),
             ["revit"] = api.Run(app => app.Application.VersionNumber + " " + app.Application.VersionBuild, Quick),
+            ["testHost"] = HostBuild(),
         };
+    }
+
+    // Which test host the loader loaded, so a report shows that a rebuilt host ran without a new prompt.
+    private static string HostBuild()
+    {
+        string path = typeof(Commands).Assembly.Location;
+        return $"{path}, built {System.IO.File.GetLastWriteTimeUtc(path):yyyy-MM-dd HH:mm} UTC, loaded by {AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(assembly => assembly.GetName().Name == "RevitGeoSuite.TestHost.Loader")?.Location ?? "no loader"}";
     }
 
     private Dictionary<string, object?> Arm(Dictionary<string, object?> request)

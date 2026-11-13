@@ -3,9 +3,10 @@
   Installs the RevitGeoSuite UI test host into Revit on the build PC (user scope, no admin).
 
 .DESCRIPTION
-  Builds tests\RevitUiTests\RevitGeoSuite.TestHost, copies the DLL to
-  %LOCALAPPDATA%\RevitGeoSuite.TestHost\<year> (so later builds are not blocked by Revit holding the
-  file), and writes RevitGeoSuite.TestHost.addin into %APPDATA%\Autodesk\Revit\Addins\<year>.
+  Builds the test host and its loader, copies them to %LOCALAPPDATA%\RevitGeoSuite.TestHost\<year>,
+  and writes RevitGeoSuite.TestHost.addin into %APPDATA%\Autodesk\Revit\Addins\<year>. The manifest
+  names the loader, which is the DLL Revit's "Always Load" answer covers. The loader is copied only
+  when it is missing or its FileVersion changed, so a test host rebuild never brings the prompt back.
   Revit loads it at every start, but it stays inert (no pipe, no event hooks, no DevTools port)
   unless that Revit was started with REVITGEOSUITE_UITEST=1, which Run-UiTests.ps1 -StartRevit sets
   for that one Revit. Build PC only. -Uninstall removes it.
@@ -36,19 +37,31 @@ if ($Uninstall) {
     return
 }
 
-$project = Join-Path $PSScriptRoot 'RevitGeoSuite.TestHost\RevitGeoSuite.TestHost.csproj'
 . (Join-Path $PSScriptRoot 'Find-DotnetSdk.ps1')
 $dotnet = Find-DotnetSdk
 Write-Host "Using $dotnet"
-& $dotnet build $project -c Release
-if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
+foreach ($name in 'RevitGeoSuite.TestHost', 'RevitGeoSuite.TestHost.Loader') {
+    & $dotnet build (Join-Path $PSScriptRoot "$name\$name.csproj") -c Release
+    if ($LASTEXITCODE -ne 0) { throw "dotnet build of $name failed ($LASTEXITCODE)." }
+}
 
-$built = Join-Path $repo 'bin\Tests\RevitGeoSuite.TestHost\RevitGeoSuite.TestHost.dll'
 New-Item -ItemType Directory -Force -Path $target, $addins | Out-Null
-Copy-Item $built $target -Force
+Copy-Item (Join-Path $repo 'bin\Tests\RevitGeoSuite.TestHost\RevitGeoSuite.TestHost.dll') $target -Force
 
-$assembly = Join-Path $target 'RevitGeoSuite.TestHost.dll'
+# Revit remembers "Always Load" for the DLL the manifest names. Leave an installed loader of the
+# same FileVersion untouched, byte for byte, so the answer Daniel gave once keeps holding.
+$builtLoader = Join-Path $repo 'bin\Tests\RevitGeoSuite.TestHost.Loader\RevitGeoSuite.TestHost.Loader.dll'
+$loader = Join-Path $target 'RevitGeoSuite.TestHost.Loader.dll'
+$newVersion = (Get-Item $builtLoader).VersionInfo.FileVersion
+$oldVersion = if (Test-Path $loader) { (Get-Item $loader).VersionInfo.FileVersion } else { $null }
+if ($oldVersion -eq $newVersion) {
+    Write-Host "Loader $newVersion already installed and left as it is: Revit will not ask again."
+} else {
+    Copy-Item $builtLoader $target -Force
+    Write-Host "Installed loader $newVersion (was $(if ($oldVersion) { $oldVersion } else { 'none' })). Start Revit once by hand and choose Always Load for ""RevitGeoSuite test host""."
+}
+
 $template = Get-Content (Join-Path $PSScriptRoot 'RevitGeoSuite.TestHost\RevitGeoSuite.TestHost.addin.template') -Raw
-[IO.File]::WriteAllText($manifest, $template.Replace('{ASSEMBLY}', [Security.SecurityElement]::Escape($assembly)), [Text.UTF8Encoding]::new($false))
-Write-Host "Installed: $manifest -> $assembly"
-Write-Host 'Start Revit once by hand and choose Always Load for "RevitGeoSuite test host". It stays inert until Run-UiTests.ps1 -StartRevit starts Revit for a run.'
+[IO.File]::WriteAllText($manifest, $template.Replace('{ASSEMBLY}', [Security.SecurityElement]::Escape($loader)), [Text.UTF8Encoding]::new($false))
+Write-Host "Installed: $manifest -> $loader, test host $(Join-Path $target 'RevitGeoSuite.TestHost.dll')"
+Write-Host 'The test host stays inert until Run-UiTests.ps1 -StartRevit starts Revit for a run.'

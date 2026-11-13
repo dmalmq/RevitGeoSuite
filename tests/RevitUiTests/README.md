@@ -14,6 +14,7 @@ There are five scenarios. `--scenario` picks one, and `--script` is the same opt
 
 | Part | What it does |
 |---|---|
+| `RevitGeoSuite.TestHost.Loader` | The DLL that the Revit manifest names. It holds no test logic. In a Revit started for a run, it loads the test host next to it. Otherwise it loads nothing. |
 | `RevitGeoSuite.TestHost` | A test-only Revit add-in, installed on the build PC only. It listens on the named pipe `RevitGeoSuite.TestHost`, which only the signed-in user can open. No network port is opened. |
 | `RevitGeoSuite.UiTestRunner` | A .NET 8 console app. It drives the web page with Playwright over WebView2's DevTools protocol, and drives Revit through the test host. |
 | `RevitGeoSuite.UiTestRunner.Tests` | Unit tests for the runner's own logic. They run in CI on Linux and Windows. |
@@ -39,9 +40,11 @@ The test code never reaches the installer. All three projects build into `bin\Te
 2. Install the .NET 8 SDK if it is not there yet. Both scripts find it themselves: they try `DOTNET_ROOT`, then `%USERPROFILE%\.dotnet`, then each `dotnet` on PATH, then `C:\Program Files\dotnet`, and use the first that lists a .NET 8 or later SDK. A `dotnet` on PATH that is only a runtime is skipped. When none has the SDK, the script stops and names what it tried. To pick an install, set `DOTNET_ROOT` to its folder.
 3. Close Revit. Then run `tests\RevitUiTests\Install-TestHost.ps1` in a clone of this repo.
 4. Start Revit 2024 once by hand. Answer **Always Load** for "RevitGeoSuite test host". Revit asks this once for an unsigned add-in. In this session the add-in stays inert. Close Revit again.
+
+The answer covers the DLL that the manifest names, which is the loader. The loader does not change when the test host changes. It builds deterministically, without a PDB, so two builds of the same source give the same bytes. `Install-TestHost.ps1` also leaves an installed loader of the same FileVersion untouched. Rebuilding and reinstalling the test host therefore needs no new click. The script prints whether the loader was left as it is or newly installed. Only a new loader FileVersion, which follows a change to the loader's source, makes Revit ask once more. Each report's header names the test host build that ran.
 5. Make a pristine detached copy of the test model at `C:\dev\revit-test\auto\lumine-pristine.rvt`. The copy must never have been set up with the GIS standard. Never use the original or the central model, and never save over the pristine copy.
 
-To remove the test host, close Revit and run `Install-TestHost.ps1 -Uninstall`. That deletes the `.addin` file and the copied DLL.
+To remove the test host, close Revit and run `Install-TestHost.ps1 -Uninstall`. That deletes the `.addin` file and the copied DLLs.
 
 ## Run
 

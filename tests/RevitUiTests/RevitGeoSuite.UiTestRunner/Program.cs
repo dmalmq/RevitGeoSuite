@@ -24,6 +24,7 @@ Directory.CreateDirectory(options.OutputFolder);
 var report = new Report(options.OutputFolder);
 report.Header.Add($"Started {runStartedUtc:yyyy-MM-dd HH:mm:ss} UTC on {Environment.MachineName}.");
 report.Header.Add($"Revit {ping["revit"]}, process {ping["pid"]}, WebView2 arguments '{ping["webViewArguments"]}'.");
+report.Header.Add($"Test host: {ping["testHost"]}.");
 
 host.Call("arm", new { on = true });
 var run = new GisStandardRun(options, host, report);
