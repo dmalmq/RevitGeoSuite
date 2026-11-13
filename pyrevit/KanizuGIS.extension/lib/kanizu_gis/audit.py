@@ -136,7 +136,8 @@ def _audit_families(snapshot, standard):
         if suggested:
             findings.append(Finding(
                 WARNING, "families",
-                u"%s looks like a %s but has no gis_kind, so it is found only by its family name, if at all." % (name, suggested),
+                u"%s looks like %s %s but has no gis_kind, so it is found only by its family name, if at all." % (
+                    name, u"an" if suggested[0] in u"aeiou" else u"a", suggested),
                 family_type.instance_ids))
     return findings
 

@@ -173,5 +173,18 @@
       ],
       "expected_problem_count": 5
     }
+  ],
+  "whole_number": [
+    {"text": "2", "expected": 2},
+    {"text": " 2 ", "expected": 2},
+    {"text": "-1", "expected": -1},
+    {"text": "+3", "expected": 3},
+    {"text": "", "expected": null},
+    {"text": "two", "expected": null},
+    {"text": "1.5", "expected": null},
+    {"text": "1 2", "expected": null},
+    {"text": "１", "expected": null},
+    {"text": "2147483647", "expected": 2147483647},
+    {"text": "2147483648", "expected": null}
   ]
 }

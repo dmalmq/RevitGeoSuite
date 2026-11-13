@@ -10,7 +10,7 @@ import os
 import unittest
 
 import helpers
-from kanizu_gis import audit, drift, floor_type_match, setup_plan, snapshot
+from kanizu_gis import audit, drift, floor_type_match, setup_plan, snapshot, standards
 
 CASES = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(helpers.HERE))),
                      "tests", "Fixtures", "Conformance", "gis-tools", "cases.json")
@@ -93,6 +93,10 @@ class ConformanceTests(unittest.TestCase):
                              [[c.unique_id, c.parameter, c.binding, c.old, c.new, c.conflict] for c in changes],
                              case["name"])
             self.assertEqual(case["expected_problem_count"], len(problems), case["name"])
+
+    def test_whole_number(self):
+        for case in self.cases["whole_number"]:
+            self.assertEqual(case["expected"], standards.parse_whole_number(case["text"]), repr(case["text"]))
 
 
 if __name__ == "__main__":

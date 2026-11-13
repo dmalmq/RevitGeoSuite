@@ -132,7 +132,7 @@ public sealed class ParameterTableTests
 
         var (changes, problems) = Diff(edited);
 
-        Assert.Empty(problems);
+        Assert.Equal("Line 5: level only describes the element; the edit is ignored.", Assert.Single(problems));
         Assert.Equal(
             new[] { ("101", "name", "1番線ホーム"), ("101", "category", "Platform"), ("102", "gis_direction", "up"), ("104", "ordinal", "1") },
             changes.Select(change => (change.ElementId, change.Column, change.NewValue)));
@@ -158,7 +158,21 @@ public sealed class ParameterTableTests
         Assert.Contains("sideways", problems[2]);
         Assert.Contains("not a whole number", problems[3]);
         Assert.Contains("appears twice", problems[4]);
-        Assert.Contains("999 is not in the model", problems[5]);
+        Assert.Contains("999 is not in the model; the row is skipped", problems[5]);
+        Assert.All(problems.Take(4), problem => Assert.EndsWith("only this cell is skipped.", problem, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AnInvalidCellSkipsOnlyThatCellAndSaysSo()
+    {
+        List<Dictionary<string, string>> edited = Edited();
+        edited[3]["short_name"] = "8F";
+        edited[3]["ordinal"] = "shop";
+
+        var (changes, problems) = Diff(edited);
+
+        Assert.Equal(new[] { ("104", "short_name", "8F") }, changes.Select(change => (change.ElementId, change.Column, change.NewValue)));
+        Assert.Equal("Line 5: ordinal 'shop' is not a whole number. Only this cell is skipped.", Assert.Single(problems));
     }
 
     [Fact]
@@ -184,5 +198,31 @@ public sealed class ParameterTableTests
         var (changes, _) = Diff(edited);
 
         Assert.Equal(new[] { ("name", "階段A", "") }, changes.Select(change => (change.Column, change.OldValue, change.NewValue)));
+    }
+
+    [Fact]
+    public void AcceptKeepsChangesThatStillApplyAndListsTheRest()
+    {
+        List<IReadOnlyDictionary<string, string>> now = ModelRows();
+        now[1] = ParameterTable.Row(102, "stair", "1FL", values: new[] { Cell("name", "階段B"), Cell("gis_direction", "both") });
+        ParameterTableChange[] accepted =
+        {
+            new("101", "floor", "category", "", "walkway"),
+            new("101", "floor", "category", "", "walkway"),
+            new("102", "stair", "name", "階段A", "階段C"),
+            new("103", "family", "gis_direction", "", "上り"),
+            new("104", "level", "category", "", "walkway"),
+            new("999", "floor", "name", "", "x"),
+        };
+
+        (IReadOnlyList<ParameterTableChange> changes, IReadOnlyList<string> skipped) = ParameterTable.Accept(now, accepted, Standard);
+
+        Assert.Equal(
+            new[] { ("101", "category", "walkway"), ("103", "gis_direction", "up") },
+            changes.Select(change => (change.ElementId, change.Column, change.NewValue)));
+        Assert.Equal(3, skipped.Count);
+        Assert.Contains("changed in Revit", skipped[0]);
+        Assert.Contains("cannot be set on a level", skipped[1]);
+        Assert.Contains("no longer in the model", skipped[2]);
     }
 }

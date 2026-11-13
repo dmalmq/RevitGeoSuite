@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
+using RevitGeoSuite.FloorPlanExport.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Assignments;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
@@ -155,6 +157,7 @@ public sealed class FloorGeoPackageExporter
         }
 
         setupWarnings.AddRange(GisStandardWarnings(standardStatus));
+        setupWarnings.AddRange(GisAudit.ExportRecord(ModelSnapshotReader.AuditErrors(_document)));
         SharedParameterManager parameterManager = new(_document);
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
         ViewExportContextProvider contextProvider = new(_document);

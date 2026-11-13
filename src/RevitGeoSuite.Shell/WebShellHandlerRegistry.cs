@@ -28,6 +28,17 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new GeoreferenceRevertHandler());
         bridge.RegisterHandler(new GeoreferenceHasUndoSnapshotHandler());
 
+        // GIS standard route
+        bridge.RegisterHandler(new GisStandardInspectHandler());
+        bridge.RegisterHandler(new GisStandardSetupHandler());
+        bridge.RegisterHandler(new GisFixFloorTypesHandler());
+        bridge.RegisterHandler(new GisSelectElementsHandler());
+        bridge.RegisterHandler(new GisParametersWriteHandler());
+        bridge.RegisterHandler(new GisParametersReadHandler());
+        bridge.RegisterHandler(new GisParametersApplyHandler());
+        bridge.RegisterHandler(new GisDriftInspectHandler());
+        bridge.RegisterHandler(new GisDriftApplyHandler());
+
         // Import route
         bridge.RegisterHandler(new DialogOpenFolderHandler());
         bridge.RegisterHandler(new DialogOpenFileHandler());
