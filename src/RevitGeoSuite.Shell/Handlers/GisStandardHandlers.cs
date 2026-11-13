@@ -113,7 +113,8 @@ internal static class GisStandardWork
         ModelSnapshot snapshot = ModelSnapshotReader.Read(document);
         GisStandardStatus status = GisStandardStateReader.Check(document);
         SetupPlan plan = SetupPlanner.Plan(snapshot, standard);
-        ExportViewPlan views = ExportViewPlanner.Plan(ExportViewSetup.Read(document));
+        ExportViewSnapshot viewSnapshot = ExportViewSetup.Read(document);
+        ExportViewPlan views = ExportViewPlanner.Plan(viewSnapshot);
         return new GisStandardInspectResponse
         {
             DocumentTitle = document.Title ?? string.Empty,
@@ -121,7 +122,7 @@ internal static class GisStandardWork
             ModelVersion = snapshot.StandardVersion,
             ExportSummary = status.Summary,
             ExportBlockers = status.Issues.Where(issue => issue.BlocksExport).Select(issue => issue.Message).ToArray(),
-            Findings = GisAudit.Run(snapshot, standard)
+            Findings = ExportAuditReader.Audit(document, snapshot, standard, viewSnapshot)
                 .Select(finding => new GisAuditFindingItem
                 {
                     Severity = finding.Severity.ToString().ToLowerInvariant(),

@@ -951,19 +951,11 @@ public sealed class UnitExtractor
             return null;
         }
 
-        double topZ = vertices.Max(vertex => vertex.Z);
-        const double MinimumRiseFeet = 1.0d / FeetToMetersForLevels;
-        const double ToleranceFeet = 2.5d / FeetToMetersForLevels;
-        Level? topLevel = new FilteredElementCollector(_document)
-            .OfClass(typeof(Level))
-            .Cast<Level>()
-            .Where(level => level.ProjectElevation > bottomLevel.ProjectElevation + MinimumRiseFeet)
-            .OrderBy(level => Math.Abs(level.ProjectElevation - topZ))
-            .FirstOrDefault();
-        if (topLevel != null && Math.Abs(topLevel.ProjectElevation - topZ) > ToleranceFeet)
-        {
-            topLevel = null;
-        }
+        Level? topLevel = VerticalCirculation.EscalatorTopLevel(
+            bottomLevel.ProjectElevation,
+            vertices.Max(vertex => vertex.Z),
+            new FilteredElementCollector(_document).OfClass(typeof(Level)).Cast<Level>(),
+            level => level.ProjectElevation);
 
         return VerticalCirculation.ResolveToLevel(
             levelId,
@@ -1014,8 +1006,6 @@ public sealed class UnitExtractor
 
         return exportId!.Trim();
     }
-
-    private const double FeetToMetersForLevels = 0.3048d;
 
     private const double HostLevelToleranceFeet = 0.1d;
 

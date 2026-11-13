@@ -58,11 +58,13 @@ public static class ExportViewSetup
                 view.Name ?? string.Empty,
                 view.GenLevel.Id.Value,
                 FrameOf(view),
-                view.CropBoxActive ? CropOf(view) : null))
+                view.CropBoxActive ? CropOf(view) : null,
+                view.ViewTemplateId == ElementId.InvalidElementId ? null : view.ViewTemplateId.Value))
             .ToList();
 
+        View? template = FindTemplate(document);
         return new ExportViewSnapshot(
-            FindTemplate(document) != null,
+            template == null ? null : new ExportTemplate(template.Id.Value, OwnedCategories(document, template)),
             levels,
             plans,
             views.Select(view => view.Name ?? string.Empty),
@@ -84,6 +86,21 @@ public static class ExportViewSetup
             .ToList();
 
         View? template = FindTemplate(document);
+        if (plan.Repair is TemplateRepair repair && document.GetElement(new ElementId(repair.TemplateId)) is View repaired)
+        {
+            foreach (TemplateCategory category in repair.Show)
+            {
+                repaired.SetCategoryHidden(new ElementId(category.ElementId), false);
+            }
+
+            foreach (TemplateCategory category in repair.Hide)
+            {
+                repaired.SetCategoryHidden(new ElementId(category.ElementId), true);
+            }
+
+            log.Add($"Updated view template {ExportViewPlanner.TemplateName}: {repair.Changes()}");
+        }
+
         if (plan.CreatesTemplate || (plan.NewViews.Count > 0 && template == null))
         {
             template = CreateTemplate(document, plan);
@@ -130,6 +147,38 @@ public static class ExportViewSetup
         }
     }
 
+    /// <summary>
+    /// The categories and line styles whose visibility the template owns, as they are on
+    /// <paramref name="template"/>: what the export reads and every line style.
+    /// </summary>
+    private static IEnumerable<TemplateCategory> OwnedCategories(Document document, View template)
+    {
+        HashSet<long> reads = ExportReadCategoryIds(document);
+        foreach (Category category in document.Settings.Categories)
+        {
+            if (category.CategoryType == CategoryType.Model && reads.Contains(category.Id.Value) && template.CanCategoryBeHidden(category.Id))
+            {
+                yield return new TemplateCategory(category.Id.Value, category.Name ?? string.Empty, TemplateCategoryKind.ExportReads, template.GetCategoryHidden(category.Id));
+            }
+        }
+
+        foreach (Category style in document.Settings.Categories.get_Item(BuiltInCategory.OST_Lines).SubCategories)
+        {
+            if (template.CanCategoryBeHidden(style.Id))
+            {
+                yield return new TemplateCategory(style.Id.Value, style.Name ?? string.Empty, TemplateCategoryKind.LineStyle, template.GetCategoryHidden(style.Id));
+            }
+        }
+    }
+
+    /// <summary>What the export reads from a view, and the category of every family type the standard tags.</summary>
+    private static HashSet<long> ExportReadCategoryIds(Document document)
+    {
+        HashSet<long> ids = new(VisibleModelCategories.Select(category => (long)category));
+        ids.UnionWith(TaggedFamilyCategories(document));
+        return ids;
+    }
+
     private static View? FindTemplate(Document document) =>
         new FilteredElementCollector(document)
             .OfClass(typeof(ViewPlan))
@@ -150,8 +199,7 @@ public static class ExportViewSetup
         document.Delete(scratch.Id);
         template.Name = ExportViewPlanner.TemplateName;
 
-        HashSet<long> visible = new(VisibleModelCategories.Select(category => (long)category));
-        visible.UnionWith(TaggedFamilyCategories(document));
+        HashSet<long> visible = ExportReadCategoryIds(document);
         foreach (Category category in document.Settings.Categories)
         {
             bool show = category.CategoryType == CategoryType.Model && visible.Contains(category.Id.Value);

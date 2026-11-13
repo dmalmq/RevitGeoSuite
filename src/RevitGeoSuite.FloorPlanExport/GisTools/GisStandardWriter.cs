@@ -27,6 +27,7 @@ public static class GisStandardWriter
             .Concat(plan.EchoFloorIds)
             .Concat(views.Crops.Select(crop => crop.ViewId))
             .Concat(views.LevelIds.Select(level => level.ElementId))
+            .Concat(views.Repair is TemplateRepair repair ? new[] { repair.TemplateId } : Array.Empty<long>())
             .Concat(plan.Materials.Select(step => MaterialId(document, step.Name)).Where(id => id.HasValue).Select(id => id!.Value))
             .Concat(new[] { document.ProjectInformation.Id.Value }));
         List<string> log = new();

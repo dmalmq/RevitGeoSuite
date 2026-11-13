@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Models;
 
@@ -102,5 +103,22 @@ public static class VerticalCirculation
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// An escalator's top level: of the levels at least 1 m above the bottom one, the one nearest
+    /// the top of its geometry, which sits under the upper floor's slab. Null when none is within
+    /// 2.5 m. Elevations and the top are in the same model coordinates (Level.ProjectElevation).
+    /// </summary>
+    public static TLevel? EscalatorTopLevel<TLevel>(double bottomElevationFeet, double topFeet, IEnumerable<TLevel> levels, Func<TLevel, double> elevationFeet)
+        where TLevel : class
+    {
+        const double MinimumRiseFeet = 1.0 / 0.3048;
+        const double ToleranceFeet = 2.5 / 0.3048;
+        TLevel? top = levels
+            .Where(level => elevationFeet(level) > bottomElevationFeet + MinimumRiseFeet)
+            .OrderBy(level => Math.Abs(elevationFeet(level) - topFeet))
+            .FirstOrDefault();
+        return top != null && Math.Abs(elevationFeet(top) - topFeet) <= ToleranceFeet ? top : null;
     }
 }

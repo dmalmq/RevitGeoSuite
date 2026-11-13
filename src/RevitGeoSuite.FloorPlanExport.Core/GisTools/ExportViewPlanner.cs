@@ -84,16 +84,17 @@ public sealed class ExportViewLevel
     public bool HasLevelId { get; }
 }
 
-/// <summary>A floor plan in the model: its level, its crop frame and its crop when the crop is on.</summary>
+/// <summary>A floor plan in the model: its level, its crop frame, its crop when the crop is on, and its view template.</summary>
 public sealed class ExportPlanView
 {
-    public ExportPlanView(long elementId, string name, long levelId, ViewFrame frame, CropRect? activeCrop)
+    public ExportPlanView(long elementId, string name, long levelId, ViewFrame frame, CropRect? activeCrop, long? templateId = null)
     {
         ElementId = elementId;
         Name = name;
         LevelId = levelId;
         Frame = frame;
         ActiveCrop = activeCrop;
+        TemplateId = templateId;
     }
 
     public long ElementId { get; }
@@ -106,27 +107,116 @@ public sealed class ExportPlanView
 
     public CropRect? ActiveCrop { get; }
 
+    /// <summary>The view template the plan uses; null without one.</summary>
+    public long? TemplateId { get; }
+
     public bool IsGisView => Name.StartsWith(GisModelFile.GisViewPrefix, StringComparison.OrdinalIgnoreCase);
+}
+
+public enum TemplateCategoryKind
+{
+    /// <summary>A category the export reads, or the category of a family type the standard tags: shown.</summary>
+    ExportReads,
+
+    /// <summary>A line style: shown when its name starts with <c>GIS_</c>, hidden otherwise.</summary>
+    LineStyle,
+}
+
+/// <summary>One category or line style whose visibility the <c>GIS Export</c> template owns.</summary>
+public sealed class TemplateCategory
+{
+    public TemplateCategory(long elementId, string name, TemplateCategoryKind kind, bool hidden)
+    {
+        ElementId = elementId;
+        Name = name;
+        Kind = kind;
+        Hidden = hidden;
+    }
+
+    public long ElementId { get; }
+
+    public string Name { get; }
+
+    public TemplateCategoryKind Kind { get; }
+
+    public bool Hidden { get; }
+
+    public bool Shown => Kind == TemplateCategoryKind.ExportReads || Name.StartsWith(GisModelFile.GisViewPrefix, StringComparison.Ordinal);
+
+    public string Label => Kind == TemplateCategoryKind.LineStyle ? "line style " + Name : Name;
+}
+
+/// <summary>The <c>GIS Export</c> template as it is: the visibility of what it owns.</summary>
+public sealed class ExportTemplate
+{
+    public ExportTemplate(long elementId, IEnumerable<TemplateCategory> categories)
+    {
+        ElementId = elementId;
+        Categories = categories.ToList();
+    }
+
+    public long ElementId { get; }
+
+    public IReadOnlyList<TemplateCategory> Categories { get; }
+}
+
+/// <summary>What Set up model turns back on the <c>GIS Export</c> template: only the visibility it owns.</summary>
+public sealed class TemplateRepair
+{
+    public TemplateRepair(long templateId, IEnumerable<TemplateCategory> show, IEnumerable<TemplateCategory> hide)
+    {
+        TemplateId = templateId;
+        Show = show.ToList();
+        Hide = hide.ToList();
+    }
+
+    public long TemplateId { get; }
+
+    public IReadOnlyList<TemplateCategory> Show { get; }
+
+    public IReadOnlyList<TemplateCategory> Hide { get; }
+
+    public bool IsEmpty => Show.Count == 0 && Hide.Count == 0;
+
+    /// <summary>"show Floors, line style GIS_route; hide line style Thin Lines": every change, by name.</summary>
+    public string Changes()
+    {
+        List<string> parts = new();
+        if (Show.Count > 0)
+        {
+            parts.Add("show " + string.Join(", ", Show.Select(category => category.Label)));
+        }
+
+        if (Hide.Count > 0)
+        {
+            parts.Add("hide " + string.Join(", ", Hide.Select(category => category.Label)));
+        }
+
+        return string.Join("; ", parts);
+    }
 }
 
 /// <summary>What Set up model reads about the export views.</summary>
 public sealed class ExportViewSnapshot
 {
     public ExportViewSnapshot(
-        bool hasTemplate,
+        ExportTemplate? template,
         IEnumerable<ExportViewLevel> levels,
         IEnumerable<ExportPlanView> planViews,
         IEnumerable<string> viewNames,
         IEnumerable<Point2D> floorPoints)
     {
-        HasTemplate = hasTemplate;
+        Template = template;
         Levels = levels.ToList();
         PlanViews = planViews.ToList();
         ViewNames = new HashSet<string>(viewNames, StringComparer.OrdinalIgnoreCase);
         FloorPoints = floorPoints.ToList();
     }
 
-    public bool HasTemplate { get; }
+    /// <summary>The <c>GIS Export</c> template; null when the model has none.</summary>
+    public ExportTemplate? Template { get; }
+
+    public bool HasTemplate => Template != null;
 
     public IReadOnlyList<ExportViewLevel> Levels { get; }
 
@@ -179,9 +269,11 @@ public sealed class ExportViewPlan
         IEnumerable<NewExportView> newViews,
         IEnumerable<ExportViewCrop> crops,
         IEnumerable<ExportViewLevel> levelIds,
-        CropRect? extent = null)
+        CropRect? extent = null,
+        TemplateRepair? repair = null)
     {
         Extent = extent;
+        Repair = repair;
         CreatesTemplate = createsTemplate;
         NewViews = newViews.ToList();
         Crops = crops.ToList();
@@ -202,7 +294,10 @@ public sealed class ExportViewPlan
     /// <summary>Levels that get a <c>level_id</c>.</summary>
     public IReadOnlyList<ExportViewLevel> LevelIds { get; }
 
-    public bool IsEmpty => !CreatesTemplate && NewViews.Count == 0 && Crops.Count == 0 && LevelIds.Count == 0;
+    /// <summary>The visibility put back on an existing <c>GIS Export</c> template; null when there is nothing to put back.</summary>
+    public TemplateRepair? Repair { get; }
+
+    public bool IsEmpty => !CreatesTemplate && NewViews.Count == 0 && Crops.Count == 0 && LevelIds.Count == 0 && Repair is null;
 }
 
 /// <summary>
@@ -210,7 +305,9 @@ public sealed class ExportViewPlan
 /// every level that holds floors and has none, one crop around every floor on all <c>GIS_</c>
 /// plans, and a <c>level_id</c> on every level, so a stair's or escalator's far level always has an
 /// id. It adds and never deletes. A crop that already holds every floor is left as it is, so a
-/// wider crop someone set stays.
+/// wider crop someone set stays. On an existing template it puts back only the visibility the
+/// template owns: what the export reads is shown and line styles not named <c>GIS_</c> are hidden.
+/// Anything else someone turned on stays on, and the <c>GIS_</c> plans' own settings are not touched.
 /// </summary>
 public static class ExportViewPlanner
 {
@@ -246,7 +343,23 @@ public static class ExportViewPlanner
             newViews,
             crops,
             snapshot.Levels.Where(level => !level.HasLevelId),
-            CropFor(new ViewFrame(new Point2D(0, 0), 1, 0), snapshot.FloorPoints));
+            CropFor(new ViewFrame(new Point2D(0, 0), 1, 0), snapshot.FloorPoints),
+            RepairFor(snapshot.Template));
+    }
+
+    /// <summary>The owned visibility <paramref name="template"/> has lost; null when it has lost none or there is no template.</summary>
+    public static TemplateRepair? RepairFor(ExportTemplate? template)
+    {
+        if (template is null)
+        {
+            return null;
+        }
+
+        TemplateRepair repair = new(
+            template.ElementId,
+            template.Categories.Where(category => category.Hidden && category.Shown),
+            template.Categories.Where(category => !category.Hidden && !category.Shown));
+        return repair.IsEmpty ? null : repair;
     }
 
     /// <summary>The rectangle around every floor point, in <paramref name="frame"/>, with the margin; null without floors.</summary>
@@ -271,6 +384,11 @@ public static class ExportViewPlanner
         if (plan.CreatesTemplate)
         {
             lines.Add($"Create view template {TemplateName}");
+        }
+
+        if (plan.Repair is TemplateRepair repair)
+        {
+            lines.Add($"Update view template {TemplateName}: {repair.Changes()}");
         }
 
         lines.AddRange(plan.NewViews.Select(view => $"Create plan {view.ViewName} for level {view.LevelName}"));

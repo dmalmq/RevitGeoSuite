@@ -15,13 +15,21 @@ public sealed class ExportViewPlannerTests
 
     private static ExportViewLevel Level(long id, string name, bool hasFloors = true, bool hasLevelId = true) => new(id, name, hasFloors, hasLevelId);
 
+    private static readonly ExportTemplate Template = new(900, new[]
+    {
+        new TemplateCategory(1, "Floors", TemplateCategoryKind.ExportReads, hidden: false),
+        new TemplateCategory(2, "GIS_route", TemplateCategoryKind.LineStyle, hidden: false),
+        new TemplateCategory(3, "Thin Lines", TemplateCategoryKind.LineStyle, hidden: true),
+    });
+
     private static ExportViewSnapshot Model(
         bool hasTemplate = true,
         ExportViewLevel[]? levels = null,
         ExportPlanView[]? views = null,
         string[]? names = null,
-        Point2D[]? floor = null) => new(
-            hasTemplate,
+        Point2D[]? floor = null,
+        ExportTemplate? template = null) => new(
+            hasTemplate ? template ?? Template : null,
             levels ?? new[] { Level(1, "1FL"), Level(2, "B1FL"), Level(3, "TP±0", hasFloors: false) },
             views ?? Array.Empty<ExportPlanView>(),
             names ?? Array.Empty<string>(),
@@ -159,4 +167,39 @@ public sealed class ExportViewPlannerTests
         Assert.Empty(plan.Crops);
         Assert.Equal("Give 2 level(s) a level_id: B1FL, TP±0", Assert.Single(ExportViewPlanner.Describe(plan)));
     }
+
+    [Fact]
+    public void AChangedTemplateGetsBackOnlyTheVisibilityItOwns()
+    {
+        ExportTemplate changed = new(900, new[]
+        {
+            new TemplateCategory(1, "Floors", TemplateCategoryKind.ExportReads, hidden: true),
+            new TemplateCategory(2, "GIS_route", TemplateCategoryKind.LineStyle, hidden: true),
+            new TemplateCategory(3, "Thin Lines", TemplateCategoryKind.LineStyle, hidden: false),
+            new TemplateCategory(4, "Stairs", TemplateCategoryKind.ExportReads, hidden: false),
+            new TemplateCategory(5, "<Hidden>", TemplateCategoryKind.LineStyle, hidden: true),
+        });
+
+        ExportViewPlan plan = ExportViewPlanner.Plan(Model(template: changed, views: GisViews(), floor: Array.Empty<Point2D>()));
+
+        TemplateRepair repair = plan.Repair!;
+        Assert.Equal(900, repair.TemplateId);
+        Assert.Equal(new long[] { 1, 2 }, repair.Show.Select(category => category.ElementId));
+        Assert.Equal(new long[] { 3 }, repair.Hide.Select(category => category.ElementId));
+        Assert.Equal(
+            "Update view template GIS Export: show Floors, line style GIS_route; hide line style Thin Lines",
+            Assert.Single(ExportViewPlanner.Describe(plan)));
+    }
+
+    [Fact]
+    public void ATemplateThatHoldsItsOwnVisibilityNeedsNoRepair()
+    {
+        Assert.Null(ExportViewPlanner.Plan(Model(views: GisViews(), floor: Array.Empty<Point2D>())).Repair);
+    }
+
+    private static ExportPlanView[] GisViews() => new ExportPlanView[]
+    {
+        new(11, "GIS_1FL", 1, North, null, 900),
+        new(12, "GIS_B1FL", 2, North, null, 900),
+    };
 }
