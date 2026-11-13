@@ -3,9 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
+using RevitGeoSuite.FloorPlanExport.Core.Assignments;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
+using RevitGeoSuite.FloorPlanExport.Export;
+using RevitGeoSuite.FloorPlanExport.Extractors;
 
 namespace RevitGeoSuite.FloorPlanExport.GisTools;
 
@@ -25,13 +28,149 @@ public static class ExportAuditReader
     public static ExportAuditSnapshot Read(Document document, ExportViewSnapshot views)
     {
         List<Level> levels = new FilteredElementCollector(document).OfClass(typeof(Level)).Cast<Level>().ToList();
+        List<AuditStair> stairs = ReadStairs(document).ToList();
+        List<AuditFamily> families = ReadFamilies(document, levels).ToList();
         return new ExportAuditSnapshot(
             views,
-            ReadStairs(document),
-            ReadFamilies(document, levels),
+            stairs,
+            families,
             ReadIds(document),
-            levels.Select(level => new AuditIdValue(level.Id.Value, ModelSnapshotReader.ReadText(level, GisSharedParameters.LevelId))));
+            levels.Select(level => new AuditIdValue(level.Id.Value, ModelSnapshotReader.ReadText(level, GisSharedParameters.LevelId))),
+            ReadFloors(document),
+            ReadWaysIn(document, stairs, families));
     }
+
+    /// <summary>Every floor with the unit category the export resolves for it, its top outline and how far its top rises.</summary>
+    private static IEnumerable<LayoutFloor> ReadFloors(Document document)
+    {
+        string projectKey = DocumentProjectKeyBuilder.Create(document);
+        FloorCategoryResolver resolver = new(ZoneCatalog.CreateDefault(), new FloorCategoryOverrideStore().LoadWithDiagnostics(projectKey).Value);
+        bool setUp = ModelSnapshotReader.ReadText(document.ProjectInformation, GisSharedParameters.GisStandardVersion).Length > 0;
+        foreach (Floor floor in new FilteredElementCollector(document).OfClass(typeof(Floor)).WhereElementIsNotElementType().Cast<Floor>())
+        {
+            Element? type = document.GetElement(floor.GetTypeId());
+            string typeName = (type?.Name ?? string.Empty).Trim();
+            string rawName = typeName.Length == 0 ? $"<floor-{floor.Id.Value}>" : typeName;
+            string zoneName = UnitExtractor.TryResolveFloorZoneName(typeName, out string parsed, out _) ? parsed : rawName;
+            ResolvedFloorCategory category = resolver.Resolve(
+                rawName,
+                zoneName,
+                new FloorStandardParameters(
+                    NullIfEmpty(ModelSnapshotReader.ReadText(floor, GisSharedParameters.Category)),
+                    NullIfEmpty(ModelSnapshotReader.ReadText(type, GisSharedParameters.GisCategory)),
+                    NullIfEmpty(ModelSnapshotReader.ReadText(type, GisSharedParameters.GisRestriction)),
+                    setUp));
+            (List<Polygon2D> outline, double rise) = TopOutline(floor);
+            if (outline.Count > 0)
+            {
+                yield return new LayoutFloor(floor.Id.Value, floor.LevelId.Value, category.ZoneInfo.Category, outline, rise);
+            }
+        }
+    }
+
+    /// <summary>The floor's top faces as polygons (the longest loop of each face is its outline) and the rise between their lowest and highest point.</summary>
+    private static (List<Polygon2D> Outline, double Rise) TopOutline(Floor floor)
+    {
+        List<Polygon2D> polygons = new();
+        double low = double.MaxValue;
+        double high = double.MinValue;
+        foreach (Reference reference in HostObjectUtils.GetTopFaces(floor))
+        {
+            if (floor.GetGeometryObjectFromReference(reference) is not Face face)
+            {
+                continue;
+            }
+
+            List<List<Point2D>> loops = new();
+            foreach (CurveLoop loop in face.GetEdgesAsCurveLoops())
+            {
+                List<Point2D> ring = new();
+                foreach (Curve curve in loop)
+                {
+                    IList<XYZ> points = curve.Tessellate();
+                    for (int index = 0; index < points.Count - 1; index++)
+                    {
+                        ring.Add(new Point2D(points[index].X, points[index].Y));
+                        low = Math.Min(low, points[index].Z);
+                        high = Math.Max(high, points[index].Z);
+                    }
+                }
+
+                if (ring.Count >= 3)
+                {
+                    loops.Add(ring);
+                }
+            }
+
+            if (loops.Count > 0)
+            {
+                List<List<Point2D>> ordered = loops.OrderByDescending(ring => Math.Abs(Area(ring))).ToList();
+                polygons.Add(new Polygon2D(ordered[0], ordered.Skip(1).Cast<IReadOnlyList<Point2D>>().ToList()));
+            }
+        }
+
+        return (polygons, polygons.Count == 0 ? 0 : high - low);
+    }
+
+    /// <summary>Doors, windows and accepted openings on their level, and each stair's and escalator's footprint on both of its levels.</summary>
+    private static IEnumerable<LayoutOpening> ReadWaysIn(Document document, IReadOnlyList<AuditStair> stairs, IReadOnlyList<AuditFamily> families)
+    {
+        IReadOnlyList<string> accepted = new AcceptedOpeningFamilyStore().LoadWithDiagnostics(DocumentProjectKeyBuilder.Create(document)).Value;
+        foreach (FamilyInstance instance in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>())
+        {
+            if (instance.LevelId != ElementId.InvalidElementId && OpeningFamilyClassifier.IsAcceptedOpening(instance, accepted) && Corners(instance) is List<Point2D> corners)
+            {
+                yield return new LayoutOpening(instance.Id.Value, instance.LevelId.Value, corners);
+            }
+        }
+
+        IEnumerable<(long Id, long? Bottom, long? Top)> connectors = stairs.Select(stair => (stair.ElementId, stair.BaseLevelId, stair.TopLevelId))
+            .Concat(families.Where(family => ExportAudit.IsEscalator(family.GisKind, family.GisCategory, family.FamilyName, family.TypeName))
+                .Select(family => (family.ElementId, family.BottomLevelId, family.TopLevelId)));
+        foreach ((long id, long? bottom, long? top) in connectors)
+        {
+            if (Corners(document.GetElement(new ElementId(id))) is not List<Point2D> corners)
+            {
+                continue;
+            }
+
+            foreach (long level in new[] { bottom, top }.Where(level => level.HasValue).Select(level => level!.Value).Distinct())
+            {
+                yield return new LayoutOpening(id, level, corners);
+            }
+        }
+    }
+
+    private static List<Point2D>? Corners(Element? element)
+    {
+        if (element?.get_BoundingBox(null) is not BoundingBoxXYZ box)
+        {
+            return null;
+        }
+
+        return new List<Point2D>
+        {
+            new(box.Min.X, box.Min.Y),
+            new(box.Max.X, box.Min.Y),
+            new(box.Max.X, box.Max.Y),
+            new(box.Min.X, box.Max.Y),
+        };
+    }
+
+    private static double Area(IReadOnlyList<Point2D> ring)
+    {
+        double sum = 0;
+        for (int index = 0; index < ring.Count; index++)
+        {
+            Point2D a = ring[index];
+            Point2D b = ring[(index + 1) % ring.Count];
+            sum += (a.X * b.Y) - (b.X * a.Y);
+        }
+
+        return sum / 2;
+    }
+
+    private static string? NullIfEmpty(string value) => value.Length == 0 ? null : value;
 
     private static IEnumerable<AuditStair> ReadStairs(Document document)
     {

@@ -97,13 +97,17 @@ public sealed class ExportAuditSnapshot
         IEnumerable<AuditStair>? stairs = null,
         IEnumerable<AuditFamily>? families = null,
         IEnumerable<AuditIdValue>? elementIds = null,
-        IEnumerable<AuditIdValue>? levelIds = null)
+        IEnumerable<AuditIdValue>? levelIds = null,
+        IEnumerable<LayoutFloor>? floors = null,
+        IEnumerable<LayoutOpening>? openings = null)
     {
         Views = views ?? throw new ArgumentNullException(nameof(views));
         Stairs = (stairs ?? Array.Empty<AuditStair>()).ToList();
         Families = (families ?? Array.Empty<AuditFamily>()).ToList();
         ElementIds = (elementIds ?? Array.Empty<AuditIdValue>()).ToList();
         LevelIds = (levelIds ?? Array.Empty<AuditIdValue>()).ToList();
+        Floors = (floors ?? Array.Empty<LayoutFloor>()).ToList();
+        Openings = (openings ?? Array.Empty<LayoutOpening>()).ToList();
     }
 
     public ExportViewSnapshot Views { get; }
@@ -117,12 +121,19 @@ public sealed class ExportAuditSnapshot
 
     /// <summary>Every level's non-empty <c>level_id</c>.</summary>
     public IReadOnlyList<AuditIdValue> LevelIds { get; }
+
+    /// <summary>Every floor, for <see cref="FloorLayoutAudit"/>.</summary>
+    public IReadOnlyList<LayoutFloor> Floors { get; }
+
+    /// <summary>Every way onto a floor, for <see cref="FloorLayoutAudit"/>.</summary>
+    public IReadOnlyList<LayoutOpening> Openings { get; }
 }
 
 /// <summary>
 /// Audit of how the model is built for the export, beside <see cref="GisAudit"/>'s check of the
 /// standard: stairs the export cannot link, escalators without a direction, ids two rows would
-/// share, connectors ending on a level that is not exported, and a changed export template.
+/// share, connectors ending on a level that is not exported, a changed export template, and the
+/// floor layout checks of <see cref="FloorLayoutAudit"/>.
 /// </summary>
 public static class ExportAudit
 {
@@ -146,6 +157,7 @@ public static class ExportAudit
         findings.AddRange(EscalatorsWithoutDirection(snapshot.Families));
         findings.AddRange(EndsWithoutGisPlan(snapshot, LevelName));
         findings.AddRange(Template(snapshot.Views));
+        findings.AddRange(FloorLayoutAudit.Run(snapshot.Floors, snapshot.Openings, LevelName));
         return findings.OrderBy(finding => (int)finding.Severity).ToList();
     }
 

@@ -3187,7 +3187,7 @@ public sealed class UnitExtractor
         return true;
     }
 
-    private static bool TryResolveFloorZoneName(
+    internal static bool TryResolveFloorZoneName(
         string typeName,
         out string zoneName,
         out bool prefixMatched)
