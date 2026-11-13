@@ -24,6 +24,10 @@ internal sealed partial class GisStandardRun
     };
 
     private List<FloorTypeRow> typesBefore = new();
+
+    // An old shop type that already carries rachi_gai or rachi_nai is only offered its own side's
+    // name; one without a restriction is offered both. Null: both sides.
+    private string? shopSide;
     private int floorTypesApplied;
 
     private async Task FloorTypeSteps()
@@ -45,6 +49,14 @@ internal sealed partial class GisStandardRun
     {
         typesBefore = FloorTypes();
         List<string> inUse = OldNamesInUse(typesBefore);
+        FloorTypeRow? shopType = typesBefore.FirstOrDefault(type => type.Name == Shop && type.Floors > 0);
+        string? restriction = shopType == null ? null : TypeParameter(shopType.Id, "gis_restriction");
+        shopSide = restriction switch { "rachi_gai" => ShopOutside, "rachi_nai" => ShopInside, _ => null };
+        if (shopType != null)
+        {
+            step.Note($"{Shop} has gis_restriction '{restriction ?? "(none)"}', so it is offered {shopSide ?? $"{ShopOutside} or {ShopInside}"}.");
+        }
+
         step.Note($"Old-named types in use: {(inUse.Count == 0 ? "none" : string.Join(", ", inUse))}.");
         step.Check(inUse.Count > 0, "The model has at least one old-named floor type in use (otherwise this script checks nothing).");
 
@@ -55,7 +67,7 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        string[] blocked = BlockedNewNames(inUse);
+        string[] blocked = BlockedNewNames(inUse, shopSide);
         foreach (string name in blocked)
         {
             step.Check(!before.SetupLines.Any(line => line.Contains(name, StringComparison.Ordinal)), $"Set up model does not plan to create {name} while its old-named type is in use.");
@@ -77,8 +89,10 @@ internal sealed partial class GisStandardRun
         FloorTypeRow? other = types.FirstOrDefault(type => type.Name == "j その他_床");
         if (step.Check(other != null, "j その他_床 exists after Set up model."))
         {
-            string? restriction = TypeParameter(other!.Id, "gis_restriction");
-            step.Check(restriction == "nonpublic", $"j その他_床 has gis_restriction nonpublic (has '{restriction ?? "(no parameter)"}').");
+            string? category = TypeParameter(other!.Id, "gis_category");
+            string? otherRestriction = TypeParameter(other.Id, "gis_restriction");
+            step.Check(category == "nonpublic", $"j その他_床 has gis_category nonpublic (has '{category ?? "(no parameter)"}').");
+            step.Check(string.IsNullOrEmpty(otherRestriction), $"j その他_床 keeps an empty gis_restriction (has '{otherRestriction}').");
         }
     }
 
@@ -99,10 +113,17 @@ internal sealed partial class GisStandardRun
         if (inUse.Contains(Shop))
         {
             FindingItem? shop = oldName.FirstOrDefault(finding => finding.Message.Contains(Shop, StringComparison.Ordinal));
-            step.Check(
-                shop != null && shop.Message.Contains(ShopOutside, StringComparison.Ordinal) && shop.Message.Contains(ShopInside, StringComparison.Ordinal)
-                    && Regex.IsMatch(shop.Message, @"All \d+ floors of this type"),
-                $"The {Shop} warning names both shop types and says all its floors get the chosen name (says: {shop?.Message ?? "nothing"}).");
+            if (shopSide == null)
+            {
+                step.Check(
+                    shop != null && shop.Message.Contains($"rename it to {ShopOutside} or {ShopInside}", StringComparison.Ordinal)
+                        && Regex.IsMatch(shop.Message, @"All \d+ floors of this type"),
+                    $"The {Shop} warning names both shop types and says all its floors get the name chosen (says: {shop?.Message ?? "nothing"}).");
+            }
+            else
+            {
+                step.Check(shop != null && shop.Message.Contains($"rename it to {shopSide}", StringComparison.Ordinal), $"The {Shop} warning names its own side, {shopSide} (says: {shop?.Message ?? "nothing"}).");
+            }
         }
 
         foreach (FindingItem finding in oldName)
@@ -135,7 +156,15 @@ internal sealed partial class GisStandardRun
             List<ProposalItem> shop = model.Proposals.Where(item => item.FloorTypeName == Shop).ToList();
             ProposalItem? outside = shop.FirstOrDefault(item => item.StandardTypeName == ShopOutside);
             ProposalItem? inside = shop.FirstOrDefault(item => item.StandardTypeName == ShopInside);
-            if (step.Check(shop.Count == 2 && outside != null && inside != null, $"{Shop} has two rows, {ShopOutside} and {ShopInside} (has {shop.Count})."))
+            if (shopSide != null)
+            {
+                step.Check(shop.Count == 1 && shop[0].StandardTypeName == shopSide, $"{Shop} has one row, {shopSide} (has {string.Join(", ", shop.Select(item => item.StandardTypeName))}).");
+                if (shop.Count == 1)
+                {
+                    step.Check(await ProposalCheckbox(Shop, shopSide).IsCheckedAsync(), $"The single {Shop} row starts ticked.");
+                }
+            }
+            else if (step.Check(shop.Count == 2 && outside != null && inside != null, $"{Shop} has two rows, {ShopOutside} and {ShopInside} (has {shop.Count})."))
             {
                 ILocator outsideBox = ProposalCheckbox(Shop, ShopOutside);
                 ILocator insideBox = ProposalCheckbox(Shop, ShopInside);
@@ -148,7 +177,8 @@ internal sealed partial class GisStandardRun
         }
 
         await Shot(step, "F3-fix-floor-types");
-        int types = model.Proposals.GroupBy(item => item.FloorTypeId).Count(group => group.Count() == 1) + (inUse.Contains(Shop) ? 1 : 0);
+        // Single-candidate types start ticked; a two-candidate shop type counts once it is ticked above.
+        int types = model.Proposals.GroupBy(item => item.FloorTypeId).Count(group => group.Count() == 1) + (inUse.Contains(Shop) && shopSide == null ? 1 : 0);
         int seq = host.LastEvent();
         await Shell.Button($"Apply to {types} type(s)").ClickAsync();
         step.Check(await Shell.ShowsAsync(Shell.Text($"{types} floor type(s) fixed"), 120000), $"Banner '{types} floor type(s) fixed'.");
@@ -169,7 +199,8 @@ internal sealed partial class GisStandardRun
 
         if (inUse.Contains(Shop))
         {
-            step.Check(banner.Contains($"Renamed {Shop} to {ShopOutside}", StringComparison.Ordinal), $"The change list says 'Renamed {Shop} to {ShopOutside}'.");
+            string target = shopSide ?? ShopOutside;
+            step.Check(banner.Contains($"Renamed {Shop} to {target}", StringComparison.Ordinal), $"The change list says 'Renamed {Shop} to {target}'.");
         }
 
         await Shot(step, "F3-applied");
@@ -184,7 +215,7 @@ internal sealed partial class GisStandardRun
         }
 
         Dictionary<long, FloorTypeRow> after = FloorTypes().ToDictionary(type => type.Id);
-        IEnumerable<(string Old, string New)> expected = Renames.Select(rename => (rename.Old, rename.New)).Append((Shop, ShopOutside));
+        IEnumerable<(string Old, string New)> expected = Renames.Select(rename => (rename.Old, rename.New)).Append((Shop, shopSide ?? ShopOutside));
         foreach ((string old, string renamed) in expected)
         {
             FloorTypeRow? before = typesBefore.FirstOrDefault(type => type.Name == old && type.Floors > 0);
@@ -209,9 +240,12 @@ internal sealed partial class GisStandardRun
         step.Check(oldName.Count == 0, $"No old-name warnings are left ({string.Join(" / ", oldName.Select(finding => finding.Message))}).");
         HashSet<long> renamedIds = typesBefore.Where(type => type.Floors > 0 && (type.Name == Shop || Renames.Any(rename => rename.Old == type.Name))).Select(type => type.Id).ToHashSet();
         step.Check(!model.Proposals.Any(proposal => renamedIds.Contains(proposal.FloorTypeId)), "The card proposes nothing more for the renamed types.");
-        if (OldNamesInUse(typesBefore).Contains(Shop))
+        // Only a shop type offered both sides holds back both names; after it becomes the outside
+        // type, Set up model may create the inside one.
+        if (OldNamesInUse(typesBefore).Contains(Shop) && shopSide == null)
         {
-            step.Check(model.SetupLines.Any(line => line.Contains(ShopInside, StringComparison.Ordinal)), $"Set up model now offers to create {ShopInside} (lines: {string.Join(" / ", model.SetupLines)}).");
+            string otherSide = ShopInside;
+            step.Check(model.SetupLines.Any(line => line.Contains(otherSide, StringComparison.Ordinal)), $"Set up model now offers to create {otherSide} (lines: {string.Join(" / ", model.SetupLines)}).");
         }
     }
 
@@ -263,9 +297,9 @@ internal sealed partial class GisStandardRun
     private static List<string> OldNamesInUse(List<FloorTypeRow> types) =>
         Renames.Select(rename => rename.Old).Append(Shop).Where(old => types.Any(type => type.Name == old && type.Floors > 0)).ToList();
 
-    private static string[] BlockedNewNames(List<string> inUse) =>
+    private static string[] BlockedNewNames(List<string> inUse, string? shopSide) =>
         Renames.Where(rename => inUse.Contains(rename.Old)).Select(rename => rename.New)
-            .Concat(inUse.Contains(Shop) ? new[] { ShopOutside, ShopInside } : Array.Empty<string>())
+            .Concat(!inUse.Contains(Shop) ? Array.Empty<string>() : shopSide != null ? new[] { shopSide } : new[] { ShopOutside, ShopInside })
             .ToArray();
 
     private string? TypeParameter(long typeId, string name)

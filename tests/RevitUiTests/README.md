@@ -89,8 +89,8 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Step | Check |
 |---|---|
-| F1 | Set up model plans and creates none of j 喫煙所_床, j ベビー休憩室_床, j 屋外_床, j ラチ外店舗_床, or j ラチ内店舗_床 while the old-named type is in use. The model goes to standard version 2. j その他_床 has gis_restriction nonpublic. |
-| F2 | There is one "uses an old name" warning per old-named type in use, naming the new name. The j 店舗_床 warning names both shop types and says that all its floors follow the choice. |
+| F1 | Set up model plans and creates none of j 喫煙所_床, j ベビー休憩室_床, j 屋外_床, j ラチ外店舗_床, or j ラチ内店舗_床 while the old-named type is in use. The model goes to standard version 2. j その他_床 has gis_category nonpublic and an empty gis_restriction. |
+| F2 | There is one "uses an old name" warning per old-named type in use, naming the new name. The j 店舗_床 warning names both shop types and says that all its floors follow the choice. If j 店舗_床 already has a gis_restriction, it names only that side, and the card shows one row for it. |
 | F3 | smoking room, Baby room, and Roof are proposed as old names that rename to the new names with the right categories, and start ticked. The two j 店舗_床 rows start unticked, and ticking one unticks the other. Ticking j ラチ外店舗_床 and applying gives the banner, the commit event, and a "Renamed X to Y" line for each type. |
 | F4 | Each renamed type keeps its element id and its floor count in Revit. |
 | F5 | After Check again, no old-name warning is left and nothing more is proposed for those types. Set up model now offers to create j ラチ内店舗_床. |
