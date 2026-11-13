@@ -17,6 +17,11 @@
   installed (a PR build): it copies the folder to -RgsTarget (C:\dev\revit-test\rgs\<year>) and hands Revit a
   manifest for it for this one start. It refuses when another RevitGeoSuite manifest is installed,
   because Revit cannot load two add-ins with the same id.
+
+  -PyRevitExtension <folder> adds a pyRevit extension folder to userextensions in
+  %APPDATA%\pyRevit\pyRevit_config.ini for the same window and takes it out again. pyRevit reads the
+  list at Revit start; a reload in that Revit drops the folder. Every run also takes entries under
+  C:\dev\rgs-uitests and C:\dev\revit-test out of that roaming file, since those exist only here.
 #>
 param(
     [switch]$StartRevit,
@@ -24,6 +29,7 @@ param(
     [string]$TestHost = (Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear\RevitGeoSuite.TestHost"),
     [string]$RgsTarget = "C:\dev\revit-test\rgs\$RevitYear",
     [string]$RgsBuild = '',
+    [string]$PyRevitExtension = '',
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$RunnerArgs
 )
 
@@ -43,6 +49,32 @@ foreach ($stale in $hostManifest, $rgsManifest) {
     if (Test-Path $stale) { Remove-Item $stale -Force; Write-Host "Removed a manifest an earlier run left: $stale" }
 }
 
+$pyRevitConfig = Join-Path $env:APPDATA 'pyRevit\pyRevit_config.ini'
+
+# pyRevit keeps userextensions as a JSON-style list on one line of its INI file.
+function Set-PyRevitExtensions([scriptblock]$Change) {
+    if (-not (Test-Path $pyRevitConfig)) { return }
+    $text = [IO.File]::ReadAllText($pyRevitConfig)
+    $match = [regex]::Match($text, '(?m)^userextensions[ \t]*=[ \t]*(\[.*\])[ \t]*(?=\r?$)')
+    $list = @(if ($match.Success) { ConvertFrom-Json $match.Groups[1].Value | ForEach-Object { $_ } })
+    $new = @(& $Change $list)
+    if ((ConvertTo-Json -InputObject $list -Compress) -eq (ConvertTo-Json -InputObject $new -Compress)) { return }
+    $line = 'userextensions = ' + $(if ($new.Count -eq 0) { '[]' } else { ConvertTo-Json -InputObject $new -Compress })
+    if ($match.Success) {
+        $text = $text.Remove($match.Index, $match.Length).Insert($match.Index, $line)
+    } elseif ($text -match '(?m)^\[core\][ \t]*(?=\r?$)') {
+        $text = [regex]::new('(?m)^\[core\][ \t]*(?=\r?$)').Replace($text, { param($m) "[core]`r`n$line" }, 1)
+    } else {
+        $text = $text.TrimEnd() + "`r`n[core]`r`n$line`r`n"
+    }
+    [IO.File]::WriteAllText($pyRevitConfig, $text, [Text.UTF8Encoding]::new($false))
+    Write-Host "pyRevit userextensions: $(ConvertTo-Json -InputObject $new -Compress)"
+}
+
+# Test folders (C:\dev\rgs-uitests, C:\dev\revit-test) exist only on the build PC; never leave one in the roaming list.
+Set-PyRevitExtensions { param($list) $list | Where-Object { "$_" -notmatch '^C:\\dev\\(rgs-uitests|revit-test)(\\|$)' } }
+
+if ($PyRevitExtension -and -not $StartRevit) { throw '-PyRevitExtension needs -StartRevit: the folder is handed to the Revit this script starts.' }
 if ($RgsBuild -and -not $StartRevit) { throw '-RgsBuild needs -StartRevit: the build is handed to the Revit this script starts.' }
 
 if ($StartRevit) {
@@ -71,6 +103,11 @@ if ($StartRevit) {
             Write-Host "RevitGeoSuite for this run: $RgsBuild, copied to $rgs."
         }
 
+        if ($PyRevitExtension) {
+            $extension = (Resolve-Path $PyRevitExtension).Path
+            Set-PyRevitExtensions { param($list) @($list) + $extension }
+        }
+
         Copy-Item $staged $hostManifest -Force
         try {
             $env:REVITGEOSUITE_UITEST = '1'   # inherited by this Revit only; removed again below
@@ -83,6 +120,7 @@ if ($StartRevit) {
         }
         finally {
             Remove-Item $handed -Force -ErrorAction SilentlyContinue
+            if ($PyRevitExtension) { Set-PyRevitExtensions { param($list) $list | Where-Object { $_ -ne $extension } } }
             Write-Host "Removed $($handed -join ', '): Revit has read it, and nothing is left for a roaming profile or a Revit started by hand."
         }
     }

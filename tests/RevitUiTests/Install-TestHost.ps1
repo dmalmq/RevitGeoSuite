@@ -46,6 +46,8 @@ foreach ($old in $liveManifest, $oldTarget) {
         Write-Host "Removed $old (the manifest no longer stays where Revit and the roaming profile see it)."
     }
 }
+$oldParent = Split-Path $oldTarget
+if ((Test-Path $oldParent) -and -not (Get-ChildItem $oldParent -Force)) { Remove-Item $oldParent -Force }
 
 if ($Uninstall) {
     Remove-Item $Target -Recurse -Force -ErrorAction SilentlyContinue
