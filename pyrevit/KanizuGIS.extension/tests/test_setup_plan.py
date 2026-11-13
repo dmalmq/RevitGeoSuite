@@ -18,9 +18,9 @@ class SetupPlanTests(unittest.TestCase):
         plan = setup_plan.plan_setup(snapshot.ModelSnapshot(), self.standard)
         self.assertEqual(15, len([step for step in plan.parameters if step.action == setup_plan.BIND]))
         self.assertEqual(len(self.standard.materials), len(plan.materials))
-        self.assertEqual(12, len([step for step in plan.floor_types if step.action == setup_plan.CREATE]))
+        self.assertEqual(21, len([step for step in plan.floor_types if step.action == setup_plan.CREATE]))
         self.assertTrue(plan.sets_version)
-        self.assertIn("Set gis_standard_version (none) to 1", setup_plan.describe(plan))
+        self.assertIn("Set gis_standard_version (none) to 2", setup_plan.describe(plan))
 
     def test_legacy_guid_is_kept_and_only_extended(self):
         legacy = snapshot.BoundParameter("category", "11111111-2222-3333-4444-555555555555", "instance",

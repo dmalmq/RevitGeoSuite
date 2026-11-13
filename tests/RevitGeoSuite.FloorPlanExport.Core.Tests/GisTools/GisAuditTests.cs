@@ -26,7 +26,7 @@ public sealed class GisAuditTests
     [Fact]
     public void FlagsAnOlderStandard()
     {
-        Assert.Contains("current one is 1", Audit(ModelOnStandard(standardVersion: "0"))[0].Message);
+        Assert.Contains("current one is 2", Audit(ModelOnStandard(standardVersion: "0"))[0].Message);
     }
 
     [Fact]
@@ -77,6 +77,7 @@ public sealed class GisAuditTests
         IReadOnlyList<GisAuditFinding> findings = Audit(ModelOnStandard(levels: new[]
         {
             new LevelInfo(1, "ルミネ2_3FL", null, "3F"),
+            new LevelInfo(3, "1FL", 0, "1F"),
             new LevelInfo(2, "Roof", null, "", hasFloors: false),
         }));
 
@@ -99,8 +100,8 @@ public sealed class GisAuditTests
         Assert.Equal(
             new[] { (GisAuditSeverity.Error, 25L), (GisAuditSeverity.Warning, 21L), (GisAuditSeverity.Warning, 22L) },
             findings.Select(finding => (finding.Severity, finding.ElementIds.Single())));
-        Assert.Contains("escalator", findings[1].Message);
-        Assert.Contains("moving_walkway", findings[2].Message);
+        Assert.Contains("looks like an escalator", findings[1].Message);
+        Assert.Contains("looks like a moving_walkway", findings[2].Message);
     }
 
     [Fact]
@@ -115,5 +116,25 @@ public sealed class GisAuditTests
 
         Assert.Equal(new[] { "b" }, GisAudit.BlockingFindings(findings).Select(finding => finding.Message));
         Assert.Equal("1 errors, 1 warnings, 1 notes", GisAudit.Summary(findings));
+    }
+
+    [Fact]
+    public void TheExportRecordNamesEachAcceptedErrorAndIsEmptyWithoutErrors()
+    {
+        GisAuditFinding[] errors =
+        {
+            new(GisAuditSeverity.Error, "floors", "b"),
+            new(GisAuditSeverity.Error, "families", "d"),
+        };
+
+        Assert.Equal(
+            new[]
+            {
+                "Exported with 2 GIS audit error(s) accepted; the output may be wrong where they apply.",
+                "GIS audit error: b",
+                "GIS audit error: d",
+            },
+            GisAudit.ExportRecord(errors));
+        Assert.Empty(GisAudit.ExportRecord(System.Array.Empty<GisAuditFinding>()));
     }
 }

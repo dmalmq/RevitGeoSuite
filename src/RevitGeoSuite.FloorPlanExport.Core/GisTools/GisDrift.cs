@@ -91,11 +91,18 @@ public sealed class GisDriftRow
 
 public sealed class GisDriftFile
 {
-    public GisDriftFile(string model, string appliedVersion, IReadOnlyList<GisDriftRow> rows)
+    public GisDriftFile(
+        string model,
+        string appliedVersion,
+        IReadOnlyList<GisDriftRow> rows,
+        int epsg = 0,
+        IReadOnlyList<GisDriftShape>? shapes = null)
     {
         Model = model;
         AppliedVersion = appliedVersion;
         Rows = rows;
+        Epsg = epsg;
+        Shapes = shapes ?? Array.Empty<GisDriftShape>();
     }
 
     public string Model { get; }
@@ -103,6 +110,68 @@ public sealed class GisDriftFile
     public string AppliedVersion { get; }
 
     public IReadOnlyList<GisDriftRow> Rows { get; }
+
+    /// <summary>The CRS of every <see cref="GisDriftShape.Outline"/>: the export's, so the model's project CRS. 0 when Kanizu knew none, and then no shape has an outline.</summary>
+    public int Epsg { get; }
+
+    /// <summary>The units whose shape the GDB changed, with the GDB's outline.</summary>
+    public IReadOnlyList<GisDriftShape> Shapes { get; }
+}
+
+/// <summary>
+/// One unit whose shape someone changed in the GDB, as Kanizu records it. The rows of one split or
+/// merge share a <see cref="Group"/>, the key of the element that keeps its row; in a split, every
+/// piece still carries that key until Revit makes the new floors and the next apply writes theirs.
+/// </summary>
+public sealed class GisDriftShape
+{
+    public GisDriftShape(
+        string edit,
+        string revitKey,
+        string uniqueId,
+        string layer,
+        string label,
+        string levelId,
+        string group,
+        bool keeps,
+        IReadOnlyList<IReadOnlyList<IReadOnlyList<(double X, double Y)>>> outline)
+    {
+        Edit = edit;
+        RevitKey = revitKey;
+        UniqueId = uniqueId;
+        Layer = layer;
+        Label = label;
+        LevelId = levelId;
+        Group = group;
+        Keeps = keeps;
+        Outline = outline;
+    }
+
+    /// <summary>One of <see cref="GisDrift.Reshaped"/>, <see cref="GisDrift.Deleted"/>, <see cref="GisDrift.Moved"/>, <see cref="GisDrift.HandDrawn"/>, <see cref="GisDrift.Split"/> or <see cref="GisDrift.Merged"/>.</summary>
+    public string Edit { get; }
+
+    /// <summary>Empty for a unit drawn by hand in the GDB.</summary>
+    public string RevitKey { get; }
+
+    public string UniqueId { get; }
+
+    public string Layer { get; }
+
+    public string Label { get; }
+
+    /// <summary>The level of the GDB floor the outline is on; empty when no level of the model is paired with it.</summary>
+    public string LevelId { get; }
+
+    /// <summary>For a split or merge: the key of the element that keeps its row. Empty otherwise.</summary>
+    public string Group { get; }
+
+    /// <summary>For a split or merge: this row keeps the element (and its key). The other pieces of a split become new floors; the other units of a merge are deleted.</summary>
+    public bool Keeps { get; }
+
+    /// <summary>The GDB outline in <see cref="GisDriftFile.Epsg"/>: polygons, each a list of rings (the outer one first), each point X easting and Y northing whatever axis order the EPSG code names. Empty for a deleted unit and for the units a merge took in.</summary>
+    public IReadOnlyList<IReadOnlyList<IReadOnlyList<(double X, double Y)>>> Outline { get; }
+
+    public string Describe() => $"{Layer} {(Label.Length > 0 ? Label : UniqueId)} {Edit}";
 }
 
 /// <summary>One parameter to set on one element: the GDB's value, accepted into Revit.</summary>
@@ -155,8 +224,9 @@ public sealed class GisDriftChange
 /// this model's GIS export to the GDB; each row is a Revit-owned field someone changed in the GDB.
 /// Accepting a row writes the GDB's value into the Revit parameter the field comes from, so the
 /// next export agrees and the GDB edit survives it. Rows the model already agrees with are left
-/// out, so reading the file twice changes nothing the second time. The format is described in
-/// docs/kanizu-link-contract.md.
+/// out, so reading the file twice changes nothing the second time. The file also lists the units
+/// whose shape the GDB changed (<see cref="GisDriftFile.Shapes"/>), which this page does not apply
+/// yet. The format is described in docs/kanizu-link-contract.md.
 /// </summary>
 public static class GisDrift
 {
@@ -166,13 +236,34 @@ public static class GisDrift
     public const string Instance = "instance";
     public const string Type = "type";
 
+    /// <summary>Shape edits (<see cref="GisDriftShape.Edit"/>): the GDB changed the outline.</summary>
+    public const string Reshaped = "reshaped";
+
+    /// <summary>The GDB deleted the unit.</summary>
+    public const string Deleted = "deleted";
+
+    /// <summary>The GDB moved the unit to another floor.</summary>
+    public const string Moved = "moved";
+
+    /// <summary>A unit drawn in the GDB that no element has.</summary>
+    public const string HandDrawn = "handDrawn";
+
+    /// <summary>The GDB cut the unit into several, one row per piece.</summary>
+    public const string Split = "split";
+
+    /// <summary>The GDB merged units into one: the one that keeps its row, then the ones it took in.</summary>
+    public const string Merged = "merged";
+
     /// <summary>The floor type parameter that says which side of the ticket gates a unit is on.</summary>
     public const string RestrictionParameter = "gis_restriction";
 
     /// <summary>
     /// The Revit parameter behind each core field, for rows whose field has no parameter of its own
-    /// in the field list. Fields Revit works out (geometry, ids, the level, the detail and opening
-    /// categories) are not here: a GDB edit to them can only be made again in Revit by hand. Nor is
+    /// in the field list. Fields Revit works out (geometry, ids, the level, the detail, opening and
+    /// fixture categories, the level's name) are not here: a GDB edit to them can only be made again
+    /// in Revit by hand. Kanizu reads a fixture's type as the GDB's category and a level's level_name
+    /// as its name, so rows name those fields as the GDB does. A fixture's category only says it is a
+    /// fixture (a ticket gate), so writing a GDB category into it would make the gate a unit. Nor is
     /// unit restrict: the GDB holds IMDF restrictions there (employeesonly), while the floor type's
     /// gis_restriction says which side of the ticket gates it is on and picks the station category
     /// code, so writing one into the other would change the unit's category.
@@ -186,6 +277,7 @@ public static class GisDrift
             [("unit", "direction")] = ("gis_direction", Instance),
             [("fixture", "name")] = ("name", Instance),
             [("fixture", "alt_name")] = ("short_name", Instance),
+            [("level", "short_name")] = ("short_name", Instance),
             [("level", "ordinal")] = ("ordinal", Instance),
         };
 
@@ -257,7 +349,28 @@ public static class GisDrift
             }
         }
 
-        return new GisDriftFile(Text(root["model"]), Text(root["appliedVersion"]), rows);
+        List<GisDriftShape> shapes = new();
+        if (root["shapes"] is JArray shapeEntries)
+        {
+            foreach (JObject entry in shapeEntries.OfType<JObject>())
+            {
+                string revitKey = Text(entry["revitKey"]);
+                string uniqueId = Text(entry["uniqueId"]);
+                shapes.Add(new GisDriftShape(
+                    Text(entry["edit"]),
+                    revitKey,
+                    uniqueId.Length > 0 ? uniqueId : UniqueIdOf(revitKey),
+                    Text(entry["layer"]),
+                    Text(entry["label"]),
+                    Text(entry["levelId"]),
+                    Text(entry["group"]),
+                    Truthy(entry["keeps"]),
+                    Polygons(entry["outline"])));
+            }
+        }
+
+        int epsg = root["epsg"] is JValue { Type: JTokenType.Integer } code ? Convert.ToInt32(code.Value, CultureInfo.InvariantCulture) : 0;
+        return new GisDriftFile(Text(root["model"]), Text(root["appliedVersion"]), rows, epsg, shapes);
     }
 
     /// <summary>Reads a drift file, with or without a byte order mark.</summary>
@@ -350,6 +463,45 @@ public static class GisDrift
         return (changes, problems);
     }
 
+    /// <summary>
+    /// The planned changes the user ticked, matched by element, parameter, binding and value. A
+    /// ticked change the plan no longer holds (the model or the drift file changed since the
+    /// preview) is listed, not written.
+    /// </summary>
+    public static (IReadOnlyList<GisDriftChange> Changes, IReadOnlyList<string> Skipped) Accept(
+        IReadOnlyList<GisDriftChange> planned,
+        IEnumerable<(string UniqueId, string Parameter, string Binding, string NewValue, string Label)> accepted)
+    {
+        Dictionary<(string, string, string, string), GisDriftChange> byKey = new();
+        foreach (GisDriftChange change in planned)
+        {
+            byKey[(change.UniqueId, change.Parameter, change.Binding, change.NewValue)] = change;
+        }
+
+        List<GisDriftChange> changes = new();
+        List<string> skipped = new();
+        HashSet<(string, string, string, string)> seen = new();
+        foreach ((string uniqueId, string parameter, string binding, string newValue, string label) in accepted)
+        {
+            (string, string, string, string) key = (uniqueId, parameter, binding, newValue);
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            if (byKey.TryGetValue(key, out GisDriftChange? change))
+            {
+                changes.Add(change);
+            }
+            else
+            {
+                skipped.Add($"Skipped {label}: the model or the drift file changed since the preview.");
+            }
+        }
+
+        return (changes, skipped);
+    }
+
     private static bool Same(string parameter, string old, string value)
     {
         if (ParameterTable.IntegerColumns.Contains(parameter))
@@ -360,6 +512,32 @@ public static class GisDrift
         }
 
         return GisToolStandard.Normalize(old) == GisToolStandard.Normalize(value);
+    }
+
+    /// <summary>A GeoJSON Polygon or MultiPolygon as polygons of rings; anything else as none.</summary>
+    private static IReadOnlyList<IReadOnlyList<IReadOnlyList<(double X, double Y)>>> Polygons(JToken? geometry)
+    {
+        static IReadOnlyList<IReadOnlyList<(double X, double Y)>> Rings(JToken? rings) =>
+            (rings as JArray)?.OfType<JArray>()
+                .Select(ring => (IReadOnlyList<(double X, double Y)>)ring.OfType<JArray>()
+                    .Where(point => point.Count >= 2)
+                    .Select(point => ((double)point[0], (double)point[1]))
+                    .ToList())
+                .ToList()
+            ?? new List<IReadOnlyList<(double X, double Y)>>();
+
+        if (geometry is not JObject shape)
+        {
+            return Array.Empty<IReadOnlyList<IReadOnlyList<(double X, double Y)>>>();
+        }
+
+        return Text(shape["type"]) switch
+        {
+            "Polygon" => new[] { Rings(shape["coordinates"]) },
+            "MultiPolygon" => (shape["coordinates"] as JArray)?.Select(Rings).ToList()
+                ?? new List<IReadOnlyList<IReadOnlyList<(double X, double Y)>>>(),
+            _ => Array.Empty<IReadOnlyList<IReadOnlyList<(double X, double Y)>>>(),
+        };
     }
 
     private static string UniqueIdOf(string revitKey)

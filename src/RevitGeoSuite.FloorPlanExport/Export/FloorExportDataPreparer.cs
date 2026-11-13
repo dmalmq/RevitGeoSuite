@@ -10,9 +10,12 @@ using NetTopologySuite.Precision;
 using RevitGeoSuite.FloorPlanExport.Core.Assignments;
 using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Geometry;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Extractors;
+using RevitGeoSuite.FloorPlanExport.GisTools;
 using NetTopologySuite.Simplify;
 
 namespace RevitGeoSuite.FloorPlanExport.Export;
@@ -108,8 +111,11 @@ public sealed class FloorExportDataPreparer
         }
 
         IReadOnlyList<Level> allLevels = _levelCollector.GetAllLevels(_document);
-        Dictionary<long, int> ordinalByLevelId = BuildLevelOrdinalMap(
-            allLevels.Count > 0 ? allLevels : contexts.Select(x => x.Level).ToList());
+        (IReadOnlyDictionary<long, int> ordinalByLevelId, IReadOnlyList<string> ordinalWarnings) = LevelOrdinals.Resolve(
+            (allLevels.Count > 0 ? allLevels : contexts.Select(x => x.Level).ToList())
+                .Select(level => new LevelOrdinalInput(level.Id.Value, level.Name ?? string.Empty, level.Elevation, ModelSnapshotReader.ReadInteger(level, GisSharedParameters.Ordinal))),
+            new HashSet<long>(contexts.Select(x => x.Level.Id.Value)));
+        warnings.AddRange(ordinalWarnings);
         SchemaProfile activeSchemaProfile = options?.ActiveSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         UnitGeometrySource unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(
             options?.UnitSource ?? UnitSource.Floors,
@@ -2091,34 +2097,6 @@ public sealed class FloorExportDataPreparer
                VerticalCirculation.IsMovingCirculation(category) ||
                string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(category, "column", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static Dictionary<long, int> BuildLevelOrdinalMap(IReadOnlyList<Level> levels)
-    {
-        Dictionary<long, int> ordinalByLevelId = new();
-        if (levels.Count == 0)
-        {
-            return ordinalByLevelId;
-        }
-
-        int groundIndex = 0;
-        double bestDistanceFromZero = double.MaxValue;
-        for (int i = 0; i < levels.Count; i++)
-        {
-            double distance = Math.Abs(levels[i].Elevation);
-            if (distance < bestDistanceFromZero)
-            {
-                bestDistanceFromZero = distance;
-                groundIndex = i;
-            }
-        }
-
-        for (int i = 0; i < levels.Count; i++)
-        {
-            ordinalByLevelId[levels[i].Id.Value] = i - groundIndex;
-        }
-
-        return ordinalByLevelId;
     }
 
     private static IReadOnlyDictionary<string, string> EmptyOverrides()

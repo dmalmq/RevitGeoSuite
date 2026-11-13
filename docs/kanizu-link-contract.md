@@ -89,7 +89,7 @@ RevitGeoSuite writes it through a temporary file and a rename, and keeps fields 
 
 ## `gis/gis-fields.json` (version 1)
 
-The field list the export used, written beside the GeoPackage: schema `revitgeosuite.gis-fields`. One row per field: `layer` (`unit`, `detail`, `opening`, `fixture`, `level`), `name` (the GDB field name), `aliasJa`, `type` (`text`, `integer`, `real`), `length` (absent: 255), `values` (the pick list for a coded-value domain; empty means free text), `source` and `owner`.
+The field list the export used, written beside the GeoPackage: schema `revitgeosuite.gis-fields`. One row per field: `layer` (`unit`, `detail`, `opening`, `fixture`, `level`), `name` (the GDB field name, but for fixture `type` and level `level_name`, below), `aliasJa`, `type` (`text`, `integer`, `real`), `length` (absent: 255), `values` (the pick list for a coded-value domain; empty means free text), `source` and `owner`.
 
 - `source.kind` is `core` for a field the export always writes, `parameter` for a Revit parameter (`parameter`, `guid`, `binding`, `categories`), `derived` for a value the export works out, and `none` for a field with no Revit source.
 - `owner` is `revit` (every export writes the value) or `gdb` (the export never writes it; Kanizu keeps the GDB's value and carries it across by `revit_key`).
@@ -106,23 +106,55 @@ The standard list has these rows beyond the core ones:
 
 Unit categories reach the GDB in the station's codes. The export writes a unit's category in IMDF terms (`walkway`, `retail`, `ticketing`) and its side of the ticket gates in `gis_restriction` (`rachi_nai` inside, `rachi_gai` outside), which `restrict` leaves out. `gis_restriction` is the side the export resolves, the same one that picks `restrict` and the preview fill: the type's `gis_restriction` parameter, or, for a type without one, the side its name gives (`ラチ内店舗`, `改札内コンコース`). Kanizu's station code table turns the two into the GDB's one code (`walkway_sta`, `walkway`, `store_sta`, `store`, `ticket office`) and drops `gis_restriction`. A pair with no code is written as exported and listed when the apply is reviewed. A blank `restrict` never replaces a GDB value such as `employeesonly`. The same holds for an opening's `door`, `access_con` and `name`: models leave those parameters empty today while the delivered GDBs fill them by hand. The cost is that clearing one of these values in Revit does not clear it in the GDB; clear it there too.
 
+Two fields reach the GDB under another name. Kanizu reads a fixture's `type` as the GDB's `category` and a level's `level_name` as its `name`; when an export writes both names, the GDB's one wins. A fixture's category is always `fixture` (the export's fixtures are ticket gates), which Kanizu writes as the station code `checkin.kiosk`. A level's `name` only fills a GDB level `name` that is blank: a station's level names are hand data (`B1ラチ内`, `B1ラチ外`, one per polygon) that one Revit level cannot reproduce, so a GDB name that differs stays and Kanizu lists it in Review changes. A level's `short_name` is the level's `short_name` parameter; a blank one never replaces the GDB's (`1F`, `B2`). `elevation_m` is for Kanizu's own use and does not reach the GDB.
+
 Kanizu creates a missing field with its alias and pick list and fills the Revit-owned ones. A station adds a field by copying `standards/fields.json` to the share, adding a row, and naming the copy in the model's `gis-model.json` `fields`. RevitGeoSuite then binds the row's parameter and exports its column, with no code change. The standard's `core` rows always win over a station copy.
 
 ## `gis-drift/<model id>.gis-drift.json` (version 1)
 
-Kanizu's record of the GDB values that differ from a model's export, written whole every time Kanizu applies that model's GIS export to the GDB (through a temporary file and a rename). The file name is the model id in lower case (or the document key without one), with characters other than ASCII letters, digits and `-` turned into `_`. Kanizu keeps the GDB's value when an apply meets such an edit; the pyRevit **Review GDB edits** button reads the file, and accepting a row writes the GDB's value into the Revit parameter so the next export agrees.
+Kanizu's record of the GDB values and shapes that differ from a model's export, written whole every time Kanizu applies that model's GIS export to the GDB and again after every save into the GDB or restore of a GDB backup (through a temporary file and a rename). The file name is the model id in lower case (or the document key without one), with characters other than ASCII letters, digits and `-` turned into `_`. Kanizu keeps the GDB's value when an apply meets such an edit; the pyRevit **Review GDB edits** button reads the file, and accepting a row writes the GDB's value into the Revit parameter so the next export agrees.
 
 | Field | Meaning |
 |---|---|
 | `schema`, `version` | `kanizu.gis-drift` and `1` |
 | `model`, `appliedVersion` | The model key, and the version applied (relative to the station folder) |
 | `rows[]` | `revitKey`, `uniqueId` (from the key), `layer`, `field` (the GDB field), `parameter`, `guid` and `binding` (from `gis-fields.json`; empty for a core field), `label` (the feature's name), `revit` (this export's value), `gdb` (the GDB's), `base` (the last applied export's) and `conflict` (both sides changed since the last apply). A unit `category` row also has `gdbCategory` and `gdbRestriction`: the GDB's station code as the Revit category it comes from and the floor type restriction it needs (absent when the code says nothing about one). |
+| `notPlaced` | Keys of the applied version's features the apply did not put in the GDB (no layer of their kind on their floor, or a level paired with no floor); absent when none |
+| `epsg` | The EPSG code of every `shapes[].outline`: the export's CRS, which is the model's project CRS. Absent when the export named none; no shape then has an outline |
+| `shapes[]` | Units whose shape the GDB changed since the applied version, which Kanizu kept: `edit`, `revitKey`, `uniqueId` (from the key), `layer` (`unit`), `label`, `levelId` (the level paired with the floor the GDB row is on; empty for a deleted unit or a floor no level of the model is paired with), `group` and `keeps` (split and merge only), and `outline` (the GDB's outline as a GeoJSON Polygon or MultiPolygon in `epsg`, each position easting then northing whatever axis order the EPSG code names, exterior rings counter-clockwise; `null` for a deleted unit and a unit a merge took in). Absent when none |
 
-A core field maps to its parameter by name: unit and fixture `name` to `name`, `alt_name` to `short_name`, unit `category` to `category`, `direction` to `gis_direction`, and level `ordinal` to `ordinal`. Unit `restrict` has no parameter: the GDB holds IMDF restrictions there (`employeesonly`), while the type's `gis_restriction` is the side of the ticket gates and picks the category code. A unit `category` row writes `gdbCategory`, not the station code; when the element's floor type has another restriction than `gdbRestriction`, it is listed for a floor type change by hand. Other core fields have no parameter and are listed for a change by hand. The button leaves out rows the model already agrees with and leaves conflicts unticked.
+`shapes[].edit` says what the GDB did:
+
+| `edit` | In the GDB | `keeps` |
+|---|---|---|
+| `reshaped` | The unit has another outline. | |
+| `deleted` | The unit is gone. | |
+| `moved` | The unit's row is on another floor (or layer) while the element stayed on its level. | |
+| `handDrawn` | A unit without `revit_key` that no element matches. `revitKey` is empty. | |
+| `split` | The unit was cut into pieces, one row each. Every piece still carries the unit's `revitKey`, because a split row starts as a copy of the original; `group` is that key. | `true` on the piece in the unit's own row, which keeps the element; the others become new floors |
+| `merged` | Units were merged into one. The one that keeps its row has the merged outline; the others are gone and have no outline. `group` is the key of the one that keeps its row. | `true` on that one; the others are deleted in Revit |
+
+Two rows that carry one `revit_key` read as a split that waits for Revit, not as an error. Once Revit has made a floor for a piece, the next apply matches the piece's row with that floor by overlap and writes the floor's key onto it.
+
+A core field maps to its parameter by name: unit and fixture `name` to `name`, `alt_name` to `short_name`, unit `category` to `category`, `direction` to `gis_direction`, and level `ordinal` to `ordinal` and `short_name` to `short_name`. Fixture `category` and level `name` have no parameter: a fixture's category only marks it a fixture, and a level's name is the Revit level's own. Unit `restrict` has no parameter: the GDB holds IMDF restrictions there (`employeesonly`), while the type's `gis_restriction` is the side of the ticket gates and picks the category code. A unit `category` row writes `gdbCategory`, not the station code; when the element's floor type has another restriction than `gdbRestriction`, it is listed for a floor type change by hand. Other core fields have no parameter and are listed for a change by hand. The button leaves out rows the model already agrees with and leaves conflicts unticked.
 
 ## GIS exports: `revit_key`
 
 The floor plan export (GeoPackage, and the GDB built from it) carries `revit_key` on every feature, `parent_key` and `category` on detail lines. `revit_key` reads `model|UniqueId|part`, with `model@LinkUniqueId` for a feature read through a link. The rules are defined once, in the remarks on [`RevitKey`](../src/RevitGeoSuite.FloorPlanExport.Core/Models/RevitKey.cs); a reader follows those rather than a copy here. It is written only in the GIS export, not in the Cesium package's tiles.
+
+## The walking network: who owns what
+
+Revit owns everything the network is generated from, Kanizu owns the links, and the network GDB only receives. Nobody draws or types a network value in ArcGIS Pro as the normal path.
+
+| Part | Owner | How |
+|---|---|---|
+| Links on one floor | Kanizu | Generated from the units and openings of the GIS export, edited by hand in Kanizu, checked there. Revit has no element for a walking link. |
+| Connections between floors | Revit | One level connector per stair, escalator, elevator or ramp element. Kanizu pairs the element's units on each floor by their shared `revit_key` and stores the key on the connector. A wrong connector is fixed by fixing the model and generating again. |
+| The delivered network | The network GDB | Kanizu writes it, floor links and connectors together, and is its only writer. |
+
+In Kanizu a connector that carries a `revit_key` is locked: it can be inspected and its cost changed, but not removed, reversed, rejoined or changed to another kind. Generating again keeps its id and cost while the element still exports, and removes it once the element is gone. Units without a key, such as data from before the GIS export, still pair by distance on adjacent floors, and a connector drawn by hand stays possible for a station with no Revit model.
+
+What crosses each way: Revit sends Kanizu the units, openings and connector elements in the GIS export. Kanizu sends the network GDB the whole network. Whatever Kanizu shows back in Revit is a read-only view of the network, never ownership.
 
 ## Versions
 
@@ -135,5 +167,6 @@ The floor plan export (GeoPackage, and the GDB built from it) carries `revit_key
 | `kanizu-link.json` | 1 | Kanizu changes it; RevitGeoSuite does not read it |
 | `gis-model.json` | 1 | an older RevitGeoSuite would misread it |
 | `gis-fields.json`, `fields.json` | 1 | an older reader would misread it |
+| `gis-drift/*.gis-drift.json` | 1 | as above (`epsg` and `shapes` were added in version 1: a reader that ignores them still reads every value row right) |
 
 A reader refuses a file newer than it knows, naming the file and both versions, and reads a file without a version as it is.

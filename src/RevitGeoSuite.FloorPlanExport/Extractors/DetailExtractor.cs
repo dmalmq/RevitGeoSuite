@@ -249,8 +249,8 @@ public sealed class DetailExtractor
         if (box != null)
         {
             const double toleranceFeet = 1.0d;
-            return level.Elevation >= box.Min.Z - toleranceFeet &&
-                   level.Elevation <= box.Max.Z + toleranceFeet;
+            return level.ProjectElevation >= box.Min.Z - toleranceFeet &&
+                   level.ProjectElevation <= box.Max.Z + toleranceFeet;
         }
 
         Curve? curve = curveElement.GeometryCurve;
@@ -262,7 +262,7 @@ public sealed class DetailExtractor
         XYZ p0 = curve.GetEndPoint(0);
         XYZ p1 = curve.GetEndPoint(1);
         double averageZ = (p0.Z + p1.Z) * 0.5d;
-        return Math.Abs(averageZ - level.Elevation) <= 1.0d;
+        return Math.Abs(averageZ - level.ProjectElevation) <= 1.0d;
     }
 
     private IReadOnlyList<ExportLineString> ExtractStairStepLines(

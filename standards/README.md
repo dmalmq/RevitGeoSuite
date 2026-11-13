@@ -5,7 +5,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | File | What it is | Edited by hand |
 |---|---|---|
 | `color_theme.json` | Kanizu's area colour table (StaNavi map design), copied unchanged from Kanizu `crates/kanizu-core/src/recolor/color_theme.json` (dev `de67c3c`) | No, copy it again from Kanizu |
-| `floor-types.json` | The 12 standard floor types with `gis_category`, `gis_restriction`, a `GIS_<area>` material and its theme colour, plus one material per theme area, `GIS_unlisted` (#E5E5E5) and the list of unit categories the export accepts | No, generated |
+| `floor-types.json` | The 21 standard floor types with `gis_category`, `gis_restriction`, a `GIS_<area>` material and its theme colour, the `former_names` they replace, plus one material per theme area, `GIS_unlisted` (#E5E5E5) and the list of unit categories the export accepts | No, generated |
 | `KanizuGIS.SharedParameters.txt` | The shared parameter file, with fixed GUIDs | No, generated |
 | `fields.json` | The field list: one row per GIS field with its layer, GDB name, Japanese alias, type, pick list, Revit source and owner ([contract](../docs/kanizu-link-contract.md)) | No, generated; a station copy gets rows added by hand |
 | `gis-model.template.json` | The start of a model's `gis-model.json` in the station folder: the standard's stair drawing numbers and empty identity, levels and views ([contract](../docs/kanizu-link-contract.md)) | No, generated |
@@ -43,6 +43,17 @@ The first six names are the ones RevitGeoSuite has always used. Earlier versions
 The export no longer writes the resolved category back into a floor's `category` (rooms still get it), so a value there is always one somebody set. Exports before this standard wrote it into every floor, so until a model is set up with the standard (Project Information has `gis_standard_version`), a floor's `category` that only repeats what steps 3 and 4 give is read as that old echo and does not override a type that has its own `gis_category`. Set up model clears those echoes when it stamps the version; from then on every floor `category` counts.
 
 A generic model or specialty equipment family gets its unit category the same way: `gis_kind` first, then its own `category`, then its type's `gis_category` with `gis_restriction`, then the per-PC override and the family name catalog. A family with a category from these parameters is exported as a unit even when its name is not in the catalog.
+
+## Floor type names
+
+Each standard name, `j <zone>_床`, means exactly one GDB code, and the gate side (`ラチ内`, `ラチ外`) is in the name wherever the code depends on it. Version 2 split `j 店舗_床` into `j ラチ外店舗_床` (`store`) and `j ラチ内店舗_床` (`store_sta`) and added `j ラチ外スロープ_床`, `j ラチ内スロープ_床`, `j 案内所_床`, `j ベビー休憩室_床`, `j 喫煙所_床`, `j その他_床`, `j 道路_床` and `j 屋外_床` (`unenclosedarea`, which also covers roofs).
+
+`former_names` in `floor-types.json` lists the names models still use and the standard names each can now be: `j 店舗_床` (either shop type), `smoking room`, `Baby room`, `Roof` and `Other`. A floor type is an old name when its zone name equals a former name's, ignoring case, and it is not a standard name.
+
+- **Audit** warns once per old-named type in use, and says which name to rename it to.
+- **Fix floor types** offers one row per current name, narrowed to one when the type's own `gis_restriction` or its name says inside or outside. Accepting a row writes `gis_category`, `gis_restriction` and the material and renames the type. Several rows for one type cannot be accepted together. A name that another floor type already has is not a rename target, so that type only gets its parameters. The type becomes a standard type, so the check stops reporting it.
+- **Set up model** does not create a standard type while an old-named type in use lists that name, so the name stays free for the rename.
+- Renaming never changes a floor's type and never deletes a type.
 
 ## Changing the standard
 

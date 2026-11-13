@@ -35,6 +35,20 @@ public sealed class StandardFloorType
     public string FillHex { get; }
 }
 
+/// <summary>A name floor types used to have, and the standard names it can now be.</summary>
+public sealed class FormerFloorTypeName
+{
+    public FormerFloorTypeName(string name, IReadOnlyList<string> now)
+    {
+        Name = name;
+        Now = now;
+    }
+
+    public string Name { get; }
+
+    public IReadOnlyList<string> Now { get; }
+}
+
 /// <summary>One material of the standard, named <c>GIS_&lt;area&gt;</c>, in its theme colour.</summary>
 public sealed class StandardMaterial
 {
@@ -80,22 +94,45 @@ public sealed class FloorTypeStandard
         ("j ホーム_床", "platform", "rachi_nai", "paid_area"),
         ("j 新幹線コンコース_床", "walkway", "rachi_nai", "paid_area_shinkansen"),
         ("j 新幹線ホーム_床", "platform", "rachi_nai", "paid_area_shinkansen"),
-        ("j 店舗_床", "retail", null, "facilities"),
+        ("j ラチ外スロープ_床", "ramp", "rachi_gai", "free_area"),
+        ("j ラチ内スロープ_床", "ramp", "rachi_nai", "paid_area"),
+        ("j ラチ外店舗_床", "retail", "rachi_gai", "facilities"),
+        ("j ラチ内店舗_床", "retail", "rachi_nai", "facilities"),
         ("j 男子トイレ_床", "restroom.male", null, "facilities"),
         ("j 女子トイレ_床", "restroom.female", null, "facilities"),
         ("j 多目的トイレ_床", "restroom.unisex", null, "facilities"),
         ("j みどりの窓口_床", "ticketing", null, "facilities"),
+        ("j 案内所_床", "information", null, "restricted"),
         ("j 待合室_床", "waitingroom", null, "restricted"),
+        ("j ベビー休憩室_床", "mothersroom", null, "restricted"),
+        ("j 喫煙所_床", "smokingarea", null, "restricted"),
         ("j 駅事務室_床", "nonpublic", null, "restricted"),
+        ("j その他_床", "nonpublic", null, "restricted"),
+        ("j 道路_床", "road", null, "free_area"),
+        ("j 屋外_床", "unenclosedarea", null, "restricted"),
+    };
+
+    // Names an earlier standard or the English default model used. A model type with one of these
+    // zone names is renamed to a current name by Fix floor types; several targets mean the name
+    // alone does not say which (a shop's gate side).
+    private static readonly (string Name, string[] Now)[] FormerNameDefinitions =
+    {
+        ("j 店舗_床", new[] { "j ラチ外店舗_床", "j ラチ内店舗_床" }),
+        ("smoking room", new[] { "j 喫煙所_床" }),
+        ("Baby room", new[] { "j ベビー休憩室_床" }),
+        ("Roof", new[] { "j 屋外_床" }),
+        ("Other", new[] { "j その他_床" }),
     };
 
     private FloorTypeStandard(
         int standardVersion,
         string outlineHex,
         IReadOnlyList<StandardMaterial> materials,
-        IReadOnlyList<StandardFloorType> floorTypes)
+        IReadOnlyList<StandardFloorType> floorTypes,
+        IReadOnlyList<FormerFloorTypeName> formerNames)
     {
         StandardVersion = standardVersion;
+        FormerNames = formerNames;
         OutlineHex = outlineHex;
         Materials = materials;
         FloorTypes = floorTypes;
@@ -108,6 +145,8 @@ public sealed class FloorTypeStandard
     public IReadOnlyList<StandardMaterial> Materials { get; }
 
     public IReadOnlyList<StandardFloorType> FloorTypes { get; }
+
+    public IReadOnlyList<FormerFloorTypeName> FormerNames { get; }
 
     /// <summary>
     /// Every unit category the export accepts, so tools outside RevitGeoSuite (the pyRevit audit)
@@ -145,7 +184,11 @@ public sealed class FloorTypeStandard
                 theme.GetArea(definition.Area).Hex))
             .ToList();
 
-        return new FloorTypeStandard(GisStandard.Version, theme.OutlineHex, materials, floorTypes);
+        List<FormerFloorTypeName> formerNames = FormerNameDefinitions
+            .Select(definition => new FormerFloorTypeName(definition.Name, definition.Now))
+            .ToList();
+
+        return new FloorTypeStandard(GisStandard.Version, theme.OutlineHex, materials, floorTypes, formerNames);
     }
 
     public static FloorTypeStandard LoadEmbedded()
@@ -176,7 +219,12 @@ public sealed class FloorTypeStandard
             (int?)root["standard_version"] ?? 0,
             (string?)root["outline"] ?? string.Empty,
             materials,
-            floorTypes);
+            floorTypes,
+            ((JArray?)root["former_names"] ?? new JArray())
+                .Select(token => new FormerFloorTypeName(
+                    (string)token["name"]!,
+                    ((JArray)token["now"]!).Select(now => (string)now!).ToList()))
+                .ToList());
     }
 
     /// <summary>The text of <c>standards/floor-types.json</c>: UTF-8, LF line endings, two-space indent.</summary>
@@ -205,6 +253,11 @@ public sealed class FloorTypeStandard
                 ["area"] = floorType.Area,
                 ["material"] = floorType.Material,
                 ["fill"] = floorType.FillHex,
+            })),
+            ["former_names"] = new JArray(FormerNames.Select(former => new JObject
+            {
+                ["name"] = former.Name,
+                ["now"] = new JArray(former.Now),
             })),
         };
 

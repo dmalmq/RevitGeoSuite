@@ -173,6 +173,72 @@ public sealed class GisDriftTests
         Assert.Contains("restrict", problems[0]);
     }
 
+    [Fact]
+    public void ReadsTheShapeEditsKanizuWrote()
+    {
+        // The same file as ReadsAFileWrittenByKanizu: its shapes cover each shape edit.
+        string path = Path.Combine(Path.GetDirectoryName(SourceFile())!, "..", "..", "Fixtures", "Conformance", "gis-drift", "8d7f3c1e-0000.gis-drift.json");
+        GisDriftFile file = GisDrift.Read(path);
+
+        Assert.Equal(6677, file.Epsg);
+        Assert.Equal(
+            new[]
+            {
+                "reshaped u-1  - 1",
+                "split u-4 8d7f3c1e-0000|u-4|0 keeps 1",
+                "split u-4 8d7f3c1e-0000|u-4|0 - 1",
+                "merged u-5 8d7f3c1e-0000|u-5|0 keeps 1",
+                "merged u-6 8d7f3c1e-0000|u-5|0 - 0",
+                "handDrawn   - 1",
+                "deleted u-7  - 0",
+                "moved u-8  - 1",
+            },
+            file.Shapes.Select(shape => $"{shape.Edit} {shape.UniqueId} {shape.Group} {(shape.Keeps ? "keeps" : "-")} {shape.Outline.Count}"));
+        Assert.Equal(new[] { GisDrift.Reshaped, GisDrift.Split, GisDrift.Merged, GisDrift.HandDrawn, GisDrift.Deleted, GisDrift.Moved },
+            file.Shapes.Select(shape => shape.Edit).Distinct());
+
+        // Both pieces of the split still carry the key of the floor they were cut from.
+        Assert.All(file.Shapes.Where(shape => shape.Edit == GisDrift.Split), shape => Assert.Equal("8d7f3c1e-0000|u-4|0", shape.RevitKey));
+        Assert.Equal("", file.Shapes[5].RevitKey);
+        Assert.Equal("コインロッカー", file.Shapes[5].Label);
+        Assert.Equal(("lvl-1f", ""), (file.Shapes[0].LevelId, file.Shapes[6].LevelId));
+
+        // Outlines are in the model's project CRS: the split's second piece, outer ring first.
+        var ring = file.Shapes[2].Outline[0][0];
+        Assert.Equal((-5875.0, -35000.0), ring[0]);
+        Assert.Equal((-5870.0, -34990.0), ring[2]);
+        Assert.Equal(5, ring.Count);
+    }
+
+    [Fact]
+    public void AFileWithoutShapesHasNone()
+    {
+        GisDriftFile parsed = GisDrift.Parse(Text(new[] { Entry("name", "北") }));
+
+        Assert.Equal(0, parsed.Epsg);
+        Assert.Empty(parsed.Shapes);
+    }
+
+    [Fact]
+    public void AMultiPolygonOutlineReadsAsEachOfItsPolygons()
+    {
+        JObject root = JObject.Parse(Text(Array.Empty<JObject>()));
+        root["epsg"] = 6677;
+        root["shapes"] = new JArray(new JObject
+        {
+            ["edit"] = "reshaped",
+            ["revitKey"] = "model|u-9|0",
+            ["layer"] = "unit",
+            ["outline"] = JObject.Parse("{\"type\":\"MultiPolygon\",\"coordinates\":[[[[0,0],[1,0],[1,1],[0,0]]],[[[5,5],[6,5],[6,6],[5,5]]]]}"),
+        });
+
+        GisDriftShape shape = Assert.Single(GisDrift.Parse(root.ToString()).Shapes);
+
+        Assert.Equal("u-9", shape.UniqueId);
+        Assert.Equal(2, shape.Outline.Count);
+        Assert.Equal((5.0, 5.0), shape.Outline[1][0][0]);
+    }
+
     private static string SourceFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
 
     [Fact]
@@ -213,6 +279,7 @@ public sealed class GisDriftTests
             Entry("restrict", "employeesonly"),
             Entry("shop_hours", "10-20", parameter: "kanizu_shop_hours", binding: "type"),
             Entry("ordinal", "2", layer: "level", revit: "1", uniqueId: "lvl"),
+            Entry("short_name", "B1", layer: "level", uniqueId: "lvl"),
         };
         var model = Model(new Dictionary<(string, string, string), string>
         {
@@ -221,6 +288,7 @@ public sealed class GisDriftTests
             [("u-1", "gis_restriction", "type")] = "",
             [("u-1", "kanizu_shop_hours", "type")] = "",
             [("lvl", "ordinal", "instance")] = "1",
+            [("lvl", "short_name", "instance")] = "",
         });
 
         var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(rows)), model, Standard);
@@ -235,6 +303,7 @@ public sealed class GisDriftTests
                 ("short_name", "instance", "北"),
                 ("kanizu_shop_hours", "type", "10-20"),
                 ("ordinal", "instance", "2"),
+                ("short_name", "instance", "B1"),
             },
             changes.Select(change => (change.Parameter, change.Binding, change.NewValue)));
         Assert.Contains("every element of the type", changes[2].Label());
@@ -266,6 +335,8 @@ public sealed class GisDriftTests
             Entry("ordinal", "two", layer: "level", uniqueId: "lvl"),
             Entry("name", "北", uniqueId: "gone"),
             Entry("direction", "上り", revit: "down"),
+            Entry("category", "checkin.desk", layer: "fixture", revit: "checkin.kiosk"),
+            Entry("name", "B1ラチ外", layer: "level", revit: "B1FL", uniqueId: "lvl"),
         };
         var model = Model(new Dictionary<(string, string, string), string>
         {
@@ -276,11 +347,16 @@ public sealed class GisDriftTests
         var (changes, problems) = GisDrift.Plan(GisDrift.Parse(Text(rows)), model, Standard);
 
         Assert.Equal(new[] { ("gis_direction", "up") }, changes.Select(change => (change.Parameter, change.NewValue)));
-        Assert.Equal(4, problems.Count);
+        Assert.Equal(6, problems.Count);
         Assert.Contains("by hand", problems[0]);
         Assert.Contains("not-a-category", problems[1]);
         Assert.Contains("whole number", problems[2]);
         Assert.Contains("not in this model", problems[3]);
+        // A fixture's category only marks it a fixture, and a level's name is the Revit level's.
+        Assert.Contains("fixture", problems[4]);
+        Assert.Contains("by hand", problems[4]);
+        Assert.Contains("level", problems[5]);
+        Assert.Contains("by hand", problems[5]);
     }
 
     [Fact]
@@ -293,5 +369,27 @@ public sealed class GisDriftTests
 
         Assert.True(changes[0].Conflict);
         Assert.Contains("also changed in Revit", changes[0].Label());
+    }
+
+    [Fact]
+    public void AcceptKeepsTickedChangesTheFileStillPlansAndListsTheRest()
+    {
+        GisDriftFile file = GisDrift.Parse(Text(new[] { Entry("name", "北改札"), Entry("alt_name", "北", uniqueId: "u-2") }));
+        var model = Model(new Dictionary<(string, string, string), string>
+        {
+            [("u-1", "name", "instance")] = "改札",
+            [("u-2", "short_name", "instance")] = "",
+        });
+        var (planned, _) = GisDrift.Plan(file, model, Standard);
+
+        var (changes, skipped) = GisDrift.Accept(planned, new[]
+        {
+            ("u-1", "name", "instance", "北改札", "a"),
+            ("u-1", "name", "instance", "北改札", "a"),
+            ("u-2", "short_name", "instance", "南", "b"),
+        });
+
+        Assert.Equal(new[] { "u-1" }, changes.Select(change => change.UniqueId));
+        Assert.Contains("Skipped b", Assert.Single(skipped));
     }
 }

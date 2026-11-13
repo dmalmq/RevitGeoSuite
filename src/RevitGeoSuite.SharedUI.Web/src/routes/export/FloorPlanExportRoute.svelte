@@ -3,10 +3,12 @@
   import { request, on } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
   import { i18n, t } from '$lib/i18n'
-  import { Banner, Button, Progress } from '$lib/kit'
+  import { Banner, Button, Checkbox, Dialog, Progress } from '$lib/kit'
   import { ContinueBar, StepBar, format, workflow, type LocalProblem } from '$lib/shell'
   import type {
     DialogOpenFolderResponse,
+    GisAuditFindingItem,
+    GisStandardInspectResponse,
     ExecutionActionResponse,
     ExecutionProgressPayload,
     ExporterInitialStateResponse,
@@ -42,6 +44,7 @@
 
   const defaultSettings = (): ExporterSettingsPayload => ({
     outputDirectory: '',
+    auditErrorsAccepted: false,
     targetEpsg: 4326,
     coordinateMode: 'shared',
     outputFormat: 'geopackage',
@@ -561,8 +564,41 @@
     assignmentsOpen = true
   }
 
+  // The GIS audit gate: errors make the export come out wrong, so the user sees them first and
+  // must tick "Export anyway" each time. The server refuses an unconfirmed run with errors too.
+  let auditOpen = false
+  let auditErrors: GisAuditFindingItem[] = []
+  let auditAccepted = false
+
   async function startExport() {
     if (!validate()) return
+    let errors: GisAuditFindingItem[] = []
+    try {
+      const inspect = await request<GisStandardInspectResponse>('gisStandard.inspect', {})
+      errors = inspect.findings.filter((finding) => finding.severity === 'error')
+    } catch {
+      errors = []
+    }
+    if (errors.length > 0) {
+      auditErrors = errors
+      auditAccepted = false
+      auditOpen = true
+      return
+    }
+    await runExport(false)
+  }
+
+  function openGisStandard() {
+    auditOpen = false
+    window.location.hash = '#/gis-standard'
+  }
+
+  async function exportAnyway() {
+    auditOpen = false
+    await runExport(true)
+  }
+
+  async function runExport(auditErrorsAccepted: boolean) {
     step = 'export'
     exportStatus = 'running'
     exportError = ''
@@ -577,7 +613,7 @@
     }
     await letBrowserPaint()
     try {
-      const response = await request<ExporterRunResponse>('floorplan.run', settings)
+      const response = await request<ExporterRunResponse>('floorplan.run', { ...settings, auditErrorsAccepted })
       if (!response.success || !response.result) {
         exportStatus = 'failed'
         exportError = response.error ?? 'Export failed.'
@@ -973,3 +1009,22 @@
     </div>
   {/if}
 </section>
+
+<Dialog
+  bind:open={auditOpen}
+  size="md"
+  title={format($t('Exporter.Audit.Title', 'The GIS audit found {0} error(s)'), auditErrors.length)}
+  description={$t('Exporter.Audit.Hint', 'These make the export come out wrong. Fix them on the GIS standard page, or export anyway.')}
+  closeLabel={$t('Common.Close', 'Close')}
+>
+  <ul class="m-0 flex max-h-[240px] list-disc flex-col gap-1 overflow-auto pl-5 text-body" data-testid="export-audit-errors">
+    {#each auditErrors as finding}
+      <li>{finding.message}</li>
+    {/each}
+  </ul>
+  <Checkbox class="mt-3" bind:checked={auditAccepted} label={$t('Exporter.Audit.Accept', 'Export anyway; the report records the accepted errors')} />
+  {#snippet footer()}
+    <Button icon="list-checks" onclick={openGisStandard}>{$t('Exporter.Audit.Open', 'Open GIS standard')}</Button>
+    <Button variant="primary" icon="download" onclick={exportAnyway} disabled={!auditAccepted}>{$t('Exporter.Audit.ExportAnyway', 'Export anyway')}</Button>
+  {/snippet}
+</Dialog>

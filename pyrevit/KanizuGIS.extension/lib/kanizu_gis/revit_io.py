@@ -8,7 +8,7 @@ import System
 from Autodesk.Revit import DB
 
 from kanizu_gis import parameter_table, setup_plan, snapshot
-from kanizu_gis.standards import hex_to_rgb, normalize, rgb_to_hex
+from kanizu_gis.standards import hex_to_rgb, normalize, parse_whole_number, rgb_to_hex
 
 FAMILY_CATEGORIES = [DB.BuiltInCategory.OST_GenericModel, DB.BuiltInCategory.OST_SpecialityEquipment]
 
@@ -34,10 +34,16 @@ def read_string(element, name):
 
 
 def read_integer(element, name):
+    """A whole-number parameter's value, or None. Older models hold ordinal as text; a text value
+    that is a whole number counts, as it does in RevitGeoSuite's export."""
     parameter = element.LookupParameter(name)
-    if parameter is None or not parameter.HasValue or parameter.StorageType != DB.StorageType.Integer:
+    if parameter is None or not parameter.HasValue:
         return None
-    return parameter.AsInteger()
+    if parameter.StorageType == DB.StorageType.Integer:
+        return parameter.AsInteger()
+    if parameter.StorageType == DB.StorageType.String:
+        return parse_whole_number(parameter.AsString())
+    return None
 
 
 def category_name(category):
@@ -397,7 +403,8 @@ def apply_setup(doc, standard, plan, log):
 
 
 def apply_proposals(doc, standard, proposals, log, echo_floor_ids=None):
-    """Writes each accepted proposal onto its floor type, and clears the floors' own category
+    """Writes each accepted proposal onto its floor type, renames an old-named type when the
+    proposal carries a new name, and clears the floors' own category
     where it only repeats the new gis_category. Floors keep their type."""
     materials = dict((element_name(material), material.Id) for material in DB.FilteredElementCollector(doc).OfClass(DB.Material))
     transaction = DB.Transaction(doc, "Kanizu GIS: Fix floor types")
@@ -409,6 +416,9 @@ def apply_proposals(doc, standard, proposals, log, echo_floor_ids=None):
             log(u"%s: gis_category %s%s" % (
                 proposal.floor_type.name, proposal.gis_category,
                 ", gis_restriction " + proposal.gis_restriction if proposal.gis_restriction else ""))
+            if proposal.new_name:
+                floor_type.Name = proposal.new_name
+                log(u"Renamed %s to %s" % (proposal.floor_type.name, proposal.new_name))
         if echo_floor_ids:
             clear_floor_categories(doc, echo_floor_ids)
             log("Cleared the repeated category of %d floors" % len(echo_floor_ids))

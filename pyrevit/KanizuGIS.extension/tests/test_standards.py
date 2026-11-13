@@ -11,9 +11,9 @@ from kanizu_gis import standards
 class StandardsTests(unittest.TestCase):
     def test_loads_the_shipped_standard(self):
         standard = helpers.load_standard()
-        self.assertEqual(1, standard.version)
+        self.assertEqual(2, standard.version)
         self.assertEqual(15, len(standard.parameters))
-        self.assertEqual(12, len(standard.floor_types))
+        self.assertEqual(21, len(standard.floor_types))
         self.assertTrue(os.path.isfile(standard.shared_parameter_file))
 
     def test_floor_types_carry_theme_colours(self):
@@ -24,8 +24,19 @@ class StandardsTests(unittest.TestCase):
         self.assertEqual("#F2F7FB", floor_type.fill)
         self.assertEqual(floor_type.fill, standard.material(floor_type.material).fill)
 
-    def test_shop_restriction_is_by_location(self):
-        self.assertEqual("", helpers.load_standard().floor_type(u"j 店舗_床").gis_restriction)
+    def test_shops_are_split_by_gate_side(self):
+        standard = helpers.load_standard()
+        self.assertIsNone(standard.floor_type(u"j 店舗_床"))
+        self.assertEqual("rachi_gai", standard.floor_type(u"j ラチ外店舗_床").gis_restriction)
+        self.assertEqual("rachi_nai", standard.floor_type(u"j ラチ内店舗_床").gis_restriction)
+
+    def test_former_names_come_from_the_json_and_point_at_standard_names(self):
+        standard = helpers.load_standard()
+        self.assertEqual([u"j ラチ外店舗_床", u"j ラチ内店舗_床"], [f for f in standard.former_names if f.name == u"j 店舗_床"][0].now)
+        for former in standard.former_names:
+            self.assertIsNone(standard.floor_type(former.name), former.name)
+            for name in former.now:
+                self.assertIsNotNone(standard.floor_type(name), name)
 
     def test_parameters_match_the_shared_parameter_file(self):
         standard = helpers.load_standard()

@@ -79,6 +79,24 @@ public static class GisAudit
     public static IReadOnlyList<GisAuditFinding> BlockingFindings(IEnumerable<GisAuditFinding> findings) =>
         findings.Where(finding => finding.Severity == GisAuditSeverity.Error).ToList();
 
+    /// <summary>
+    /// The lines the export report carries when it ran with audit errors: a count, then each error.
+    /// Nothing for a model without errors.
+    /// </summary>
+    public static IEnumerable<string> ExportRecord(IReadOnlyList<GisAuditFinding> errors)
+    {
+        if (errors.Count == 0)
+        {
+            yield break;
+        }
+
+        yield return string.Format(CultureInfo.InvariantCulture, "Exported with {0} GIS audit error(s) accepted; the output may be wrong where they apply.", errors.Count);
+        foreach (GisAuditFinding error in errors)
+        {
+            yield return "GIS audit error: " + error.Message;
+        }
+    }
+
     /// <summary>"1 errors, 0 warnings, 2 notes": the counts by severity, for the export prompt.</summary>
     public static string Summary(IEnumerable<GisAuditFinding> findings)
     {
@@ -174,8 +192,30 @@ public static class GisAudit
                     $"Floor type {floorType.Name} has gis_category '{category}', which is not a unit category. Its floors export by name instead.",
                     floorType.FloorIds);
             }
-            else if (FloorTypeMatcher.NeedsFix(floorType, standard))
+            else if (FloorTypeMatcher.NeedsFix(floorType, snapshot, standard))
             {
+                IReadOnlyList<string> renames = FloorTypeMatcher.FreeTargets(floorType, snapshot, standard);
+                if (renames.Count > 0)
+                {
+                    yield return new GisAuditFinding(
+                        GisAuditSeverity.Warning,
+                        "floor types",
+                        $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name. Run Fix floor types to rename it to {string.Join(" or ", renames)}.{OneChoiceForAllFloors(floorType, renames)}",
+                        floorType.FloorIds);
+                    continue;
+                }
+
+                IReadOnlyList<string> undecided = FloorTypeMatcher.UndecidedTargets(floorType, standard);
+                if (undecided.Count > 0)
+                {
+                    yield return new GisAuditFinding(
+                        GisAuditSeverity.Warning,
+                        "floor types",
+                        $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name that can be {string.Join(" or ", undecided)}. Run Fix floor types to choose one. All {floorType.FloorIds.Count} floors of this type follow the choice. If some belong to the other one, duplicate the type and move those floors to the copy first.",
+                        floorType.FloorIds);
+                    continue;
+                }
+
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "floor types",
@@ -184,6 +224,12 @@ public static class GisAudit
             }
         }
     }
+
+    // One floor type can cover floors on both sides of the gates; the rename moves them all.
+    private static string OneChoiceForAllFloors(FloorTypeInfo floorType, IReadOnlyList<string> renames) =>
+        renames.Count > 1
+            ? $" All {floorType.FloorIds.Count} floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first."
+            : string.Empty;
 
     private static IEnumerable<GisAuditFinding> AuditFloors(ModelSnapshot snapshot, GisToolStandard standard)
     {
@@ -225,9 +271,19 @@ public static class GisAudit
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "levels",
-                    $"Level {level.Name} has no {string.Join(" or ", missing)}, so the export guesses it from the level name.",
+                    $"Level {level.Name} has no {string.Join(" or ", missing)}. The export counts a missing ordinal from the other levels and leaves a missing short_name empty.",
                     new[] { level.ElementId });
             }
+        }
+
+        List<LevelInfo> withFloors = snapshot.Levels.Where(level => level.HasFloors).ToList();
+        if (withFloors.Count > 0 && snapshot.Levels.All(level => level.Ordinal is null))
+        {
+            yield return new GisAuditFinding(
+                GisAuditSeverity.Warning,
+                "levels",
+                "No level has an ordinal, so the export takes the level nearest elevation 0 as ground, which is wrong for a model at its real height. Setting the ground floor's ordinal to 0 is enough.",
+                withFloors.Select(level => level.ElementId));
         }
     }
 
@@ -263,7 +319,7 @@ public static class GisAudit
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "families",
-                    $"{name} looks like a {suggested} but has no gis_kind, so it is found only by its family name, if at all.",
+                    $"{name} looks like {("aeiou".IndexOf(suggested[0]) >= 0 ? "an" : "a")} {suggested} but has no gis_kind, so it is found only by its family name, if at all.",
                     familyType.InstanceIds);
             }
         }

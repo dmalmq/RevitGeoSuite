@@ -46,6 +46,7 @@ public sealed class UnitExtractor
     private readonly ZoneCatalog _zoneCatalog;
     private readonly IExportMetadataProvider _metadataProvider;
     private IReadOnlyList<ElevatorStop>? _elevatorStops;
+    private const double FeetToMeters = 0.3048d;
     private readonly FloorCategoryResolver _floorCategoryResolver;
     private readonly RoomCategoryResolver _roomCategoryResolver;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
@@ -221,6 +222,8 @@ public sealed class UnitExtractor
 
         // Create features for each base polygon extracted from the floor.
         List<Polygon2D> allPolygons = basePolygons;
+        bool slope = string.Equals(zoneInfo.Category, VerticalCirculation.SlopeCategory, StringComparison.OrdinalIgnoreCase);
+        string? slopeToLevel = slope ? ResolveSlopeToLevel(floor, levelId, warnings) : null;
 
         if (allPolygons.Count == 1)
         {
@@ -240,6 +243,7 @@ public sealed class UnitExtractor
                     rawFloorTypeName,
                     viewName),
             };
+            features = slope ? features.Select(feature => WithDirection(feature, VerticalCirculation.Both, slopeToLevel)).ToList() : features;
             return true;
         }
 
@@ -270,8 +274,40 @@ public sealed class UnitExtractor
                     partIndex: i));
         }
 
-        features = created;
+        features = slope ? created.Select(feature => WithDirection(feature, VerticalCirculation.Both, slopeToLevel)).ToList() : created;
         return true;
+    }
+
+    /// <summary>
+    /// A slope floor's other level, from its top face's ends against the levels' ProjectElevation.
+    /// Null when it rises too little, when neither end sits on its own level, or when the far end
+    /// sits between levels; the audit reports the last two. Never the floor's own level.
+    /// </summary>
+    private string? ResolveSlopeToLevel(Floor floor, string levelId, ICollection<string> warnings)
+    {
+        (List<Polygon2D> outline, double low, double high) = FloorTopFaces.Read(floor);
+        if (outline.Count == 0)
+        {
+            return null;
+        }
+
+        SlopeReach<long> reach = VerticalCirculation.SlopeToLevel(
+            floor.LevelId.Value,
+            low,
+            high,
+            new FilteredElementCollector(_document)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .Select(level => new KeyValuePair<long, double>(level.Id.Value, level.ProjectElevation)));
+        if (reach.ToLevel is not long target)
+        {
+            return null;
+        }
+
+        // A linked slope's far level maps to the host level at its height, which could be the
+        // view's own level when the link's levels do not line up with the host's.
+        string? toLevel = GetLevelExportId(new ElementId(target), warnings);
+        return string.Equals(toLevel, levelId, StringComparison.Ordinal) ? null : toLevel;
     }
 
     public bool TryCreateFloorUnit(
@@ -951,8 +987,8 @@ public sealed class UnitExtractor
         List<string> unknown = new();
         IReadOnlyList<string> stops = VerticalCirculation.ResolveLevelsServed(
             levels,
-            (box?.Min.Z ?? 0d) * FeetToMetersForLevels,
-            (box?.Max.Z ?? 0d) * FeetToMetersForLevels,
+            (box?.Min.Z ?? 0d) * FeetToMeters,
+            (box?.Max.Z ?? 0d) * FeetToMeters,
             levelsServed,
             unknown);
         string label = $"Elevator {elevator.Id.Value} ({GetFamilyName(elevator)})";
@@ -987,7 +1023,7 @@ public sealed class UnitExtractor
                     exportId,
                     level.Name,
                     level.LookupParameter(GisSharedParameters.ShortName)?.AsString(),
-                    level.ProjectElevation * FeetToMetersForLevels));
+                    level.ProjectElevation * FeetToMeters));
             }
         }
 
@@ -1032,19 +1068,11 @@ public sealed class UnitExtractor
             return null;
         }
 
-        double topZ = vertices.Max(vertex => vertex.Z);
-        const double MinimumRiseFeet = 1.0d / FeetToMetersForLevels;
-        const double ToleranceFeet = 2.5d / FeetToMetersForLevels;
-        Level? topLevel = new FilteredElementCollector(_document)
-            .OfClass(typeof(Level))
-            .Cast<Level>()
-            .Where(level => level.ProjectElevation > bottomLevel.ProjectElevation + MinimumRiseFeet)
-            .OrderBy(level => Math.Abs(level.ProjectElevation - topZ))
-            .FirstOrDefault();
-        if (topLevel != null && Math.Abs(topLevel.ProjectElevation - topZ) > ToleranceFeet)
-        {
-            topLevel = null;
-        }
+        Level? topLevel = VerticalCirculation.EscalatorTopLevel(
+            bottomLevel.ProjectElevation,
+            vertices.Max(vertex => vertex.Z),
+            new FilteredElementCollector(_document).OfClass(typeof(Level)).Cast<Level>(),
+            level => level.ProjectElevation);
 
         return VerticalCirculation.ResolveToLevel(
             levelId,
@@ -1095,8 +1123,6 @@ public sealed class UnitExtractor
         string? exportId = _metadataProvider.GetReferencedLevelId(exportedLevel, warnings);
         return string.IsNullOrWhiteSpace(exportId) ? null : exportId!.Trim();
     }
-
-    private const double FeetToMetersForLevels = 0.3048d;
 
     private const double HostLevelToleranceFeet = 0.1d;
 
@@ -3278,7 +3304,7 @@ public sealed class UnitExtractor
         return true;
     }
 
-    private static bool TryResolveFloorZoneName(
+    internal static bool TryResolveFloorZoneName(
         string typeName,
         out string zoneName,
         out bool prefixMatched)

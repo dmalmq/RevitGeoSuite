@@ -41,11 +41,29 @@ public sealed class GisToolsConformanceTests
         foreach (JObject testCase in Cases["floor_type_match"]!.Cast<JObject>())
         {
             string name = (string)testCase["name"]!;
-            FloorTypeProposal? proposal = FloorTypeMatcher.ProposeOne(new FloorTypeInfo(900, name, floorIds: new long[] { 1, 2, 3 }), Standard);
-            string? expected = testCase["expected"]!.Type == JTokenType.Null ? null : string.Join("|", testCase["expected"]!.Values<string>());
-            string? actual = proposal is null ? null : string.Join("|", proposal.StandardType.Name, proposal.GisRestriction, proposal.Reason);
+            string expected = string.Join("; ", testCase["expected"]!.Select(entry => string.Join("|", entry.Values<string>())));
+            string actual = string.Join(
+                "; ",
+                FloorTypeMatcher.Candidates(new FloorTypeInfo(900, name, floorIds: new long[] { 1, 2, 3 }), new ModelSnapshot(), Standard)
+                    .Select(proposal => string.Join("|", proposal.StandardType.Name, proposal.GisRestriction, proposal.Reason)));
 
-            Assert.True(expected == actual, $"{name}: expected {expected ?? "no match"}, got {actual ?? "no match"}");
+            Assert.True(expected == actual, $"{name}: expected {(expected.Length == 0 ? "no match" : expected)}, got {(actual.Length == 0 ? "no match" : actual)}");
+        }
+    }
+
+    [Fact]
+    public void FixFloorTypes()
+    {
+        foreach (JObject testCase in Cases["fix_floor_types"]!.Cast<JObject>())
+        {
+            ModelSnapshot model = BuildModel((JObject)testCase["model"]!);
+
+            Assert.Equal(
+                testCase["expected_proposals"]!.Select(entry => $"{entry[0]}|{entry[1]}|{entry[2]}").ToList(),
+                FloorTypeMatcher.Propose(model, Standard).Select(proposal => $"{proposal.FloorType.ElementId}|{proposal.StandardType.Name}|{proposal.NewName}").ToList());
+            Assert.Equal(
+                testCase["expected_needs_fix"]!.Values<long>().ToList(),
+                model.FloorTypes.Where(floorType => FloorTypeMatcher.NeedsFix(floorType, model, Standard)).Select(floorType => floorType.ElementId).ToList());
         }
     }
 
@@ -57,6 +75,17 @@ public sealed class GisToolsConformanceTests
             IReadOnlyList<string> lines = SetupPlanner.Describe(SetupPlanner.Plan(BuildModel((JObject)testCase["model"]!), Standard));
 
             Assert.Equal(testCase["expected_lines"]!.Values<string>().ToList(), lines.ToList());
+        }
+    }
+
+    [Fact]
+    public void WholeNumber()
+    {
+        foreach (JObject testCase in Cases["whole_number"]!.Cast<JObject>())
+        {
+            Assert.True(
+                (int?)testCase["expected"] == GisToolStandard.ParseWholeNumber((string)testCase["text"]!),
+                $"'{testCase["text"]}': expected {testCase["expected"]}");
         }
     }
 
@@ -108,6 +137,8 @@ public sealed class GisToolsConformanceTests
             target.Material = (string?)edit["material"] ?? target.Material;
         }
 
+        string[] skipTypes = spec["standard_type_skip"]?.Values<string>().ToArray()! ?? Array.Empty<string>();
+        floorTypes.RemoveAll(floorType => skipTypes.Contains(floorType.Name));
         foreach (JToken entry in spec["floor_types_extra"] ?? new JArray())
         {
             floorTypes.Add(new FloorTypeInfo(

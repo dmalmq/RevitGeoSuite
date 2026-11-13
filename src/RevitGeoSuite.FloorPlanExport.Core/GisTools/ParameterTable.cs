@@ -207,9 +207,10 @@ public static class ParameterTable
     public static IReadOnlyList<Dictionary<string, string>> ReadCsv(string path) => ParseCsvText(DecodeCsv(File.ReadAllBytes(path)));
 
     /// <summary>
-    /// The changes the edited rows make, and the problems that keep a cell from being written. A
-    /// row whose element_id is not in the model, a change in a column its kind does not own, and a
-    /// value the standard does not accept are problems; the rest of the file still applies.
+    /// The changes the edited rows make, and one line for each edit that is not written. A row whose
+    /// element_id is not in the model is skipped whole. A change in a column its kind does not own,
+    /// or a value the standard does not accept, skips only that cell; the row's other cells still
+    /// apply. An edit to a column that only describes the element is ignored and listed.
     /// </summary>
     public static (IReadOnlyList<ParameterTableChange> Changes, IReadOnlyList<string> Problems) Diff(
         IEnumerable<IReadOnlyDictionary<string, string>> currentRows,
@@ -243,7 +244,7 @@ public static class ParameterTable
 
             if (!current.TryGetValue(elementId, out IReadOnlyDictionary<string, string>? entry))
             {
-                problems.Add($"Line {number}: element {elementId} is not in the model.");
+                problems.Add($"Line {number}: element {elementId} is not in the model; the row is skipped.");
                 continue;
             }
 
@@ -257,21 +258,27 @@ public static class ParameterTable
 
                 string old = entry.TryGetValue(column, out string? oldValue) ? oldValue : string.Empty;
                 string value = GisToolStandard.Normalize(editedValue);
-                if (value == old || ReadOnlyColumns.Contains(column))
+                if (value == old)
                 {
+                    continue;
+                }
+
+                if (ReadOnlyColumns.Contains(column))
+                {
+                    problems.Add($"Line {number}: {column} only describes the element; the edit is ignored.");
                     continue;
                 }
 
                 if (!Editable.TryGetValue(kind, out IReadOnlyList<string>? owned) || !owned.Contains(column))
                 {
-                    problems.Add($"Line {number}: {column} cannot be set on a {kind} here.");
+                    problems.Add($"Line {number}: {column} cannot be set on a {kind} here; only this cell is skipped.");
                     continue;
                 }
 
                 (string? accepted, string? problem) = CheckValue(column, value, standard);
                 if (problem != null)
                 {
-                    problems.Add($"Line {number}: {problem}");
+                    problems.Add($"Line {number}: {problem} Only this cell is skipped.");
                     continue;
                 }
 
@@ -283,6 +290,65 @@ public static class ParameterTable
         }
 
         return (changes, problems);
+    }
+
+    /// <summary>
+    /// The accepted changes that still apply to the model as it is now, and one line for each that
+    /// does not: its element is gone, its column is not the kind's, the standard no longer takes the
+    /// value, or the cell changed in Revit since the preview.
+    /// </summary>
+    public static (IReadOnlyList<ParameterTableChange> Changes, IReadOnlyList<string> Skipped) Accept(
+        IEnumerable<IReadOnlyDictionary<string, string>> currentRows,
+        IEnumerable<ParameterTableChange> accepted,
+        GisToolStandard standard)
+    {
+        Dictionary<string, IReadOnlyDictionary<string, string>> current = new(StringComparer.Ordinal);
+        foreach (IReadOnlyDictionary<string, string> entry in currentRows)
+        {
+            current[entry["element_id"]] = entry;
+        }
+
+        List<ParameterTableChange> changes = new();
+        List<string> skipped = new();
+        HashSet<(string, string)> seen = new();
+        foreach (ParameterTableChange change in accepted)
+        {
+            if (!seen.Add((change.ElementId, change.Column)))
+            {
+                continue;
+            }
+
+            if (!current.TryGetValue(change.ElementId, out IReadOnlyDictionary<string, string>? entry))
+            {
+                skipped.Add($"Skipped {change.Label()}: the element is no longer in the model.");
+                continue;
+            }
+
+            string kind = entry["kind"];
+            if (!Editable.TryGetValue(kind, out IReadOnlyList<string>? owned) || !owned.Contains(change.Column))
+            {
+                skipped.Add($"Skipped {change.Label()}: {change.Column} cannot be set on a {kind} here.");
+                continue;
+            }
+
+            string now = entry.TryGetValue(change.Column, out string? value) ? value : string.Empty;
+            if (now != change.OldValue)
+            {
+                skipped.Add($"Skipped {change.Label()}: the value changed in Revit since the preview.");
+                continue;
+            }
+
+            (string? checkedValue, string? problem) = CheckValue(change.Column, change.NewValue, standard);
+            if (problem != null)
+            {
+                skipped.Add($"Skipped {change.Label()}: {problem}");
+                continue;
+            }
+
+            changes.Add(new ParameterTableChange(change.ElementId, kind, change.Column, now, checkedValue!));
+        }
+
+        return (changes, skipped);
     }
 
     /// <summary>The value to write for a cell, or a problem when the standard does not accept it.</summary>

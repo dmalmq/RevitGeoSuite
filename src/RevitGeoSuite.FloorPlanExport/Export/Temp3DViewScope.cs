@@ -294,7 +294,7 @@ public sealed class Temp3DViewScope : IDisposable
         }
 
         double? floorTopZ = TryGetLevelFloorTopZ(_document, level);
-        double zReference = floorTopZ ?? level.Elevation;
+        double zReference = floorTopZ ?? level.ProjectElevation;
         string zSource = floorTopZ.HasValue ? "floor_top" : "level_elevation";
 
         BoundingBoxXYZ sectionBox = BuildSectionBox(planView, zReference, aboveFloorFeet, belowFloorFeet, scopeBoxUnion, buildingBounds, modelBounds, out string source);

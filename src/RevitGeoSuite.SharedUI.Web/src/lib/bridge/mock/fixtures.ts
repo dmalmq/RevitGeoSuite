@@ -10,6 +10,7 @@ import type {
   GeoreferenceGridCandidatesResponse,
   GeoreferenceHasUndoResponse,
   GisExportOptionsResponse,
+  GisStandardInspectResponse,
   MeshOverlayResponse,
   PreviewInitialStateResponse,
   PreviewViewPayload,
@@ -98,6 +99,7 @@ const gridCandidates: GeoreferenceGridCandidatesResponse = {
 
 const settings: ExporterSettingsPayload = {
   activeSchemaProfileName: 'Default',
+  auditErrorsAccepted: false,
   activeValidationPolicyProfileName: 'Default',
   coordinateMode: 'shared',
   detail: true,
@@ -288,9 +290,146 @@ const cesiumState: CesiumExportStateResponse = {
 
 const undo: GeoreferenceHasUndoResponse = { hasSnapshot: false, summary: '' }
 
+// The GIS standard page: a model with two floor types that need a category, one the matcher
+// cannot place, and an escalator family without gis_kind. Applying a step clears what it fixes.
+const range = (start: number, count: number) => Array.from({ length: count }, (_, index) => start + index)
+
+function gisStandard(scenario: MockScenario) {
+  let setUp = scenario === 'existing'
+  let fixed = false
+  const inspect = (): GisStandardInspectResponse => ({
+    documentTitle: 'TokyoStation_Concourse.rvt',
+    standardVersion: 2,
+    modelVersion: setUp ? '2' : '',
+    exportSummary: setUp ? 'On the current Kanizu GIS standard (version 2).' : 'Not set up with the Kanizu GIS standard.',
+    exportBlockers: [],
+    findings: [
+      ...(setUp ? [] : [{ severity: 'warning', topic: 'standard', message: 'The model has not been set up with the Kanizu GIS standard. Run Set up model.', elementIds: [] }]),
+      ...(fixed
+        ? []
+        : [
+            { severity: 'warning', topic: 'floor types', message: 'Floor type 1F ラチ内 床 (14 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: range(301, 14) },
+            { severity: 'warning', topic: 'floor types', message: 'Floor type j 店舗_床 (6 floors) uses an old name. Run Fix floor types to rename it to j ラチ外店舗_床 or j ラチ内店舗_床. All 6 floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first.', elementIds: range(331, 6) }
+          ]),
+      { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
+      { severity: 'error', topic: 'families', message: "Lift : A has gis_kind 'lift', which the export does not know; its instances export as plain fixtures.", elementIds: [501] },
+      { severity: 'warning', topic: 'levels', message: 'Level B1FL has no short_name, so the export guesses it from the level name.', elementIds: [11] },
+      { severity: 'warning', topic: 'families', message: 'ESC_1200 : S800 looks like an escalator but has no gis_kind, so it is found only by its family name, if at all.', elementIds: [401, 402] },
+      { severity: 'info', topic: 'parameters', message: 'Parameter name uses its own GUID 1f0c9e2a-0000-4000-8000-000000000001, not the standard\'s 47b8db20-e756-4280-a842-f570dc847db5. It exports, but other models cannot share schedules or families with it.', elementIds: [] }
+    ],
+    setupLines: setUp
+      ? []
+      : [
+          'Bind gis_category (type) to Floors',
+          'Bind gis_restriction (type) to Floors',
+          'Bind gis_standard_version to Project Information',
+          'Create material GIS_ラチ内コンコース #F2E6C9',
+          'Create material GIS_店舗 #F7C6A3',
+          'Create floor type j ラチ内コンコース_床 (walkway, rachi_nai, GIS_ラチ内コンコース)',
+          'Create floor type j ラチ外スロープ_床 (ramp, rachi_gai, GIS_ラチ外コンコース)',
+          'Set gis_standard_version 2'
+        ],
+    proposals:
+      !setUp || fixed
+        ? []
+        : [
+            { floorTypeId: 201, floorTypeName: '1F ラチ内 床', floorCount: 14, standardTypeName: 'j ラチ内コンコース_床', gisCategory: 'walkway', gisRestriction: 'rachi_nai', material: 'GIS_ラチ内コンコース', newName: '', reason: 'words' },
+            { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ外店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_gai', material: 'GIS_店舗', newName: 'j ラチ外店舗_床', reason: 'oldName' },
+            { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ内店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_nai', material: 'GIS_店舗', newName: 'j ラチ内店舗_床', reason: 'oldName' }
+          ],
+    unmatched: [{ floorTypeId: 203, name: '機械室', floorIds: [321, 322] }],
+    fixBlocker: setUp ? '' : 'gis_category is not bound yet. Run Set up model first.'
+  })
+  return {
+    'gisStandard.inspect': inspect,
+    'gisStandard.setup': () => {
+      setUp = true
+      return { log: ['Bound gis_category', 'Bound gis_restriction', 'Material GIS_店舗 #F7C6A3', 'Created floor type j 店舗_床 from j 床', 'gis_standard_version = 2'], skipped: [] }
+    },
+    'gisStandard.fixFloorTypes': (payload: { accepted?: { floorTypeId: number; standardTypeName: string }[] }) => {
+      fixed = true
+      const names: Record<number, string> = {
+        201: '1F ラチ内 床: gis_category walkway, gis_restriction rachi_nai',
+        202: 'j 店舗_床: gis_category retail'
+      }
+      return {
+        log: (payload?.accepted ?? []).flatMap(({ floorTypeId, standardTypeName }) => [
+          names[floorTypeId] ?? `Floor type ${floorTypeId}`,
+          ...(floorTypeId === 202 ? [`Renamed j 店舗_床 to ${standardTypeName}`] : [])
+        ]),
+        skipped: []
+      }
+    },
+    'gisStandard.select': (payload: { elementIds?: number[] }) => ({ selected: payload?.elementIds?.length ?? 0 }),
+    ...gisParameters(),
+    ...gisDrift()
+  }
+}
+
+// Parameters: an edited CSV with three changes and two rows that will not be written.
+function gisParameters() {
+  const changes = [
+    { elementId: '301', kind: 'floor', column: 'name', oldValue: '', newValue: '北改札内コンコース' },
+    { elementId: '301', kind: 'floor', column: 'category', oldValue: '', newValue: 'walkway' },
+    { elementId: '11', kind: 'level', column: 'short_name', oldValue: '', newValue: 'B1' }
+  ]
+  return {
+    'gisParameters.write': () => ({ path: 'C:\\Users\\me\\Documents\\TokyoStation_Concourse_gis-parameters.csv', rowCount: 412 }),
+    'gisParameters.read': () => ({
+      path: 'C:\\Users\\me\\Documents\\TokyoStation_Concourse_gis-parameters.csv',
+      rowCount: 412,
+      changes,
+      problems: ["Line 57: 'shop' is not a unit category.", 'Line 203: element 99001 is not in the model.']
+    }),
+    'gisParameters.apply': (payload: { changes?: typeof changes }) => ({
+      log: (payload?.changes ?? []).map((change) => `${change.kind} ${change.elementId}: ${change.column} ${change.oldValue || '(empty)'} to ${change.newValue}`),
+      skipped: []
+    })
+  }
+}
+
+// Review GDB edits: Kanizu's drift file for this model, with a conflict and a row it cannot write.
+function gisDrift() {
+  let accepted = false
+  const station = 'D:\\Stations\\Tokyo'
+  const path = `${station}\\gis-drift\\8d7f3c1e-0000.gis-drift.json`
+  // The rows of tests/Fixtures/Conformance/gis-drift/8d7f3c1e-0000.gis-drift.json, which Kanizu wrote.
+  const changes = [
+    { uniqueId: 'u-1', layer: 'unit', field: 'name', feature: '北改札', parameter: 'name', binding: 'instance', oldValue: '改札', newValue: '北改札', conflict: false, label: 'unit 北改札 name: name 改札 to 北改札' },
+    { uniqueId: 'u-1', layer: 'unit', field: 'alt_name', feature: '北改札', parameter: 'short_name', binding: 'instance', oldValue: '', newValue: '北', conflict: false, label: 'unit 北改札 alt_name: short_name (empty) to 北' },
+    { uniqueId: 'u-1', layer: 'unit', field: 'shop_hours', feature: '北改札', parameter: 'kanizu_shop_hours', binding: 'type', oldValue: '9-21', newValue: '10-20', conflict: false, label: 'unit 北改札 shop_hours: kanizu_shop_hours 9-21 to 10-20 (type parameter: every element of the type changes)' },
+    { uniqueId: 'u-2', layer: 'unit', field: 'category', feature: '北改札', parameter: 'category', binding: 'instance', oldValue: 'retail', newValue: 'walkway', conflict: true, label: 'unit 北改札 category: category retail to walkway (also changed in Revit since the last apply)' },
+    { uniqueId: 'lvl', layer: 'level', field: 'ordinal', feature: '北改札', parameter: 'ordinal', binding: 'instance', oldValue: '1', newValue: '2', conflict: false, label: 'level 北改札 ordinal: ordinal 1 to 2' }
+  ]
+  const inspect = (payload: { path?: string; pick?: boolean }) => ({
+    cancelled: false,
+    source: payload?.pick ? 'picked' : 'station',
+    path: payload?.pick ? 'C:\\Users\\me\\Downloads\\0f3a-b2.gis-drift.json' : path,
+    documentTitle: 'TokyoStation_Concourse.rvt',
+    modelKey: '8d7f3c1e-0000',
+    fileModel: payload?.pick ? '0f3a-b2' : '8d7f3c1e-0000',
+    stationFolder: station,
+    expectedPath: path,
+    appliedVersion: 'revit/tokyo-8d7f3c1e/20261110T000000Z-aaaaaaaa',
+    changes: accepted ? [changes[3]] : changes,
+    problems: [
+      'unit 北改札 restrict: no Revit parameter holds this field; change it in Revit by hand (GDB: private).',
+      'unit 北改札 level_id: no Revit parameter holds this field; change it in Revit by hand (GDB: b).'
+    ]
+  })
+  return {
+    'gisDrift.inspect': inspect,
+    'gisDrift.apply': (payload: { changes?: typeof changes }) => {
+      accepted = true
+      return { log: (payload?.changes ?? []).map((change) => change.label), skipped: [] }
+    }
+  }
+}
+
 /** Request/response fixtures. A function gets the request payload. */
 export function responses(scenario: MockScenario): Record<string, unknown | ((payload: any) => unknown)> {
   return {
+    ...gisStandard(scenario),
     'georeference.getCurrentState': currentState(scenario),
     'georeference.getAvailableCrs': {
       groups: [{ region: 'Japan', entries: [{ epsgCode: 6677, name: 'JGD2011 / Japan Plane Rectangular CS IX', areaSummary: 'Tokyo' }] }]

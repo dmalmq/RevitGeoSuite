@@ -1,3 +1,4 @@
+using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using Xunit;
@@ -10,9 +11,9 @@ public sealed class GisToolStandardTests
     [Fact]
     public void LoadsTheShippedStandard()
     {
-        Assert.Equal(1, Standard.Version);
+        Assert.Equal(2, Standard.Version);
         Assert.Equal(GisSharedParameters.All.Count, Standard.Parameters.Count);
-        Assert.Equal(12, Standard.FloorTypes.Count);
+        Assert.Equal(21, Standard.FloorTypes.Count);
     }
 
     [Fact]
@@ -27,9 +28,21 @@ public sealed class GisToolStandardTests
     }
 
     [Fact]
-    public void ShopRestrictionIsByLocation()
+    public void ShopsAreSplitByGateSide()
     {
-        Assert.True(string.IsNullOrEmpty(Standard.FloorType("j 店舗_床")!.GisRestriction));
+        Assert.Null(Standard.FloorType("j 店舗_床"));
+        Assert.Equal("rachi_gai", Standard.FloorType("j ラチ外店舗_床")!.GisRestriction);
+        Assert.Equal("rachi_nai", Standard.FloorType("j ラチ内店舗_床")!.GisRestriction);
+    }
+
+    [Fact]
+    public void FormerNamesPointAtCurrentStandardNames()
+    {
+        Assert.All(Standard.FormerNames.SelectMany(former => former.Now), name => Assert.NotNull(Standard.FloorType(name)));
+        Assert.All(Standard.FormerNames, former => Assert.Null(Standard.FloorType(former.Name)));
+        Assert.Equal(new[] { "j ラチ外店舗_床", "j ラチ内店舗_床" }, Standard.FormerTargets("j 店舗_床"));
+        Assert.Equal(new[] { "j 屋外_床" }, Standard.FormerTargets(" roof "));
+        Assert.Empty(Standard.FormerTargets("j 屋外_床"));
     }
 
     [Fact]

@@ -22,8 +22,10 @@ public sealed class GisToolStandard
         IReadOnlyList<StandardMaterial> materials,
         IReadOnlyList<StandardFloorType> floorTypes,
         IEnumerable<string> knownCategories,
-        string outlineHex)
+        string outlineHex,
+        IReadOnlyList<FormerFloorTypeName>? formerNames = null)
     {
+        FormerNames = formerNames ?? Array.Empty<FormerFloorTypeName>();
         Version = version;
         Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
         Materials = materials ?? throw new ArgumentNullException(nameof(materials));
@@ -44,6 +46,8 @@ public sealed class GisToolStandard
 
     public string OutlineHex { get; }
 
+    public IReadOnlyList<FormerFloorTypeName> FormerNames { get; }
+
     /// <summary>The standard this build ships.</summary>
     public static GisToolStandard LoadEmbedded()
     {
@@ -54,7 +58,8 @@ public sealed class GisToolStandard
             floorTypes.Materials,
             floorTypes.FloorTypes,
             FloorTypeStandard.KnownCategories,
-            floorTypes.OutlineHex);
+            floorTypes.OutlineHex,
+            floorTypes.FormerNames);
     }
 
     public GisParameterDefinition? Parameter(string name) =>
@@ -69,11 +74,39 @@ public sealed class GisToolStandard
         return FloorTypes.FirstOrDefault(floorType => floorType.Name == trimmed);
     }
 
+    /// <summary>
+    /// The standard names a floor type called <paramref name="name"/> is an old name for, or none
+    /// when it is not an old name. A name is old when its zone equals a former name's zone, ignoring
+    /// case, and it is not itself a standard name.
+    /// </summary>
+    public IReadOnlyList<string> FormerTargets(string? name)
+    {
+        if (FloorType(name) != null)
+        {
+            return Array.Empty<string>();
+        }
+
+        string zone = FloorTypeMatcher.ZoneName(name);
+        FormerFloorTypeName? former = FormerNames.FirstOrDefault(entry =>
+            string.Equals(FloorTypeMatcher.ZoneName(entry.Name), zone, StringComparison.OrdinalIgnoreCase));
+        return former?.Now ?? Array.Empty<string>();
+    }
+
     /// <summary>True for a unit category the export accepts, ignoring case and surrounding spaces.</summary>
     public bool IsKnownCategory(string? value) => _knownCategories.Contains(Normalize(value).ToLowerInvariant());
 
     /// <summary>The value trimmed, with null read as empty.</summary>
     public static string Normalize(string? value) => value == null ? string.Empty : value.Trim();
+
+    /// <summary>A whole number written as text, as the export reads it, or null.</summary>
+    public static int? ParseWholeNumber(string? text)
+    {
+        string value = Normalize(text);
+        return value.Length > 0 && value.Skip(value[0] is '+' or '-' ? 1 : 0).All(character => character is >= '0' and <= '9') &&
+               int.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int number)
+            ? number
+            : null;
+    }
 
     /// <summary>The red, green and blue of a <c>#RRGGBB</c> colour.</summary>
     public static (byte Red, byte Green, byte Blue) HexToRgb(string hex)

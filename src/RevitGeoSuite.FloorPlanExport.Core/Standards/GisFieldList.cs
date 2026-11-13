@@ -90,6 +90,7 @@ public sealed class GisFieldList
             Core("level", "id", "ID", "Stable export id of the level."),
             Core("level", RevitKey.AttributeName, "Revitキー", "Model, level UniqueId and part."),
             Core("level", "level_name", "レベル名", "Revit level name."),
+            Core("level", "short_name", "略称", "Short name of the level, from its short_name parameter."),
             Core("level", "ordinal", "階数", "Floor number.", type: GisFieldType.Integer),
             Core("level", "elevation_m", "標高", "Elevation in metres.", type: GisFieldType.Real),
             Gdb("level", "address_id", "住所ID", "Address of the level. Kept in the GDB."),

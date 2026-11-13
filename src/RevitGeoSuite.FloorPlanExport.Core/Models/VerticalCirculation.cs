@@ -34,6 +34,18 @@ public static class VerticalCirculation
 
     public const string Both = "both";
 
+    /// <summary>The unit category of the slope floor types, which export with a <c>to_level</c> like stairs.</summary>
+    public const string SlopeCategory = "ramp";
+
+    /// <summary>A slope rising less than this stays on its own level: a ramp inside one floor, not a level change.</summary>
+    public const double SlopeMinRiseMetres = 0.3;
+
+    /// <summary>How far a slope's near end may sit from its own level's elevation.</summary>
+    public const double SlopeOwnLevelToleranceMetres = 0.3;
+
+    /// <summary>How far a slope's far end may sit from the level it reaches, for a slab finish or a slope that stops short.</summary>
+    public const double SlopeLevelToleranceMetres = 0.5;
+
     private static readonly Dictionary<string, string> CategoryByGisKind = new(StringComparer.OrdinalIgnoreCase)
     {
         ["escalator"] = EscalatorCategory,
@@ -171,7 +183,120 @@ public static class VerticalCirculation
             .Distinct(StringComparer.Ordinal)
             .ToList();
     }
+
+    /// <summary>
+    /// An escalator's top level: of the levels at least 1 m above the bottom one, the one nearest
+    /// the top of its geometry, which sits under the upper floor's slab. Null when none is within
+    /// 2.5 m. Elevations and the top are in the same model coordinates (Level.ProjectElevation).
+    /// </summary>
+    public static TLevel? EscalatorTopLevel<TLevel>(double bottomElevationFeet, double topFeet, IEnumerable<TLevel> levels, Func<TLevel, double> elevationFeet)
+        where TLevel : class
+    {
+        const double MinimumRiseFeet = 1.0 / 0.3048;
+        const double ToleranceFeet = 2.5 / 0.3048;
+        TLevel? top = levels
+            .Where(level => elevationFeet(level) > bottomElevationFeet + MinimumRiseFeet)
+            .OrderBy(level => Math.Abs(elevationFeet(level) - topFeet))
+            .FirstOrDefault();
+        return top != null && Math.Abs(elevationFeet(top) - topFeet) <= ToleranceFeet ? top : null;
+    }
+
+    /// <summary>
+    /// The level a slope floor leads to. Its near end must sit on its own level and its far end on
+    /// another level on the far side, each within its tolerance. Heights and elevations are in the
+    /// same model coordinates (Level.ProjectElevation), in feet. The own level is never the answer.
+    /// </summary>
+    public static SlopeReach<TKey> SlopeToLevel<TKey>(
+        TKey ownLevel,
+        double lowFeet,
+        double highFeet,
+        IEnumerable<KeyValuePair<TKey, double>> levelElevationsFeet)
+        where TKey : struct, IEquatable<TKey>
+    {
+        const double Metre = 1 / 0.3048;
+        List<KeyValuePair<TKey, double>> levels = levelElevationsFeet.ToList();
+        KeyValuePair<TKey, double>[] own = levels.Where(level => level.Key.Equals(ownLevel)).ToArray();
+        if (own.Length == 0 || highFeet - lowFeet < SlopeMinRiseMetres * Metre)
+        {
+            return new SlopeReach<TKey>(SlopeOutcome.Flat, null, 0, 0, null, 0);
+        }
+
+        double ownElevation = own[0].Value;
+        bool lowIsNear = Math.Abs(lowFeet - ownElevation) <= Math.Abs(highFeet - ownElevation);
+        double near = (lowIsNear ? lowFeet : highFeet) - ownElevation;
+        double far = (lowIsNear ? highFeet : lowFeet) - ownElevation;
+        List<KeyValuePair<TKey, double>> others = levels
+            .Where(level => !level.Key.Equals(ownLevel))
+            .OrderBy(level => Math.Abs(level.Value - ownElevation - far))
+            .ToList();
+        TKey? nearest = others.Count == 0 ? null : others[0].Key;
+        double nearestDistance = others.Count == 0 ? 0 : Math.Abs(others[0].Value - ownElevation - far);
+        if (Math.Abs(near) > SlopeOwnLevelToleranceMetres * Metre)
+        {
+            return new SlopeReach<TKey>(SlopeOutcome.OwnLevelAtNeitherEnd, null, near, far, nearest, nearestDistance);
+        }
+
+        // The level must lie on the far side, clear of the own level's height, so a second level at
+        // the same height as the own one is never taken.
+        KeyValuePair<TKey, double>[] reached = others
+            .Where(level => (level.Value - ownElevation) * Math.Sign(far) >= SlopeMinRiseMetres * Metre)
+            .Where(level => Math.Abs(level.Value - ownElevation - far) <= SlopeLevelToleranceMetres * Metre)
+            .Take(1)
+            .ToArray();
+        return reached.Length == 1
+            ? new SlopeReach<TKey>(SlopeOutcome.Reaches, reached[0].Key, near, far, reached[0].Key, Math.Abs(reached[0].Value - ownElevation - far))
+            : new SlopeReach<TKey>(SlopeOutcome.FarEndBetweenLevels, null, near, far, nearest, nearestDistance);
+    }
 }
+
+public enum SlopeOutcome
+{
+    /// <summary>Rises less than <see cref="VerticalCirculation.SlopeMinRiseMetres"/>: no level change.</summary>
+    Flat,
+
+    /// <summary>The far end sits on another level.</summary>
+    Reaches,
+
+    /// <summary>Neither end sits on the floor's own level, so which way it leads is a guess.</summary>
+    OwnLevelAtNeitherEnd,
+
+    /// <summary>The near end is on its own level but the far end is on no level, as a half-level ramp is.</summary>
+    FarEndBetweenLevels,
+}
+
+/// <summary>
+/// Where a slope leads: the level it reaches, if any, both ends' heights above its own level and
+/// the other level nearest the far end with its distance, all in feet, for the audit's message.
+/// </summary>
+public sealed class SlopeReach<TKey>
+    where TKey : struct
+{
+    public SlopeReach(SlopeOutcome outcome, TKey? toLevel, double nearEndFeet, double farEndFeet, TKey? nearestLevel, double nearestDistanceFeet)
+    {
+        Outcome = outcome;
+        ToLevel = toLevel;
+        NearEndFeet = nearEndFeet;
+        FarEndFeet = farEndFeet;
+        NearestLevel = nearestLevel;
+        NearestDistanceFeet = nearestDistanceFeet;
+    }
+
+    public SlopeOutcome Outcome { get; }
+
+    /// <summary>Set only when <see cref="Outcome"/> is <see cref="SlopeOutcome.Reaches"/>.</summary>
+    public TKey? ToLevel { get; }
+
+    /// <summary>The end nearer the own level, as height above it (negative below).</summary>
+    public double NearEndFeet { get; }
+
+    /// <summary>The other end, as height above the own level (negative below).</summary>
+    public double FarEndFeet { get; }
+
+    public TKey? NearestLevel { get; }
+
+    public double NearestDistanceFeet { get; }
+}
+
 
 /// <summary>A level an elevator can stop at: its export id, the names a <c>gis_levels_served</c> value can use, and its elevation.</summary>
 public sealed class ElevatorStop
