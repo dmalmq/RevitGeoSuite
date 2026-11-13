@@ -272,10 +272,32 @@ public static class GisShapeEdits
                 continue;
             }
 
+            if (floor.Outline.Count > 1)
+            {
+                problems.Add($"{shape.Describe()}: floor {floor.ElementId} {InParts(floor)}");
+                continue;
+            }
+
             edits.Add(new ShapeEdit(ShapeEditKind.Reshape, shape, floor, outline));
         }
 
-        return new ShapePlan(edits, problems, file.Shapes.Count - settled);
+        return new ShapePlan(OnePerFloor(edits, problems), problems, file.Shapes.Count - settled);
+    }
+
+    /// <summary>Why a floor in several parts is not redrawn: the export writes each part as its own unit, and one part's outline would replace them all.</summary>
+    public static string InParts(ShapeFloor floor) =>
+        $"is in {floor.Outline.Count} separate parts, which the GDB holds as separate units; redrawing it to one of them would drop the others. Change it in Revit by hand.";
+
+    // Two edits for one floor cannot both apply: neither is offered.
+    private static List<ShapeEdit> OnePerFloor(List<ShapeEdit> edits, List<string> problems)
+    {
+        HashSet<string> twice = new(edits.GroupBy(edit => edit.Floor.UniqueId, StringComparer.Ordinal).Where(group => group.Count() > 1).Select(group => group.Key), StringComparer.Ordinal);
+        foreach (ShapeEdit edit in edits.Where(edit => twice.Contains(edit.Floor.UniqueId)).GroupBy(edit => edit.Floor.UniqueId).Select(group => group.First()))
+        {
+            problems.Add($"Floor {edit.Floor.ElementId}: the GDB changed it in more than one way, so none of its edits is applied. Change it in Revit by hand.");
+        }
+
+        return edits.Where(edit => !twice.Contains(edit.Floor.UniqueId)).ToList();
     }
 
     /// <summary>
@@ -316,7 +338,20 @@ public static class GisShapeEdits
             return 0;
         }
 
+        // A new floor is one polygon, so a piece in several parts could never be read back as drawn.
+        if (others.Any(other => other.Outline.Count > 1))
+        {
+            problems.Add($"{keeper.Describe()}: a piece of this split is in several separate parts in the GDB. Split it in Revit by hand.");
+            return 0;
+        }
+
         bool redraw = !SameOutline(floor.Outline, outline);
+        if (redraw && floor.Outline.Count > 1)
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {InParts(floor)}");
+            return 0;
+        }
+
         List<NewFloor> missing = others
             .Where(other => !floors.Values.Any(existing => existing.UniqueId != floor.UniqueId && existing.LevelId == floor.LevelId && SameOutline(existing.Outline, other.Outline)))
             .Select(other => NewFloorOf(other.Piece, other.Outline, standard, problems))
@@ -383,6 +418,11 @@ public static class GisShapeEdits
                 problems.Add($"{gone.Describe()}: element {other.ElementId} {NotAFloor}, so the merge does not delete it. Merge it in Revit by hand.");
                 return settled;
             }
+            else if (other.Outline.Count > 1)
+            {
+                problems.Add($"{gone.Describe()}: floor {other.ElementId} {InParts(other)}");
+                return settled;
+            }
             else
             {
                 absorbed.Add(other);
@@ -390,6 +430,12 @@ public static class GisShapeEdits
         }
 
         bool redraw = !SameOutline(floor.Outline, outline);
+        if (redraw && floor.Outline.Count > 1)
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {InParts(floor)}");
+            return settled;
+        }
+
         settled += redraw ? 0 : 1;
         if (!redraw && absorbed.Count == 0)
         {

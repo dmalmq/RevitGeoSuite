@@ -41,13 +41,14 @@ public static class ShapeEditWork
             }
         }
 
-        // A split's pieces lie inside the floor it splits: the floors there are the ones a piece may already be.
+        // A floor a piece may already be is on the split floor's level. Not only around it: after a
+        // first apply the split floor has shrunk to its own piece, and pieces further off fall outside it.
         foreach (Floor splitFloor in file.Shapes
             .Where(shape => shape.Edit == GisDrift.Split && shape.Keeps)
             .Select(shape => document.GetElement(shape.UniqueId))
             .OfType<Floor>())
         {
-            foreach (Floor beside in FloorsOver(document, splitFloor))
+            foreach (Floor beside in OtherFloorsOnLevel(document, splitFloor))
             {
                 if (!floors.ContainsKey(beside.UniqueId))
                 {
@@ -69,11 +70,7 @@ public static class ShapeEditWork
     /// <returns>What Revit warned about, the elements gone with the old outline or a deleted floor, and the new floors, one line each.</returns>
     public static IReadOnlyList<string> Apply(Document document, ShapeEdit edit)
     {
-        if (edit.Kind == ShapeEditKind.Reshape)
-        {
-            return Redraw(document, edit);
-        }
-
+        // Every kind in a group, so an outline Revit takes but draws differently is rolled back and nothing changes.
         using TransactionGroup group = new(document, edit.Label());
         group.Start();
         try
@@ -258,21 +255,12 @@ public static class ShapeEditWork
         }
     }
 
-    /// <summary>The floors on the floor's level whose bounding boxes meet its own.</summary>
-    private static IEnumerable<Floor> FloorsOver(Document document, Floor floor)
-    {
-        BoundingBoxXYZ? box = floor.get_BoundingBox(null);
-        if (box == null)
-        {
-            return Enumerable.Empty<Floor>();
-        }
-
-        return new FilteredElementCollector(document)
+    private static IEnumerable<Floor> OtherFloorsOnLevel(Document document, Floor floor) =>
+        new FilteredElementCollector(document)
             .OfClass(typeof(Floor))
-            .WherePasses(new BoundingBoxIntersectsFilter(new Outline(box.Min, box.Max)))
+            .WherePasses(new ElementLevelFilter(floor.LevelId))
             .Cast<Floor>()
-            .Where(other => other.LevelId == floor.LevelId && other.Id != floor.Id);
-    }
+            .Where(other => other.Id != floor.Id);
 
     /// <summary>Redraws the floor's sketch as the edit's outline, as one SketchEditScope.</summary>
     private static IReadOnlyList<string> Redraw(Document document, ShapeEdit edit)

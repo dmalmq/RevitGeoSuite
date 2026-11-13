@@ -79,11 +79,21 @@ internal sealed class GisStandardNotifier
         _buttonDocumentKey = null;
     }
 
+    // Only floors, rooms, levels and family instances carry GDB edits: the drift rows' units, fixtures and
+    // levels, and the floors shape edits redraw. Edits to anything else leave the count as it is.
+    private static readonly ElementFilter CountedElements = new LogicalOrFilter(
+        new ElementMulticategoryFilter(new[] { BuiltInCategory.OST_Floors, BuiltInCategory.OST_Levels, BuiltInCategory.OST_Rooms }),
+        new ElementClassFilter(typeof(FamilyInstance)));
+
     // An edit or an Undo can settle or reopen a GDB edit. Only a flag here: the Idling poll counts
     // again at most every few seconds, so nothing is re-planned per edit.
     private void OnModelChanged(object sender, DocumentChangedEventArgs e)
     {
-        _modelChanged = true;
+        if (!_modelChanged &&
+            (e.GetDeletedElementIds().Count > 0 || e.GetAddedElementIds(CountedElements).Count > 0 || e.GetModifiedElementIds(CountedElements).Count > 0))
+        {
+            _modelChanged = true;
+        }
     }
 
     private void OnDocumentClosed(object sender, DocumentClosedEventArgs e)
