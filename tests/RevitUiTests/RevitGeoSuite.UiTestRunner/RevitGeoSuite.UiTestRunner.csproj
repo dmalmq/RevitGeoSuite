@@ -29,4 +29,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <!-- The installer packs bin\Deploy\; test code must never land there. -->
+  <Target Name="KeepOutOfDeploy" BeforeTargets="Build">
+    <Error Condition="$([System.String]::Copy('$(OutputPath)').Contains('Deploy'))" Text="$(MSBuildProjectName) is test code and must not build into $(OutputPath), which the installer packs." />
+  </Target>
 </Project>

@@ -38,6 +38,19 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
 
     public async Task RunAsync(DateTime revitStartedUtc)
     {
+        try
+        {
+            await RunStepsAsync(revitStartedUtc);
+        }
+        catch (NotTheTestCopyException ex)
+        {
+            report.Header.Add($"RUN STOPPED: {ex.Message}");
+            Console.Error.WriteLine($"Run stopped: {ex.Message}");
+        }
+    }
+
+    private async Task RunStepsAsync(DateTime revitStartedUtc)
+    {
         PrepareModel();
         try
         {
@@ -90,8 +103,16 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
         modelCopy = Path.Combine(folder, Path.GetFileNameWithoutExtension(options.Model) + "-uitest.rvt");
         File.Copy(options.Model, modelCopy, overwrite: true);
         JsonObject opened = host.Call("open", new { path = modelCopy });
+        string copyPath = modelCopy;
+        modelCopy = opened["path"]?.GetValue<string>() ?? string.Empty;
+        if (!string.Equals(modelCopy, copyPath, StringComparison.OrdinalIgnoreCase))
+        {
+            report.Header.Add($"The model is workshared: it was detached and saved once as its own central at {modelCopy}.");
+        }
+
+        RequireTestCopy(opened);
         JsonObject closed = host.Call("closeOthers");
-        report.Header.Add($"Model: copy of {options.Model} at {modelCopy} ({opened["document"]}); never saved.");
+        report.Header.Add($"Model: copy of {options.Model} at {modelCopy} ({opened["document"]}). The pristine file is never opened or saved.");
         report.Header.Add($"Closed earlier test documents: {closed["closed"]?.ToJsonString()}; left open: {closed["kept"]?.ToJsonString()}.");
     }
 
@@ -108,7 +129,13 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
         Console.WriteLine($"Step {id}: {title}");
         try
         {
+            RequireTestCopy(host.Call("state"));
             await body(step);
+        }
+        catch (NotTheTestCopyException ex)
+        {
+            step.Check(false, ex.Message);
+            throw;
         }
         catch (Exception ex)
         {
@@ -117,6 +144,21 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
         }
 
         Console.WriteLine($"  -> {step.Outcome}{(step.Failures.Count > 0 ? ": " + string.Join("; ", step.Failures) : string.Empty)}");
+    }
+
+    /// <summary>
+    /// Stops the whole run unless the active document is this run's copy, detached when workshared:
+    /// every step writes to the active document, and it must never be anything else.
+    /// </summary>
+    private void RequireTestCopy(JsonObject document)
+    {
+        string path = document["path"]?.GetValue<string>() ?? string.Empty;
+        string? problem = TestCopy.Problem(path, modelCopy, options.OutputFolder,
+            document["isWorkshared"]?.GetValue<bool>() == true, document["centralPath"]?.GetValue<string>() ?? string.Empty);
+        if (problem != null)
+        {
+            throw new NotTheTestCopyException(problem);
+        }
     }
 
     private async Task OpenPage(StepResult step, DateTime revitStartedUtc)

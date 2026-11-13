@@ -48,7 +48,7 @@ internal sealed class Commands
                 "uniqueIds" => UniqueIds(request),
                 "fixture" => Fixture(request),
                 "newFamily" => NewFamily(request),
-                "fileDialog" => Win32Dialogs.FillFileDialog(Text(request, "path"), Milliseconds(request)),
+                "fileDialog" => Win32Dialogs.FillFileDialog(TestRoot.Require(root, Text(request, "path")), Milliseconds(request)),
                 "windows" => Win32Dialogs.List(),
                 "pressButton" => Win32Dialogs.Press(Text(request, "button"), Milliseconds(request)),
                 "screenshot" => Screenshot(Text(request, "path")),
@@ -98,7 +98,7 @@ internal sealed class Commands
     }
 
     // Opens a model copy under the test folder and makes it active. A workshared file is detached
-    // with its worksets kept, so nothing ever syncs to a central model.
+    // with its worksets kept, so nothing ever syncs to the original central model.
     private Dictionary<string, object?> Open(Dictionary<string, object?> request)
     {
         string path = TestRoot.Require(root, Text(request, "path"));
@@ -115,8 +115,20 @@ internal sealed class Commands
                 options.DetachFromCentralOption = DetachFromCentralOption.DetachAndPreserveWorksets;
             }
 
-            UIDocument opened = app.OpenAndActivateDocument(ModelPathUtils.ConvertUserVisiblePathToModelPath(path), options, false);
-            return Describe(opened.Document);
+            Document document = app.OpenAndActivateDocument(ModelPathUtils.ConvertUserVisiblePathToModelPath(path), options, false).Document;
+
+            // A detached model has no path until it is saved, so the runner could not tell it from any
+            // other open document. Save it once as its own central next to the copy: it then has a
+            // path in the run folder and no tie to the original central model.
+            if (document.IsWorkshared && string.IsNullOrEmpty(document.PathName))
+            {
+                string detached = TestRoot.Require(root, Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "-detached.rvt"));
+                var save = new SaveAsOptions { OverwriteExistingFile = true, MaximumBackups = 1 };
+                save.SetWorksharingOptions(new WorksharingSaveAsOptions { SaveAsCentral = true });
+                document.SaveAs(detached, save);
+            }
+
+            return Describe(document);
         }, Slow);
     }
 
@@ -350,6 +362,10 @@ internal sealed class Commands
         ["path"] = document.PathName,
         ["isFamily"] = document.IsFamilyDocument,
         ["isWorkshared"] = document.IsWorkshared,
+        ["isDetached"] = document.IsDetached,
+        ["centralPath"] = document.IsWorkshared
+            ? ModelPathUtils.ConvertModelPathToUserVisiblePath(document.GetWorksharingCentralModelPath())
+            : string.Empty,
     };
 
     private static string? ValueOf(Parameter parameter) => parameter.StorageType switch

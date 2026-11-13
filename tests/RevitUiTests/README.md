@@ -12,30 +12,34 @@ The first script is the GIS standard page test (run 2 of the M2/M3 Revit test). 
 | `RevitGeoSuite.UiTestRunner` | A .NET 8 console app. It drives the web page with Playwright over WebView2's DevTools protocol, and drives Revit through the test host. |
 | `RevitGeoSuite.UiTestRunner.Tests` | Unit tests for the runner's own logic. They run in CI on Linux and Windows. |
 
-The test host does these things:
+The test host does nothing at all unless Revit was started with `REVITGEOSUITE_UITEST=1`. `Run-UiTests.ps1 -StartRevit` sets that variable for the one Revit it starts. In any other Revit session on the build PC, the add-in still loads but opens no pipe, adds no event hooks, and opens no DevTools port. When a Revit was started for tests, the test host does these things:
 
-- At Revit start-up, it sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=0` inside the Revit process only. Other WebView2 apps on the PC keep their settings. Chromium picks a free port, binds it to 127.0.0.1, and writes the port to `%LOCALAPPDATA%\RevitGeoSuite\WebView2\EBWebView\DevToolsActivePort`. The runner reads the port from that file.
-- It opens the per-run model copy, detached from central if it is workshared. It refuses any path outside the test folder: `C:\dev\revit-test`, or `REVITGEOSUITE_TESTHOST_ROOT` when that is set.
+- It sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=0` inside that Revit process only. Other WebView2 apps on the PC keep their settings. Chromium picks a free port, binds it to 127.0.0.1, and writes the port to `%LOCALAPPDATA%\RevitGeoSuite\WebView2\EBWebView\DevToolsActivePort`. The runner reads the port from that file. The port stays open on localhost until that Revit closes.
+- It opens the per-run model copy. It refuses any path outside the test folder: `C:\dev\revit-test`, or `REVITGEOSUITE_TESTHOST_ROOT` when that is set. A workshared copy is detached and saved once as its own central model inside the run folder, so it has a path and no tie to the original central model.
 - It clicks ribbon buttons and Undo with `PostCommand`. This is exactly what a click does.
 - It records every committed, undone, and redone transaction with its name, from `DocumentChanged`. A check such as "the Undo list names Kanizu GIS: Set up model" becomes an assertion on the `undo` event with that name.
-- It records every dialog Revit raises. While a run is connected, it answers TaskDialogs and message boxes with OK, so a run cannot hang on one.
-- It fills in Windows Open, Save, and folder dialogs: it types the path and presses OK.
+- It records every dialog Revit raises. Only while a runner is connected does it answer TaskDialogs and message boxes with OK, so that a run cannot hang on one. `DialogPolicy` never answers a dialog about saving, overwriting, replacing, synchronising, worksharing, or the central model, in English or Japanese. Such a dialog stays on screen, and the run times out with a message saying so.
+- It fills in Windows Open, Save, and folder dialogs only with paths inside the test folder: it types the path and presses OK. The runner deletes a target file before saving it, so no overwrite prompt appears.
 - It reads the selection, the active view and its zoom, and parameters. It takes screenshots of the Revit window.
-- It writes small fixtures into the per-run copy in one transaction named `UI test: fixture`: renamed floor types and set parameter values.
+- It writes small fixtures into the per-run copy in one transaction named `UI test: fixture`: renamed floor types and set parameter values. It refuses to do this when the active document is outside the test folder.
 
-Nothing is ever saved. Each run copies the pristine model into its own output folder and opens the copy.
+The runner checks the active document after it opens the model and before every step. If the active document is not this run's copy in the run folder, or if a workshared copy is still tied to another central model, the runner stops the whole run.
+
+The test code never reaches the installer. All three projects build into `bin\Tests\`. The installer and `install.ps1` pack only `bin\Deploy\`. The test host and the runner fail their build if their output path contains `Deploy`.
 
 ## One-time setup on the build PC
 
 1. Stay signed in to the build PC desktop. Revit needs an interactive session to run.
 2. Install the .NET 8 SDK if it is not there yet (`dotnet --list-sdks`).
 3. Close Revit. Then run `tests\RevitUiTests\Install-TestHost.ps1` in a clone of this repo.
-4. Start Revit 2024 once by hand. Answer **Always Load** for "RevitGeoSuite test host". Revit asks this once for an unsigned add-in.
+4. Start Revit 2024 once by hand. Answer **Always Load** for "RevitGeoSuite test host". Revit asks this once for an unsigned add-in. In this session the add-in stays inert. Close Revit again.
 5. Make a pristine detached copy of the test model at `C:\dev\revit-test\auto\lumine-pristine.rvt`. The copy must never have been set up with the GIS standard. Never use the original or the central model, and never save over the pristine copy.
 
-To remove the test host, run `Install-TestHost.ps1 -Uninstall`.
+To remove the test host, close Revit and run `Install-TestHost.ps1 -Uninstall`. That deletes the `.addin` file and the copied DLL.
 
 ## Run
+
+Close Revit first. The runner only reaches a Revit that `-StartRevit` started.
 
 ```powershell
 cd C:\dev\RevitGeoSuite

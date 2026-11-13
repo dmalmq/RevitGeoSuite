@@ -34,7 +34,7 @@ internal sealed class TestHostClient : IDisposable
         {
             pipe.Dispose();
             throw new InvalidOperationException(
-                $"No Revit with the test host answered within {timeout.TotalSeconds:0} s. Start Revit 2024 with RevitGeoSuite.TestHost installed (Install-TestHost.ps1), or close the other runner that holds the pipe.");
+                $"No Revit with the test host answered within {timeout.TotalSeconds:0} s. Install it once (Install-TestHost.ps1), close Revit, and start the run with Run-UiTests.ps1 -StartRevit: the test host stays inert in a Revit started any other way. Or close the other runner that holds the pipe.");
         }
 
         return new TestHostClient(pipe);

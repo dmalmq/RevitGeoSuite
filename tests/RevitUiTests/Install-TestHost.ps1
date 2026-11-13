@@ -6,8 +6,9 @@
   Builds tests\RevitUiTests\RevitGeoSuite.TestHost, copies the DLL to
   %LOCALAPPDATA%\RevitGeoSuite.TestHost\<year> (so later builds are not blocked by Revit holding the
   file), and writes RevitGeoSuite.TestHost.addin into %APPDATA%\Autodesk\Revit\Addins\<year>.
-  Revit loads it at its next start. Build PC only: never install it on a PC people model on, since
-  while a run is connected it answers Revit's message boxes with OK.
+  Revit loads it at every start, but it stays inert (no pipe, no event hooks, no DevTools port)
+  unless that Revit was started with REVITGEOSUITE_UITEST=1, which Run-UiTests.ps1 -StartRevit sets
+  for that one Revit. Build PC only. -Uninstall removes it.
 
 .EXAMPLE
   .\Install-TestHost.ps1
@@ -47,4 +48,4 @@ $assembly = Join-Path $target 'RevitGeoSuite.TestHost.dll'
 $template = Get-Content (Join-Path $PSScriptRoot 'RevitGeoSuite.TestHost\RevitGeoSuite.TestHost.addin.template') -Raw
 [IO.File]::WriteAllText($manifest, $template.Replace('{ASSEMBLY}', [Security.SecurityElement]::Escape($assembly)), [Text.UTF8Encoding]::new($false))
 Write-Host "Installed: $manifest -> $assembly"
-Write-Host 'Start Revit; the test host loads with it. The first start asks once whether to load this add-in: choose Always Load.'
+Write-Host 'Start Revit once by hand and choose Always Load for "RevitGeoSuite test host". It stays inert until Run-UiTests.ps1 -StartRevit starts Revit for a run.'

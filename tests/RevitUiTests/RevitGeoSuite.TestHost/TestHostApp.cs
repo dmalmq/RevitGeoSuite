@@ -16,11 +16,24 @@ public sealed class TestHostApp : IExternalApplication
     internal const string WebViewArgumentsVariable = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
     internal const string RemoteDebuggingArgument = "--remote-debugging-port=0";
 
+    /// <summary>
+    /// The test host does nothing unless Revit was started with this variable set to 1, which
+    /// Run-UiTests.ps1 -StartRevit does for that Revit process only. A Revit started any other way
+    /// gets no pipe, no event hooks and no DevTools port.
+    /// </summary>
+    internal const string EnableVariable = "REVITGEOSUITE_UITEST";
+
     private EventRecorder? recorder;
     private PipeServer? server;
 
     public Result OnStartup(UIControlledApplication application)
     {
+        if (Environment.GetEnvironmentVariable(EnableVariable) != "1")
+        {
+            Trace.WriteLine($"RevitGeoSuite.TestHost: inert, because {EnableVariable} is not 1 for this Revit.");
+            return Result.Succeeded;
+        }
+
         EnableWebViewDebugging();
 
         recorder = new EventRecorder();

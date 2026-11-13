@@ -11,8 +11,9 @@ namespace RevitGeoSuite.TestHost;
 /// <summary>
 /// Records what Revit did, in order: each committed, undone or redone transaction with its names, and
 /// each dialog Revit raised. The runner reads it to prove that "the Undo list names X" without
-/// reading the journal. While armed (a run is connected), TaskDialogs and message boxes are
-/// answered with OK so an unattended run cannot hang on them; the text is kept for the report.
+/// reading the journal. While armed (a runner is connected), TaskDialogs and message boxes that
+/// <see cref="DialogPolicy"/> allows are answered with OK so an unattended run cannot hang on them;
+/// the text is kept for the report. Unarmed, it only records.
 /// </summary>
 internal sealed class EventRecorder
 {
@@ -51,20 +52,21 @@ internal sealed class EventRecorder
 
     public void OnDialogBoxShowing(object? sender, DialogBoxShowingEventArgs args)
     {
+        string message = args switch
+        {
+            TaskDialogShowingEventArgs task => task.Message,
+            MessageBoxShowingEventArgs box => box.Message,
+            _ => string.Empty,
+        };
         var entry = new Dictionary<string, object?>
         {
             ["kind"] = "dialog",
             ["dialogId"] = args.DialogId,
-            ["message"] = args switch
-            {
-                TaskDialogShowingEventArgs task => task.Message,
-                MessageBoxShowingEventArgs box => box.Message,
-                _ => string.Empty,
-            },
+            ["message"] = message,
             ["answered"] = false,
         };
 
-        if (Armed && args is TaskDialogShowingEventArgs or MessageBoxShowingEventArgs)
+        if ((args is TaskDialogShowingEventArgs or MessageBoxShowingEventArgs) && DialogPolicy.MayAnswer(Armed, args.DialogId, message))
         {
             entry["answered"] = args.OverrideResult((int)TaskDialogResult.Ok);
         }
