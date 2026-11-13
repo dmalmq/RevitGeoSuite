@@ -21,12 +21,14 @@ public static class GisStandardWriter
     public const string DriftTransactionName = "Kanizu GIS: Review GDB edits";
 
     /// <summary>Applies <paramref name="plan"/> and returns what it did, one line per change.</summary>
-    public static IReadOnlyList<string> ApplySetup(Document document, GisToolStandard standard, SetupPlan plan)
+    public static IReadOnlyList<string> ApplySetup(Document document, GisToolStandard standard, SetupPlan plan, ExportViewPlan views)
     {
         RequireOwnable(document, plan.FloorTypes.Where(step => step.ElementId.HasValue).Select(step => step.ElementId!.Value)
             .Concat(plan.EchoFloorIds)
+            .Concat(views.Crops.Select(crop => crop.ViewId))
+            .Concat(views.LevelIds.Select(level => level.ElementId))
             .Concat(plan.Materials.Select(step => MaterialId(document, step.Name)).Where(id => id.HasValue).Select(id => id!.Value))
-            .Concat(new[] { document.ProjectInformation.Id.Value }));
+            .Concat(plan.SetsVersion ? new[] { document.ProjectInformation.Id.Value } : Array.Empty<long>()));
         List<string> log = new();
         InTransaction(document, SetupTransactionName, () =>
         {
@@ -40,6 +42,7 @@ public static class GisStandardWriter
                 log.Add($"Cleared the repeated category of {plan.EchoFloorIds.Count} floors");
             }
 
+            ExportViewSetup.Apply(document, views, log);
             if (plan.SetsVersion)
             {
                 Parameter parameter = document.ProjectInformation.LookupParameter(GisSharedParameters.GisStandardVersion)
