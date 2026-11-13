@@ -43,10 +43,19 @@ class FloorType(object):
         self.fill = fill.upper()
 
 
+class FormerName(object):
+    """A name floor types used to have, and the standard names it can now be."""
+
+    def __init__(self, name, now):
+        self.name = name
+        self.now = list(now)
+
+
 class Standard(object):
     """The standard: version, shared parameters, materials and floor types."""
 
-    def __init__(self, folder, version, parameters, materials, floor_types, known_categories, outline):
+    def __init__(self, folder, version, parameters, materials, floor_types, known_categories, outline,
+                 former_names=None):
         self.folder = folder
         self.version = version
         self.parameters = parameters
@@ -54,6 +63,7 @@ class Standard(object):
         self.floor_types = floor_types
         self.known_categories = set(known_categories)
         self.outline = outline
+        self.former_names = list(former_names or [])
 
     @property
     def shared_parameter_file(self):
@@ -150,7 +160,8 @@ def load_standard(folder=None):
         materials,
         floor_types,
         [category.lower() for category in floor_data.get("known_categories", [])],
-        floor_data.get("outline", ""))
+        floor_data.get("outline", ""),
+        [FormerName(entry["name"], entry["now"]) for entry in floor_data.get("former_names", [])])
 
 
 def hex_to_rgb(value):

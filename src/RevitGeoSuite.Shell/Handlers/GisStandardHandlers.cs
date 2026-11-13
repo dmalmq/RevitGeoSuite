@@ -60,7 +60,10 @@ public sealed class GisFixFloorTypesHandler : IRpcHandler
                 throw new InvalidOperationException(blocker);
             }
 
-            FloorTypeFix fix = FloorTypeMatcher.Accept(snapshot, standard, request.FloorTypeIds);
+            FloorTypeFix fix = FloorTypeMatcher.Accept(
+                snapshot,
+                standard,
+                request.Accepted.Select(entry => (entry.FloorTypeId, entry.StandardTypeName)));
             IReadOnlyList<string> log = fix.Proposals.Count == 0
                 ? Array.Empty<string>()
                 : GisStandardWriter.ApplyProposals(doc, fix.Proposals, fix.EchoFloorIds);
@@ -139,7 +142,13 @@ internal static class GisStandardWork
                     GisCategory = proposal.GisCategory,
                     GisRestriction = proposal.GisRestriction,
                     Material = proposal.Material,
-                    Reason = proposal.Reason == "name" ? "name" : "words",
+                    NewName = proposal.NewName ?? string.Empty,
+                    Reason = proposal.Reason switch
+                    {
+                        "name" => "name",
+                        "old name" => "oldName",
+                        _ => "words",
+                    },
                 })
                 .ToArray(),
             Unmatched = FloorTypeMatcher.Unmatched(snapshot, standard)

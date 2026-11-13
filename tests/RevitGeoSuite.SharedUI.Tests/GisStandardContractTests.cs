@@ -13,17 +13,19 @@ public sealed class GisStandardContractTests
 {
     private sealed class FixHandler : IRpcHandler
     {
-        public long[] Received { get; private set; } = Array.Empty<long>();
+        public (long FloorTypeId, string StandardTypeName)[] Received { get; private set; } = Array.Empty<(long, string)>();
 
         public string Method => "gisStandard.fixFloorTypes";
 
         public Task<object?> HandleAsync(object? payload)
         {
             // The same parse as GisFixFloorTypesHandler.
-            Received = ((payload as JObject)?.ToObject<GisFixFloorTypesRequest>() ?? new GisFixFloorTypesRequest()).FloorTypeIds;
+            Received = ((payload as JObject)?.ToObject<GisFixFloorTypesRequest>() ?? new GisFixFloorTypesRequest()).Accepted
+                .Select(entry => (entry.FloorTypeId, entry.StandardTypeName))
+                .ToArray();
             return Task.FromResult<object?>(new GisStandardApplyResponse
             {
-                Log = new[] { "j 店舗_床 (old): gis_category retail" },
+                Log = new[] { "j ラチ外店舗_床 (old): gis_category retail" },
                 Skipped = new[] { "Floor type 999 is no longer in the model." },
             });
         }
@@ -47,16 +49,21 @@ public sealed class GisStandardContractTests
         }.ToString()));
 
     [Fact]
-    public async Task FixFloorTypesReadsTheAcceptedIdsAndRepliesWithLogAndSkipped()
+    public async Task FixFloorTypesReadsTheAcceptedPairsAndRepliesWithLogAndSkipped()
     {
         WebRpcBridge bridge = new();
         FixHandler handler = new();
         bridge.RegisterHandler(handler);
 
-        JObject response = await Dispatch(bridge, "gisStandard.fixFloorTypes", new JObject { ["floorTypeIds"] = new JArray(201, 202) });
+        JObject response = await Dispatch(bridge, "gisStandard.fixFloorTypes", new JObject
+        {
+            ["accepted"] = new JArray(
+                new JObject { ["floorTypeId"] = 201, ["standardTypeName"] = "j ラチ外店舗_床" },
+                new JObject { ["floorTypeId"] = 202, ["standardTypeName"] = "j ラチ内店舗_床" }),
+        });
 
-        Assert.Equal(new long[] { 201, 202 }, handler.Received);
-        Assert.Equal(new[] { "j 店舗_床 (old): gis_category retail" }, response["payload"]!["log"]!.Values<string>());
+        Assert.Equal(new[] { (201L, "j ラチ外店舗_床"), (202L, "j ラチ内店舗_床") }, handler.Received);
+        Assert.Equal(new[] { "j ラチ外店舗_床 (old): gis_category retail" }, response["payload"]!["log"]!.Values<string>());
         Assert.Equal(new[] { "Floor type 999 is no longer in the model." }, response["payload"]!["skipped"]!.Values<string>());
     }
 

@@ -19,7 +19,7 @@ public sealed class UnitFloorLinkFileTests
 
             UnitFloorLinkFile file = new() { CreatedUtc = "2026-11-10T05:00:00Z" };
             file.Source.Table = "SHINJUKU_LUMINE_EST_B1_unit";
-            file.Floors.Add(new UnitFloorLinkFloor { Key = "12", FloorUniqueId = "abc-123", TypeName = "j 店舗_床", HostUniqueId = "host-1" });
+            file.Floors.Add(new UnitFloorLinkFloor { Key = "12", FloorUniqueId = "abc-123", TypeName = "j ラチ外店舗_床", HostUniqueId = "host-1" });
             file.Skipped.Add(new UnitFloorLinkSkipped { Key = "13", Reason = "NotPolygon" });
             file.Save(path);
             file.Floors[0].FloorUniqueId = "abc-456";
@@ -28,7 +28,7 @@ public sealed class UnitFloorLinkFileTests
             UnitFloorLinkFile loaded = UnitFloorLinkFile.Load(path);
             Assert.Equal(UnitFloorLinkFile.Format, loaded.FileFormat);
             Assert.Equal("abc-456", Assert.Single(loaded.Floors).FloorUniqueId);
-            Assert.Equal("j 店舗_床", loaded.Floors[0].TypeName);
+            Assert.Equal("j ラチ外店舗_床", loaded.Floors[0].TypeName);
             Assert.Equal("13", Assert.Single(loaded.Skipped).Key);
             Assert.False(File.Exists(path + ".tmp"));
         }
