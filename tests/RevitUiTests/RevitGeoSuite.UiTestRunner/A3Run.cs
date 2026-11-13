@@ -215,7 +215,15 @@ internal sealed partial class GisStandardRun
             step.Check(values.Length == 1, $"{label}: every row has the same levels_served ({string.Join(" | ", values.Select(value => $"'{value}'"))}).");
             if (stops.Length >= 2)
             {
-                step.Check(values.All(value => value.Replace(" ", string.Empty, StringComparison.Ordinal) == expected), $"{label}: levels_served is its exported levels lowest first, '{expected}' ({string.Join(", ", stops.Select(level => level.Name))}).");
+                if (!step.Check(values.All(value => value.Replace(" ", string.Empty, StringComparison.Ordinal) == expected), $"{label}: levels_served is its exported levels lowest first, '{expected}' ({string.Join(", ", stops.Select(level => level.Name))})."))
+                {
+                    // The export's Z rule compares each object's box with its levels' ProjectElevation; show both sides.
+                    foreach (ElevatorRow elevator in shaft.OrderBy(item => item.ZMinM))
+                    {
+                        LevelRow? host = elevator.LevelElementId is long id ? levels.GetValueOrDefault(id) : null;
+                        step.Note($"{label}: elevator {elevator.Id} Z {Metres(elevator.ZMinM)} to {Metres(elevator.ZMaxM)}; host level {elevator.Level} ({host?.LevelId ?? "no level_id"}) at ProjectElevation {Metres(host?.ElevationFt * 0.3048)}.");
+                    }
+                }
                 cases["shaft"] = cases.GetValueOrDefault("shaft") + shaftRows.Count;
             }
             else
