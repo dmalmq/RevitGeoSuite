@@ -163,6 +163,18 @@ public sealed class GisShapeEditsTests
     }
 
     [Fact]
+    public void AnOutlineThatCrossesItselfIsListedRatherThanSketched()
+    {
+        // The east corner moved past the notch beside it: the ring crosses itself.
+        Polygon2D bowtie = new(new[] { new Point2D(0, 0), new Point2D(10, 0), new Point2D(0, 10), new Point2D(10, 10) }, Array.Empty<IReadOnlyList<Point2D>>());
+        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
+            new[] { Shape(GisDrift.Reshaped, "a", bowtie) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }) });
+        Assert.Empty(edits);
+        Assert.EndsWith(GisShapeEdits.CrossesItself, Assert.Single(problems));
+    }
+
+    [Fact]
     public void TwoEditsForOneFloorAreBothListed()
     {
         (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
