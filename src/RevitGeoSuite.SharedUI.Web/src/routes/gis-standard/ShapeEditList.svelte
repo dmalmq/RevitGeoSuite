@@ -1,14 +1,16 @@
 <!--
   The shape edits of a drift file: floors whose outline someone changed in the GDB. Each one is drawn
   first (the floor now in grey, the GDB's outline in orange) and can be shown over the floor's plan
-  in Revit before anything changes. Applying redraws each ticked floor's sketch, adds a split's new floors and deletes a merge's other floors, each edit as its own undo step.
+  in Revit before anything changes. Applying redraws each ticked floor's sketch, adds a split's new floors,
+  deletes a merge's other floors and draws a floor for a hand-drawn unit, each edit as its own undo step.
+  A hand-drawn unit's floor type starts as the one its GDB category names, or is picked here.
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import type { GisShapeEditItem } from '$lib/bridge/contracts.generated'
   import { request } from '$lib/bridge/rpc'
   import { t } from '$lib/i18n'
-  import { Button, Checkbox } from '$lib/kit'
+  import { Button, Checkbox, Select } from '$lib/kit'
   import { format } from '$lib/shell'
   import { outlineDrawing } from '$lib/gisStandard/driftReview'
 
@@ -16,12 +18,17 @@
     shapes,
     path,
     unticked = $bindable(),
+    types = $bindable(),
+    floorTypes = [],
     disabled = false,
     onerror
   }: {
     shapes: GisShapeEditItem[]
     path: string
     unticked: Set<string>
+    /** The floor type of each hand-drawn unit, by its key; empty until picked. */
+    types: Record<string, string>
+    floorTypes?: string[]
     disabled?: boolean
     onerror: (message: string) => void
   } = $props()
@@ -81,7 +88,9 @@
                 ? format($t('GisStandard.Shapes.Split', 'Split floor {0} into {1} floors'), shape.elementId, shape.floors)
                 : shape.kind === 'merge'
                   ? format($t('GisStandard.Shapes.Merge', 'Merge {1} floors into floor {0}'), shape.elementId, shape.floors)
-                  : format($t('GisStandard.Shapes.Reshape', 'Reshape floor {0}'), shape.elementId)}
+                  : shape.kind === 'create'
+                    ? $t('GisStandard.Shapes.Create', 'New floor drawn in the GDB')
+                    : format($t('GisStandard.Shapes.Reshape', 'Reshape floor {0}'), shape.elementId)}
             </span>
           </span>
         </label>
@@ -89,6 +98,19 @@
           <path d={drawing.before} fill="none" fill-rule="evenodd" class="stroke-muted-foreground" stroke-width="1.5" />
           <path d={drawing.after} fill="none" fill-rule="evenodd" class="stroke-warning" stroke-width="2" stroke-dasharray="5 3" />
         </svg>
+        {#if shape.kind === 'create'}
+          <Select
+            aria-label={$t('GisStandard.Shapes.Type', 'Floor type')}
+            value={types[shape.uniqueId] ?? ''}
+            invalid={!types[shape.uniqueId]}
+            {disabled}
+            onchange={(event) => (types = { ...types, [shape.uniqueId]: event.currentTarget.value })}
+            options={[
+              { value: '', label: $t('GisStandard.Shapes.PickType', 'Pick a floor type…'), disabled: true },
+              ...floorTypes.map((name) => ({ value: name, label: name }))
+            ]}
+          />
+        {/if}
         <Button size="sm" icon={shown === shape.uniqueId ? 'eye-off' : 'eye'} busy={showing === shape.uniqueId} disabled={disabled || showing !== null} onclick={() => show(shape)}>
           {shown === shape.uniqueId ? $t('GisStandard.Shapes.Hide', 'Hide in Revit') : $t('GisStandard.Shapes.Show', 'Show in Revit')}
         </Button>

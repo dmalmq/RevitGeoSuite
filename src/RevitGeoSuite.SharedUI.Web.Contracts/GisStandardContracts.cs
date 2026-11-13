@@ -231,6 +231,9 @@ public sealed class GisDriftInspectResponse
     /// <summary>Shape edits the page can apply, each previewed before anything changes.</summary>
     public GisShapeEditItem[] Shapes { get; set; } = Array.Empty<GisShapeEditItem>();
 
+    /// <summary>The standard floor types this model has, for the page to offer on a hand-drawn unit; empty when no shape edit creates a floor.</summary>
+    public string[] ShapeFloorTypes { get; set; } = Array.Empty<string>();
+
     /// <summary>Rows and shape edits that cannot be applied, one line each.</summary>
     public string[] Problems { get; set; } = Array.Empty<string>();
 }
@@ -242,7 +245,7 @@ public sealed class GisShapeEditItem
     /// <summary>The floor's UniqueId: what the page sends back to show or apply the edit.</summary>
     public string UniqueId { get; set; } = string.Empty;
 
-    /// <summary>reshape, split or merge</summary>
+    /// <summary>reshape, split, merge or create</summary>
     public string Kind { get; set; } = string.Empty;
 
     /// <summary>A split's floors once applied (the kept floor and each new one); a merge's floors before it (the kept floor and each one deleted); 1 for a reshape.</summary>
@@ -252,6 +255,9 @@ public sealed class GisShapeEditItem
 
     /// <summary>The unit's name, or its unique id.</summary>
     public string Feature { get; set; } = string.Empty;
+
+    /// <summary>For a create: the standard floor type its GDB category and restriction name; empty when the page has to ask.</summary>
+    public string TypeName { get; set; } = string.Empty;
 
     public string Label { get; set; } = string.Empty;
 
@@ -286,6 +292,18 @@ public sealed class GisShapeApplyRequest
     public string Path { get; set; } = string.Empty;
 
     public string[] UniqueIds { get; set; } = Array.Empty<string>();
+
+    /// <summary>The floor type the user picked for each hand-drawn unit, by its key.</summary>
+    public GisShapeTypeChoice[] Types { get; set; } = Array.Empty<GisShapeTypeChoice>();
+}
+
+/// <summary>A floor type picked on the page for one hand-drawn unit.</summary>
+[TsExport]
+public sealed class GisShapeTypeChoice
+{
+    public string UniqueId { get; set; } = string.Empty;
+
+    public string TypeName { get; set; } = string.Empty;
 }
 
 /// <summary>One GDB value to accept into one Revit parameter.</summary>

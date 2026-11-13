@@ -370,6 +370,61 @@ public sealed class GisShapeEditsTests
         Assert.Equal(("カフェ", "カ", "retail", "rachi_gai"), (shape.GdbName, shape.GdbAltName, shape.GdbCategory, shape.GdbRestriction));
     }
 
+    private static GisDriftShape Drawn(string levelId, Polygon2D outline, string category = "", string restriction = "") =>
+        new(GisDrift.HandDrawn, string.Empty, string.Empty, "unit", "売店", levelId, string.Empty, false, Gdb(outline), gdbCategory: category, gdbRestriction: restriction);
+
+    private static ShapePlan PlanDrawn(GisDriftShape shape, params ShapeFloor[] floors) =>
+        GisShapeEdits.Plan(
+            new GisDriftFile("m", "v1", Array.Empty<GisDriftRow>(), 6677, new[] { shape }),
+            floors.ToDictionary(floor => floor.UniqueId),
+            ModelToProject,
+            6677,
+            GisToolStandard.LoadEmbedded(),
+            new Dictionary<string, long> { ["lvl-1f"] = 7 });
+
+    [Fact]
+    public void AHandDrawnUnitBecomesAFloorOfItsStandardTypeOnItsLevel()
+    {
+        ShapePlan plan = PlanDrawn(Drawn("lvl-1f", Rect(0, 0, 4, 4), "retail", "rachi_gai"));
+
+        Assert.Empty(plan.Problems);
+        ShapeEdit edit = Assert.Single(plan.Edits);
+        Assert.Equal(ShapeEditKind.Create, edit.Kind);
+        Assert.Equal("handDrawn:0", edit.Floor.UniqueId);
+        Assert.Equal(7, edit.Floor.LevelId);
+        NewFloor floor = Assert.Single(edit.NewFloors);
+        Assert.Equal("j ラチ外店舗_床", floor.TypeName);
+        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(0, 0, 4, 4) }, floor.Outline));
+        Assert.Equal("Create a floor for the hand-drawn unit 売店 from the GDB", edit.Label());
+        Assert.Equal(1, plan.Waiting);
+    }
+
+    [Fact]
+    public void AHandDrawnUnitWithoutACategoryLeavesTheTypeToThePage()
+    {
+        ShapePlan plan = PlanDrawn(Drawn("lvl-1f", Rect(0, 0, 4, 4)));
+
+        Assert.Null(Assert.Single(Assert.Single(plan.Edits).NewFloors).TypeName);
+    }
+
+    [Fact]
+    public void AHandDrawnUnitTheModelAlreadyHasOffersNothing()
+    {
+        ShapePlan plan = PlanDrawn(Drawn("lvl-1f", Rect(0, 0, 4, 4)), new ShapeFloor("x", 120, new[] { Rect(0, 0, 4, 4) }, levelId: 7));
+
+        Assert.Empty(plan.Edits);
+        Assert.Equal(0, plan.Waiting);
+    }
+
+    [Fact]
+    public void AHandDrawnUnitOnALevelNoRevitLevelPairsIsListed()
+    {
+        ShapePlan plan = PlanDrawn(Drawn("lvl-9f", Rect(0, 0, 4, 4)));
+
+        Assert.Empty(plan.Edits);
+        Assert.Equal("unit 売店 handDrawn: no level of this model has level_id lvl-9f, so there is no level to draw it on. Draw it in Revit by hand.", Assert.Single(plan.Problems));
+    }
+
     [Fact]
     public void NewFloorsTakeTheFloorsGisValuesButNotItsIds()
     {

@@ -56,7 +56,45 @@ public static class ShapeEditWork
             }
         }
 
-        return GisShapeEdits.Plan(file, floors, new SharedCoordinateProjector(document.ActiveProjectLocation).Transform, ModelEpsg(document), GisToolStandard.LoadEmbedded());
+        // A hand-drawn unit goes on the level whose level_id it names; the floors there tell whether it was drawn before.
+        Dictionary<string, long>? levels = null;
+        if (file.Shapes.Any(shape => shape.Edit == GisDrift.HandDrawn))
+        {
+            levels = PairedLevels(document);
+            HashSet<long> wantedLevels = new(file.Shapes
+                .Where(shape => shape.Edit == GisDrift.HandDrawn && levels.ContainsKey(shape.LevelId))
+                .Select(shape => levels[shape.LevelId]));
+            foreach (Floor onLevel in new FilteredElementCollector(document).OfClass(typeof(Floor)).Cast<Floor>().Where(floor => wantedLevels.Contains(floor.LevelId.Value)))
+            {
+                if (!floors.ContainsKey(onLevel.UniqueId))
+                {
+                    floors[onLevel.UniqueId] = new ShapeFloor(onLevel.UniqueId, onLevel.Id.Value, FloorTopFaces.Read(onLevel).Outline, levelId: onLevel.LevelId.Value);
+                }
+            }
+        }
+
+        return GisShapeEdits.Plan(file, floors, new SharedCoordinateProjector(document.ActiveProjectLocation).Transform, ModelEpsg(document), GisToolStandard.LoadEmbedded(), levels);
+    }
+
+    /// <summary>Revit levels by their level_id value; a level_id two levels share names neither.</summary>
+    private static Dictionary<string, long> PairedLevels(Document document)
+    {
+        List<(string Key, long Id)> pairs = new FilteredElementCollector(document)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .Select(level => (Key: level.LookupParameter("level_id")?.AsString() ?? string.Empty, Id: level.Id.Value))
+            .Where(pair => pair.Key.Length > 0)
+            .ToList();
+        return pairs.GroupBy(pair => pair.Key, StringComparer.Ordinal)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
+    }
+
+    /// <summary>The standard floor types this model has, by name, in the standard's order.</summary>
+    public static IEnumerable<string> StandardFloorTypesIn(Document document)
+    {
+        HashSet<string> present = new(new FilteredElementCollector(document).OfClass(typeof(FloorType)).Select(type => type.Name), StringComparer.Ordinal);
+        return GisToolStandard.LoadEmbedded().FloorTypes.Select(type => type.Name).Where(present.Contains);
     }
 
     /// <summary>
@@ -65,9 +103,11 @@ public static class ShapeEditWork
     /// kept floor to its piece and adds a floor for each other piece, with the kept floor's type,
     /// level, offset and GIS values; the next Kanizu apply pairs each piece with its new floor. A
     /// merge deletes the floors the GDB merged into the kept one, then redraws it to the merged outline.
+    /// A create draws a new floor for a hand-drawn unit on its level.
     /// </summary>
+    /// <param name="typeName">For a create, the floor type the user picked; null takes the one the GDB category names.</param>
     /// <returns>What Revit warned about, the elements gone with the old outline or a deleted floor, and the new floors, one line each.</returns>
-    public static IReadOnlyList<string> Apply(Document document, ShapeEdit edit)
+    public static IReadOnlyList<string> Apply(Document document, ShapeEdit edit, string? typeName = null)
     {
         if (edit.Kind == ShapeEditKind.Reshape)
         {
@@ -79,6 +119,12 @@ public static class ShapeEditWork
         try
         {
             List<string> notes = new();
+            if (edit.Kind == ShapeEditKind.Create)
+            {
+                // In a group too, so a floor Revit did not draw as the GDB did is rolled back.
+                notes.AddRange(Create(document, edit, typeName ?? edit.NewFloors[0].TypeName));
+            }
+
             if (edit.Kind == ShapeEditKind.Merge)
             {
                 // The merged floors go first, so the kept floor's new outline never overlaps them.
@@ -90,10 +136,11 @@ public static class ShapeEditWork
                 notes.AddRange(Redraw(document, edit));
             }
 
-            if (edit.NewFloors.Count > 0)
+            if (edit.Kind == ShapeEditKind.Split && edit.NewFloors.Count > 0)
             {
                 notes.AddRange(AddFloors(document, edit));
             }
+
             group.Assimilate();
             return notes;
         }
@@ -104,6 +151,61 @@ public static class ShapeEditWork
                 group.RollBack();
             }
         }
+    }
+
+    /// <summary>A floor for a hand-drawn unit, on its level at no offset, of the picked or named standard type, with the unit's GDB values; read back to check Revit kept the outline.</summary>
+    private static IReadOnlyList<string> Create(Document document, ShapeEdit edit, string? typeName)
+    {
+        NewFloor drawn = edit.NewFloors[0];
+        if (string.IsNullOrEmpty(typeName))
+        {
+            throw new InvalidOperationException("Pick a floor type for it: the drift file names no GDB category for this unit.");
+        }
+
+        if (FloorTypeNamed(document, typeName!) is not FloorType type)
+        {
+            throw new InvalidOperationException($"No floor type {typeName} in this model. Run Set up model, then apply again.");
+        }
+
+        ElementId levelId = new(edit.Floor.LevelId);
+        double z = (document.GetElement(levelId) as Level)?.Elevation ?? 0;
+        FailOnError failures = new();
+        Floor? floor = null;
+        using (Transaction transaction = new(document, edit.Label()))
+        {
+            transaction.SetFailureHandlingOptions(transaction.GetFailureHandlingOptions().SetFailuresPreprocessor(failures));
+            transaction.Start();
+            foreach (Polygon2D polygon in drawn.Outline)
+            {
+                List<CurveLoop> loops = new[] { polygon.ExteriorRing }
+                    .Concat(polygon.InteriorRings)
+                    .Select(ring => CurveLoop.Create(Lines(ring, z).Cast<Curve>().ToList()))
+                    .ToList();
+                floor = Floor.Create(document, loops, type.Id, levelId);
+                foreach (KeyValuePair<string, string> value in drawn.Values)
+                {
+                    if (floor.LookupParameter(value.Key) is { IsReadOnly: false, StorageType: StorageType.String } parameter)
+                    {
+                        parameter.Set(value.Value);
+                    }
+                }
+            }
+
+            if (transaction.Commit() != TransactionStatus.Committed)
+            {
+                string why = failures.Errors.Count > 0 ? ": " + string.Join(" ", failures.Errors.Distinct()) : string.Empty;
+                throw new InvalidOperationException($"Revit refused the floor for the hand-drawn unit; nothing changed{why}");
+            }
+        }
+
+        if (floor == null || !floor.IsValidObject || !GisShapeEdits.SameOutline(FloorTopFaces.Read(floor).Outline, drawn.Outline))
+        {
+            throw new InvalidOperationException("Revit did not keep the GDB outline of the hand-drawn unit's floor; nothing changed.");
+        }
+
+        return failures.Warnings.Distinct().Select(text => "Revit warned: " + text)
+            .Append($"New floor {floor.Id.Value} ({type.Name}). The next Kanizu apply pairs the hand-drawn unit with it.")
+            .ToList();
     }
 
     /// <summary>Deletes the floors a merge took in, in one transaction, and names each with what Revit deleted with it.</summary>
