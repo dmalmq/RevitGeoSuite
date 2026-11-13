@@ -2,7 +2,10 @@
 
 These tests drive RevitGeoSuite inside a running Revit on the build PC, the way a person does: they click the ribbon and the page's buttons, answer the file dialogs, press Undo, and check what Revit and the page report. A run writes a report with pass or fail for each step, screenshots, and the Revit journal check. A person only looks at the screenshots.
 
-The first script is the GIS standard page test (run 2 of the M2/M3 Revit test). Steps 1 to 16 are automated. Step 15 uses a generated drift file until Kanizu writes a real one for the model.
+There are two scripts:
+
+- `gis-standard` (the default) is the GIS standard page test, run 2 of the M2/M3 Revit test. Steps 1 to 16 are automated. Step 15 uses a generated drift file until Kanizu writes a real one for the model.
+- `floor-types` checks floor type standard 2 (RevitGeoSuite #52). Set up model leaves old-named floor types alone. The audit names each old name. Fix floor types renames the old names, and a shop type takes one of the two shop types. The export carries the new categories and restrictions. It needs a build with #52 installed.
 
 ## How it works
 
@@ -50,13 +53,14 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
+| `--script <name>` | `gis-standard` (the default) or `floor-types`. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
 | `--steps 1,2,10` | Runs only these steps. The steps build on each other, so a subset is for debugging. |
-| `--export-view <name>` | The plan view for step 16. Without it, step 16 does not run. |
+| `--export-view <name>` | The plan view for step 16. Without it, step 16 does not run. In `floor-types`, it limits step F6 to this view. Without it, F6 exports all plan views. |
 | `--excel` | Step 10 also saves the CSV again through the real Excel, then reads it back. Needs Excel. |
 | `--real-drift` | Step 15 uses the model's own Kanizu drift file instead of a generated one. |
-| `--rename-type "a=>b"` | Step 6 renames floor type a to b first, so the name rules match it. Repeat it for more renames. The defaults are the two renames from run 2. |
+| `--rename-type "a=>b"` | Before step 6, renames floor type a to b, so the name rules match it. This happens only when fewer than two proposals start ticked, as on floor type standard 1. Repeat the option for more renames. The defaults are the two renames from run 2. |
 | `--revit-year <year>` | The Revit version whose journals are checked. The default is 2024. |
 
 ## What each step checks
@@ -68,7 +72,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 | 3 | The banner appears, a `commit` event named `Kanizu GIS: Set up model` arrives, the version reads `1 / 1`, and the card says "Nothing to set up". |
 | 4 | Undo gives an `undo` event with that name. After Check again, the preview is the same as in step 2. |
 | 5 | A second apply, then Check again, reports nothing to do. |
-| 6 | The fixture renames two floor types. One row is unticked, then "Apply to N type(s)": the banner, the commit event, the fixed types leave the table, the unticked one stays, and the floor type findings drop by N. |
+| 6 | If needed, the fixture renames two floor types first. One pre-ticked row is unticked, then "Apply to N type(s)": the banner, the commit event, the fixed types leave the table, the unticked one stays, and the floor type findings drop by N. |
 | 7 | Undo gives the `undo` event. The proposals are back. |
 | 8 | An audit row's Select button and an unmatched type's Select button each select exactly those elements in Revit. The active view, the zoom, and a Revit screenshot are recorded. |
 | 10 | Write CSV saves through the Save dialog. The file has a UTF-8 byte order mark, and the row count matches the page. With `--excel`, an Excel round trip reads back with no changes. |
@@ -81,11 +85,24 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 | 9 | Runs last. With a new family active, the ribbon button shows "Open a project model …". |
 | J | The journals written during the run contain every committed transaction name, and no `HANDLER_ERROR`, unhandled exception, or `Revit did not commit` line. |
 
+## The floor-types script
+
+| Step | Check |
+|---|---|
+| F1 | Set up model plans and creates none of j 喫煙所_床, j ベビー休憩室_床, j 屋外_床, j ラチ外店舗_床, or j ラチ内店舗_床 while the old-named type is in use. The model goes to standard version 2. j その他_床 has gis_restriction nonpublic. |
+| F2 | There is one "uses an old name" warning per old-named type in use, naming the new name. The j 店舗_床 warning names both shop types and says that all its floors follow the choice. |
+| F3 | smoking room, Baby room, and Roof are proposed as old names that rename to the new names with the right categories, and start ticked. The two j 店舗_床 rows start unticked, and ticking one unticks the other. Ticking j ラチ外店舗_床 and applying gives the banner, the commit event, and a "Renamed X to Y" line for each type. |
+| F4 | Each renamed type keeps its element id and its floor count in Revit. |
+| F5 | After Check again, no old-name warning is left and nothing more is proposed for those types. Set up model now offers to create j ラチ内店舗_床. |
+| F6 | The export's unit tables have shop units with restriction rachi_gai and roof units with category unenclosedarea. |
+| F7 | Not run: the pyRevit Fix floor types dialog is still a manual check. |
+
 ## What still needs a person
 
 - Looking at the screenshots. The text checks are automated, but layout and look are not.
 - The one-time setup above, the Revit sign-in, and the licence prompts.
 - Anything on the original or central model.
+- The pyRevit tab's dialogs (step F7).
 
 ## Adding a test
 

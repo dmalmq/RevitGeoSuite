@@ -18,6 +18,7 @@ internal sealed record InspectReply(
 
 internal sealed record FindingItem(string Severity, string Topic, string Message, long[] ElementIds);
 
-internal sealed record ProposalItem(long FloorTypeId, string FloorTypeName, int FloorCount);
+// NewName and Reason "oldName" come with floor type standard version 2 (RevitGeoSuite #52); older builds leave them empty.
+internal sealed record ProposalItem(long FloorTypeId, string FloorTypeName, int FloorCount, string? StandardTypeName = null, string? GisCategory = null, string? NewName = null, string? Reason = null);
 
 internal sealed record UnmatchedItem(long FloorTypeId, string Name, long[] FloorIds);

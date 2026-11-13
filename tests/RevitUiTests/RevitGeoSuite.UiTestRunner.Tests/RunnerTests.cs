@@ -80,6 +80,14 @@ public class RunOptionsTests
     }
 
     [Fact]
+    public void Picks_the_script()
+    {
+        Assert.Equal(RunOptions.GisStandardScript, RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt" }).Script);
+        Assert.Equal(RunOptions.FloorTypesScript, RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "floor-types" }).Script);
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "everything" }));
+    }
+
+    [Fact]
     public void Needs_a_model() => Assert.Throws<ArgumentException>(() => RunOptions.Parse(new[] { "--excel" }));
 
     [Fact]

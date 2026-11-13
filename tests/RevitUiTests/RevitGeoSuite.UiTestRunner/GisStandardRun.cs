@@ -9,7 +9,7 @@ namespace RevitGeoSuite.UiTestRunner;
 /// test model. Every step records pass or fail with what it saw; a failed check does not stop the
 /// run unless later steps cannot make sense without it.
 /// </summary>
-internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Report report)
+internal sealed partial class GisStandardRun(RunOptions options, TestHostClient host, Report report)
 {
     private const string Tab = "Revit Geo Suite";
     private const string Panel = "Geo Suite";
@@ -61,6 +61,20 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
             }
 
             string language = await Shell.UseEnglishAsync();
+            if (options.Script == RunOptions.FloorTypesScript)
+            {
+                try
+                {
+                    await FloorTypeSteps();
+                }
+                finally
+                {
+                    await Shell.RestoreLanguageAsync(language);
+                }
+
+                return;
+            }
+
             try
             {
                 await Step("2", "Set up model card shows what it would do", SetupPreview);
@@ -253,12 +267,17 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
 
     private async Task FixFloorTypes(StepResult step)
     {
-        // After Set up model LUMINE has no floor type the name rules match, so give two types names
-        // they do match, the same renames Daniel made by hand in run 2.
-        JsonObject fixture = host.Call("fixture", new { renames = options.Renames.Select(pair => new { from = pair.From, to = pair.To }).ToArray() });
-        step.Note($"Fixture: {fixture["log"]?.ToJsonString()}");
-        await CheckAgain();
         InspectReply before = await Inspect();
+        if (SingleCandidates(before).Count < 2 && options.Renames.Count > 0)
+        {
+            // Before floor type standard 2, LUMINE has no floor type the name rules match after Set up
+            // model, so give two types names they do match: the renames Daniel made by hand in run 2.
+            JsonObject fixture = host.Call("fixture", new { renames = options.Renames.Select(pair => new { from = pair.From, to = pair.To }).ToArray() });
+            step.Note($"Fixture: {fixture["log"]?.ToJsonString()}");
+            await CheckAgain();
+            before = await Inspect();
+        }
+
         fixProposals = before.Proposals;
         if (!string.IsNullOrEmpty(before.FixBlocker))
         {
@@ -266,15 +285,17 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
             return;
         }
 
-        if (before.Proposals.Length < 2)
+        // A floor type with one candidate starts ticked; one with several starts with none ticked.
+        List<ProposalItem> ticked = SingleCandidates(before);
+        if (ticked.Count < 2)
         {
-            step.NotRun($"Needs at least two proposals to untick one; the model has {before.Proposals.Length}.");
+            step.NotRun($"Needs at least two pre-ticked proposals to untick one; the model has {ticked.Count}.");
             return;
         }
 
-        ProposalItem kept = before.Proposals[0];
-        int fixedCount = before.Proposals.Length - 1;
-        await Shell.Page.GetByRole(AriaRole.Checkbox, new() { Name = kept.FloorTypeName, Exact = true }).First.UncheckAsync();
+        ProposalItem kept = ticked[0];
+        int fixedCount = ticked.Count - 1;
+        await ProposalCheckbox(kept.FloorTypeName, kept.StandardTypeName).UncheckAsync();
         int seq = host.LastEvent();
         await Shell.Button($"Apply to {fixedCount} type(s)").ClickAsync();
         step.Check(await Shell.ShowsAsync(Shell.Text($"{fixedCount} floor type(s) fixed"), 120000), $"Banner '{fixedCount} floor type(s) fixed'.");
@@ -282,11 +303,23 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
         InspectReply after = await Inspect();
         var left = after.Proposals.Select(proposal => proposal.FloorTypeId).ToHashSet();
         step.Check(left.Contains(kept.FloorTypeId), $"The unticked type '{kept.FloorTypeName}' stays in the table.");
-        step.Check(!before.Proposals.Skip(1).Any(proposal => left.Contains(proposal.FloorTypeId)), "The fixed types leave the table.");
+        step.Check(!ticked.Skip(1).Any(proposal => left.Contains(proposal.FloorTypeId)), "The fixed types leave the table.");
         int warningsBefore = before.FloorTypeFindings();
         int warningsAfter = after.FloorTypeFindings();
         step.Check(warningsAfter == warningsBefore - fixedCount, $"Floor type findings drop by {fixedCount} (were {warningsBefore}, now {warningsAfter}).");
         await Shot(step, "06-floor-types-fixed");
+    }
+
+    private static List<ProposalItem> SingleCandidates(InspectReply model) =>
+        model.Proposals.GroupBy(proposal => proposal.FloorTypeId).Where(group => group.Count() == 1).Select(group => group.First()).ToList();
+
+    // Standard 2 labels a row's checkbox "<type> to <standard type>"; standard 1 labels it "<type>".
+    private ILocator ProposalCheckbox(string floorTypeName, string? standardTypeName)
+    {
+        string pattern = standardTypeName is { Length: > 0 }
+            ? $"^{Regex.Escape(floorTypeName)}( to {Regex.Escape(standardTypeName)})?$"
+            : $"^{Regex.Escape(floorTypeName)}$";
+        return Shell.Page.GetByRole(AriaRole.Checkbox, new() { NameRegex = new Regex(pattern) }).First;
     }
 
     private async Task UndoFix(StepResult step)
@@ -606,17 +639,9 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
             }
         }
 
-        await Shell.GoToAsync("/export/geopackage");
-        await Shell.Page.GetByPlaceholder("Filter views...").FillAsync(options.ExportView);
-        await Shell.Button("Clear all").ClickAsync();
-        await Shell.Page.GetByRole(AriaRole.Checkbox, new() { NameRegex = new Regex("^" + Regex.Escape(options.ExportView)) }).First.CheckAsync();
-        string output = Path.Combine(options.OutputFolder, "export");
-        Directory.CreateDirectory(output);
-        await Shell.Button("Browse...").ClickAsync();
-        host.Call("fileDialog", new { path = output, timeoutMs = 30000 });
-        await Shell.Button("Preview").ClickAsync();
-        ILocator export = Shell.Button("Export 1 view");
-        if (!step.Check(await Shell.ShowsAsync(export, 600000), "The preview loads and offers 'Export 1 view'."))
+        string output = await OpenExport(step, options.ExportView, "export");
+        ILocator export = Shell.Button(new Regex(@"^Export (1 view|\d+ views)$"));
+        if (!step.Check(await Shell.ShowsAsync(export, 600000), "The preview loads and offers to export."))
         {
             return;
         }
@@ -634,11 +659,67 @@ internal sealed class GisStandardRun(RunOptions options, TestHostClient host, Re
         step.Check(await Shell.ShowsAsync(accept) && !await accept.IsCheckedAsync(), "After closing and exporting again, the box is unticked again.");
         await accept.CheckAsync();
         await anyway.ClickAsync();
-        ILocator accepted = Shell.Text(new Regex($@"Exported with {errors} GIS audit error\(s\) accepted"));
-        step.Check(await Shell.ShowsAsync(accepted, 900000), $"The export's warnings include 'Exported with {errors} GIS audit error(s) accepted'.");
+        if (await FinishExport(step))
+        {
+            ILocator accepted = Shell.Text(new Regex($@"Exported with {errors} GIS audit error\(s\) accepted"));
+            step.Check(await Shell.ShowsAsync(accepted, 10000), $"The export's warnings include 'Exported with {errors} GIS audit error(s) accepted'.");
+        }
+
         step.Note($"Output folder: {output}");
         await Shot(step, "16-export-done");
         await Shell.GoToAsync("/gis-standard");
+    }
+
+    /// <summary>
+    /// Opens GeoPackage Export, ticks one view (or all of them when <paramref name="viewName"/> is
+    /// empty), picks a fresh output folder in the run folder and opens the preview. Returns the folder.
+    /// </summary>
+    private async Task<string> OpenExport(StepResult step, string viewName, string folderName)
+    {
+        await Shell.GoToAsync("/export/geopackage");
+        if (viewName.Length > 0)
+        {
+            await Shell.Page.GetByPlaceholder("Filter views...").FillAsync(viewName);
+            await Shell.Button("Clear all").ClickAsync();
+            await Shell.Page.GetByRole(AriaRole.Checkbox, new() { NameRegex = new Regex("^" + Regex.Escape(viewName)) }).First.CheckAsync();
+        }
+        else
+        {
+            await Shell.Button("Select all").ClickAsync();
+        }
+
+        string output = Path.Combine(options.OutputFolder, folderName);
+        Directory.CreateDirectory(output);
+        await Shell.Button("Browse...").ClickAsync();
+        host.Call("fileDialog", new { path = output, timeoutMs = 30000 });
+        await Shell.Button("Preview").ClickAsync();
+        step.Note($"Export of {(viewName.Length > 0 ? $"view '{viewName}'" : "all plan views")} to {output}.");
+        return output;
+    }
+
+    /// <summary>Waits for the export to finish and opens its warning list. False when it failed or never finished.</summary>
+    private async Task<bool> FinishExport(StepResult step)
+    {
+        ILocator done = Shell.Button("Open folder");
+        ILocator failed = Shell.Text("Export failed");
+        if (!step.Check(await Shell.ShowsAsync(done.Or(failed), 1800000), "The export finishes within 30 minutes."))
+        {
+            return false;
+        }
+
+        if (await failed.CountAsync() > 0)
+        {
+            step.Check(false, "The export failed; the screenshot shows its message.");
+            return false;
+        }
+
+        ILocator show = Shell.Button("Show warnings");
+        if (await show.CountAsync() > 0)
+        {
+            await show.ClickAsync();
+        }
+
+        return true;
     }
 
     private void FamilyOpen(StepResult step)

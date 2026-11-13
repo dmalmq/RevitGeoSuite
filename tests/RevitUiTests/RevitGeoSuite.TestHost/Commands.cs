@@ -46,6 +46,7 @@ internal sealed class Commands
                 "undo" => Post("ID_EDIT_UNDO"),
                 "params" => Params(request),
                 "uniqueIds" => UniqueIds(request),
+                "floorTypes" => api.Run(FloorTypes, Quick),
                 "fixture" => Fixture(request),
                 "newFamily" => NewFamily(request),
                 "fileDialog" => Win32Dialogs.FillFileDialog(TestRoot.Require(root, Text(request, "path")), Milliseconds(request)),
@@ -233,6 +234,26 @@ internal sealed class Commands
 
             return new Dictionary<string, object?> { ["elements"] = elements };
         }, Quick);
+    }
+
+    // Every floor type with its name and how many floors use it, to check renames by element id.
+    private static Dictionary<string, object?> FloorTypes(UIApplication app)
+    {
+        Document document = app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");
+        Dictionary<long, int> floors = new FilteredElementCollector(document).OfClass(typeof(Floor)).WhereElementIsNotElementType()
+            .GroupBy(floor => floor.GetTypeId().Value)
+            .ToDictionary(group => group.Key, group => group.Count());
+        return new Dictionary<string, object?>
+        {
+            ["floorTypes"] = new FilteredElementCollector(document).OfClass(typeof(FloorType)).Cast<FloorType>()
+                .Select(type => new Dictionary<string, object?>
+                {
+                    ["id"] = type.Id.Value,
+                    ["name"] = type.Name,
+                    ["floors"] = floors.TryGetValue(type.Id.Value, out int count) ? count : 0,
+                })
+                .ToList(),
+        };
     }
 
     private Dictionary<string, object?> UniqueIds(Dictionary<string, object?> request)

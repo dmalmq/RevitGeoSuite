@@ -3,6 +3,12 @@ namespace RevitGeoSuite.UiTestRunner;
 /// <summary>Command line of the runner. See ..\README.md for what each option is for.</summary>
 internal sealed record RunOptions
 {
+    public const string GisStandardScript = "gis-standard";
+    public const string FloorTypesScript = "floor-types";
+
+    /// <summary>Which test script to run: the GIS standard page (run 2) or the floor type standard 2 renames.</summary>
+    public string Script { get; init; } = GisStandardScript;
+
     public string Model { get; init; } = string.Empty;
     public string OutputFolder { get; init; } = string.Empty;
     public string ExportView { get; init; } = string.Empty;
@@ -29,6 +35,8 @@ internal sealed record RunOptions
     public const string Usage = """
         RevitGeoSuite.UiTestRunner --model <pristine detached copy .rvt> [options]
 
+          --script <name>        gis-standard (default): the GIS standard page script, steps 1-16.
+                                 floor-types: floor type standard 2, old names renamed by Fix floor types.
           --model <path>         Pristine detached copy of the test model, under the test folder (C:\dev\revit-test).
                                  The runner copies it for each run and never saves either file.
           --out <folder>         Where the report, screenshots, CSVs and the model copy go.
@@ -53,6 +61,7 @@ internal sealed record RunOptions
             string Value() => index + 1 < args.Length ? args[++index] : throw new ArgumentException($"{name} needs a value.");
             options = name switch
             {
+                "--script" => options with { Script = ScriptName(Value()) },
                 "--model" => options with { Model = Path.GetFullPath(Value()) },
                 "--out" => options with { OutputFolder = Path.GetFullPath(Value()) },
                 "--steps" => options with { Steps = Value().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet() },
@@ -78,6 +87,9 @@ internal sealed record RunOptions
 
         return options;
     }
+
+    private static string ScriptName(string value) =>
+        value is GisStandardScript or FloorTypesScript ? value : throw new ArgumentException($"Unknown script '{value}'. Use {GisStandardScript} or {FloorTypesScript}.");
 
     private static RunOptions AddRename(RunOptions options, List<(string, string)> renames, string value)
     {
