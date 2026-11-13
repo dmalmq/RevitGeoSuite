@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -21,7 +22,7 @@ public class ReshapeFixtureTests
         List<FloorUnit> units = ReshapeFixture.FloorUnits(folder);
         FloorUnit shop = ReshapeFixture.Pick(units, "retail")!;
         string path = Path.Combine(folder, "reshape.gis-drift.json");
-        File.WriteAllText(path, ReshapeFixture.DriftJson(shop, ReshapeFixture.Grow(shop, 1.0)));
+        File.WriteAllText(path, ReshapeFixture.DriftJson(shop, ReshapeFixture.Reshaped(shop, ReshapeFixture.Grow(shop, 1.0))));
         ReshapeShape shape = ReshapeShape.Read(path);
 
         Assert.Equal(new[] { "room-uid", "shop-uid" }, units.Select(unit => unit.UniqueId));
@@ -42,6 +43,36 @@ public class ReshapeFixtureTests
 
         Assert.Equal(new (double, double)[] { (0, 0), (5, -5), (8.5, -1.5), (8.5, 1.5), (5, 5), (0, 0) }, cut[0]);
         Assert.True(ReshapeFixture.Distance(ReshapeFixture.ShrinkEast(square, 1.5), ReshapeFixture.Grow(square, -1.5)) < 1e-9);
+    }
+
+    [Fact]
+    public void Split_halves_a_unit_east_to_west_and_the_east_piece_carries_its_own_values()
+    {
+        var square = new FloorUnit("m|s|0", "s", "Shop", "L1", "retail", 6677, new[] { Square });
+        var holed = square with { Rings = new[] { Square, new (double, double)[] { (1, 1), (2, 1), (2, 2), (1, 1) } } };
+
+        var pieces = ReshapeFixture.Split(square)!.Value;
+        JsonObject[] shapes = ReshapeFixture.SplitShapes(square, pieces.West, pieces.East);
+
+        Assert.Equal(25, ReshapeFixture.Area(pieces.West), 9);
+        Assert.Equal(25, ReshapeFixture.Area(pieces.East), 9);
+        Assert.Equal(new[] { true, false }, shapes.Select(shape => shape["keeps"]!.GetValue<bool>()));
+        Assert.Equal(("Shop east", "E", "retail"), (shapes[1]["gdbName"]!.GetValue<string>(), shapes[1]["gdbAltName"]!.GetValue<string>(), shapes[1]["gdbCategory"]!.GetValue<string>()));
+        Assert.Null(ReshapeFixture.Split(holed));
+    }
+
+    [Fact]
+    public void Merge_keeps_the_unit_outline_and_takes_in_the_other_floor_without_one()
+    {
+        var kept = new FloorUnit("Model|k|0", "k", "K", "L1", "retail", 6677, new[] { Square });
+
+        JsonObject[] shapes = ReshapeFixture.Merged(kept, "g");
+
+        Assert.Equal("Model|g|0", shapes[1]["revitKey"]!.GetValue<string>());
+        Assert.Null(shapes[1]["outline"]);
+        Assert.All(shapes, shape => Assert.Equal("Model|k|0", shape["group"]!.GetValue<string>()));
+        Assert.Equal(0, ReshapeFixture.Gap(kept.Rings, new[] { new (double, double)[] { (10, 0), (12, 0), (12, 5), (10, 5), (10, 0) } }), 9);
+        Assert.Equal(1, ReshapeFixture.Gap(kept.Rings, new[] { new (double, double)[] { (11, 0), (12, 0), (12, 5), (11, 5), (11, 0) } }), 9);
     }
 
     [Fact]

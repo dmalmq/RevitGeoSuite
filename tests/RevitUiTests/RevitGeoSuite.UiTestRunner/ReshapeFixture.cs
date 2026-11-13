@@ -78,26 +78,45 @@ internal static class ReshapeFixture
     public static List<List<(double X, double Y)>> ShrinkEast(FloorUnit unit, double bandM)
     {
         double limit = unit.Rings[0].Max(point => point.X) - bandM;
-        return unit.Rings.Select(ring => ClipWest(ring, limit)).Where(ring => ring.Count >= 4).ToList();
+        return unit.Rings.Select(ring => Clip(ring, limit, keepWest: true)).Where(ring => ring.Count >= 4).ToList();
     }
 
-    // Sutherland-Hodgman against x <= limit; the result is closed, its last point repeating the first.
-    private static List<(double X, double Y)> ClipWest(IReadOnlyList<(double X, double Y)> ring, double limit)
+    /// <summary>
+    /// The unit cut in two at the middle of its east-west extent, as make_reshape_fixture.py --split does;
+    /// null for a unit with holes or a piece of 1 m² or less.
+    /// </summary>
+    public static (List<(double X, double Y)> West, List<(double X, double Y)> East)? Split(FloorUnit unit)
     {
-        var open = ring.Count > 1 && ring[0] == ring[^1] ? ring.Take(ring.Count - 1).ToList() : ring.ToList();
-        var clipped = new List<(double X, double Y)>();
-        for (int index = 0; index < open.Count; index++)
-        {
-            (double X, double Y) a = open[index], b = open[(index + 1) % open.Count];
-            bool aIn = a.X <= limit, bIn = b.X <= limit;
-            if (aIn)
-            {
-                clipped.Add(a);
-            }
+        IReadOnlyList<(double X, double Y)> ring = unit.Rings[0];
+        double middle = (ring.Min(point => point.X) + ring.Max(point => point.X)) / 2;
+        List<(double X, double Y)> west = Clip(ring, middle, keepWest: true), east = Clip(ring, middle, keepWest: false);
+        return unit.Rings.Count > 1 || west.Count < 4 || east.Count < 4 || Area(west) < 1 || Area(east) < 1 ? null : (west, east);
+    }
 
-            if (aIn != bIn)
+    public static double Area(IReadOnlyList<(double X, double Y)> ring) =>
+        Math.Abs(ring.Zip(ring.Skip(1)).Sum(pair => pair.First.X * pair.Second.Y - pair.Second.X * pair.First.Y)) / 2;
+
+    // Sutherland-Hodgman against the line X = x, point for point as the Python fixture's clip(); closed again.
+    private static List<(double X, double Y)> Clip(IReadOnlyList<(double X, double Y)> ring, double x, bool keepWest)
+    {
+        bool Inside((double X, double Y) point) => keepWest ? point.X <= x : point.X >= x;
+        List<(double X, double Y)> points = ring.Count > 1 && ring[0] == ring[^1] ? ring.Take(ring.Count - 1).ToList() : ring.ToList();
+        var clipped = new List<(double X, double Y)>();
+        for (int index = 0; index < points.Count; index++)
+        {
+            (double X, double Y) current = points[index], previous = points[(index + points.Count - 1) % points.Count];
+            if (Inside(current))
             {
-                clipped.Add((limit, a.Y + (b.Y - a.Y) * (limit - a.X) / (b.X - a.X)));
+                if (!Inside(previous))
+                {
+                    clipped.Add(Cross(previous, current, x));
+                }
+
+                clipped.Add(current);
+            }
+            else if (Inside(previous))
+            {
+                clipped.Add(Cross(previous, current, x));
             }
         }
 
@@ -109,9 +128,45 @@ internal static class ReshapeFixture
         return clipped;
     }
 
-    public static string DriftJson(FloorUnit unit, IReadOnlyList<IReadOnlyList<(double X, double Y)>> outline, string model = "")
+    private static (double X, double Y) Cross((double X, double Y) a, (double X, double Y) b, double x) =>
+        (x, a.Y + (x - a.X) / (b.X - a.X) * (b.Y - a.Y));
+
+    /// <summary>A `reshaped` shape: the unit gets <paramref name="outline"/>.</summary>
+    public static JsonObject[] Reshaped(FloorUnit unit, IReadOnlyList<IReadOnlyList<(double X, double Y)>> outline) =>
+        new[] { Shape(unit, "reshaped", outline) };
+
+    /// <summary>Two `split` shapes sharing the unit's key: the west piece keeps the floor, the east one carries its own GDB values.</summary>
+    public static JsonObject[] SplitShapes(FloorUnit unit, List<(double X, double Y)> west, List<(double X, double Y)> east)
     {
-        var coordinates = new JsonArray(outline.Select(ring => (JsonNode)new JsonArray(ring.Select(point => (JsonNode)new JsonArray(point.X, point.Y)).ToArray())).ToArray());
+        JsonObject kept = Shape(unit, "split", new[] { west }, group: unit.RevitKey, keeps: true);
+        JsonObject piece = Shape(unit, "split", new[] { east }, group: unit.RevitKey, keeps: false);
+        piece["gdbName"] = unit.Name + " east";
+        piece["gdbAltName"] = "E";
+        piece["gdbCategory"] = unit.Category;
+        return new[] { kept, piece };
+    }
+
+    /// <summary>A `merged` group: the unit keeps its row and outline, and the floor <paramref name="takenIn"/> is taken in (no outline).</summary>
+    public static JsonObject[] Merged(FloorUnit unit, string takenIn)
+    {
+        JsonObject kept = Shape(unit, "merged", unit.Rings, group: unit.RevitKey, keeps: true);
+        var gone = new JsonObject
+        {
+            ["edit"] = "merged",
+            ["revitKey"] = $"{unit.RevitKey.Split('|')[0]}|{takenIn}|0",
+            ["uniqueId"] = takenIn,
+            ["layer"] = "unit",
+            ["label"] = string.Empty,
+            ["levelId"] = unit.LevelId,
+            ["group"] = unit.RevitKey,
+            ["keeps"] = false,
+            ["outline"] = null,
+        };
+        return new[] { kept, gone };
+    }
+
+    public static string DriftJson(FloorUnit unit, IEnumerable<JsonObject> shapes, string model = "")
+    {
         var file = new JsonObject
         {
             ["schema"] = "kanizu.gis-drift",
@@ -120,19 +175,38 @@ internal static class ReshapeFixture
             ["appliedVersion"] = "ui-test",
             ["rows"] = new JsonArray(),
             ["epsg"] = unit.Epsg,
-            ["shapes"] = new JsonArray(new JsonObject
-            {
-                ["edit"] = "reshaped",
-                ["revitKey"] = unit.RevitKey,
-                ["uniqueId"] = unit.UniqueId,
-                ["layer"] = "unit",
-                ["label"] = unit.Name,
-                ["levelId"] = unit.LevelId,
-                ["outline"] = new JsonObject { ["type"] = "Polygon", ["coordinates"] = coordinates },
-            }),
+            ["shapes"] = new JsonArray(shapes.Cast<JsonNode>().ToArray()),
         };
         return file.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
     }
+
+    private static JsonObject Shape(FloorUnit unit, string edit, IEnumerable<IReadOnlyList<(double X, double Y)>> outline, string? group = null, bool? keeps = null)
+    {
+        var shape = new JsonObject
+        {
+            ["revitKey"] = unit.RevitKey,
+            ["uniqueId"] = unit.UniqueId,
+            ["layer"] = "unit",
+            ["label"] = unit.Name,
+            ["levelId"] = unit.LevelId,
+            ["edit"] = edit,
+        };
+        if (group != null)
+        {
+            shape["group"] = group;
+            shape["keeps"] = keeps;
+        }
+
+        var coordinates = new JsonArray(outline.Select(ring => (JsonNode)new JsonArray(ring.Select(point => (JsonNode)new JsonArray(point.X, point.Y)).ToArray())).ToArray());
+        shape["outline"] = new JsonObject { ["type"] = "Polygon", ["coordinates"] = coordinates };
+        return shape;
+    }
+
+    /// <summary>The smallest distance between two outlines' edges (0 when they touch or cross), in their units.</summary>
+    public static double Gap(IReadOnlyList<IReadOnlyList<(double X, double Y)>> a, IReadOnlyList<IReadOnlyList<(double X, double Y)>> b) =>
+        Math.Min(
+            a.SelectMany(ring => ring).Min(point => b.Min(ring => RingDistance(point, ring))),
+            b.SelectMany(ring => ring).Min(point => a.Min(ring => RingDistance(point, ring))));
 
     /// <summary>
     /// The largest distance from a vertex of either outline to the other outline's edges, in the

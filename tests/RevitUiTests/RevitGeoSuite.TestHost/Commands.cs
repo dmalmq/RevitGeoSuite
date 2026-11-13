@@ -52,6 +52,7 @@ internal sealed class Commands
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
                 "redo" => Post("ID_EDIT_REDO"),
                 "elements" => api.Run(app => FloorCommands.Elements(app, Strings(request, "uniqueIds"), Longs(request, "ids")), Quick),
+                "firstOf" => api.Run(app => FloorCommands.FirstOf(app, Text(request, "category")), Quick),
                 "floorScan" => api.Run(FloorCommands.FloorScan, TimeSpan.FromMinutes(5)),
                 "fixture" => Fixture(request),
                 "newFamily" => NewFamily(request),

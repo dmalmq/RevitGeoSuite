@@ -2,13 +2,14 @@
 
 These tests drive RevitGeoSuite inside a running Revit on the build PC, the way a person does: they click the ribbon and the page's buttons, answer the file dialogs, press Undo, and check what Revit and the page report. A run writes a report with pass or fail for each step, screenshots, and the Revit journal check. A person only looks at the screenshots.
 
-There are five scenarios. `--scenario` picks one, and `--script` is the same option.
+There are seven scenarios. `--scenario` picks one, and `--script` is the same option.
 
 - `gis-standard` (the default) is the GIS standard page test, run 2 of the M2/M3 Revit test. Steps 1 to 16 are automated. Step 15 uses a generated drift file until Kanizu writes a real one for the model.
 - `floor-types` checks floor type standard 2 (RevitGeoSuite #52). Set up model leaves old-named floor types alone. The audit names each old name. Fix floor types renames the old names, and a shop type takes one of the two shop types. The export carries the new categories and restrictions. It needs a build with #52 installed.
 - `b1` checks that Set up model adds the GIS export views (RevitGeoSuite #53): the `GIS Export` view template, a `GIS_` plan for each level with floors, the crops, and a `level_id` on every level. The default export then takes only the `GIS_` plans, and every stair and escalator unit has a `to_level`.
 - `b2a` checks the export audit and the template repair (RevitGeoSuite #54): the findings of the topics ids, stairs, escalators, levels and views, Set up model putting back what someone changed in `GIS Export`, a `GIS_` plan without the template, and the duplicate id error of a floor pasted in place. It expects a model on which Set up model has run once, and runs it first when it has not.
 - `c3a-reshape` checks that Review GDB edits reshapes a floor to the GDB outline (RevitGeoSuite #57). It makes its own drift file from its own export, so the build PC runs one command. With `--drift <file>`, it uses that file instead.
+- `c3b-split` and `c3c-merge` check that Review GDB edits splits a floor by the GDB's pieces and merges floors that the GDB merged (C3b, C3c). They prepare themselves the same way.
 
 ## How it works
 
@@ -59,7 +60,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a` or `c3a-reshape`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split` or `c3c-merge`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -162,6 +163,47 @@ The scenario does the check list's Prepare part itself. It exports the GeoPackag
 | C3a.10 | A floor with an arc in its sketch, given a reshape, shows up in the problems with the curved-edges reason. No card appears, and the floor does not change. Not run when no exported floor has an arc. |
 
 East is the project CRS east the export writes. The test host computes it from the active project location, the same way RevitGeoSuite's `SharedCoordinateProjector` does.
+
+## The c3b-split and c3c-merge scenarios
+
+```powershell
+.\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit --scenario c3b-split --model C:\dev\revit-test\auto\lumine-pristine.rvt
+.\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit --scenario c3c-merge --model C:\dev\revit-test\auto\lumine-pristine.rvt
+```
+
+Both export to `<run>\export` and write their drift files with `ReshapeFixture.cs`. That file gives the same JSON as `make_reshape_fixture.py --split` and `--merge-with`.
+
+| Step | Check |
+|---|---|
+| C3b.P | Picks the first retail floor, else the first walkway floor, that has no holes, can be redrawn, and splits into two pieces over 1 m² each. It cuts the floor at the middle of its east-west extent. The east piece carries `gdbName` "<name> east", `gdbAltName` "E" and the unit's category. It records F's id, type, level, height offset, area, `name`, `short_name`, `category`, `id`, `gis_key`, and the number of floors on F's level. |
+| C3b.1 | One card reads "Split floor <id> into 2 floors", with two dashed pieces. |
+| C3b.2 | "Show in Revit" makes the `GIS_` plan of F's level active, with no transaction, and takes a Revit screenshot. |
+| C3b.3 | Apply. The banner appears, and a "New floor <id> …" line is in its list. If Revit refuses, the step fails and quotes the page's error. |
+| C3b.4 | F keeps its UniqueId, and its area is the west piece's within 1 %. The new floor has the east piece's area, sits on F's level with F's height offset, and is one more floor on that level. Its `name` is "<F's name> east", its `short_name` is "E", and its `category` is F's. Its `id` and `gis_key` are not F's. If the result names a missing standard type, the new floor has F's type. Otherwise the report records the type it took. |
+| C3b.5 | Check again offers nothing. |
+| C3b.6 | One Undo gives the `undo` event of the split, removes the new floor and gives F its old outline. |
+| C3b.7 | Redo, then export to `<run>\export2`. F's unit is the west piece within 1 cm, and the unit keyed by the new floor is the east piece within 1 cm. |
+| C3c.P | Picks floors K and G on one level. G hosts nothing. The step prefers two retail floors, and among those, a pair that touches. K keeps its own outline, and G is taken in. |
+| C3c.1 | One card reads "Merge 2 floors into floor <K id>". |
+| C3c.2 | "Show in Revit" on K's level, with no transaction, and a Revit screenshot. |
+| C3c.3 | Apply. The list has "Deleted floor <G id>.". |
+| C3c.4 | G is gone. K keeps its UniqueId, element id and box. The level has one floor fewer. |
+| C3c.5 | Check again offers nothing. |
+| C3c.6 | One Undo gives the `undo` event of the merge, and G is back with its UniqueId. |
+| C3c.7 | A merge that takes in a room is listed as "element <id> is not a floor, so the merge does not delete it. Merge it in Revit by hand.", with no card and no change. |
+| C3c.8 | A fixture cuts an opening in G, and the same merge is applied again. G and the opening are deleted, the result names the opening, and one Undo brings both back. |
+
+Each Revit assumption in the C3b evidence table is checked by a step:
+
+| Assumption | Step |
+|---|---|
+| `SketchEditScope` keeps the floor's UniqueId | C3a.4 |
+| `SketchEditScope` can run inside a `TransactionGroup` | C3b.3, C3c.3, and the one-Undo checks C3b.6 and C3c.6 |
+| `Floor.Create` with GDB curve loops gives the piece's outline within 1 cm | C3b.4 (area) and C3b.7 (outline) |
+| DirectContext3D lines show in the `GIS_` plan | C3a.2, C3b.2, C3c.2 (screenshots, checked by eye) |
+| Deleting a merged floor deletes its hosted elements, and nothing blocks it | C3c.8 |
+
+The commit events of each apply are recorded. One undo step is proven by pressing Undo once, not by counting events. Revit can raise one DocumentChanged event per inner transaction of an assimilated group.
 
 ## What still needs a person
 

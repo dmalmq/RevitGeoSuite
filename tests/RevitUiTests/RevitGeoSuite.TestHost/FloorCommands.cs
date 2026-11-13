@@ -33,6 +33,15 @@ internal static class FloorCommands
         return new Dictionary<string, object?> { ["elements"] = found };
     }
 
+    /// <summary>The first element of a category (by BuiltInCategory name, such as OST_Rooms), or nothing.</summary>
+    public static Dictionary<string, object?> FirstOf(UIApplication app, string category)
+    {
+        Document document = Active(app);
+        BuiltInCategory builtIn = (BuiltInCategory)Enum.Parse(typeof(BuiltInCategory), category);
+        Element? element = new FilteredElementCollector(document).OfCategory(builtIn).WhereElementIsNotElementType().FirstElement();
+        return new Dictionary<string, object?> { ["id"] = element?.Id.Value, ["uniqueId"] = element?.UniqueId };
+    }
+
     /// <summary>
     /// Every floor: why its sketch would not be redrawn (arcs, extra sketch lines), and its openings and
     /// hosted family instances with their distance west of the floor's east edge in metres.
@@ -137,6 +146,9 @@ internal static class FloorCommands
             ["category"] = element?.Category?.Name,
             ["typeId"] = element?.GetTypeId().Value,
             ["typeName"] = element == null ? null : element.Document.GetElement(element.GetTypeId())?.Name,
+            ["levelId"] = element == null || element.LevelId == ElementId.InvalidElementId ? null : element.LevelId.Value,
+            ["heightOffsetFt"] = element?.get_Parameter(BuiltInParameter.FLOOR_HEIGHTABOVELEVEL_PARAM)?.AsDouble(),
+            ["areaM2"] = element?.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED)?.AsDouble() * FeetToMetres * FeetToMetres,
             ["min"] = box == null ? null : new[] { box.Min.X, box.Min.Y, box.Min.Z },
             ["max"] = box == null ? null : new[] { box.Max.X, box.Max.Y, box.Max.Z },
         };

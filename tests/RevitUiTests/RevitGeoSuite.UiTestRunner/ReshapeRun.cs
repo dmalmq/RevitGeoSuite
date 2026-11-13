@@ -41,16 +41,11 @@ internal sealed partial class GisStandardRun
 
     private async Task PrepareReshape(StepResult step)
     {
-        string output = await OpenExport(step, string.Empty, "export", keepDefaultViews: true);
-        bool exported = await ExportNow(step);
-        await Shell.GoToAsync("/gis-standard");
-        if (!exported)
+        if (!await ExportFloorUnits(step))
         {
             return;
         }
 
-        exportedUnits = ReshapeFixture.FloorUnits(output);
-        step.Note($"{exportedUnits.Count} single-polygon floor unit(s) in the export: {Format(exportedUnits.GroupBy(unit => unit.Category).ToDictionary(group => group.Key, group => group.Count()))}.");
         string path = options.Drift;
         if (path.Length == 0)
         {
@@ -62,7 +57,7 @@ internal sealed partial class GisStandardRun
                 return;
             }
 
-            path = WriteDrift("reshape.gis-drift.json", unit!, ReshapeFixture.Grow(unit!, GrowM));
+            path = WriteDrift("reshape.gis-drift.json", unit!, ReshapeFixture.Reshaped(unit!, ReshapeFixture.Grow(unit!, GrowM)));
             step.Note($"Wrote {path}: floor unit '{unit!.Name}' ({unit.Category}), east edge {GrowM} m east, EPSG:{unit.Epsg}.");
         }
         else
@@ -270,7 +265,7 @@ internal sealed partial class GisStandardRun
         DependentRow[] dependents = h.Dependents;
         step.Note($"H = floor {h.Id} ({h.UniqueId}, level {h.Level}). Dependents: {string.Join("; ", dependents.Select(item => $"{item.Id} {item.Name} ({item.Category}) {Metres(item.WestOfEdgeM)} west of the east edge"))}.");
         FloorUnit unit = Unit(h.UniqueId)!;
-        string path = WriteDrift("shrink.gis-drift.json", unit, ReshapeFixture.ShrinkEast(unit, ShrinkBandM));
+        string path = WriteDrift("shrink.gis-drift.json", unit, ReshapeFixture.Reshaped(unit, ReshapeFixture.ShrinkEast(unit, ShrinkBandM)));
         await PickDrift(path);
         if (!step.Check(await Shell.ShowsAsync(Shell.Text("Shape edits (1)"), 60000), "The shrink file shows one shape edit."))
         {
@@ -329,7 +324,7 @@ internal sealed partial class GisStandardRun
     private async Task ExpectProblem(StepResult step, FloorScanRow floor, string fileName, string reason)
     {
         FloorUnit unit = Unit(floor.UniqueId)!;
-        string path = WriteDrift(fileName, unit, ReshapeFixture.Grow(unit, GrowM));
+        string path = WriteDrift(fileName, unit, ReshapeFixture.Reshaped(unit, ReshapeFixture.Grow(unit, GrowM)));
         step.Note($"Floor {floor.Id} ({floor.UniqueId}): {path}.");
         await PickDrift(path);
         JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
@@ -337,6 +332,21 @@ internal sealed partial class GisStandardRun
         step.Check(problems.Any(problem => problem.Contains($"floor {floor.Id} {reason}", StringComparison.Ordinal)), $"Problems say floor {floor.Id} '{reason}' ({string.Join(" | ", problems)}).");
         step.Check((drift?["shapes"]?.AsArray().Count ?? 0) == 0 && await Shell.Page.GetByTestId("shape-edit").CountAsync() == 0, "There is no shape edit card.");
         await Shot(step, Path.GetFileNameWithoutExtension(fileName).Replace(".gis-drift", string.Empty, StringComparison.Ordinal) + "-problem");
+    }
+
+    /// <summary>Exports with the default views to &lt;run&gt;\export and reads its floor units into <see cref="exportedUnits"/>.</summary>
+    private async Task<bool> ExportFloorUnits(StepResult step)
+    {
+        string output = await OpenExport(step, string.Empty, "export", keepDefaultViews: true);
+        bool exported = await ExportNow(step);
+        await Shell.GoToAsync("/gis-standard");
+        if (exported)
+        {
+            exportedUnits = ReshapeFixture.FloorUnits(output);
+            step.Note($"{exportedUnits.Count} single-polygon floor unit(s) in the export: {Format(exportedUnits.GroupBy(unit => unit.Category).ToDictionary(group => group.Key, group => group.Count()))}.");
+        }
+
+        return exported;
     }
 
     private async Task<string[]> ApplyShapes(StepResult step, int count)
@@ -350,7 +360,9 @@ internal sealed partial class GisStandardRun
             await Shell.Page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = label, Exact = true }).ClickAsync();
         }
 
-        step.Check(await Shell.ShowsAsync(Shell.Text($"{count} floor(s) reshaped"), 120000), $"The banner reads '{count} floor(s) reshaped' (saw: {await Shell.AlertTextAsync()}).");
+        // C3a's build says "floor(s) reshaped"; from C3b on, every shape edit says "shape edit(s) applied".
+        Regex banner = new($@"^{count} (floor\(s\) reshaped|shape edit\(s\) applied)");
+        step.Check(await Shell.ShowsAsync(Shell.Text(banner), 120000), $"The banner reads '{count} floor(s) reshaped' or '{count} shape edit(s) applied'.");
         return await ReadAppliedLog();
     }
 
@@ -362,10 +374,10 @@ internal sealed partial class GisStandardRun
         await Shell.Page.WaitForTimeoutAsync(1000);
     }
 
-    private string WriteDrift(string fileName, FloorUnit unit, IReadOnlyList<IReadOnlyList<(double X, double Y)>> outline)
+    private string WriteDrift(string fileName, FloorUnit unit, IEnumerable<JsonObject> shapes)
     {
         string path = Path.Combine(options.OutputFolder, fileName);
-        File.WriteAllText(path, ReshapeFixture.DriftJson(unit, outline));
+        File.WriteAllText(path, ReshapeFixture.DriftJson(unit, shapes));
         return path;
     }
 
@@ -448,7 +460,7 @@ internal sealed record ReshapeShape(string Path, string UniqueId, string Label, 
     }
 }
 
-internal sealed record ElementRow(string Key, bool Exists, long? Id, string? UniqueId, string? Category, long? TypeId, string? TypeName, double[]? Min, double[]? Max);
+internal sealed record ElementRow(string Key, bool Exists, long? Id, string? UniqueId, string? Category, long? TypeId, string? TypeName, long? LevelId, double? HeightOffsetFt, double? AreaM2, double[]? Min, double[]? Max);
 
 internal sealed record FloorScanRow(long Id, string UniqueId, string? Level, bool HasArc, bool ExtraSketchLines, bool ShapeEdited, DependentRow[] Dependents);
 
