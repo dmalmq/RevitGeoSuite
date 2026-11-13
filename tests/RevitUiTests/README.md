@@ -39,13 +39,19 @@ The test code never reaches the installer. All three projects build into `bin\Te
 
 1. Stay signed in to the build PC desktop. Revit needs an interactive session to run.
 2. Install the .NET 8 SDK if it is not there yet. Both scripts find it themselves: they try `DOTNET_ROOT`, then `%USERPROFILE%\.dotnet`, then each `dotnet` on PATH, then `C:\Program Files\dotnet`, and use the first that lists a .NET 8 or later SDK. A `dotnet` on PATH that is only a runtime is skipped. When none has the SDK, the script stops and names what it tried. To pick an install, set `DOTNET_ROOT` to its folder.
-3. Close Revit. Then run `tests\RevitUiTests\Install-TestHost.ps1` in a clone of this repo.
-4. Start Revit 2024 once by hand. Answer **Always Load** for "RevitGeoSuite test host". Revit asks this once for an unsigned add-in. In this session the add-in stays inert. Close Revit again.
+3. Close Revit. Then run `tests\RevitUiTests\Install-TestHost.ps1` in a clone of this repo. It copies the loader, the test host and their manifest to `%APPDATA%\Autodesk\Revit\Addins\2024\RevitGeoSuite.TestHost\`. Revit reads manifests only at the top of `Addins\2024`, so it does not see this one there.
+4. At the first `Run-UiTests.ps1 -StartRevit`, answer **Always Load** for "RevitGeoSuite test host". Revit asks this once for an unsigned add-in.
+
+Nothing of the tests stays where Revit or another PC looks. Daniel's profile roams, so everything under `%APPDATA%` follows him to his other PCs. `Run-UiTests.ps1 -StartRevit` copies the manifest to the top of `Addins\2024`, starts Revit, waits until the test host's pipe is up (or Revit exits, or 15 minutes pass), and deletes the manifest again. A run that was stopped half way leaves no manifest for long: the next run, and `Install-TestHost.ps1`, delete any manifest they find. Another PC therefore only ever receives the DLLs, which no manifest names, and a Revit started by hand does not load the test host. Even when loaded, the loader does nothing unless that Revit was started with `REVITGEOSUITE_UITEST=1`. It references only `mscorlib` and `RevitAPIUI`.
+
+Why not `%LOCALAPPDATA%`, which does not roam: on the build PC, Revit reported the loader there as not found although the file was present (journal: `TaskDialog_External_Tools_Add_In_Assembly_Not_Found`), while DLLs under `%APPDATA%` load. `-Target` installs elsewhere, and `Run-UiTests.ps1 -TestHost` then names the same folder.
 
 The answer covers the DLL that the manifest names, which is the loader. The loader does not change when the test host changes. It builds deterministically, without a PDB, so two builds of the same source give the same bytes. `Install-TestHost.ps1` also leaves an installed loader of the same FileVersion untouched. Rebuilding and reinstalling the test host therefore needs no new click. The script prints whether the loader was left as it is or newly installed. Only a new loader FileVersion, which follows a change to the loader's source, makes Revit ask once more. Each report's header names the test host build that ran.
+
+A RevitGeoSuite build that is not installed, such as a PR build, goes the same way: `Run-UiTests.ps1 -StartRevit -RgsBuild <build folder> ...` copies it to `C:\dev\revit-test\rgs\2024` (`-RgsTarget` for another folder) and hands Revit its manifest for that one start. It refuses while another RevitGeoSuite manifest is installed, in `%ProgramData%` or `%APPDATA%`, because Revit cannot load two add-ins with the same id. Do not install a test build into `%APPDATA%\Autodesk\Revit\Addins` with a manifest: it would roam to other PCs and load there.
 5. Make a pristine detached copy of the test model at `C:\dev\revit-test\auto\lumine-pristine.rvt`. The copy must never have been set up with the GIS standard. Never use the original or the central model, and never save over the pristine copy.
 
-To remove the test host, close Revit and run `Install-TestHost.ps1 -Uninstall`. That deletes the `.addin` file and the copied DLLs.
+To remove the test host, close Revit and run `Install-TestHost.ps1 -Uninstall`. That deletes the copied DLLs and their manifest, and any manifest a stopped run left in `Addins\2024`.
 
 ## Run
 
