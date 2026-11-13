@@ -84,7 +84,7 @@ public static class ModelSnapshotReader
 
     /// <summary>The audit errors of <paramref name="document"/>: what makes its export come out wrong.</summary>
     public static IReadOnlyList<GisAuditFinding> AuditErrors(Document document) =>
-        GisAudit.BlockingFindings(GisAudit.Run(Read(document), GisToolStandard.LoadEmbedded()));
+        GisAudit.BlockingFindings(ExportAuditReader.Audit(document, Read(document), GisToolStandard.LoadEmbedded()));
 
     /// <summary>Every floor, placed room, stair, escalator-like family instance and level, as Parameters rows.</summary>
     public static List<IReadOnlyDictionary<string, string>> ParameterRows(Document document)
