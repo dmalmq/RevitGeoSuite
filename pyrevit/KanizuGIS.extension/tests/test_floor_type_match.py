@@ -143,6 +143,15 @@ class FloorTypeMatchTests(unittest.TestCase):
             u"Floor type smoking room (2 floors) uses an old name. Run Fix floor types to rename it to j 喫煙所_床.",
         ], messages)
 
+    def test_audit_asks_for_the_side_of_an_old_shop_type_when_both_names_are_taken(self):
+        from kanizu_gis import audit
+        model = helpers.model_on_standard(self.standard, floor_types=helpers.floor_types_as_standard(self.standard) + [
+            floor_type(u"j 店舗_床", "retail", floors=6, element_id=1)])
+        messages = [f.message for f in audit.audit(model, self.standard) if u"old name" in f.message]
+        self.assertEqual([
+            u"Floor type j 店舗_床 (6 floors) uses an old name that can be j ラチ外店舗_床 or j ラチ内店舗_床. Run Fix floor types to choose one. All 6 floors of this type follow the choice. If some belong to the other one, duplicate the type and move those floors to the copy first.",
+        ], messages)
+
 
 if __name__ == "__main__":
     unittest.main()

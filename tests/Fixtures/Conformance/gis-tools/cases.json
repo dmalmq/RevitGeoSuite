@@ -191,6 +191,18 @@
       "expected_needs_fix": []
     },
     {
+      "name": "an old shop type with no side stays fixable when both current names are taken, until it states a side",
+      "model": {
+        "base": "standard",
+        "floor_types_extra": [
+          { "id": 1, "name": "j 店舗_床", "gis_category": "retail", "floor_ids": [11] },
+          { "id": 2, "name": "店舗", "gis_category": "retail", "gis_restriction": "rachi_gai", "floor_ids": [12] }
+        ]
+      },
+      "expected_proposals": [[1, "j ラチ外店舗_床", ""], [1, "j ラチ内店舗_床", ""]],
+      "expected_needs_fix": [1]
+    },
+    {
       "name": "one current shop name taken leaves the other as the rename",
       "model": {
         "base": "standard",

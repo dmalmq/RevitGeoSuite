@@ -205,6 +205,17 @@ public static class GisAudit
                     continue;
                 }
 
+                IReadOnlyList<string> undecided = FloorTypeMatcher.UndecidedTargets(floorType, standard);
+                if (undecided.Count > 0)
+                {
+                    yield return new GisAuditFinding(
+                        GisAuditSeverity.Warning,
+                        "floor types",
+                        $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name that can be {string.Join(" or ", undecided)}. Run Fix floor types to choose one. All {floorType.FloorIds.Count} floors of this type follow the choice. If some belong to the other one, duplicate the type and move those floors to the copy first.",
+                        floorType.FloorIds);
+                    continue;
+                }
+
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "floor types",

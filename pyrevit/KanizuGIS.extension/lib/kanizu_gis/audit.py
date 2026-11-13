@@ -89,6 +89,16 @@ def _audit_floor_types(snapshot, standard):
                         floor_type.name, len(floor_type.floor_ids), u" or ".join(renames), _one_choice_for_all_floors(floor_type, renames)),
                     floor_type.floor_ids))
                 continue
+            undecided = floor_type_match.undecided_targets(floor_type, standard)
+            if undecided:
+                findings.append(Finding(
+                    WARNING, "floor types",
+                    (u"Floor type %s (%d floors) uses an old name that can be %s. Run Fix floor types to choose one. "
+                     u"All %d floors of this type follow the choice. If some belong to the other one, duplicate the "
+                     u"type and move those floors to the copy first.") % (
+                        floor_type.name, len(floor_type.floor_ids), u" or ".join(undecided), len(floor_type.floor_ids)),
+                    floor_type.floor_ids))
+                continue
             findings.append(Finding(
                 WARNING, "floor types",
                 u"Floor type %s (%d floors) has no gis_category, so its floors export by type name. Run Fix floor types." % (floor_type.name, len(floor_type.floor_ids)),

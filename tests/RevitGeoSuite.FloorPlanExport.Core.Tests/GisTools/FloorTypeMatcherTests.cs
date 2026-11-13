@@ -289,4 +289,18 @@ public sealed class FloorTypeMatcherTests
             },
             messages);
     }
+
+    [Fact]
+    public void Audit_asks_for_the_side_of_an_old_shop_type_when_both_names_are_taken()
+    {
+        ModelSnapshot model = ModelOnStandard(floorTypes: FloorTypesAsStandard().Append(FloorType("j 店舗_床", "retail", floors: 6, elementId: 1)));
+        List<string> messages = GisAudit.Run(model, Standard).Select(finding => finding.Message).Where(message => message.Contains("old name")).ToList();
+
+        Assert.Equal(
+            new[]
+            {
+                "Floor type j 店舗_床 (6 floors) uses an old name that can be j ラチ外店舗_床 or j ラチ内店舗_床. Run Fix floor types to choose one. All 6 floors of this type follow the choice. If some belong to the other one, duplicate the type and move those floors to the copy first.",
+            },
+            messages);
+    }
 }

@@ -93,6 +93,14 @@ def free_targets(floor_type, snapshot, standard):
             if snapshot.floor_type_by_name(candidate.name) is None]
 
 
+def undecided_targets(floor_type, standard):
+    """The current names of an old-named type that could still be more than one of them (a shop
+    that does not state its gate side), or none. Such a type exports without its side until one
+    is chosen, also when every current name is already taken."""
+    former = _former_candidates(floor_type, standard)
+    return [candidate.name for candidate in former] if len(former) > 1 else []
+
+
 def _former_candidates(floor_type, standard):
     former = _resolve(standard, former_targets(floor_type.name, standard))
     if not former:
@@ -102,12 +110,14 @@ def _former_candidates(floor_type, standard):
 
 
 def needs_fix(floor_type, snapshot, standard):
-    """True for a floor type in use that is not a standard type and either has no usable
-    gis_category or carries an old name that a still free current name can replace."""
+    """True for a floor type in use that is not a standard type and has no usable gis_category,
+    carries an old name that a still free current name can replace, or carries an old name that
+    does not say which current name it is."""
     if not floor_type.floor_ids or standard.floor_type(floor_type.name) is not None:
         return False
     return (not standard.is_known_category(floor_type.gis_category)
-            or len(free_targets(floor_type, snapshot, standard)) > 0)
+            or len(free_targets(floor_type, snapshot, standard)) > 0
+            or len(undecided_targets(floor_type, standard)) > 0)
 
 
 def propose(snapshot, standard):

@@ -129,9 +129,10 @@ public static class FloorTypeMatcher
     }
 
     /// <summary>
-    /// True for a floor type in use that is not a standard type and either has no usable gis_category
-    /// or carries an old name that one of its current names, still free in the model, can replace.
-    /// A renamed type is a standard type, so the check converges.
+    /// True for a floor type in use that is not a standard type and has no usable gis_category,
+    /// carries an old name that one of its current names, still free in the model, can replace, or
+    /// carries an old name that does not say which current name it is. A renamed type is a standard
+    /// type and a fixed type states its side, so the check converges.
     /// </summary>
     public static bool NeedsFix(FloorTypeInfo floorType, ModelSnapshot snapshot, GisToolStandard standard)
     {
@@ -140,7 +141,9 @@ public static class FloorTypeMatcher
             return false;
         }
 
-        return !standard.IsKnownCategory(floorType.GisCategory) || FreeTargets(floorType, snapshot, standard).Count > 0;
+        return !standard.IsKnownCategory(floorType.GisCategory) ||
+               FreeTargets(floorType, snapshot, standard).Count > 0 ||
+               UndecidedTargets(floorType, standard).Count > 0;
     }
 
     /// <summary>
@@ -152,6 +155,17 @@ public static class FloorTypeMatcher
             .Select(standardType => standardType.Name)
             .Where(name => snapshot.FloorTypeByName(name) is null)
             .ToList();
+
+    /// <summary>
+    /// The current names of an old-named type that could still be more than one of them (a shop
+    /// that does not state its gate side), or none. Such a type exports without its side until
+    /// one is chosen, also when every current name is already taken.
+    /// </summary>
+    public static IReadOnlyList<string> UndecidedTargets(FloorTypeInfo floorType, GisToolStandard standard)
+    {
+        List<StandardFloorType> former = FormerCandidates(floorType, standard);
+        return former.Count > 1 ? former.Select(standardType => standardType.Name).ToList() : new List<string>();
+    }
 
     private static List<StandardFloorType> FormerCandidates(FloorTypeInfo floorType, GisToolStandard standard)
     {
