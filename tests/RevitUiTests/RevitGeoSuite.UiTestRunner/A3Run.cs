@@ -183,14 +183,23 @@ internal sealed partial class GisStandardRun
             new { id = a3.Door.TypeId, name = "gis_access_con", value = A3Fixture.TestAccess },
             new { id = a3.Door.Id, name = "name", value = A3Fixture.TestDoorName },
         };
-        if (a3.E != null && step.Check(a3.Levels.Length >= 2, "The export has at least two levels to name."))
-        {
-            a3.Named = a3.Levels.Take(2).ToArray();
-            values.Add(new { id = a3.E.TypeId, name = "gis_levels_served", value = $"{a3.Named[0].Name}, {a3.Named[1].Name}, {A3Fixture.UnknownLevelName}" });
-        }
-
         JsonObject fixture = host.Call("fixture", new { values });
         step.Note($"Test door {a3.Door.Id} ({a3.Door.Family} / {a3.Door.Type}, type {a3.Door.TypeId}). Fixture: {fixture["log"]?.ToJsonString()}.");
+        if (a3.E != null && step.Check(a3.Levels.Length >= 2, "The export has at least two levels to name."))
+        {
+            LevelRow[] named = a3.Levels.Take(2).ToArray();
+            string value = $"{named[0].Name}, {named[1].Name}, {A3Fixture.UnknownLevelName}";
+            try
+            {
+                JsonObject levels = host.Call("fixture", new { values = new[] { new { id = a3.E.TypeId, name = "gis_levels_served", value } } });
+                a3.Named = named;
+                step.Note($"E's type {a3.E.TypeId}: gis_levels_served = '{value}'. Fixture: {levels["log"]?.ToJsonString()}.");
+            }
+            catch (TestHostException ex) when (ex.Message.Contains("has no parameter", StringComparison.Ordinal))
+            {
+                step.Check(false, $"E ({a3.E.Family} / {a3.E.Type}, category {a3.E.Category}, type {a3.E.TypeId}) has no gis_levels_served to fill: Set up binds it to the categories A3.A lists, and {a3.E.Category} is not one of them. A3.C cannot run.");
+            }
+        }
         step.Note("The door is filled here, after the span export, because only an export says which doors it writes as openings; rules D and E read the override export.");
         return Task.CompletedTask;
     }

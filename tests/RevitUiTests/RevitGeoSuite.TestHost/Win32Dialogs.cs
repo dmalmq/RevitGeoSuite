@@ -26,6 +26,8 @@ internal static class Win32Dialogs
     private const int OkButtonId = 1;
     private const int CancelButtonId = 2;
     private const uint WM_CLOSE = 0x0010;
+    private const uint WM_MDIACTIVATE = 0x0222;
+    private const uint WM_MDIGETACTIVE = 0x0229;
     private const uint WM_SETTEXT = 0x000C;
     private const uint BM_CLICK = 0x00F5;
 
@@ -79,6 +81,11 @@ internal static class Win32Dialogs
             IntPtr dialog = open[0];
             string title = TitleOf(dialog);
             string text = TextOf(dialog);
+            if (text.Length == 0)
+            {
+                text = AllTextOf(dialog); // Revit's warning dialog keeps its messages in a list, not in Text controls
+            }
+
             IntPtr cancel = Descendants(dialog).FirstOrDefault(child => GetDlgCtrlID(child) == CancelButtonId && ClassOf(child) == "Button");
             if (cancel != IntPtr.Zero)
             {
@@ -134,8 +141,41 @@ internal static class Win32Dialogs
     }
 
     /// <summary>
-    /// Invokes the first enabled button of Revit's main window named one of <paramref name="names"/>
-    /// (the Quick Access Toolbar's Undo, for example). Throws, naming what it found, when none is enabled.
+    /// Gives keyboard focus to Revit's active view window (the active MDI child). A view the API opened
+    /// may not be the frame Revit routes commands to until it has focus, and then Undo is refused.
+    /// </summary>
+    public static string FocusActiveView()
+    {
+        IntPtr window = Process.GetCurrentProcess().MainWindowHandle;
+        IntPtr client = Descendants(window).FirstOrDefault(child => ClassOf(child) == "MDIClient");
+        if (client == IntPtr.Zero)
+        {
+            return "no MDIClient window";
+        }
+
+        IntPtr active = SendMessage(client, WM_MDIGETACTIVE, IntPtr.Zero, IntPtr.Zero);
+        if (active == IntPtr.Zero)
+        {
+            return "no active view window";
+        }
+
+        PostMessage(client, WM_MDIACTIVATE, active, IntPtr.Zero);
+        try
+        {
+            AutomationElement.FromHandle(active).SetFocus();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ElementNotAvailableException)
+        {
+            return $"activated view window '{TitleOf(active)}' (focus refused: {ex.Message})";
+        }
+
+        return $"focused view window '{TitleOf(active)}'";
+    }
+
+    /// <summary>
+    /// Invokes the first enabled control of Revit's main window whose name, automation id or help text
+    /// contains one of <paramref name="names"/> (the Quick Access Toolbar's Undo, whose name can be empty
+    /// with the id ID_EDIT_UNDO). Throws, naming every match it saw, when none is enabled.
     /// </summary>
     public static Dictionary<string, object?> PressMainWindowButton(string[] names, string why)
     {
@@ -145,20 +185,37 @@ internal static class Win32Dialogs
             throw new InvalidOperationException($"{why} Revit's main window is not available to press {names[0]} instead.");
         }
 
-        Condition named = new OrCondition(names.Select(name => (Condition)new PropertyCondition(AutomationElement.NameProperty, name)).Concat(new[] { Condition.FalseCondition }).ToArray());
-        AutomationElementCollection found = AutomationElement.FromHandle(window).FindAll(TreeScope.Descendants, named);
+        Condition clickable = new OrCondition(
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.SplitButton),
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.MenuItem));
         var seen = new List<string>();
-        foreach (AutomationElement element in found)
+        foreach (AutomationElement element in AutomationElement.FromHandle(window).FindAll(TreeScope.Descendants, clickable))
         {
-            seen.Add($"{element.Current.ControlType.ProgrammaticName} '{element.Current.Name}' enabled={element.Current.IsEnabled}");
+            string text;
+            try
+            {
+                text = $"{element.Current.Name}|{element.Current.AutomationId}|{element.Current.HelpText}";
+            }
+            catch (ElementNotAvailableException)
+            {
+                continue;
+            }
+
+            if (!names.Any(name => text.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                continue;
+            }
+
+            seen.Add($"{element.Current.ControlType.ProgrammaticName} '{text}' enabled={element.Current.IsEnabled}");
             if (element.Current.IsEnabled && element.TryGetCurrentPattern(InvokePattern.Pattern, out object pattern))
             {
                 ((InvokePattern)pattern).Invoke();
-                return new Dictionary<string, object?> { ["pressed"] = element.Current.Name, ["why"] = why };
+                return new Dictionary<string, object?> { ["pressed"] = text, ["why"] = why, ["seen"] = seen };
             }
         }
 
-        throw new InvalidOperationException($"{why} No enabled '{string.Join("' or '", names)}' button to press instead (found: {(seen.Count == 0 ? "none" : string.Join("; ", seen))}).");
+        throw new InvalidOperationException($"{why} No enabled control named like '{string.Join("' or '", names)}' to press instead (found: {(seen.Count == 0 ? "none" : string.Join("; ", seen))}).");
     }
 
     /// <summary>Saves a PNG of Revit's main window as it is on screen.</summary>
@@ -264,6 +321,37 @@ internal static class Win32Dialogs
         }
     }
 
+    /// <summary>Every name UI Automation gives inside the dialog, and every child window's text, for dialogs whose text is not in Text controls.</summary>
+    private static string AllTextOf(IntPtr dialog)
+    {
+        var parts = new List<string>();
+        try
+        {
+            foreach (AutomationElement element in AutomationElement.FromHandle(dialog).FindAll(TreeScope.Descendants, Condition.TrueCondition))
+            {
+                string name = element.Current.Name;
+                if (!string.IsNullOrWhiteSpace(name) && !parts.Contains(name))
+                {
+                    parts.Add(name);
+                }
+            }
+        }
+        catch (ElementNotAvailableException)
+        {
+        }
+
+        foreach (IntPtr child in Descendants(dialog))
+        {
+            string text = TitleOf(child);
+            if (!string.IsNullOrWhiteSpace(text) && !parts.Contains(text))
+            {
+                parts.Add(text);
+            }
+        }
+
+        return string.Join("\n", parts);
+    }
+
     private static string TitleOf(IntPtr window)
     {
         var text = new StringBuilder(512);
@@ -300,5 +388,6 @@ internal static class Win32Dialogs
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int capacity);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, string lParam);
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

@@ -43,7 +43,7 @@ internal sealed class Commands
                 "state" => api.Run(State, Quick),
                 "post" => Post(Text(request, "id")),
                 "ribbon" => Post($"CustomCtrl_%CustomCtrl_%{Text(request, "tab")}%{Text(request, "panel")}%{Text(request, "button")}"),
-                "undo" => PostOrPress("ID_EDIT_UNDO", "Undo", "元に戻す"),
+                "undo" => PostOrPress("ID_EDIT_UNDO", "Undo", "元に戻す", "UNDO"),
                 "params" => Params(request),
                 "uniqueIds" => UniqueIds(request),
                 "floorTypes" => api.Run(FloorTypes, Quick),
@@ -299,9 +299,23 @@ internal sealed class Commands
         }
         catch (InvalidOperationException refused) when (refused.Message.Contains("cannot run"))
         {
-            Dictionary<string, object?> pressed = Win32Dialogs.PressMainWindowButton(buttonNames, refused.Message);
-            pressed["last"] = recorder.LastSequence;
-            return pressed;
+            // Second try: give the active view window focus (an API-opened view may not be the frame
+            // Revit routes commands to), then post again. Last: press the toolbar button.
+            string focus = Win32Dialogs.FocusActiveView();
+            System.Threading.Thread.Sleep(500);
+            try
+            {
+                Dictionary<string, object?> posted = Post(id);
+                posted["after"] = focus;
+                return posted;
+            }
+            catch (InvalidOperationException again) when (again.Message.Contains("cannot run"))
+            {
+                Dictionary<string, object?> pressed = Win32Dialogs.PressMainWindowButton(
+                    buttonNames.Concat(new[] { id }).ToArray(), $"{refused.Message} After {focus}, still refused.");
+                pressed["last"] = recorder.LastSequence;
+                return pressed;
+            }
         }
     }
 
