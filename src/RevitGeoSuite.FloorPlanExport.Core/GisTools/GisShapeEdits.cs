@@ -533,6 +533,12 @@ public static class GisShapeEdits
             return 1;
         }
 
+        if (!CanSketch(outline))
+        {
+            problems.Add($"{shape.Describe()}: {CrossesItself}");
+            return 0;
+        }
+
         NewFloor floor = NewFloorOf(shape, outline, standard, problems);
         edits.Add(new ShapeEdit(ShapeEditKind.Create, shape, new ShapeFloor(key, 0, Array.Empty<Polygon2D>(), levelId: levelId), outline, new[] { floor }, redrawFloor: false));
         return 0;
