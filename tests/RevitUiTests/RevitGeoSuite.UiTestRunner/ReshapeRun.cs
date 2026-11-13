@@ -180,7 +180,7 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label));
         ElementRow after = Element(reshape.UniqueId);
         step.Check(SameBox(after, reshapeBefore), $"One Undo puts floor F's box back ({Box(after)}, was {Box(reshapeBefore)}).");
@@ -196,7 +196,7 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("redo");
+        host.PostCommand("redo");
         ExpectEvent(step, seq, "redo", ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label));
         string output = await OpenExport(step, string.Empty, "export2", keepDefaultViews: true);
         bool exported = await ExportNow(step);
@@ -301,7 +301,7 @@ internal sealed partial class GisStandardRun
         await Shot(step, "C3a-9-shrink-applied");
         RevitShot(step, "C3a-9-shrink");
         seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", name);
         string[] missing = Elements(dependents.Select(item => item.Id)).Where(row => !row.Exists).Select(row => row.Key).ToArray();
         step.Check(missing.Length == 0, $"Undo brings every dependent back (missing: {string.Join(", ", missing)}).");

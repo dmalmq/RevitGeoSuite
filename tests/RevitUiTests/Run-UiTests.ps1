@@ -23,6 +23,9 @@
   sees no manifest for it, so it never asks Always Load. It refuses when RevitGeoSuite is installed,
   because two copies would build the same ribbon.
 
+  The export page's remembered settings (%APPDATA%\RevitGeoSuite\FloorPlanExport\settings.json) are
+  empty for the run and go back as they were on exit, so every run sees the page's defaults.
+
   -PyRevitExtension <folder> adds a pyRevit extension folder to userextensions in
   %APPDATA%\pyRevit\pyRevit_config.ini for the same window and takes it out again. pyRevit reads the
   list at Revit start; a reload in that Revit drops the folder. Every run also takes entries under
@@ -115,6 +118,16 @@ foreach ($name in 'settings.json', 'profiles.json') {
     $file = Join-Path $env:APPDATA "RevitGeoSuite\FloorPlanExport\$name"
     $exportSettings[$file] = $null
     if (Test-Path $file) { $exportSettings[$file] = [IO.File]::ReadAllBytes($file) }
+}
+# A run starts the export page as a first-time user sees it: no remembered views, folder or options, so
+# the default view choice (gis-model.json, else every GIS_ plan) is what the scenarios test. An empty
+# object, not a missing file: without the file RevitGeoSuite would read the legacy RevitGeoExporter one.
+# Profiles stay: the Cesium export uses the PC's first floor plan profile.
+$runSettings = Join-Path $env:APPDATA 'RevitGeoSuite\FloorPlanExport\settings.json'
+if ($StartRevit) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $runSettings) | Out-Null
+    [IO.File]::WriteAllText($runSettings, '{}')
+    Write-Host "Export settings for this run: empty ($runSettings); the old file goes back on exit."
 }
 
 # Test folders (C:\dev\rgs-uitests, C:\dev\revit-test) exist only on the build PC; never leave one in the roaming list.

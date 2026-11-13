@@ -55,6 +55,33 @@ internal sealed class TestHostClient : IDisposable
         return reply;
     }
 
+    /// <summary>
+    /// Posts Undo or Redo. Revit refuses a posted command for a moment after the active view changes
+    /// (CanPostCommand is false until it has been idle), so a refusal is retried for up to 15 s; the
+    /// last refusal names the active view and any dialog on screen.
+    /// </summary>
+    public JsonObject PostCommand(string command)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                return Call(command);
+            }
+            catch (TestHostException ex) when (ex.Message.Contains("cannot run", StringComparison.Ordinal))
+            {
+                if (clock.Elapsed > TimeSpan.FromSeconds(15))
+                {
+                    JsonObject state = Call("state");
+                    throw new TestHostException(command, $"{ex.Message} Still refused after {clock.Elapsed.TotalSeconds:0} s; active view '{state["viewName"]}', dialogs {Call("windows")["windows"]?.ToJsonString()}.");
+                }
+
+                Thread.Sleep(500);
+            }
+        }
+    }
+
     public int LastEvent() => Call("events", new { after = int.MaxValue })["last"]!.GetValue<int>();
 
     public List<RevitEvent> EventsAfter(int after) =>

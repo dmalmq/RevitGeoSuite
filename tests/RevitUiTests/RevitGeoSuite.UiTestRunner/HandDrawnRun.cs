@@ -139,7 +139,7 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", HandDrawnTransaction(drawn));
         step.Check(!Element(id).Exists, $"One Undo removes the new floor {id}.");
         return Task.CompletedTask;
@@ -154,7 +154,7 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("redo");
+        host.PostCommand("redo");
         ExpectEvent(step, seq, "redo", HandDrawnTransaction(drawn));
         string? uniqueId = Element(id).UniqueId;
         string output = await OpenExport(step, string.Empty, "export2", keepDefaultViews: true);
@@ -181,7 +181,7 @@ internal sealed partial class GisStandardRun
         if (drawnFloor is long id && Element(id).Exists)
         {
             int undoSeq = host.LastEvent();
-            host.Call("undo");
+            host.PostCommand("undo");
             ExpectEvent(step, undoSeq, "undo", HandDrawnTransaction(drawn));
         }
 
@@ -208,7 +208,7 @@ internal sealed partial class GisStandardRun
         if (created.Success)
         {
             seq = host.LastEvent();
-            host.Call("undo");
+            host.PostCommand("undo");
             ExpectEvent(step, seq, "undo", HandDrawnTransaction(drawn));
         }
     }

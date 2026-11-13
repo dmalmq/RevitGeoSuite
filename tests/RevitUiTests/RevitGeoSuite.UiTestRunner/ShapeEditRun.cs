@@ -191,7 +191,7 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", SplitTransaction(split));
         step.Check(!Element(id).Exists, $"One Undo removes the new floor {id}.");
         ElementRow kept = Element(split.Unit.UniqueId);
@@ -208,7 +208,7 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("redo");
+        host.PostCommand("redo");
         ExpectEvent(step, seq, "redo", SplitTransaction(split));
         string? newUniqueId = Element(id).UniqueId;
         string output = await OpenExport(step, string.Empty, "export2", keepDefaultViews: true);
@@ -317,7 +317,7 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", MergeTransaction(merge));
         ElementRow back = Element(merge.Taken.UniqueId);
         step.Check(back.Exists && back.Id == merge.Taken.Id, $"G is back with its UniqueId ({back.Id}).");
@@ -389,7 +389,7 @@ internal sealed partial class GisStandardRun
         step.Check(opening != 0 && !Element(opening).Exists, $"Opening {opening} is gone with it.");
         step.Check(log.Any(line => line.Contains(opening.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)), $"The result names opening {opening} before the delete.");
         seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", MergeTransaction(merge));
         step.Check(Element(merge.Taken.UniqueId).Exists && Element(opening).Exists, "One Undo brings G and the opening back.");
     }

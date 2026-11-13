@@ -159,14 +159,14 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", SetupTransaction);
         PlanViewRow? template = Views().FirstOrDefault(IsExportTemplate);
         step.Check(template?.CategoryHidden("OST_Floors") == true, $"Floors are hidden again, as B2.3 left them (hidden: {template?.CategoryHidden("OST_Floors")}).");
         step.Check(template?.LineStylesHidden == false, $"Thin Lines are shown again (hidden: {template?.LineStylesHidden}).");
 
         seq = host.LastEvent();
-        host.Call("redo");
+        host.PostCommand("redo");
         ExpectEvent(step, seq, "redo", SetupTransaction);
         template = Views().FirstOrDefault(IsExportTemplate);
         step.Check(template?.CategoryHidden("OST_Floors") == false, $"After Redo Floors are shown (hidden: {template?.CategoryHidden("OST_Floors")}).");
@@ -192,7 +192,7 @@ internal sealed partial class GisStandardRun
         await Shot(step, "B2-7-plan-without-template");
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", FixtureTransaction);
         PlanViewRow? after = Views().FirstOrDefault(view => view.Id == plan.Id);
         step.Check(after?.Template == TemplateName, $"After Undo {plan.Name} uses {TemplateName} again ({after?.Template ?? "none"}).");
@@ -241,7 +241,7 @@ internal sealed partial class GisStandardRun
 
         await Shell.GoToAsync("/gis-standard");
         int undoSeq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, undoSeq, "undo", FixtureTransaction);
         await CheckAgain();
         step.Check(!(await Inspect()).Findings.Any(item => item.Topic == "ids" && item.ElementIds.Contains(id)), "After Undo the ids error is gone.");

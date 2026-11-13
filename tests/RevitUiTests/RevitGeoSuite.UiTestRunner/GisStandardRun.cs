@@ -288,7 +288,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", SetupTransaction);
         await CheckAgain();
         InspectReply after = await Inspect();
@@ -382,7 +382,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", FixTransaction);
         await CheckAgain();
         InspectReply after = await Inspect();
@@ -524,7 +524,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         step.Check(names.Values.Any(name => name == JapaneseName), $"A written floor's name holds the Japanese text ({Describe(names)}).");
 
         seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", ParametersTransaction);
         names = ReadNames(editedFloorIds);
         step.Check(editedFloorIds.All(id => (names[id] ?? string.Empty) == namesBefore[id]), $"After Undo the names are back ({Describe(names)}).");
@@ -653,7 +653,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", DriftTransaction);
         await Shell.Button("Check again").Last.ClickAsync();
         step.Check(await Shell.ShowsAsync(boxes) && await boxes.CountAsync() == rows, $"After Undo the row is proposed again ({await boxes.CountAsync()} row(s), were {rows}).");

@@ -195,14 +195,14 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
-        host.Call("undo");
+        host.PostCommand("undo");
         ExpectEvent(step, seq, "undo", SetupTransaction);
         await CheckAgain();
         string[] back = (await Inspect()).SetupLines;
         step.Check(back.SequenceEqual(setupLinesBefore), $"The step 2 lines are back ({back.Length} line(s), were {setupLinesBefore.Length}).");
 
         seq = host.LastEvent();
-        host.Call("redo");
+        host.PostCommand("redo");
         ExpectEvent(step, seq, "redo", SetupTransaction);
         await CheckAgain();
         string[] left = (await Inspect()).SetupLines.Where(IsViewSetupLine).ToArray();
