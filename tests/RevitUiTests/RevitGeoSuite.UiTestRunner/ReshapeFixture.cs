@@ -34,7 +34,7 @@ internal static class ReshapeFixture
             foreach ((string table, string column, int srs) in UnitTables(connection))
             {
                 using SqliteCommand command = connection.CreateCommand();
-                string restriction = HasColumn(connection, table, "restriction") ? "restriction" : "''";
+                string restriction = HasColumn(connection, table, "restrict") ? "\"restrict\"" : HasColumn(connection, table, "restriction") ? "restriction" : "''";
                 command.CommandText = $"SELECT revit_key, name, level_id, category, \"{column.Replace("\"", "\"\"")}\", {restriction} FROM \"{table.Replace("\"", "\"\"")}\"";
                 using SqliteDataReader reader = command.ExecuteReader();
                 while (reader.Read())

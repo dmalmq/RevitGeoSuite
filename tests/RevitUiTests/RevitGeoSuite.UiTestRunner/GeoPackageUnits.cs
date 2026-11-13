@@ -20,14 +20,15 @@ internal static class GeoPackageUnits
             foreach (string table in FeatureTables(connection))
             {
                 List<string> columns = Columns(connection, table);
-                if (!columns.Contains("category") || !columns.Contains("restriction"))
+                string? restriction = RestrictionColumn(columns);
+                if (!columns.Contains("category") || restriction == null)
                 {
                     continue;
                 }
 
                 tables.Add($"{Path.GetFileName(file)}:{table}");
                 using SqliteCommand command = connection.CreateCommand();
-                command.CommandText = $"SELECT category, restriction FROM \"{table.Replace("\"", "\"\"")}\"";
+                command.CommandText = $"SELECT category, \"{restriction}\" FROM \"{table.Replace("\"", "\"\"")}\"";
                 using SqliteDataReader reader = command.ExecuteReader();
                 while (reader.Read())
                 {
@@ -39,6 +40,13 @@ internal static class GeoPackageUnits
 
         return new UnitCounts(categories, restrictions, tables);
     }
+
+    /// <summary>
+    /// The unit table's restriction column: the export writes "restrict" (the GIS field list's name);
+    /// "restriction" is accepted for files written before that.
+    /// </summary>
+    public static string? RestrictionColumn(IReadOnlyCollection<string> columns) =>
+        columns.Contains("restrict") ? "restrict" : columns.Contains("restriction") ? "restriction" : null;
 
     private static IEnumerable<string> FeatureTables(SqliteConnection connection)
     {

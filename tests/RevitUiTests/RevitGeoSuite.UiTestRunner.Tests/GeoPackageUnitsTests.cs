@@ -56,11 +56,11 @@ public class GeoPackageUnitsTests
                 continue;
             }
 
-            Execute(connection, $"CREATE TABLE \"{table}\" (fid INTEGER PRIMARY KEY, category TEXT, restriction TEXT)");
+            Execute(connection, $"CREATE TABLE \"{table}\" (fid INTEGER PRIMARY KEY, category TEXT, \"restrict\" TEXT)");
             foreach ((string category, string? restriction) in rows)
             {
                 using SqliteCommand insert = connection.CreateCommand();
-                insert.CommandText = $"INSERT INTO \"{table}\" (category, restriction) VALUES ($c, $r)";
+                insert.CommandText = $"INSERT INTO \"{table}\" (category, \"restrict\") VALUES ($c, $r)";
                 insert.Parameters.AddWithValue("$c", category);
                 insert.Parameters.AddWithValue("$r", (object?)restriction ?? DBNull.Value);
                 insert.ExecuteNonQuery();
@@ -74,4 +74,11 @@ public class GeoPackageUnitsTests
         command.CommandText = sql;
         command.ExecuteNonQuery();
     }
+
+    [Theory]
+    [InlineData(new[] { "fid", "category", "restrict" }, "restrict")]
+    [InlineData(new[] { "fid", "category", "restriction" }, "restriction")]
+    [InlineData(new[] { "fid", "category" }, null)]
+    public void Reads_the_restrict_column_the_export_writes(string[] columns, string? expected) =>
+        Assert.Equal(expected, GeoPackageUnits.RestrictionColumn(columns));
 }
