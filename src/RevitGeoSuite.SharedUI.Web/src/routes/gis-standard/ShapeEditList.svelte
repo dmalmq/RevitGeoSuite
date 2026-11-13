@@ -1,7 +1,7 @@
 <!--
   The shape edits of a drift file: floors whose outline someone changed in the GDB. Each one is drawn
   first (the floor now in grey, the GDB's outline in orange) and can be shown over the floor's plan
-  in Revit before anything changes. Applying redraws each ticked floor's sketch, and adds a split's new floors, each edit as its own undo step.
+  in Revit before anything changes. Applying redraws each ticked floor's sketch, adds a split's new floors and deletes a merge's other floors, each edit as its own undo step.
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte'
@@ -79,7 +79,9 @@
             <span class="block text-small text-muted-foreground">
               {shape.kind === 'split'
                 ? format($t('GisStandard.Shapes.Split', 'Split floor {0} into {1} floors'), shape.elementId, shape.floors)
-                : format($t('GisStandard.Shapes.Reshape', 'Reshape floor {0}'), shape.elementId)}
+                : shape.kind === 'merge'
+                  ? format($t('GisStandard.Shapes.Merge', 'Merge {1} floors into floor {0}'), shape.elementId, shape.floors)
+                  : format($t('GisStandard.Shapes.Reshape', 'Reshape floor {0}'), shape.elementId)}
             </span>
           </span>
         </label>

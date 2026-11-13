@@ -40,6 +40,7 @@ public enum ShapeEditKind
 {
     Reshape,
     Split,
+    Merge,
 }
 
 /// <summary>
@@ -59,7 +60,8 @@ public sealed class ShapeEdit
         ShapeFloor floor,
         IReadOnlyList<Polygon2D> outline,
         IReadOnlyList<IReadOnlyList<Polygon2D>> newFloors,
-        bool redrawFloor)
+        bool redrawFloor,
+        IReadOnlyList<ShapeFloor>? absorbed = null)
     {
         Kind = kind;
         Shape = shape;
@@ -67,6 +69,7 @@ public sealed class ShapeEdit
         Outline = outline;
         NewFloors = newFloors;
         RedrawFloor = redrawFloor;
+        Absorbed = absorbed ?? Array.Empty<ShapeFloor>();
     }
 
     public ShapeEditKind Kind { get; }
@@ -81,15 +84,26 @@ public sealed class ShapeEdit
     /// <summary>A split's pieces that no floor has yet, each a new floor of the kept floor's type and level.</summary>
     public IReadOnlyList<IReadOnlyList<Polygon2D>> NewFloors { get; }
 
-    /// <summary>False when the floor already has <see cref="Outline"/> and only new floors are missing.</summary>
+    /// <summary>False when the floor already has <see cref="Outline"/> and only new floors are missing, or only absorbed floors are left.</summary>
     public bool RedrawFloor { get; }
+
+    /// <summary>A merge's floors that the GDB merged into this one and that are still in the model: they are deleted.</summary>
+    public IReadOnlyList<ShapeFloor> Absorbed { get; }
 
     public string Label()
     {
         string name = Shape.Label.Length > 0 ? " (" + Shape.Label + ")" : string.Empty;
-        return Kind == ShapeEditKind.Split
-            ? string.Format(CultureInfo.InvariantCulture, "Split floor {0}{1} into {2} floors by the GDB", Floor.ElementId, name, NewFloors.Count + 1)
-            : string.Format(CultureInfo.InvariantCulture, "Reshape floor {0}{1} to the GDB outline", Floor.ElementId, name);
+        return Kind switch
+        {
+            ShapeEditKind.Split => string.Format(CultureInfo.InvariantCulture, "Split floor {0}{1} into {2} floors by the GDB", Floor.ElementId, name, NewFloors.Count + 1),
+            ShapeEditKind.Merge => string.Format(
+                CultureInfo.InvariantCulture,
+                "Merge floor(s) {0} into floor {1}{2} by the GDB",
+                string.Join(", ", Absorbed.Select(floor => floor.ElementId.ToString(CultureInfo.InvariantCulture))),
+                Floor.ElementId,
+                name),
+            _ => string.Format(CultureInfo.InvariantCulture, "Reshape floor {0}{1} to the GDB outline", Floor.ElementId, name),
+        };
     }
 }
 
@@ -139,6 +153,9 @@ public static class GisShapeEdits
         .Select(definition => definition.Name)
         .Where(name => name != "id" && name != "gis_key")
         .ToList();
+
+    /// <summary>The reason <see cref="ShapeFloor.CannotEdit"/> gives for an element a merge would delete that is not a floor.</summary>
+    public const string NotAFloor = "is not a floor";
 
     /// <summary>Outlines closer than this everywhere are the same.</summary>
     public const double SameOutlineMetres = 0.01;
@@ -191,7 +208,12 @@ public static class GisShapeEdits
             settled += PlanSplit(group.ToList(), floors, projectToModel, edits, problems);
         }
 
-        foreach (GisDriftShape shape in file.Shapes.Where(shape => shape.Edit != GisDrift.Split))
+        foreach (IGrouping<string, GisDriftShape> group in file.Shapes.Where(shape => shape.Edit == GisDrift.Merged).GroupBy(shape => shape.Group.Length > 0 ? shape.Group : shape.RevitKey))
+        {
+            settled += PlanMerge(group.ToList(), floors, projectToModel, edits, problems);
+        }
+
+        foreach (GisDriftShape shape in file.Shapes.Where(shape => shape.Edit != GisDrift.Split && shape.Edit != GisDrift.Merged))
         {
             if (shape.Edit != GisDrift.Reshaped)
             {
@@ -282,6 +304,75 @@ public static class GisShapeEdits
         }
 
         edits.Add(new ShapeEdit(ShapeEditKind.Split, keeper, floor, outline, missing, redraw));
+        return settled;
+    }
+
+    /// <summary>
+    /// Plans one merge: the floor that keeps its row takes the merged outline, and the floors the
+    /// GDB merged into it are deleted. A floor already gone counts as done, so a second read offers
+    /// nothing. Returns how many of the group's shapes the model already matches.
+    /// </summary>
+    private static int PlanMerge(
+        IReadOnlyList<GisDriftShape> shapes,
+        IReadOnlyDictionary<string, ShapeFloor> floors,
+        AffineTransform2D projectToModel,
+        List<ShapeEdit> edits,
+        List<string> problems)
+    {
+        List<GisDriftShape> keepers = shapes.Where(shape => shape.Keeps).ToList();
+        if (keepers.Count != 1)
+        {
+            problems.Add($"{shapes[0].Describe()}: the drift file has {keepers.Count} units of this merge that keep their row, not 1. Merge them in Revit by hand.");
+            return 0;
+        }
+
+        GisDriftShape keeper = keepers[0];
+        if (!floors.TryGetValue(keeper.UniqueId, out ShapeFloor? floor) || floor.CannotEdit == NotAFloor)
+        {
+            problems.Add($"{keeper.Describe()}: no floor in this model has unique id {keeper.UniqueId}. Units from rooms and families are merged in Revit by hand.");
+            return 0;
+        }
+
+        List<Polygon2D> outline = ToModel(keeper.Outline, projectToModel);
+        if (outline.Count == 0)
+        {
+            problems.Add($"{keeper.Describe()}: the GDB outline has no area.");
+            return 0;
+        }
+
+        List<ShapeFloor> absorbed = new();
+        int settled = 0;
+        foreach (GisDriftShape gone in shapes.Where(shape => !shape.Keeps))
+        {
+            if (!floors.TryGetValue(gone.UniqueId, out ShapeFloor? other))
+            {
+                settled++;
+            }
+            else if (other.CannotEdit == NotAFloor)
+            {
+                problems.Add($"{gone.Describe()}: element {other.ElementId} {NotAFloor}, so the merge does not delete it. Merge it in Revit by hand.");
+                return settled;
+            }
+            else
+            {
+                absorbed.Add(other);
+            }
+        }
+
+        bool redraw = !SameOutline(floor.Outline, outline);
+        settled += redraw ? 0 : 1;
+        if (!redraw && absorbed.Count == 0)
+        {
+            return settled;
+        }
+
+        if (redraw && floor.CannotEdit != null)
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {floor.CannotEdit}, so its sketch is not redrawn. Merge it in Revit by hand.");
+            return settled;
+        }
+
+        edits.Add(new ShapeEdit(ShapeEditKind.Merge, keeper, floor, outline, Array.Empty<IReadOnlyList<Polygon2D>>(), redraw, absorbed));
         return settled;
     }
 

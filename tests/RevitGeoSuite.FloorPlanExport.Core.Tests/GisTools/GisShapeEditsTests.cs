@@ -160,7 +160,7 @@ public sealed class GisShapeEditsTests
                 Shape(GisDrift.Reshaped, "same", Rect(0, 0, 10, 10)),
                 Shape(GisDrift.Reshaped, "wider", Rect(0, 0, 12, 10)),
                 Shape(GisDrift.Reshaped, "no-floor", Rect(0, 0, 12, 10)),
-                Shape(GisDrift.Merged, "merged", Rect(0, 0, 5, 10)),
+                Shape(GisDrift.Moved, "moved", Rect(0, 0, 5, 10)),
             },
             new[]
             {
@@ -198,7 +198,7 @@ public sealed class GisShapeEditsTests
     public void EditsAppliedInALaterStepAreListed()
     {
         (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(
-            new[] { Shape(GisDrift.Merged, "a", Rect(0, 0, 5, 10)) },
+            new[] { Shape(GisDrift.Moved, "a", Rect(0, 0, 5, 10)) },
             new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }) });
 
         Assert.Empty(edits);
@@ -281,6 +281,57 @@ public sealed class GisShapeEditsTests
         Assert.Equal("unit ショップ split: floor 101 has a slope arrow, so its sketch is not redrawn. Split it in Revit by hand.", Assert.Single(plan.Problems));
     }
 
+    private static GisDriftShape Merged(string uniqueId, bool keeps, Polygon2D? outline) =>
+        new(GisDrift.Merged, "m|" + uniqueId + "|0", uniqueId, "unit", "ショップ", "lvl-1f", "m|a|0", keeps, outline == null ? Array.Empty<IReadOnlyList<IReadOnlyList<(double X, double Y)>>>() : Gdb(outline));
+
+    [Fact]
+    public void AMergeRedrawsTheKeptFloorAndDeletesTheOthers()
+    {
+        ShapePlan plan = Plan(
+            new[] { Merged("a", true, Rect(0, 0, 10, 10)), Merged("b", false, null) },
+            new[]
+            {
+                new ShapeFloor("a", 101, new[] { Rect(0, 0, 5, 10) }),
+                new ShapeFloor("b", 102, new[] { Rect(5, 0, 10, 10) }),
+            });
+
+        Assert.Empty(plan.Problems);
+        ShapeEdit edit = Assert.Single(plan.Edits);
+        Assert.Equal(ShapeEditKind.Merge, edit.Kind);
+        Assert.True(edit.RedrawFloor);
+        Assert.Equal(102, Assert.Single(edit.Absorbed).ElementId);
+        Assert.Equal("Merge floor(s) 102 into floor 101 (ショップ) by the GDB", edit.Label());
+        Assert.Equal(2, plan.Waiting);
+    }
+
+    [Fact]
+    public void AMergeTheModelAlreadyHasOffersNothing()
+    {
+        ShapePlan plan = Plan(
+            new[] { Merged("a", true, Rect(0, 0, 10, 10)), Merged("b", false, null) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }) });
+
+        Assert.Empty(plan.Edits);
+        Assert.Empty(plan.Problems);
+        Assert.Equal(0, plan.Waiting);
+    }
+
+    [Fact]
+    public void AMergeLeavesAnElementThatIsNotAFloorToBeDoneByHand()
+    {
+        ShapePlan plan = Plan(
+            new[] { Merged("a", true, Rect(0, 0, 10, 10)), Merged("b", false, null) },
+            new[]
+            {
+                new ShapeFloor("a", 101, new[] { Rect(0, 0, 5, 10) }),
+                new ShapeFloor("b", 102, Array.Empty<Polygon2D>(), GisShapeEdits.NotAFloor),
+            });
+
+        Assert.Empty(plan.Edits);
+        Assert.Equal("unit ショップ merged: element 102 is not a floor, so the merge does not delete it. Merge it in Revit by hand.", Assert.Single(plan.Problems));
+        Assert.Equal(2, plan.Waiting);
+    }
+
     [Fact]
     public void NewFloorsTakeTheFloorsGisValuesButNotItsIds()
     {
@@ -302,9 +353,9 @@ public sealed class GisShapeEditsTests
             ModelToProject,
             file.Epsg);
 
-        // One line per shape, except the split's two pieces, which share one.
+        // One line per shape, except the split's two pieces and the merge's two units, which share one each.
         Assert.Empty(plan.Edits);
-        Assert.Equal(file.Shapes.Count - 1, plan.Problems.Count);
+        Assert.Equal(file.Shapes.Count - 2, plan.Problems.Count);
         Assert.Equal(file.Shapes.Count, plan.Waiting);
     }
 

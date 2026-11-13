@@ -32,6 +32,15 @@ public static class ShapeEditWork
             }
         }
 
+        // A merge deletes only floors: anything else the GDB merged away is named, not deleted.
+        foreach (GisDriftShape gone in file.Shapes.Where(shape => shape.Edit == GisDrift.Merged && !shape.Keeps && !floors.ContainsKey(shape.UniqueId)))
+        {
+            if (gone.UniqueId.Length > 0 && document.GetElement(gone.UniqueId) is Element element)
+            {
+                floors[gone.UniqueId] = new ShapeFloor(gone.UniqueId, element.Id.Value, Array.Empty<Polygon2D>(), GisShapeEdits.NotAFloor);
+            }
+        }
+
         // A split's pieces lie inside the floor it splits: the floors there are the ones a piece may already be.
         foreach (Floor splitFloor in file.Shapes
             .Where(shape => shape.Edit == GisDrift.Split && shape.Keeps)
@@ -54,9 +63,10 @@ public static class ShapeEditWork
     /// Applies one shape edit as one undo step named after it. A reshape redraws the floor's
     /// sketch, so the floor keeps its UniqueId, revit_key, id and parameters. A split redraws the
     /// kept floor to its piece and adds a floor for each other piece, with the kept floor's type,
-    /// level, offset and GIS values; the next Kanizu apply pairs each piece with its new floor.
+    /// level, offset and GIS values; the next Kanizu apply pairs each piece with its new floor. A
+    /// merge deletes the floors the GDB merged into the kept one, then redraws it to the merged outline.
     /// </summary>
-    /// <returns>What Revit warned about, the elements gone with the old outline, and the new floors, one line each.</returns>
+    /// <returns>What Revit warned about, the elements gone with the old outline or a deleted floor, and the new floors, one line each.</returns>
     public static IReadOnlyList<string> Apply(Document document, ShapeEdit edit)
     {
         if (edit.Kind == ShapeEditKind.Reshape)
@@ -68,8 +78,22 @@ public static class ShapeEditWork
         group.Start();
         try
         {
-            List<string> notes = edit.RedrawFloor ? Redraw(document, edit).ToList() : new List<string>();
-            notes.AddRange(AddFloors(document, edit));
+            List<string> notes = new();
+            if (edit.Kind == ShapeEditKind.Merge)
+            {
+                // The merged floors go first, so the kept floor's new outline never overlaps them.
+                notes.AddRange(DeleteAbsorbed(document, edit));
+            }
+
+            if (edit.RedrawFloor)
+            {
+                notes.AddRange(Redraw(document, edit));
+            }
+
+            if (edit.NewFloors.Count > 0)
+            {
+                notes.AddRange(AddFloors(document, edit));
+            }
             group.Assimilate();
             return notes;
         }
@@ -80,6 +104,48 @@ public static class ShapeEditWork
                 group.RollBack();
             }
         }
+    }
+
+    /// <summary>Deletes the floors a merge took in, in one transaction, and names each with what Revit deleted with it.</summary>
+    private static IEnumerable<string> DeleteAbsorbed(Document document, ShapeEdit edit)
+    {
+        List<string> notes = new();
+        using Transaction transaction = new(document, edit.Label());
+        FailOnError failures = new();
+        transaction.SetFailureHandlingOptions(transaction.GetFailureHandlingOptions().SetFailuresPreprocessor(failures));
+        transaction.Start();
+        foreach (ShapeFloor gone in edit.Absorbed)
+        {
+            if (document.GetElement(gone.UniqueId) is not Floor floor)
+            {
+                continue;
+            }
+
+            HashSet<ElementId> parts = new() { floor.Id, floor.SketchId };
+            if (document.GetElement(floor.SketchId) is Sketch sketch)
+            {
+                parts.UnionWith(sketch.GetAllElements());
+            }
+
+            List<string> hosted = floor.GetDependentElements(null)
+                .Where(id => !parts.Contains(id))
+                .Select(id => (Id: id, Name: Describe(document.GetElement(id))))
+                .Where(entry => entry.Name.Length > 0)
+                .Select(entry => $"{entry.Name} {entry.Id.Value}")
+                .ToList();
+            document.Delete(floor.Id);
+            notes.Add(hosted.Count == 0
+                ? $"Deleted floor {gone.ElementId}."
+                : $"Deleted floor {gone.ElementId}, and with it {string.Join(", ", hosted)}.");
+        }
+
+        if (transaction.Commit() != TransactionStatus.Committed)
+        {
+            string why = failures.Errors.Count > 0 ? ": " + string.Join(" ", failures.Errors.Distinct()) : string.Empty;
+            throw new InvalidOperationException($"Revit refused to delete the floors merged into floor {edit.Floor.ElementId}; nothing changed{why}");
+        }
+
+        return failures.Warnings.Distinct().Select(text => "Revit warned: " + text).Concat(notes);
     }
 
     /// <summary>A floor for each piece of a split that no floor has yet, in one transaction, read back to check Revit kept each outline.</summary>

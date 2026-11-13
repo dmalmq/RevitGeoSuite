@@ -139,7 +139,7 @@ public sealed class GisShapeShowHandler : IRpcHandler
             }
 
             double z = FloorTopZ(floor) + 0.15;
-            List<OverlayLine> lines = Lines(edit.Floor.Outline, z, new Color(128, 128, 128))
+            List<OverlayLine> lines = edit.Absorbed.Select(floor => floor.Outline).Prepend(edit.Floor.Outline).SelectMany(outline => Lines(outline, z, new Color(128, 128, 128)))
                 .Concat(edit.NewFloors.Prepend(edit.Outline).SelectMany(outline => Lines(outline, z, new Color(234, 88, 12))))
                 .ToList();
             OutlineOverlay.Show(view, lines);
@@ -245,12 +245,17 @@ internal static class GisDriftWork
     public static GisShapeEditItem Item(ShapeEdit edit) => new()
     {
         UniqueId = edit.Floor.UniqueId,
-        Kind = edit.Kind == ShapeEditKind.Split ? "split" : "reshape",
-        Floors = edit.NewFloors.Count + 1,
+        Kind = edit.Kind switch
+        {
+            ShapeEditKind.Split => "split",
+            ShapeEditKind.Merge => "merge",
+            _ => "reshape",
+        },
+        Floors = edit.Kind == ShapeEditKind.Merge ? edit.Absorbed.Count + 1 : edit.NewFloors.Count + 1,
         ElementId = edit.Floor.ElementId,
         Feature = edit.Shape.Label.Length > 0 ? edit.Shape.Label : edit.Floor.UniqueId,
         Label = edit.Label(),
-        Before = Rings(edit.Floor.Outline),
+        Before = edit.Absorbed.Select(floor => floor.Outline).Prepend(edit.Floor.Outline).SelectMany(Rings).ToArray(),
         After = edit.NewFloors.Prepend(edit.Outline).SelectMany(Rings).ToArray(),
     };
 
