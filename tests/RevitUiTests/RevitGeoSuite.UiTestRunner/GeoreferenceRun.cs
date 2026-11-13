@@ -60,6 +60,15 @@ internal sealed partial class GisStandardRun
             "The Survey Point and Project Base Point are unchanged.");
     }
 
+    /// <summary>The georef-read scenario: the values a georeferenced copy holds, to compare with C8.G's.</summary>
+    private async Task ReadGeoreference(StepResult step)
+    {
+        JsonNode state = await Shell.RpcAsync("georeference.getCurrentState") ?? throw new InvalidOperationException("georeference.getCurrentState returned nothing.");
+        step.Note(Describe(state));
+        step.Note($"Raw: {state.ToJsonString()}");
+        step.Check((bool?)state["hasStoredGeoInfo"] == true, "The model has a georeference record.");
+    }
+
     private static string Describe(JsonNode state)
     {
         static string Point(JsonNode? point) => point == null ? "none" : string.Format(

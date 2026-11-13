@@ -99,6 +99,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         new("c3c-merge", "Review GDB edits merges floors the GDB merged (C3c).", run => run.MergeSteps()),
         new("c3d-hand-drawn", "Review GDB edits creates a floor for a unit drawn by hand in the GDB (C3d).", run => run.HandDrawnSteps()),
         new("a3-fields", "the export writes elevator levels_served, door fields and GDB-owned field rows (RevitGeoSuite #45).", run => run.A3Steps()),
+        new("georef-read", "reads RevitGeoSuite's georeference record and Revit's coordinates from a copy of the model; changes nothing.", run => run.Step("G.R", "Read the georeference record and coordinates", run.ReadGeoreference)),
         new("c8-network", "the Network tab shows Kanizu's walking network in Revit without a transaction (C8).", run => run.NetworkSteps()),
     };
 

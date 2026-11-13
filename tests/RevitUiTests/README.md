@@ -287,6 +287,10 @@ The sample file is a copy of the C8 conformance sample, until Kanizu writes the 
 
 Showing the network adds no element, because adding an element needs a transaction, and the steps check that none was committed. A person judges what is drawn from the screenshots.
 
+## The georef-read scenario
+
+`--scenario georef-read --model <file>` opens a copy of the model in the run folder, like every scenario, and writes RevitGeoSuite's georeference record and Revit's Site Location, project position, Survey Point and Project Base Point to the report. It changes nothing. Use it on the georeferenced LUMINE file to compare with what C8.G records on the pristine copy.
+
 ## What still needs a person
 
 - Looking at the screenshots. The text checks are automated, but layout and look are not.
