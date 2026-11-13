@@ -99,7 +99,7 @@ The standard list has these rows beyond the core ones:
 
 | Row | Source | Owner |
 |---|---|---|
-| `unit.levels_served` | core: the levels an elevator stops at, as level ids lowest first and separated by commas. From `gis_levels_served` (level names or `short_name`s) on the type of any elevator object in the shaft, else the levels the shaft's objects stand on or span. A shaft is the elevator objects whose plan footprints overlap by at least half of the smaller one, so a car drawn once per floor is one elevator and cars side by side in a bank stay apart. Empty when neither gives two levels, and for every unit that is not an elevator family. Kanizu reads it for the network and does not write it to the GDB, whose levels have ids of their own. | revit |
+| `unit.levels_served` | core: the levels an elevator stops at, as level ids lowest first and separated by commas. From `gis_levels_served` (level names or `short_name`s) on the type of any elevator object in the shaft, else the levels the shaft's objects stand on or span. A shaft is the elevator objects whose plan footprints overlap by at least half of the smaller one, so a car drawn once per floor is one elevator and cars side by side in a bank stay apart. Only levels this export writes count, so a level with a `level_id` but no exported view never appears. Empty when neither gives two levels, and for every unit that is not an elevator family. Kanizu reads it for the network and does not write it to the GDB, whose levels have ids of their own. | revit |
 | `opening.door`, `opening.access_con` | parameter `gis_door`, `gis_access_con` on the door type | revit |
 | `opening.name` | parameter `name` on the door | revit |
 | `level.address_id`, `level.build_id`, `fixture.anchor_id` | none | gdb |

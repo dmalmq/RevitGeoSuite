@@ -1058,12 +1058,24 @@ public sealed class UnitExtractor
                 box.Max.Z * FeetToMeters);
     }
 
-    /// <summary>The levels with an export id, read once per extractor: every elevator asks for them.</summary>
+    /// <summary>
+    /// The levels this export writes, by element id. Elevators stop only at these, so a level with a
+    /// level_id but no exported view (a transfer level) never appears in levels_served. Null: every
+    /// level with a level_id.
+    /// </summary>
+    public ISet<long>? ExportedLevelIds { get; set; }
+
+    /// <summary>The exported levels with an export id, read once per extractor: every elevator asks for them.</summary>
     private IReadOnlyList<ElevatorStop> CollectElevatorStops(ICollection<string> warnings)
     {
         List<ElevatorStop> levels = new();
         foreach (Level level in new FilteredElementCollector(_document).OfClass(typeof(Level)).Cast<Level>())
         {
+            if (ExportedLevelIds != null && !ExportedLevelIds.Contains(level.Id.Value))
+            {
+                continue;
+            }
+
             string? exportId = ReadLevelExportId(level, warnings, out _);
             if (exportId != null)
             {
