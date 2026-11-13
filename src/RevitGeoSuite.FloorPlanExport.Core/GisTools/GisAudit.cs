@@ -247,6 +247,16 @@ public static class GisAudit
                     new[] { level.ElementId });
             }
         }
+
+        List<LevelInfo> withFloors = snapshot.Levels.Where(level => level.HasFloors).ToList();
+        if (withFloors.Count > 0 && withFloors.All(level => level.Ordinal is null))
+        {
+            yield return new GisAuditFinding(
+                GisAuditSeverity.Warning,
+                "levels",
+                "No level has an ordinal, so the export takes the level nearest elevation 0 as ground, which is wrong for a model at its real height. Setting the ground floor's ordinal to 0 is enough.",
+                withFloors.Select(level => level.ElementId));
+        }
     }
 
     private static IEnumerable<GisAuditFinding> AuditFamilies(ModelSnapshot snapshot, GisToolStandard standard)

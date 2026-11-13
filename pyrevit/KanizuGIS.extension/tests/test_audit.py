@@ -48,6 +48,7 @@ class AuditTests(unittest.TestCase):
     def test_flags_levels_with_floors_but_no_ordinal(self):
         findings = self.run_audit(levels=[
             snapshot.LevelInfo(1, u"ルミネ2_3FL", None, u"3F"),
+            snapshot.LevelInfo(3, u"1FL", 0, u"1F"),
             snapshot.LevelInfo(2, u"Roof", None, u"", has_floors=False),
         ])
         self.assertEqual(1, len(findings))
