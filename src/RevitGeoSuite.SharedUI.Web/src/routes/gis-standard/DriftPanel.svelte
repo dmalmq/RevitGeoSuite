@@ -116,10 +116,11 @@
   {#if applied}
     <AppliedBanner
       title={applied.shapes
-        ? format($t('GisStandard.Shapes.Done', '{0} floor(s) reshaped, each one undo step. Export again so Kanizu sees them.'), applied.log.length)
+        ? format($t('GisStandard.Shapes.Done', '{0} floor(s) reshaped, each one undo step. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)
         : format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), applied.log.length)}
       log={applied.log}
       skipped={applied.skipped}
+      undoHint={applied.shapes ? $t('GisStandard.Shapes.UndoHint', 'Each floor is its own undo step in Revit.') : undefined}
       skippedTitle={applied.shapes
         ? format($t('GisStandard.Shapes.Skipped', '{0} ticked shape edit(s) were not applied:'), applied.skipped.length)
         : format($t('GisStandard.Drift.Skipped', '{0} ticked change(s) were not written:'), applied.skipped.length)}

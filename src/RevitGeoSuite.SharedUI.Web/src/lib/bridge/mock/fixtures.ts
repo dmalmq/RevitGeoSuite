@@ -447,7 +447,11 @@ function gisDrift() {
     'gisDrift.clearShape': () => undefined,
     'gisDrift.applyShapes': (payload: { uniqueIds?: string[] }) => {
       reshaped = true
-      return { log: shapes.filter((shape) => payload?.uniqueIds?.includes(shape.uniqueId)).map((shape) => shape.label), skipped: [] }
+      // Revit's notes on an edit come indented under it, as the Shell writes them.
+      const log = shapes
+        .filter((shape) => payload?.uniqueIds?.includes(shape.uniqueId))
+        .flatMap((shape) => (shape.uniqueId === 'f-walk' ? [shape.label, '  Revit deleted opening 412301, which hung on the floor outside its new outline.'] : [shape.label]))
+      return { log, skipped: [] }
     }
   }
 }
