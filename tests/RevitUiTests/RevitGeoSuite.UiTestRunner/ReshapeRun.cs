@@ -351,6 +351,7 @@ internal sealed partial class GisStandardRun
 
     private async Task<string[]> ApplyShapes(StepResult step, int count)
     {
+        int seq = host.LastEvent();
         string label = $"Apply {count} shape edit(s)";
         await Shell.Button(label).ClickAsync();
         ILocator confirm = Shell.Page.GetByTestId("drift-confirm");
@@ -362,7 +363,12 @@ internal sealed partial class GisStandardRun
 
         // C3a's build says "floor(s) reshaped"; from C3b on, every shape edit says "shape edit(s) applied".
         Regex banner = new($@"^{count} (floor\(s\) reshaped|shape edit\(s\) applied)");
-        step.Check(await Shell.ShowsAsync(Shell.Text(banner), 120000), $"The banner reads '{count} floor(s) reshaped' or '{count} shape edit(s) applied'.");
+        if (!step.Check(await Shell.ShowsAsync(Shell.Text(banner), 120000), $"The banner reads '{count} floor(s) reshaped' or '{count} shape edit(s) applied'."))
+        {
+            // Word for word, so a refusal (such as Revit rejecting a SketchEditScope inside a TransactionGroup) reaches the report.
+            string dialogs = string.Join(" | ", host.EventsAfter(seq).Where(item => item.Kind == "dialog").Select(item => $"{item.DialogId}: {item.Message}"));
+            step.Note($"Page messages: {await Shell.AlertTextAsync()}. Revit dialogs: {(dialogs.Length > 0 ? dialogs : "none")}.");
+        }
         return await ReadAppliedLog();
     }
 
