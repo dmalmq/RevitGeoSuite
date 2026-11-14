@@ -35,8 +35,8 @@ public static class ShapeEditWork
             }
         }
 
-        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = GisShapeEdits.Plan(file, floors, modelToProject, ModelEpsg(document));
-        return (edits, exported.Problems.Concat(problems).ToList());
+        ShapePlan plan = GisShapeEdits.Plan(file, floors, modelToProject, ModelEpsg(document));
+        return new ShapePlan(plan.Edits, exported.Problems.Concat(plan.Problems).ToList(), plan.Waiting);
     }
 
     /// <summary>
