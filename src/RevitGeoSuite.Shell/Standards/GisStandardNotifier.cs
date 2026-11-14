@@ -179,7 +179,7 @@ internal sealed class GisStandardNotifier
             _driftWritten = WrittenAt(_driftPath);
             _button.ItemText = "GIS standard\n" + status.ShortLabel + (waiting > 0 ? " · " + WaitingLabel(waiting) : string.Empty);
             _button.ToolTip = waiting > 0
-                ? $"{status.Summary}\n{WaitingLabel(waiting)} from Kanizu wait for this model. Open GIS standard, then GDB edits, to review them."
+                ? $"{status.Summary}\n{WaitingLabel(waiting)} from Kanizu {(waiting == 1 ? "waits" : "wait")} for this model. Open GIS standard, then GDB edits, to review them."
                 : status.Summary;
             _buttonDocumentKey = key;
         }
