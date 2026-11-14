@@ -60,6 +60,7 @@ public sealed class GisFieldList
             Core("unit", "level_id", "レベルID", "The level the unit is on."),
             Core("unit", VerticalCirculation.DirectionAttributeName, "方向", "Travel direction of a stair, escalator or moving walkway.", values: direction),
             Core("unit", VerticalCirculation.ToLevelAttributeName, "行先レベル", "The level a stair or escalator leads to."),
+            Core("unit", VerticalCirculation.LevelsServedAttributeName, "停止レベル", "The levels an elevator stops at: level ids, lowest first, separated by commas. From gis_levels_served, else the levels of the elevator objects in the same plan spot.", length: 2000),
             Core("unit", "source", "ソース", "What the unit was made from."),
             Core("unit", "display_point", "表示点", "Label point."),
             Core("unit", "preview_fill_color", "プレビュー色", "Fill colour in the preview."),
@@ -74,6 +75,9 @@ public sealed class GisFieldList
             Core("opening", "category", "カテゴリ", "Opening category."),
             Core("opening", "level_id", "レベルID", "The level the opening is on."),
             Core("opening", "element_id", "要素ID", "Revit element id.", type: GisFieldType.Integer),
+            StandardParameter("opening", "door", "ドア種別", GisSharedParameters.GisDoor, "Door type, from the door type's gis_door."),
+            StandardParameter("opening", "access_con", "入場管理", GisSharedParameters.GisAccessCon, "Access control, from the door type's gis_access_con."),
+            StandardParameter("opening", "name", "名称", GisSharedParameters.Name, "Name of the door."),
             Core("fixture", "id", "ID", "Stable export id."),
             Core("fixture", RevitKey.AttributeName, "Revitキー", "Model, element UniqueId and part."),
             Core("fixture", "type", "種別", "Fixture type."),
@@ -82,12 +86,15 @@ public sealed class GisFieldList
             Core("fixture", "level_id", "レベルID", "The level the fixture is on."),
             Core("fixture", "source", "ソース", "What the fixture was made from."),
             Core("fixture", "display_point", "表示点", "Label point."),
+            Gdb("fixture", "anchor_id", "アンカーID", "Anchor of the fixture. Kept in the GDB."),
             Core("level", "id", "ID", "Stable export id of the level."),
             Core("level", RevitKey.AttributeName, "Revitキー", "Model, level UniqueId and part."),
             Core("level", "level_name", "レベル名", "Revit level name."),
             Core("level", "short_name", "略称", "Short name of the level, from its short_name parameter."),
             Core("level", "ordinal", "階数", "Floor number.", type: GisFieldType.Integer),
             Core("level", "elevation_m", "標高", "Elevation in metres.", type: GisFieldType.Real),
+            Gdb("level", "address_id", "住所ID", "Address of the level. Kept in the GDB."),
+            Gdb("level", "build_id", "建物ID", "Building of the level. Kept in the GDB."),
         };
 
         return new GisFieldList(fields);
@@ -112,11 +119,16 @@ public sealed class GisFieldList
     public static GisFieldList MergeOntoStandard(GisFieldList standard, GisFieldList station, ICollection<string> problems)
     {
         List<GisField> merged = new(standard.Fields);
-        HashSet<string> core = new(standard.Fields.Select(field => field.Key), StringComparer.Ordinal);
+        Dictionary<string, GisField> core = standard.Fields.ToDictionary(field => field.Key, StringComparer.Ordinal);
         foreach (GisField field in station.Fields)
         {
-            if (core.Contains(field.Key))
+            if (core.TryGetValue(field.Key, out GisField? standardField))
             {
+                if (!SameSource(field, standardField))
+                {
+                    problems?.Add($"{field.Key}: the standard list defines this field ({DescribeSource(standardField)}), so the station row ({DescribeSource(field)}) is left out.");
+                }
+
                 continue;
             }
 
@@ -130,6 +142,26 @@ public sealed class GisFieldList
         }
 
         return new GisFieldList(merged);
+    }
+
+    private static bool SameSource(GisField a, GisField b)
+    {
+        return a.Owner == b.Owner &&
+               a.Source.Kind == b.Source.Kind &&
+               string.Equals(a.Source.Parameter, b.Source.Parameter, StringComparison.Ordinal) &&
+               a.Source.Binding == b.Source.Binding &&
+               string.Equals(a.Source.Derived, b.Source.Derived, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string DescribeSource(GisField field)
+    {
+        string source = field.Source.Kind switch
+        {
+            GisFieldSourceKind.Parameter => $"parameter {field.Source.Parameter}",
+            GisFieldSourceKind.Derived => $"derived {field.Source.Derived}",
+            _ => field.Source.Kind.ToString().ToLowerInvariant(),
+        };
+        return $"{source}, owner {field.Owner.ToString().ToLowerInvariant()}";
     }
 
     public static GisFieldList Parse(string json, string sourceLabel, ICollection<string>? problems = null)
@@ -249,6 +281,7 @@ public sealed class GisFieldList
                     ? CustomAttributeSourceKind.RevitParameter
                     : CustomAttributeSourceKind.DerivedValue,
                 SourceKey = field.Source.Kind == GisFieldSourceKind.Parameter ? field.Source.Parameter! : field.Source.Derived!,
+                WarnWhenMissing = false,
                 TargetType = field.Type switch
                 {
                     GisFieldType.Integer => ExportAttributeType.Integer,
@@ -373,13 +406,47 @@ public sealed class GisFieldList
         return null;
     }
 
+    /// <summary>A row read from a standard parameter, which <see cref="GisSharedParameters"/> binds.</summary>
+    private static GisField StandardParameter(string layer, string name, string aliasJa, string parameter, string description)
+    {
+        GisParameterDefinition definition = GisSharedParameters.All.Single(entry => entry.Name == parameter);
+        return new GisField
+        {
+            Layer = layer,
+            Name = name,
+            AliasJa = aliasJa,
+            Source = new GisFieldSource
+            {
+                Kind = GisFieldSourceKind.Parameter,
+                Parameter = parameter,
+                Binding = definition.Binding == GisParameterBinding.Type ? GisFieldBinding.Type : GisFieldBinding.Instance,
+            },
+            Owner = GisFieldOwner.Revit,
+            Description = description,
+        };
+    }
+
+    private static GisField Gdb(string layer, string name, string aliasJa, string description)
+    {
+        return new GisField
+        {
+            Layer = layer,
+            Name = name,
+            AliasJa = aliasJa,
+            Source = new GisFieldSource { Kind = GisFieldSourceKind.None },
+            Owner = GisFieldOwner.Gdb,
+            Description = description,
+        };
+    }
+
     private static GisField Core(
         string layer,
         string name,
         string aliasJa,
         string description,
         GisFieldType type = GisFieldType.Text,
-        IReadOnlyList<string>? values = null)
+        IReadOnlyList<string>? values = null,
+        int? length = null)
     {
         return new GisField
         {
@@ -387,6 +454,7 @@ public sealed class GisFieldList
             Name = name,
             AliasJa = aliasJa,
             Type = type,
+            Length = length,
             Values = values?.ToList() ?? new List<string>(),
             Source = new GisFieldSource { Kind = GisFieldSourceKind.Core },
             Owner = GisFieldOwner.Revit,

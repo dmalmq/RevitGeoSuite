@@ -143,6 +143,7 @@ public sealed class FloorExportDataPreparer
         DetailExtractor detailExtractor = new(_document, geometryRepairOptions, hostSourceDescriptor, activeSchemaProfile);
         _stairDrawingSettings = options?.StairDrawingSettings ?? StairDrawingSettings.Default;
         unitExtractor.StairDrawingSettings = _stairDrawingSettings;
+        unitExtractor.ExportedLevelIds = new HashSet<long>(contexts.Select(x => x.Level.Id.Value));
         detailExtractor.StairDrawingSettings = _stairDrawingSettings;
         OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog, geometryRepairOptions, hostSourceDescriptor, activeSchemaProfile);
         LevelBoundaryBuilder levelBoundaryBuilder = new();

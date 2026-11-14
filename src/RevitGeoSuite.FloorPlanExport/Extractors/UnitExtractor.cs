@@ -45,6 +45,13 @@ public sealed class UnitExtractor
     private readonly ExportSourceDescriptor _sourceDescriptor;
     private readonly ZoneCatalog _zoneCatalog;
     private readonly IExportMetadataProvider _metadataProvider;
+    private IReadOnlyList<ElevatorStop>? _elevatorStops;
+    private IReadOnlyDictionary<long, IReadOnlyList<ElevatorCar>>? _elevatorShafts;
+    private const double FeetToMeters = 0.3048d;
+
+    // Elevator warnings already given in this export: the views each have their own warning list.
+    private readonly HashSet<string> _reportedLevelsServed = new(StringComparer.Ordinal);
+    private readonly HashSet<long> _reportedLoneShafts = new();
     private readonly FloorCategoryResolver _floorCategoryResolver;
     private readonly RoomCategoryResolver _roomCategoryResolver;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
@@ -756,6 +763,11 @@ public sealed class UnitExtractor
             sourceLabel: familyName,
             viewName: view?.Name,
             warnings: warnings);
+        if (string.Equals(zoneInfo.Category, VerticalCirculation.ElevatorCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            feature = WithAttribute(feature, VerticalCirculation.LevelsServedAttributeName, ResolveLevelsServed(familyInstance, warnings));
+        }
+
         return true;
     }
 
@@ -956,6 +968,146 @@ public sealed class UnitExtractor
         return true;
     }
 
+    private static ExportPolygon WithAttribute(ExportPolygon feature, string name, string? value)
+    {
+        Dictionary<string, object?> attributes = new(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, object?> entry in feature.Attributes)
+        {
+            attributes[entry.Key] = entry.Value;
+        }
+
+        attributes[name] = value;
+        return new ExportPolygon(feature.Polygons, attributes);
+    }
+
+    /// <summary>
+    /// The elevator's stops as a comma-separated list of level ids: gis_levels_served on the type of
+    /// any object in its shaft, else the levels the shaft's objects stand on or span. Null, with a
+    /// warning, when neither gives two.
+    /// </summary>
+    private string? ResolveLevelsServed(FamilyInstance elevator, ICollection<string> warnings)
+    {
+        IReadOnlyList<ElevatorStop> levels = _elevatorStops ??= CollectElevatorStops(warnings);
+        IReadOnlyDictionary<long, IReadOnlyList<ElevatorCar>> shafts = _elevatorShafts ??= CollectElevatorShafts();
+        if (!shafts.TryGetValue(elevator.Id.Value, out IReadOnlyList<ElevatorCar>? shaft))
+        {
+            shaft = ToElevatorCar(elevator) is { } car ? new[] { car } : Array.Empty<ElevatorCar>();
+        }
+
+        List<FamilyInstance> objects = new() { elevator };
+        objects.AddRange(shaft
+            .Where(car => car.Id != elevator.Id.Value)
+            .OrderBy(car => car.Bottom)
+            .Select(car => _document.GetElement(new ElementId(car.Id)) as FamilyInstance)
+            .Where(other => other != null)!);
+
+        // An instance value on any object of the shaft wins over a type value: one type often serves every shaft.
+        string? levelsServed =
+            objects.Select(other => Trimmed(other.LookupParameter(GisSharedParameters.GisLevelsServed)?.AsString())).FirstOrDefault(value => value != null) ??
+            objects.Select(other => Trimmed(other.Symbol?.LookupParameter(GisSharedParameters.GisLevelsServed)?.AsString())).FirstOrDefault(value => value != null);
+        List<string> unknown = new();
+        IReadOnlyList<string> stops = VerticalCirculation.ResolveLevelsServed(levels, shaft, levelsServed, unknown);
+        long shaftId = shaft.Count == 0 ? elevator.Id.Value : shaft.Min(car => car.Id);
+        string label = $"Elevator {shaftId} ({GetFamilyName(elevator)})";
+        if (unknown.Count > 0 && _reportedLevelsServed.Add(levelsServed!))
+        {
+            warnings.Add($"gis_levels_served '{levelsServed}' (first on {label}) names {string.Join(", ", unknown)}, which match no level name or short_name in this export.");
+        }
+
+        if (stops.Count == 0)
+        {
+            if (levelsServed == null && _reportedLoneShafts.Add(shaftId))
+            {
+                warnings.Add($"{label} has no elevator object in the same plan spot on another exported level, so levels_served is empty. Set gis_levels_served on it.");
+            }
+
+            return null;
+        }
+
+        return string.Join(",", stops);
+    }
+
+    /// <summary>Every elevator object in the model, grouped into shafts by plan position, read once per extractor.</summary>
+    private IReadOnlyDictionary<long, IReadOnlyList<ElevatorCar>> CollectElevatorShafts()
+    {
+        List<ElevatorCar> cars = new();
+        foreach (FamilyInstance instance in new FilteredElementCollector(_document).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>())
+        {
+            if (TryResolveFamilyUnitZoneInfo(instance, out _, out ZoneInfo zoneInfo) &&
+                string.Equals(zoneInfo.Category, VerticalCirculation.ElevatorCategory, StringComparison.OrdinalIgnoreCase) &&
+                ToElevatorCar(instance) is { } car)
+            {
+                cars.Add(car);
+            }
+        }
+
+        Dictionary<long, IReadOnlyList<ElevatorCar>> byCar = new();
+        foreach (IReadOnlyList<ElevatorCar> shaft in VerticalCirculation.GroupShafts(cars))
+        {
+            foreach (ElevatorCar car in shaft)
+            {
+                byCar[car.Id] = shaft;
+            }
+        }
+
+        return byCar;
+    }
+
+    private static ElevatorCar? ToElevatorCar(FamilyInstance elevator)
+    {
+        BoundingBoxXYZ? box = elevator.get_BoundingBox(null);
+        return box == null
+            ? null
+            : new ElevatorCar(
+                elevator.Id.Value,
+                box.Min.X * FeetToMeters,
+                box.Min.Y * FeetToMeters,
+                box.Max.X * FeetToMeters,
+                box.Max.Y * FeetToMeters,
+                box.Min.Z * FeetToMeters,
+                box.Max.Z * FeetToMeters);
+    }
+
+    /// <summary>
+    /// The levels this export writes, by element id. Elevators stop only at these, so a level with a
+    /// level_id but no exported view (a transfer level) never appears in levels_served. Null: every
+    /// level with a level_id.
+    /// </summary>
+    public ISet<long>? ExportedLevelIds { get; set; }
+
+    /// <summary>The exported levels with an export id, read once per extractor: every elevator asks for them.</summary>
+    private IReadOnlyList<ElevatorStop> CollectElevatorStops(ICollection<string> warnings)
+    {
+        List<ElevatorStop> levels = new();
+        foreach (Level level in new FilteredElementCollector(_document).OfClass(typeof(Level)).Cast<Level>())
+        {
+            if (ExportedLevelIds != null && !ExportedLevelIds.Contains(level.Id.Value))
+            {
+                continue;
+            }
+
+            string? exportId = ReadLevelExportId(level, warnings, out _);
+            if (exportId != null)
+            {
+                levels.Add(new ElevatorStop(
+                    exportId,
+                    level.Name,
+                    level.LookupParameter(GisSharedParameters.ShortName)?.AsString(),
+                    level.ProjectElevation * FeetToMeters));
+            }
+        }
+
+        return levels;
+    }
+
+    private static void AddOnce(ICollection<string> warnings, string message)
+    {
+        if (!warnings.Contains(message))
+        {
+            warnings.Add(message);
+        }
+    }
+
     private static ExportPolygon WithDirection(ExportPolygon feature, string? direction, string? toLevel)
     {
         Dictionary<string, object?> attributes = new(StringComparer.Ordinal);
@@ -1013,10 +1165,22 @@ public sealed class UnitExtractor
             return null;
         }
 
+        string? exportId = ReadLevelExportId(level, warnings, out Level? exportedLevel);
+        if (exportId == null && exportedLevel != null)
+        {
+            AddOnce(warnings, $"Level '{exportedLevel.Name}' is not in this export, so stairs and escalators that end on it have an empty to_level.");
+        }
+
+        return exportId;
+    }
+
+    /// <summary>The export id of <paramref name="level"/>, or of the host level at its elevation for a link; null when that level is not in this export.</summary>
+    private string? ReadLevelExportId(Level level, ICollection<string> warnings, out Level? exportedLevel)
+    {
         // Features from a link carry the host view's level id, so a linked stair's or escalator's
         // ends must name the host levels at the same elevation. This also keeps the export from
         // trying to give the linked document's levels ids of their own.
-        Level? exportedLevel = _sourceDescriptor.IsLinkedSource ? FindHostLevelAtElevationOf(level) : level;
+        exportedLevel = _sourceDescriptor.IsLinkedSource ? FindHostLevelAtElevationOf(level) : level;
         if (exportedLevel == null)
         {
             return null;
@@ -1027,19 +1191,7 @@ public sealed class UnitExtractor
         // id to be created here made Revit refuse the write and failed the whole export. A level
         // without an id is not in this export, so the far end has no level to name.
         string? exportId = _metadataProvider.GetReferencedLevelId(exportedLevel, warnings);
-        if (string.IsNullOrWhiteSpace(exportId))
-        {
-            string message =
-                $"Level '{exportedLevel.Name}' is not in this export, so stairs and escalators that end on it have an empty to_level.";
-            if (!warnings.Contains(message))
-            {
-                warnings.Add(message);
-            }
-
-            return null;
-        }
-
-        return exportId!.Trim();
+        return string.IsNullOrWhiteSpace(exportId) ? null : exportId!.Trim();
     }
 
     private const double HostLevelToleranceFeet = 0.1d;
@@ -3139,6 +3291,11 @@ public sealed class UnitExtractor
     public static bool HasMappedGisKind(FamilyInstance familyInstance)
     {
         return VerticalCirculation.TryMapGisKind(GetGisKind(familyInstance), out _);
+    }
+
+    private static string? Trimmed(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
     }
 
     private static string? ReadStringParameter(FamilyInstance familyInstance, string parameterName)
