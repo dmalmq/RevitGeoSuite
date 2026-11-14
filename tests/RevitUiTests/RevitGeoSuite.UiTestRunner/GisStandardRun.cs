@@ -578,8 +578,8 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         step.Note(isOther
             ? "The warning says the file is for another model."
             : "The open copy has no model id (never exported), so the warning says 'picked by hand' instead of 'for another model'.");
-        ILocator accept = Shell.Button(new Regex(isOther ? @"^Accept 0 change\(s\) from another model$" : @"^Accept \d+ change\(s\)$"));
-        if (isOther && step.Check(await Shell.ShowsAsync(accept), "The button reads 'Accept 0 change(s) from another model'."))
+        ILocator accept = Shell.Button(new Regex(isOther ? @"^Accept 0 (value )?change\(s\) from another model$" : @"^Accept \d+ (value )?change\(s\)$"));
+        if (isOther && step.Check(await Shell.ShowsAsync(accept), "The button reads 'Accept 0 value change(s) from another model' (before C4: 'Accept 0 change(s) …')."))
         {
             step.Check(await accept.IsDisabledAsync(), "That button is disabled.");
         }
@@ -647,10 +647,10 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         int seq = host.LastEvent();
-        await Shell.Button(new Regex(@"^Accept 1 change\(s\)")).Last.ClickAsync();
+        await Shell.Button(new Regex(@"^Accept 1 (value )?change\(s\)")).Last.ClickAsync();
         if (await Shell.ShowsAsync(Shell.Page.GetByTestId("drift-confirm"), 3000))
         {
-            await Shell.Page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { NameRegex = new Regex(@"^Accept 1 change\(s\)") }).ClickAsync();
+            await Shell.Page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { NameRegex = new Regex(@"^Accept 1 (value )?change\(s\)") }).ClickAsync();
         }
 
         step.Check(await Shell.ShowsAsync(Shell.Text("1 GDB value(s) accepted"), 120000), "Banner '1 GDB value(s) accepted'.");
