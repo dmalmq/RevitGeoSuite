@@ -304,7 +304,14 @@ internal sealed partial class GisStandardRun
     {
         JsonNode? state = await Shell.RpcAsync("cesium.export.getState");
         string[] profiles = state?["floorPlanProfiles"]?.AsArray().Select(name => name!.GetValue<string>()).ToArray() ?? Array.Empty<string>();
-        if (!step.Check(profiles.Length > 0, "There is a floor plan export profile for the Cesium export (none means its first-run setup was never done on this PC)."))
+        if (profiles.Length == 0)
+        {
+            await SaveTestProfile(step);
+            state = await Shell.RpcAsync("cesium.export.getState");
+            profiles = state?["floorPlanProfiles"]?.AsArray().Select(name => name!.GetValue<string>()).ToArray() ?? Array.Empty<string>();
+        }
+
+        if (!step.Check(profiles.Length > 0, "There is a floor plan export profile for the Cesium export."))
         {
             return null;
         }
@@ -345,6 +352,38 @@ internal sealed partial class GisStandardRun
         string tiles = result?["tilesetPath"]?.GetValue<string>() is { Length: > 0 } tileset ? Path.GetDirectoryName(tileset)! : root;
         int tileFiles = Directory.Exists(tiles) ? Directory.GetFiles(tiles, "*", SearchOption.AllDirectories).Count(file => file.EndsWith(".b3dm", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)) : 0;
         return new CesiumRun(root, tileFiles);
+    }
+
+    private const string TestProfileName = "UI test";
+
+    /// <summary>
+    /// A PC whose Cesium export never ran its first-run setup has no floor plan export profile. Save one
+    /// for this project the way that setup does (floorplan.saveProfile from the export page), with the
+    /// page's own defaults, the GIS_ plans, EPSG:6677 and an output folder inside the run folder. It goes
+    /// to the roaming profiles.json, which Run-UiTests.ps1 puts back as it was when the run ends.
+    /// </summary>
+    private async Task SaveTestProfile(StepResult step)
+    {
+        await Shell.GoToAsync("/export/geopackage");
+        JsonNode initial = await Shell.RpcAsync("floorplan.getInitialState") ?? throw new InvalidOperationException("floorplan.getInitialState returned nothing.");
+        JsonObject settings = initial["settings"]?.DeepClone().AsObject() ?? new JsonObject();
+        JsonArray selected = settings["selectedViewIds"]?.AsArray() ?? new JsonArray();
+        if (selected.Count == 0)
+        {
+            long[] gisViews = initial["views"]?.AsArray()
+                .Where(view => (view?["name"]?.GetValue<string>() ?? string.Empty).StartsWith(GisPrefix, StringComparison.OrdinalIgnoreCase))
+                .Select(view => view!["id"]!.GetValue<long>())
+                .ToArray() ?? Array.Empty<long>();
+            settings["selectedViewIds"] = new JsonArray(gisViews.Select(id => (JsonNode)id).ToArray());
+        }
+
+        string folder = Path.Combine(options.OutputFolder, "profile-export");
+        Directory.CreateDirectory(folder);
+        settings["outputDirectory"] = folder;
+        settings["targetEpsg"] = 6677;
+        await Shell.RpcAsync("floorplan.saveProfile", new { scope = "project", name = TestProfileName, settings });
+        step.Note($"This PC had no floor plan export profile (the Cesium export's first-run setup never ran), so the run saved project profile '{TestProfileName}': {settings["selectedViewIds"]!.AsArray().Count} view(s), EPSG:6677, output {folder}. Run-UiTests.ps1 restores profiles.json when the run ends.");
+        await Shell.GoToAsync("/gis-standard");
     }
 
     private ILocator NetworkTab() => Shell.Page.GetByRole(AriaRole.Radio, new() { Name = "Network", Exact = true });
