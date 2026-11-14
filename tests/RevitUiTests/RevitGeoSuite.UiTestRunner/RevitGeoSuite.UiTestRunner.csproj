@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Drives RevitGeoSuite in a running Revit on the build PC: the page through WebView2's DevTools
+    protocol (Playwright), Revit through the test host's named pipe. See ..\README.md.
+    Build-PC tool only: not part of the add-in or the installer.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>RevitGeoSuite.UiTestRunner</AssemblyName>
+    <RootNamespace>RevitGeoSuite.UiTestRunner</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- Playwright only attaches to Revit's own WebView2; no browser is ever downloaded. -->
+    <PlaywrightPlatform>win</PlaywrightPlatform>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" Version="1.49.0" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RevitGeoSuite.UiTestRunner.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\Fixtures\Conformance\gis-drift\8d7f3c1e-0000.gis-drift.json" Link="fixtures\other-model.gis-drift.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- A copy of the C8 sample (tests/Fixtures/Conformance/gis-network on the C8 branch) until Kanizu writes the file. -->
+    <None Update="fixtures\network-sample.gis-network.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- The installer packs bin\Deploy\; test code must never land there. -->
+  <Target Name="KeepOutOfDeploy" BeforeTargets="Build">
+    <Error Condition="$([System.String]::Copy('$(OutputPath)').Contains('Deploy'))" Text="$(MSBuildProjectName) is test code and must not build into $(OutputPath), which the installer packs." />
+  </Target>
+</Project>

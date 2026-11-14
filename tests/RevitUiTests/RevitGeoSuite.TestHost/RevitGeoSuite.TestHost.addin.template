@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by tests\RevitUiTests\Install-TestHost.ps1 on the build PC only. Never shipped. -->
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>RevitGeoSuite test host</Name>
+    <Assembly>{ASSEMBLY}</Assembly>
+    <AddInId>5E0B3C2A-7D41-4F7B-9C38-2A61B7E4D901</AddInId>
+    <FullClassName>RevitGeoSuite.TestHost.Loader.LoaderApp</FullClassName>
+    <VendorId>RevitGeoSuite</VendorId>
+    <VendorDescription>RevitGeoSuite UI tests (build PC only)</VendorDescription>
+  </AddIn>
+</RevitAddIns>
