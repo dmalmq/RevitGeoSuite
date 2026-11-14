@@ -240,22 +240,7 @@ public sealed class ExportWorkflowCoordinator
         }
 
         string profileName = GisModelSettings.Load(_document, warnings).File?.ProfileName ?? GisModelFile.DefaultProfileName;
-        GisRulesProfile? profile = rules.LoadStationFile()?.FindProfile(profileName);
-        if (profile == null)
-        {
-            if (!string.Equals(profileName, GisModelFile.DefaultProfileName, StringComparison.OrdinalIgnoreCase))
-            {
-                List<string> existing = (rules.LoadStationFile()?.Profiles ?? new List<GisRulesProfile>()).Select(candidate => candidate.Name).ToList();
-                throw new InvalidOperationException(
-                    $"The model's gis-model.json names the profile '{profileName}', but the rules file of station '{rules.StationName}' " +
-                    (existing.Count == 0 ? "has no profiles." : $"has only: {string.Join(", ", existing)}.") +
-                    " Save that profile for the station in the export dialog, or change \"profile\" in gis-model.json.");
-            }
-
-            profile = GisRulesProfileMapper.FromSettings(GisModelFile.DefaultProfileName, new ExportDialogSettings());
-            rules.ApplyToStation(new[] { GisRulesOperation.UpsertProfile(profile) });
-        }
-
+        GisRulesProfile profile = rules.ResolveStationProfile(profileName, GisRulesProfileMapper.FromResult(profileName, request), warnings);
         return (GisRulesProfileMapper.Overlay(request, profile), new GisRulesStamp(GisRulesStamp.StationKind, profile.Name, GisRulesHash.Compute(categoryRules, profile)));
     }
 

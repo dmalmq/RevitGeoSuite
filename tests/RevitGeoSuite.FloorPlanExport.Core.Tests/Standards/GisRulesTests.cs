@@ -427,6 +427,88 @@ public sealed class GisRulesTests : IDisposable
         Assert.Equal("walkway", used.Load().Value.FloorCategoryOverrides["A"]);
     }
 
+    private GisRulesSource StationSource(MappingRuleStore? perPc = null)
+    {
+        Directory.CreateDirectory(Station);
+        return GisRulesSource.Resolve(Station, "project-a", perPc ?? new MappingRuleStore(Path.Combine(_folder, "pc"), Path.Combine(_folder, "legacy")), FastOptions());
+    }
+
+    [Fact]
+    public void StationProfile_IsCreatedFromTheSettingsOfTheExportThatCreatesIt()
+    {
+        GisRulesSource source = StationSource();
+        GisRulesProfile mine = Profile("Dialog", 6676);
+        mine.FeatureTypes = new List<string> { "unit", "opening" };
+        List<string> warnings = new();
+
+        GisRulesProfile used = source.ResolveStationProfile(GisModelFile.DefaultProfileName, mine, warnings);
+
+        Assert.Equal(6676, used.TargetEpsg);
+        Assert.Equal(new[] { "unit", "opening" }, used.FeatureTypes);
+        GisRulesProfile stored = GisRulesFile.TryLoad(RulesPath)!.FindProfile(GisModelFile.DefaultProfileName)!;
+        Assert.Equal(6676, stored.TargetEpsg);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void AddProfile_KeepsTheProfileAnotherPcCreatedFirst()
+    {
+        GisRulesStore store = NewStore();
+        store.Apply(new[] { GisRulesOperation.UpsertProfile(Profile(GisModelFile.DefaultProfileName, 6669)) });
+
+        GisRulesFile read = store.Apply(new[] { GisRulesOperation.AddProfile(Profile(GisModelFile.DefaultProfileName, 6676)) });
+
+        Assert.Equal(6669, read.FindProfile(GisModelFile.DefaultProfileName)!.TargetEpsg);
+    }
+
+    [Fact]
+    public void StationProfile_IsUsedWithOneWarningListingEachSettingThatDiffersFromThisExport()
+    {
+        GisRulesSource source = StationSource();
+        GisRulesProfile station = Profile(GisModelFile.DefaultProfileName, 6677);
+        station.SimplifyStairUnits = true;
+        source.ApplyToStation(new[] { GisRulesOperation.UpsertProfile(station) });
+        GisRulesProfile mine = Profile("Dialog", 6676);
+        mine.FeatureTypes = new List<string> { "unit" };
+        List<string> warnings = new();
+
+        GisRulesProfile used = source.ResolveStationProfile(GisModelFile.DefaultProfileName, mine, warnings);
+
+        Assert.Equal(6677, used.TargetEpsg);
+        string warning = Assert.Single(warnings);
+        Assert.Contains("targetEpsg: 6676 -> 6677", warning);
+        Assert.Contains("simplifyStairUnits: false -> true", warning);
+        Assert.Contains("featureTypes: unit -> unit, detail, opening, level, fixture", warning);
+        Assert.DoesNotContain("name:", warning);
+        Assert.DoesNotContain("coordinateMode", warning);
+    }
+
+    [Fact]
+    public void StationProfile_GivesNoWarningWhenThisExportMatchesIt()
+    {
+        GisRulesSource source = StationSource();
+        source.ApplyToStation(new[] { GisRulesOperation.UpsertProfile(Profile(GisModelFile.DefaultProfileName)) });
+        List<string> warnings = new();
+
+        source.ResolveStationProfile("station", Profile("Dialog"), warnings);
+
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void StationProfile_ThatTheStationLacksStopsTheExportListingTheProfilesItHas()
+    {
+        GisRulesSource source = StationSource();
+        source.ApplyToStation(new[] { GisRulesOperation.UpsertProfile(Profile("Night")) });
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+            source.ResolveStationProfile("Day", Profile("Dialog"), new List<string>()));
+
+        Assert.Contains("'Day'", error.Message);
+        Assert.Contains("Night", error.Message);
+        Assert.Null(source.LoadStationFile()!.FindProfile("Day"));
+    }
+
     [Fact]
     public void Move_AddsThisPcsRulesOnceAndSetsItsFileAside()
     {

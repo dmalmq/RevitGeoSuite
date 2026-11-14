@@ -279,6 +279,87 @@ public sealed class GisRulesProfile
         return JObject.FromObject(this, GisRulesFile.Serializer).ToObject<GisRulesProfile>(GisRulesFile.Serializer)!;
     }
 
+    /// <summary>
+    /// Each setting that shapes the output and differs between <paramref name="yours"/> and
+    /// <paramref name="station"/>, as <c>setting: yours -&gt; station</c>. Of the schema profiles and
+    /// validation policies only the active ones are compared, since only they shape an export.
+    /// </summary>
+    public static IReadOnlyList<string> Differences(GisRulesProfile yours, GisRulesProfile station)
+    {
+        Dictionary<string, JToken?> mine = Flatten(yours.Effective());
+        Dictionary<string, JToken?> theirs = Flatten(station.Effective());
+        return mine.Keys
+            .Concat(theirs.Keys.Where(key => !mine.ContainsKey(key)))
+            .Where(key => key != "name")
+            .Select(key => (Key: key, Mine: mine.TryGetValue(key, out JToken? a) ? a : null, Theirs: theirs.TryGetValue(key, out JToken? b) ? b : null))
+            .Where(entry => !JToken.DeepEquals(entry.Mine, entry.Theirs))
+            .Select(entry => $"{entry.Key}: {Show(entry.Mine)} -> {Show(entry.Theirs)}")
+            .ToList();
+    }
+
+    private GisRulesProfile Effective()
+    {
+        GisRulesProfile effective = Clone();
+        SchemaProfile schema = SchemaProfile.ResolveActive(SchemaProfiles, ActiveSchemaProfile);
+        effective.SchemaProfiles = new List<SchemaProfile> { schema };
+        effective.ActiveSchemaProfile = schema.Name;
+        List<ValidationPolicyProfile> policies = ValidationPolicyProfile.NormalizeProfiles(ValidationPolicies);
+        string policyName = ValidationPolicyProfile.ResolveActiveName(policies, ActiveValidationPolicy);
+        effective.ValidationPolicies = policies
+            .Where(policy => string.Equals(policy.Name, policyName, StringComparison.OrdinalIgnoreCase))
+            .Take(1)
+            .ToList();
+        effective.ActiveValidationPolicy = policyName;
+        return effective;
+    }
+
+    private static Dictionary<string, JToken?> Flatten(GisRulesProfile profile)
+    {
+        Dictionary<string, JToken?> leaves = new(StringComparer.Ordinal);
+        Flatten(profile.ToToken(), string.Empty, leaves);
+        return leaves;
+    }
+
+    private static void Flatten(JToken token, string path, Dictionary<string, JToken?> leaves)
+    {
+        if (token is JObject obj)
+        {
+            foreach (JProperty property in obj.Properties())
+            {
+                string name = path.Length == 0 ? property.Name : path + "." + property.Name;
+                Flatten(property.Value, name switch
+                {
+                    "schemaProfiles" => "schemaProfile",
+                    "validationPolicies" => "validationPolicy",
+                    _ => name,
+                }, leaves);
+            }
+        }
+        else if (token is JArray array && array.Any(item => item is JContainer))
+        {
+            bool single = path == "schemaProfile" || path == "validationPolicy";
+            for (int index = 0; index < array.Count; index++)
+            {
+                Flatten(array[index], single ? path : $"{path}[{index}]", leaves);
+            }
+        }
+        else
+        {
+            leaves[path] = token;
+        }
+    }
+
+    private static string Show(JToken? value)
+    {
+        return value switch
+        {
+            null => "(none)",
+            JArray array => array.Count == 0 ? "(none)" : string.Join(", ", array.Select(Show)),
+            JValue { Type: JTokenType.String } text => (string)text!,
+            _ => value.ToString(Formatting.None),
+        };
+    }
+
     internal JObject ToToken()
     {
         return JObject.FromObject(this, GisRulesFile.Serializer);

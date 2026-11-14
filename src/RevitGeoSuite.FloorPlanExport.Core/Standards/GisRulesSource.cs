@@ -181,6 +181,45 @@ public sealed class GisRulesSource
         }
     }
 
+    /// <summary>
+    /// The station profile <paramref name="profileName"/> an export into the station uses. When the
+    /// station has none and the name is the default one, it is created from <paramref name="fromRun"/>,
+    /// the settings of the export that creates it; another name the station lacks stops the export.
+    /// Where the station's profile differs from <paramref name="fromRun"/>, the station's settings
+    /// are used and one warning lists each difference.
+    /// </summary>
+    public GisRulesProfile ResolveStationProfile(string profileName, GisRulesProfile fromRun, ICollection<string> warnings)
+    {
+        GisRulesStore station = _station ?? throw new InvalidOperationException("This model has no station rules file.");
+        GisRulesFile? file = station.TryLoad();
+        GisRulesProfile? profile = file?.FindProfile(profileName);
+        if (profile == null)
+        {
+            if (!string.Equals(profileName.Trim(), GisModelFile.DefaultProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                List<string> existing = (file?.Profiles ?? new List<GisRulesProfile>()).Select(candidate => candidate.Name).ToList();
+                throw new InvalidOperationException(
+                    $"The model's gis-model.json names the profile '{profileName}', but the rules file of station '{StationName}' " +
+                    (existing.Count == 0 ? "has no profiles." : $"has only: {string.Join(", ", existing)}.") +
+                    " Save that profile for the station in the export dialog, or change \"profile\" in gis-model.json.");
+            }
+
+            GisRulesProfile created = fromRun.Clone();
+            created.Name = GisModelFile.DefaultProfileName;
+            profile = station.Apply(new[] { GisRulesOperation.AddProfile(created) }).FindProfile(GisModelFile.DefaultProfileName)!;
+        }
+
+        IReadOnlyList<string> differences = GisRulesProfile.Differences(fromRun, profile);
+        if (differences.Count > 0)
+        {
+            warnings.Add(
+                $"This export uses the station profile '{profile.Name}' of station '{StationName}', whose settings differ from this export's own " +
+                $"(yours -> station): {string.Join("; ", differences)}.");
+        }
+
+        return profile;
+    }
+
     public void ApplyToStation(IReadOnlyList<GisRulesOperation> operations)
     {
         (_station ?? throw new InvalidOperationException("This model has no station rules file.")).Apply(operations);

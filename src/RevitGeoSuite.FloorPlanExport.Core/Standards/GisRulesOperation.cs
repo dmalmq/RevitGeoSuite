@@ -34,6 +34,12 @@ public abstract class GisRulesOperation
         return new UpsertProfileOperation(copy);
     }
 
+    /// <summary>Adds the profile only when the file has none of that name, so the first PC to create it wins.</summary>
+    public static GisRulesOperation AddProfile(GisRulesProfile profile)
+    {
+        return new AddProfileOperation((UpsertProfileOperation)UpsertProfile(profile));
+    }
+
     public static GisRulesOperation DeleteProfile(string name)
     {
         return new DeleteProfileOperation((name ?? string.Empty).Trim());
@@ -108,6 +114,8 @@ public abstract class GisRulesOperation
 
         public UpsertProfileOperation(GisRulesProfile profile) => _profile = profile;
 
+        public string Name => _profile.Name;
+
         internal override void ApplyTo(GisRulesFile file)
         {
             int index = file.Profiles.FindIndex(existing => SameName(existing, _profile.Name));
@@ -125,6 +133,26 @@ public abstract class GisRulesOperation
         {
             GisRulesProfile? existing = file.FindProfile(_profile.Name);
             return existing != null && JToken.DeepEquals(existing.ToToken(), _profile.ToToken());
+        }
+    }
+
+    private sealed class AddProfileOperation : GisRulesOperation
+    {
+        private readonly UpsertProfileOperation _upsert;
+
+        public AddProfileOperation(UpsertProfileOperation upsert) => _upsert = upsert;
+
+        internal override void ApplyTo(GisRulesFile file)
+        {
+            if (!IsReflectedIn(file))
+            {
+                _upsert.ApplyTo(file);
+            }
+        }
+
+        internal override bool IsReflectedIn(GisRulesFile file)
+        {
+            return file.FindProfile(_upsert.Name) != null;
         }
     }
 

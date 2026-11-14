@@ -63,8 +63,8 @@ public sealed class GisModelFile
 
     /// <summary>
     /// The profile of the station's <c>gis-rules.json</c> this model exports with. Absent means
-    /// <see cref="DefaultProfileName"/>, which is created from the standard's defaults when the
-    /// station has none.
+    /// <see cref="DefaultProfileName"/>, which the first export into a station that has none creates
+    /// from its own settings.
     /// </summary>
     [JsonProperty("profile", NullValueHandling = NullValueHandling.Ignore)]
     public string? Profile { get; set; }
