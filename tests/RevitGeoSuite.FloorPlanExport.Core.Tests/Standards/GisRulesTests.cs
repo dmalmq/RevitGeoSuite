@@ -639,6 +639,22 @@ public sealed class GisRulesTests : IDisposable
     }
 
     [Fact]
+    public void Hash_IsTheSameForJapaneseTextInDecomposedAndComposedForm()
+    {
+        GisRulesProfile profile = Profile("Station");
+        string composed = "\u30AC\u30E9\u30B9\u5E97\u8217";
+        string decomposed = "\u30AB\u3099\u30E9\u30B9\u5E97\u8217";
+        Assert.NotEqual(composed, decomposed);
+
+        string hash = GisRulesHash.Compute(new[] { Floor(composed, "retail") }, profile);
+
+        Assert.Equal(hash, GisRulesHash.Compute(new[] { Floor(decomposed, "retail") }, profile));
+        Assert.Equal(
+            GisRulesHash.Compute(new[] { Floor(composed, "retail"), Floor("\u30AC", "walkway") }, profile),
+            GisRulesHash.Compute(new[] { Floor("\u30AB\u3099", "walkway"), Floor(decomposed, "retail") }, profile));
+    }
+
+    [Fact]
     public void Hash_IgnoresWhoChangedTheFileAndWhen()
     {
         GisRulesStore store = NewStore();
