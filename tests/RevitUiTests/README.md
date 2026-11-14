@@ -314,14 +314,14 @@ The station folder is `<run>\h4-station`, so every file stays under the run fold
 | H4.1 | Notes the store's `mapping-rules` files and `profiles.json` entries. |
 | H4.2 | Run A. `gis-rules.json` has a `Station` profile with the used profile's EPSG, per-PC rule files that moved are renamed `*.moved-to-station`, the manifest has `gis.rules` with `source` `station`, a profile and a hash, and `gis-models\<id>.gis-model.json` has `links`. |
 | H4.3 | Run B. The runner renames the sandbox store to `FloorPlanExport.h4-off`, the run saves a global profile "H4 PC B" with EPSG:6676 and exports. One warning lists `(yours -> station)`, `gis.rules.hash` equals A's, `gis\gis-fields.json` is byte-equal, and every feature table of the two GeoPackages is equal row for row (ignoring fid order and `gpkg_contents.last_change`). The diff goes to the report. PC B's own store is moved to `FloorPlanExport.pc-b-<time>` and the original is renamed back. |
-| H4.4 | Run C. In the preview of the first `GIS_` plan, Category assignments, a floor type without a `gis_category` gets a category through "Add assignment". `gis-rules.json` holds the rule, no transaction is committed, and the next Cesium export has another hash. |
+| H4.4 | Run C. In the preview of the first `GIS_` plan, Category assignments, a floor type without a `gis_category` gets a category through "Add assignment". The dialog says "Saved for station h4-station", `gis-rules.json` holds the rule, no transaction is committed, and the next Cesium export has another hash. |
 | H4.5 | The runner holds `gis-rules.json` open with `FileShare.None`, and a save in the preview fails. The file is unchanged, with no `.gis-rules.*.tmp` and no `gis-rules.lock`. |
 | H4.6 | The runner writes `gis-rules.lock`, a save fails and names the lock, and once the lock is older than 30 s the save succeeds and the lock is gone. |
 | H4.7 | `icacls <station> /deny <user>:(W)`, then a Cesium export. The warning says the station is read-only, `gis.rules.source` is `local`, and nothing in the store was renamed. When the export cannot finish, the report records what it said. The deny entry is always removed again, and the step fails if it is still there. |
 | H4.8 | `"profile": "Nope"` in the model's `gis-model.json`. The export stops with the list of the station's profiles. The file is put back byte for byte. |
 | H4.9 | The real folder has the same files and hashes as before. The report's footer lists the three `gis.rules` blocks. |
 
-What a person still does: the screenshots of the warning (H4.3) and the message (H4.8) do not exist, because the runner starts the Cesium export through the bridge and no page shows the text. The report carries the text. H4.4's "Saved for station h4-station" status is a known product failure: the web preview has no status line (`ExportPreviewController.BuildFooterStatus` has no caller there), so the step reports it as known and does not fail the run. The Japanese wording is in the step's notes, for a person to read.
+What a person still does: the screenshots of the warning (H4.3) and the message (H4.8) do not exist, because the runner starts the Cesium export through the bridge and no page shows the text. The report carries the text. The Japanese wording of H4.4's "Saved for station h4-station" line is in the step's notes, for a person to read.
 
 ## The georef-read scenario
 

@@ -24,6 +24,7 @@ internal sealed class ExportPreviewController
     private PreviewDisplayViewState? _currentDisplayState;
     private PreviewAssignmentTarget? _assignmentTarget;
     private string _statusMessage = string.Empty;
+    private string? _savedMessage;
     private string _basemapProviderStatus = string.Empty;
     private string? _pendingAssignmentFloorTypeName;
 
@@ -379,7 +380,7 @@ internal sealed class ExportPreviewController
                     "リストから床タイプを選択するか、キャンバス上の床由来ユニットをクリックしてカテゴリ変更を準備します。"),
                 pendingMessage: hasPendingChanges
                     ? T("Unsaved assignment changes are staged.", "未保存の割り当て変更があります。")
-                    : T("No assignment changes are staged.", "割り当て変更はまだありません。"),
+                    : _savedMessage ?? T("No assignment changes are staged.", "割り当て変更はまだありません。"),
                 hasPendingChanges: hasPendingChanges,
                 canChooseCategory: false,
                 canAssign: false,
@@ -403,7 +404,7 @@ internal sealed class ExportPreviewController
                     "カテゴリ割り当ては Revit モデルを変更せず、プロジェクト固有の上書きを準備します。"),
             pendingMessage: hasPendingChanges
                 ? T("Unsaved assignment changes are staged.", "未保存の割り当て変更があります。")
-                : T("No assignment changes are staged.", "割り当て変更はまだありません。"),
+                : _savedMessage ?? T("No assignment changes are staged.", "割り当て変更はまだありません。"),
             hasPendingChanges: hasPendingChanges,
             canChooseCategory: _supportedFloorCategories.Count > 0,
             canAssign: _supportedFloorCategories.Count > 0,
@@ -443,6 +444,7 @@ internal sealed class ExportPreviewController
         }
 
         _pendingAssignmentFloorTypeName = floorTypeNames[0];
+        _savedMessage = null;
         ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
         SetStatusMessage(T(
@@ -464,6 +466,7 @@ internal sealed class ExportPreviewController
         }
 
         _pendingAssignmentFloorTypeName = floorTypeNames[0];
+        _savedMessage = null;
         ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
         SetStatusMessage(T(
@@ -483,13 +486,14 @@ internal sealed class ExportPreviewController
         ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
         string? savedFor = _previewService.RulesSavedStatus;
-        SetStatusMessage(savedFor == null
+        _savedMessage = savedFor == null
             ? T(
                 "Saved preview floor assignments.",
                 "プレビューの床割り当てを保存しました。")
             : T(
                 $"Saved preview floor assignments. {savedFor}.",
-                $"プレビューの床割り当てを保存しました。ステーション「{_previewService.RulesStationName}」に保存しました。"));
+                $"プレビューの床割り当てを保存しました。ステーション「{_previewService.RulesStationName}」に保存しました。");
+        SetStatusMessage(_savedMessage);
         return displayState;
     }
 
@@ -501,6 +505,7 @@ internal sealed class ExportPreviewController
         }
 
         _previewService.DiscardPendingFloorCategoryOverrides();
+        _savedMessage = null;
         ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
         SetStatusMessage(T(

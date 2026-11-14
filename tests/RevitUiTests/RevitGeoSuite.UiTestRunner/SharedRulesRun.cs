@@ -229,11 +229,10 @@ internal sealed partial class GisStandardRun
         step.Check(saved.Saved, $"Saving {rules.FloorType} as {rules.CategoryOne} in the preview succeeds ({saved.Error}).");
         NoCommit(step, seq);
         string saidSaved = $"Saved for station {Path.GetFileName(rules.Station)}";
-        step.CheckKnown(
+        step.Check(
             (await Shell.Page.InnerTextAsync("body")).Contains(saidSaved, StringComparison.Ordinal),
-            $"The preview page shows '{saidSaved}'. ExportPreviewController.BuildFooterStatus has no caller on the web page and the preview payload carries no status text, so nothing shows it.",
-            "the web preview shows the save status");
-        step.Note("Japanese wording, from ExportPreviewController (the page shows no status, so a person cannot see it): 'プレビューの床割り当てを保存しました。ステーション「" + Path.GetFileName(rules.Station) + "」に保存しました。'");
+            $"The Category assignments dialog shows '{saidSaved}' after the save.");
+        step.Note("Japanese wording of the same line: 'プレビューの床割り当てを保存しました。ステーション「" + Path.GetFileName(rules.Station) + "」に保存しました。'");
         await Shot(step, "H4-4-preview-saved");
         JsonNode? rule = StationRules.FloorRule(StationRules.Read(rules.Station), rules.FloorType);
         step.Check(rule?["value"]?.GetValue<string>() == rules.CategoryOne, $"gis-rules.json has floorCategory '{rules.FloorType}' = '{rules.CategoryOne}' ({rule?.ToJsonString() ?? "no rule"}).");
