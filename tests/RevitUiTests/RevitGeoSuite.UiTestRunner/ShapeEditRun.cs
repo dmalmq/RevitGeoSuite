@@ -293,9 +293,10 @@ internal sealed partial class GisStandardRun
         JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
         string[] problems = Problems(drift);
         step.Note($"Problems: {string.Join(" | ", problems)}");
-        string? line = problems.FirstOrDefault(problem => problem.Contains(floor.Id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal) && problem.Contains("opening", StringComparison.OrdinalIgnoreCase));
+        string? line = problems.FirstOrDefault(problem => problem.Contains($"floor {floor.Id} would leave opening(s) ", StringComparison.Ordinal));
         step.Check(openings.Length > 0 && line != null && openings.All(id => line.Contains(id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)),
-            $"A problem line names floor {floor.Id} and opening(s) {string.Join(", ", openings)} ({line ?? "none"}).");
+            $"A problem line says floor {floor.Id} would leave opening(s) {string.Join(", ", openings)} outside its new outline ({line ?? "none"}).");
+        step.Check(line?.Contains("(\"Can't make cut-out\")", StringComparison.Ordinal) == true && line.Contains("Delete or move the opening(s) in Revit first", StringComparison.Ordinal), "It names Revit's refusal, \"Can't make cut-out\", and says to delete or move the opening(s) first.");
         step.Check((drift?["shapes"]?.AsArray().Count ?? 0) == 0 && await Shell.Page.GetByTestId("shape-edit").CountAsync() == 0, "There is no shape edit card.");
         RevitEvent[] changes = host.EventsAfter(pickSeq).Where(item => item.Kind != "dialog").ToArray();
         step.Check(changes.Length == 0, $"No Revit transaction happens ({(changes.Length == 0 ? "none" : string.Join(" / ", changes.Select(item => item.ToString())))}).");
