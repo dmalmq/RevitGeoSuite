@@ -510,6 +510,12 @@ public static class GisShapeEdits
         }
 
         List<Polygon2D>? sketch = redraw ? SketchFor(floor, outline) : null;
+        if (sketch is { Count: > 1 } && TrimsToNewFloors(sketch, outline, missing) is var (kept, joined))
+        {
+            sketch = kept;
+            missing = joined;
+        }
+
         if (sketch != null && (sketch.Count != 1 || !CanSketch(sketch)))
         {
             problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {CutApart}");
@@ -518,6 +524,49 @@ public static class GisShapeEdits
 
         edits.Add(new ShapeEdit(ShapeEditKind.Split, keeper, floor, outline, missing, redraw, sketch: sketch));
         return settled;
+    }
+
+    /// <summary>
+    /// A split's kept sketch can come out in parts when an export trim (a stair or escalator over the
+    /// floor) lies wholly on a new piece's side of the cut: the trim is in neither the kept piece nor the
+    /// area taken away, so it stays behind as an island. Each such island joins the new floor of the
+    /// piece it borders, so the floor under the stair stays. Null when the sketch does not keep exactly
+    /// one part, or an island borders no new floor.
+    /// </summary>
+    private static (List<Polygon2D> Sketch, List<NewFloor> NewFloors)? TrimsToNewFloors(List<Polygon2D> sketch, IReadOnlyList<Polygon2D> kept, List<NewFloor> newFloors)
+    {
+        if (Snapped(kept) is not NtsGeometry keptArea)
+        {
+            return null;
+        }
+
+        List<Polygon2D> stays = sketch.Where(part => Snapped(new[] { part })?.Intersection(keptArea).Area > SameOutlineMetres * SameOutlineMetres).ToList();
+        if (stays.Count != 1)
+        {
+            return null;
+        }
+
+        List<NewFloor> joined = newFloors.ToList();
+        foreach (Polygon2D island in sketch.Where(part => !stays.Contains(part)))
+        {
+            NtsGeometry? islandArea = Snapped(new[] { island });
+            int index = joined.FindIndex(piece => islandArea != null && Snapped(piece.Outline) is NtsGeometry pieceArea && pieceArea.Distance(islandArea) < SameOutlineMetres);
+            if (index < 0)
+            {
+                return null;
+            }
+
+            NewFloor piece = joined[index];
+            List<Polygon2D> outline = ToFeet(GeometryPrecisionReducer.Reduce(Sealed(Snapped(piece.Outline)!.Union(islandArea)), Millimetres));
+            if (outline.Count != 1)
+            {
+                return null;
+            }
+
+            joined[index] = new NewFloor(piece.Piece, outline, piece.Values, piece.TypeName);
+        }
+
+        return (stays, joined);
     }
 
     /// <summary>
