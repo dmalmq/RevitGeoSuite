@@ -188,52 +188,6 @@ internal static class Win32Dialogs
         return $"{was}; Revit's main window {(front && GetForegroundWindow() == window ? $"brought to the front ({how})" : $"could not be brought to the front ({how})")}";
     }
 
-    /// <summary>
-    /// Invokes the first enabled control of Revit's main window whose name, automation id or help text
-    /// contains one of <paramref name="names"/> (the Quick Access Toolbar's Undo, whose name can be empty
-    /// with the id ID_EDIT_UNDO). Throws, naming every match it saw, when none is enabled.
-    /// </summary>
-    public static Dictionary<string, object?> PressMainWindowButton(string[] names, string why)
-    {
-        IntPtr window = Process.GetCurrentProcess().MainWindowHandle;
-        if (window == IntPtr.Zero)
-        {
-            throw new InvalidOperationException($"{why} Revit's main window is not available to press {names[0]} instead.");
-        }
-
-        Condition clickable = new OrCondition(
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.SplitButton),
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.MenuItem));
-        var seen = new List<string>();
-        foreach (AutomationElement element in AutomationElement.FromHandle(window).FindAll(TreeScope.Descendants, clickable))
-        {
-            string text;
-            try
-            {
-                text = $"{element.Current.Name}|{element.Current.AutomationId}|{element.Current.HelpText}";
-            }
-            catch (ElementNotAvailableException)
-            {
-                continue;
-            }
-
-            if (!names.Any(name => text.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0))
-            {
-                continue;
-            }
-
-            seen.Add($"{element.Current.ControlType.ProgrammaticName} '{text}' enabled={element.Current.IsEnabled}");
-            if (element.Current.IsEnabled && element.TryGetCurrentPattern(InvokePattern.Pattern, out object pattern))
-            {
-                ((InvokePattern)pattern).Invoke();
-                return new Dictionary<string, object?> { ["pressed"] = text, ["why"] = why, ["seen"] = seen };
-            }
-        }
-
-        throw new InvalidOperationException($"{why} No enabled control named like '{string.Join("' or '", names)}' to press instead (found: {(seen.Count == 0 ? "none" : string.Join("; ", seen))}).");
-    }
-
     /// <summary>Saves a PNG of Revit's main window as it is on screen.</summary>
     public static void CaptureMainWindow(string path)
     {

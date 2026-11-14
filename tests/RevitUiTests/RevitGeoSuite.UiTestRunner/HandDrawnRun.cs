@@ -68,14 +68,19 @@ internal sealed partial class GisStandardRun
             return;
         }
 
+        // The card preselects a type only when category and restriction name exactly one standard type. A
+        // LUMINE walkway has no restriction in the export (three walkway types), so the typed file says rachi_gai.
+        (string restriction, string expectedType) = unit.Restriction.Length == 0 && unit.Category == "walkway"
+            ? ("rachi_gai", "j ラチ外コンコース_床")
+            : (unit.Restriction, string.Empty);
         drawn = new HandDrawnCase(
-            WriteDrift("hand-drawn.gis-drift.json", unit, ReshapeFixture.HandDrawn(unit)),
+            WriteDrift("hand-drawn.gis-drift.json", unit, ReshapeFixture.HandDrawn(unit, restriction: restriction)),
             WriteDrift("hand-drawn-untyped.gis-drift.json", unit, ReshapeFixture.HandDrawn(unit, withType: false)),
             unit,
             floor,
             before,
-            scan.Count(row => row.Level == floor.Level) - 1);
-        step.Note($"Wrote {drawn.Path} and {drawn.UntypedPath}: '{drawn.Name}' on level_id {unit.LevelId}.");
+            scan.Count(row => row.Level == floor.Level) - 1) { ExpectedType = expectedType };
+        step.Note($"Wrote {drawn.Path} (category {unit.Category}, restriction '{restriction}') and {drawn.UntypedPath}: '{drawn.Name}' on level_id {unit.LevelId}.");
     }
 
     private async Task PickHandDrawn(StepResult step)
@@ -99,6 +104,11 @@ internal sealed partial class GisStandardRun
         step.Check(await card.CountAsync() == 1, $"There is one card ({await card.CountAsync()}).");
         string type = await ChosenType(card.First);
         step.Check(type.Length > 0 && !type.StartsWith("Pick a floor type", StringComparison.Ordinal), $"Its floor type is chosen from the file's category and restriction ({type}).");
+        if (drawn.ExpectedType.Length > 0)
+        {
+            step.Check(type == drawn.ExpectedType, $"The chosen type is {drawn.ExpectedType} ({type}).");
+        }
+
         step.Check(!await Shell.Button("Apply 1 shape edit(s)").IsDisabledAsync(), "'Apply 1 shape edit(s)' is enabled.");
         drawn = drawn with { ChosenType = type };
         await Shot(step, "C3d-1-hand-drawn-card");
@@ -322,6 +332,8 @@ internal sealed record HandDrawnCase(string Path, string UntypedPath, FloorUnit 
     public string Name => ReshapeFixture.DrawnName(Unit);
 
     public string ChosenType { get; init; } = string.Empty;
+
+    public string ExpectedType { get; init; } = string.Empty;
 
     public string LoggedType { get; init; } = string.Empty;
 }

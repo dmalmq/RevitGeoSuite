@@ -97,13 +97,21 @@ internal static class UndoProbe
         return $"{front}; clicked the view at ({x}, {y})";
     }
 
-    /// <summary>Ctrl+Z as a person types it, into whatever window is in front after Revit is brought forward.</summary>
-    public static string CtrlZ()
+    /// <summary>Ctrl+Z as a person types it, into Revit's main window brought forward.</summary>
+    public static string CtrlZ() => Control('Z');
+
+    /// <summary>
+    /// Ctrl+&lt;letter&gt; typed into Revit's main window. On the build PC Revit reports Undo as unavailable
+    /// (CanPostCommand false, the toolbar button greyed) in every window state, yet Ctrl+Z typed into its
+    /// main window undoes a RevitGeoSuite Apply (undo-probe, bbf2917), so typing is what a person does.
+    /// </summary>
+    public static string Control(char letter)
     {
         string front = Win32Dialogs.ActivateMainWindow();
-        Send(Key(0x11, false), Key(0x5A, false), Key(0x5A, true), Key(0x11, true));
+        ushort key = letter;
+        Send(Key(0x11, false), Key(key, false), Key(key, true), Key(0x11, true));
         Thread.Sleep(1500);
-        return $"{front}; sent Ctrl+Z";
+        return $"{front}; typed Ctrl+{letter}";
     }
 
     private static IntPtr[] ShellWindows()

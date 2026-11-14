@@ -43,7 +43,7 @@ internal sealed class Commands
                 "state" => api.Run(State, Quick),
                 "post" => Post(Text(request, "id")),
                 "ribbon" => Post($"CustomCtrl_%CustomCtrl_%{Text(request, "tab")}%{Text(request, "panel")}%{Text(request, "button")}"),
-                "undo" => PostOrPress("ID_EDIT_UNDO", "Undo", "元に戻す", "UNDO"),
+                "undo" => PostOrType("ID_EDIT_UNDO", 'Z'),
                 "params" => Params(request),
                 "uniqueIds" => UniqueIds(request),
                 "floorTypes" => api.Run(FloorTypes, Quick),
@@ -55,7 +55,7 @@ internal sealed class Commands
                 "elevators" => api.Run(app => ModelCommands.Elevators(app, Strings(request, "uniqueIds")), Quick),
                 "doors" => api.Run(ModelCommands.Doors, Quick),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
-                "redo" => PostOrPress("ID_EDIT_REDO", "Redo", "やり直し"),
+                "redo" => PostOrType("ID_EDIT_REDO", 'Y'),
                 "undoProbe" => UndoState(),
                 "shellWindow" => new Dictionary<string, object?> { ["did"] = UndoProbe.Shell(Text(request, "action")), ["last"] = recorder.LastSequence },
                 "clickView" => new Dictionary<string, object?> { ["did"] = api.Run(UndoProbe.ViewRectangle, Quick) is { } rectangle ? UndoProbe.ClickView(rectangle) : "no open view" },
@@ -294,13 +294,14 @@ internal sealed class Commands
     }
 
     /// <summary>
-    /// Undo and Redo: posts the command. Revit refuses it in b1 and b2a (CanPostCommand false) and
-    /// accepts it in c3a, from the same code and the same view, so the cause is outside the document.
-    /// A refusal is retried once with Revit's main window in front, then by pressing the Quick Access
-    /// Toolbar button through UI Automation (on this pipe thread, so Revit's UI thread is free to
-    /// answer). When both fail, the error carries Revit's state at that moment.
+    /// Undo and Redo: posts the command when Revit offers it. On the build PC Revit reports both as
+    /// unavailable in every window state, yet Ctrl+Z typed into its main window undoes a RevitGeoSuite
+    /// Apply (undo-probe), so a refusal types the shortcut instead (on this pipe thread, so Revit's UI
+    /// thread is free to act). The reply carries Revit's state at the refusal.
     /// </summary>
-    private Dictionary<string, object?> PostOrPress(string id, params string[] buttonNames)
+    // Posts the command when Revit offers it; otherwise types its shortcut into Revit's main window, as a
+    // person would. The runner judges by the undo or redo event that follows, not by this reply.
+    private Dictionary<string, object?> PostOrType(string id, char letter)
     {
         try
         {
@@ -308,22 +309,14 @@ internal sealed class Commands
         }
         catch (InvalidOperationException refused) when (refused.Message.Contains("cannot run"))
         {
-            string front = Win32Dialogs.ActivateMainWindow();
-            System.Threading.Thread.Sleep(1000);
-            try
+            string state = api.Run(app => CommandState(app, id), Quick);
+            return new Dictionary<string, object?>
             {
-                Dictionary<string, object?> posted = Post(id);
-                posted["after"] = front;
-                return posted;
-            }
-            catch (InvalidOperationException again) when (again.Message.Contains("cannot run"))
-            {
-                string state = api.Run(app => CommandState(app, id), Quick);
-                Dictionary<string, object?> pressed = Win32Dialogs.PressMainWindowButton(
-                    buttonNames.Concat(new[] { id }).ToArray(), $"{refused.Message} {front}; still refused. State: {state}");
-                pressed["last"] = recorder.LastSequence;
-                return pressed;
-            }
+                ["typed"] = UndoProbe.Control(letter),
+                ["refused"] = refused.Message,
+                ["state"] = state,
+                ["last"] = recorder.LastSequence,
+            };
         }
     }
 
