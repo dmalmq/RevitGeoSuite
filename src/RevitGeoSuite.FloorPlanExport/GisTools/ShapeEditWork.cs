@@ -118,7 +118,7 @@ public static class ShapeEditWork
         if (failures.Errors.Count > 0 || boundary.Any(id => document.GetElement(id) != null) || document.GetElement(edit.Floor.UniqueId) is not Floor after)
         {
             string why = failures.Errors.Count > 0 ? ": " + string.Join(" ", failures.Errors.Distinct()) : string.Empty;
-            throw new InvalidOperationException($"Revit refused the new outline of floor {edit.Floor.ElementId}; the floor is unchanged{why}");
+            throw new InvalidOperationException($"Revit refused the new outline of floor {edit.Floor.ElementId} ({Loops(edit.Sketch)}); the floor is unchanged{why}");
         }
 
         List<string> notes = failures.Warnings.Distinct().Select(text => "Revit warned: " + text).ToList();
@@ -133,6 +133,10 @@ public static class ShapeEditWork
             .Select(entry => $"Revit deleted {entry.Name} {entry.Id.Value}, which hung on the floor outside its new outline."));
         return notes;
     }
+
+    // What the refused sketch was, so a report shows whether a hole or a second part made Revit refuse it.
+    private static string Loops(IReadOnlyList<Polygon2D> sketch) =>
+        $"sketch of {sketch.Count} part(s), {sketch.Sum(polygon => polygon.InteriorRings.Count)} hole(s), {sketch.Sum(polygon => polygon.ExteriorRing.Count + polygon.InteriorRings.Sum(ring => ring.Count))} line(s)";
 
     private static string Centimetres(double metres) => double.IsInfinity(metres) ? "the whole outline" : $"{metres * 100:F0} cm";
 
