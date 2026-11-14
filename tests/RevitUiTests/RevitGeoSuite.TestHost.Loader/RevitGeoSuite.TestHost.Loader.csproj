@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The DLL Revit's .addin manifest names for the UI test host. Revit asks "Always Load" for an
+    unsigned add-in DLL, so this one must stay byte-identical across test host changes: it holds no
+    test logic, builds deterministically without a PDB, and Install-TestHost.ps1 replaces the
+    installed copy only when FileVersion changes. Bump FileVersion only when this source changes;
+    the next Revit start then asks once more.
+  -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AssemblyName>RevitGeoSuite.TestHost.Loader</AssemblyName>
+    <RootNamespace>RevitGeoSuite.TestHost.Loader</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitInstallDir)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="KeepOutOfDeploy" BeforeTargets="Build">
+    <Error Condition="$([System.String]::Copy('$(OutputPath)').Contains('Deploy'))" Text="$(MSBuildProjectName) is test code and must not build into $(OutputPath), which the installer packs." />
+  </Target>
+</Project>
