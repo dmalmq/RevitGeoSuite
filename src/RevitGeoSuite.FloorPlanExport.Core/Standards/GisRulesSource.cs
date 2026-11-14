@@ -120,6 +120,11 @@ public sealed class GisRulesSource
         return new GisRulesSource(_projectKey, _perPcRules, null, StationFolder);
     }
 
+    /// <summary>
+    /// The rules an export resolves. Read from a station, this PC's rules that have not moved in yet
+    /// count where the station has no entry for the same key, as the move will add them; nothing is
+    /// written or renamed.
+    /// </summary>
     public LoadResult<ProjectMappingRules> Load()
     {
         if (_station == null)
@@ -130,7 +135,9 @@ public sealed class GisRulesSource
         try
         {
             GisRulesFile? file = _station.TryLoad();
-            return new LoadResult<ProjectMappingRules>(file?.ToMappingRules() ?? ProjectMappingRules.Empty);
+            LoadResult<ProjectMappingRules> local = _perPcRules.LoadWithDiagnostics(_projectKey);
+            GisRulesFile resolved = GisRulesMigrationPlan.Create(file, local.Value, Array.Empty<GisRulesProfile>()).AppliedTo(file);
+            return new LoadResult<ProjectMappingRules>(resolved.ToMappingRules(), local.Warnings);
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException)
         {
@@ -148,8 +155,9 @@ public sealed class GisRulesSource
 
     /// <summary>
     /// Saves the change from <paramref name="before"/> (what the caller loaded) to
-    /// <paramref name="after"/>. The station's file gets one operation per changed rule, so a rule
-    /// another PC changed meanwhile stays; this PC's rules are replaced whole as before.
+    /// <paramref name="after"/>. A save to the station first moves this PC's rules in, then writes one
+    /// operation per changed rule, so a rule another PC changed meanwhile stays; this PC's rules are
+    /// replaced whole as before.
     /// </summary>
     public void Save(ProjectMappingRules before, ProjectMappingRules after)
     {
@@ -159,6 +167,7 @@ public sealed class GisRulesSource
             return;
         }
 
+        MoveLocalIntoStation(Array.Empty<GisRulesProfile>(), new List<string>());
         Dictionary<(MappingRuleType, string), MappingRule> was = before.Rules.ToDictionary(rule => (rule.RuleType, rule.MatchValue));
         Dictionary<(MappingRuleType, string), MappingRule> now = after.Rules.ToDictionary(rule => (rule.RuleType, rule.MatchValue));
         List<GisRulesOperation> operations = new();
@@ -273,6 +282,18 @@ public sealed class GisRulesMigrationPlan
     public IReadOnlyList<GisRulesOperation> Operations { get; }
 
     public IReadOnlyList<string> Warnings { get; }
+
+    /// <summary>A copy of <paramref name="station"/> with the plan's operations applied, in memory only.</summary>
+    public GisRulesFile AppliedTo(GisRulesFile? station)
+    {
+        GisRulesFile copy = station == null ? new GisRulesFile() : GisRulesFile.Parse(station.ToJson(), GisRulesFile.FileName);
+        foreach (GisRulesOperation operation in Operations)
+        {
+            operation.ApplyTo(copy);
+        }
+
+        return copy;
+    }
 
     public static GisRulesMigrationPlan Create(GisRulesFile? station, ProjectMappingRules local, IReadOnlyList<GisRulesProfile> localProfiles)
     {

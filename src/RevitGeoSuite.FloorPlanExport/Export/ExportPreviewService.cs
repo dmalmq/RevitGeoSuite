@@ -164,7 +164,6 @@ public sealed class ExportPreviewService
             return;
         }
 
-        _rules.MoveLocalIntoStation(Array.Empty<GisRulesProfile>(), new List<string>());
         IReadOnlyDictionary<string, string> floor = _floorAssignmentSession.HasPendingChanges
             ? _floorAssignmentSession.ApplyPendingChanges()
             : _loadedRules.FloorCategoryOverrides;

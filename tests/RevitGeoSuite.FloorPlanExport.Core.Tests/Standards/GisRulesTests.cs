@@ -509,6 +509,56 @@ public sealed class GisRulesTests : IDisposable
         Assert.Null(source.LoadStationFile()!.FindProfile("Day"));
     }
 
+    private static IEnumerable<(MappingRuleType, string, string?)> Rows(ProjectMappingRules rules) =>
+        rules.Rules
+            .Select(rule => (rule.RuleType, rule.MatchValue, rule.ResolvedValue))
+            .OrderBy(row => row.RuleType)
+            .ThenBy(row => row.MatchValue, StringComparer.Ordinal)
+            .ToList();
+
+    [Fact]
+    public void Load_ResolvesThisPcsUnmovedRulesAsTheMoveWillWithoutWritingAnything()
+    {
+        string pcRules = Path.Combine(_folder, "pc");
+        MappingRuleStore perPc = new(pcRules, Path.Combine(_folder, "legacy"));
+        perPc.Save("project-a", ProjectMappingRules.Create(
+            new Dictionary<string, string> { ["A"] = "walkway", ["Clash"] = "walkway" },
+            null,
+            new Dictionary<string, string> { ["Escalator"] = "escalator" },
+            new[] { "Gate" }));
+        GisRulesSource source = StationSource(perPc);
+        source.ApplyToStation(new[] { GisRulesOperation.UpsertRule(Floor("Clash", "retail")), GisRulesOperation.UpsertRule(Floor("B", "ticketing")) });
+        string stationBefore = File.ReadAllText(RulesPath);
+
+        ProjectMappingRules preview = source.Load().Value;
+
+        Assert.Equal(stationBefore, File.ReadAllText(RulesPath));
+        Assert.Single(Directory.GetFiles(pcRules, "*.json"));
+        Assert.Empty(Directory.GetFiles(pcRules, "*" + MappingRuleStore.MovedSuffix));
+        Assert.Equal("retail", preview.FloorCategoryOverrides["Clash"]);
+
+        source.MoveLocalIntoStation(Array.Empty<GisRulesProfile>(), new List<string>());
+
+        Assert.Equal(Rows(GisRulesFile.TryLoad(RulesPath)!.ToMappingRules()), Rows(preview));
+        Assert.Equal(Rows(source.Load().Value), Rows(preview));
+    }
+
+    [Fact]
+    public void Save_DeletesARuleOnlyThisPcHadSoItDoesNotComeBack()
+    {
+        MappingRuleStore perPc = new(Path.Combine(_folder, "pc"), Path.Combine(_folder, "legacy"));
+        perPc.Save("project-a", ProjectMappingRules.Create(new Dictionary<string, string> { ["A"] = "walkway", ["Keep"] = "retail" }, null, null, null));
+        GisRulesSource source = StationSource(perPc);
+        ProjectMappingRules loaded = source.Load().Value;
+
+        source.Save(loaded, ProjectMappingRules.Create(new Dictionary<string, string> { ["Keep"] = "retail" }, null, null, null));
+
+        IReadOnlyDictionary<string, string> floors = source.Load().Value.FloorCategoryOverrides;
+        Assert.False(floors.ContainsKey("A"));
+        Assert.Equal("retail", floors["Keep"]);
+        Assert.Equal("retail", GisRulesFile.TryLoad(RulesPath)!.ToMappingRules().FloorCategoryOverrides["Keep"]);
+    }
+
     [Fact]
     public void Move_AddsThisPcsRulesOnceAndSetsItsFileAside()
     {
