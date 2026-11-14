@@ -5,6 +5,7 @@ using System.Linq;
 using Newtonsoft.Json;
 using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.Utilities;
 using RevitGeoSuite.FloorPlanExport.Core.Validation;
 
@@ -19,9 +20,15 @@ public sealed class ExportProfileStore
 
     private readonly string _settingsFilePath;
     private readonly string? _legacySettingsFilePath;
+    private readonly GisRulesSource? _rules;
 
-    public ExportProfileStore(string? settingsFilePath = null, string? legacySettingsFilePath = null)
+    /// <summary>
+    /// <paramref name="rules"/> decides where project profiles live: the station's rules file when it
+    /// has one, else this PC's profiles file. Global profiles always stay on this PC.
+    /// </summary>
+    public ExportProfileStore(string? settingsFilePath = null, string? legacySettingsFilePath = null, GisRulesSource? rules = null)
     {
+        _rules = rules is { IsStation: true } ? rules : null;
         if (string.IsNullOrWhiteSpace(settingsFilePath))
         {
             _settingsFilePath = FloorPlanExportAppDataPaths.CurrentProfilesFilePath;
@@ -38,6 +45,9 @@ public sealed class ExportProfileStore
         }
     }
 
+    /// <summary>The line a dialog shows after a profile was saved to the station's file; null for this PC's profiles.</summary>
+    public string? SavedStatus => _rules?.SavedStatus;
+
     public LoadResult<IReadOnlyList<ExportProfile>> LoadWithDiagnostics(string projectKey)
     {
         LoadResult<ExportProfileDocument> result = JsonFileLoadHelper.Load(
@@ -46,7 +56,61 @@ public sealed class ExportProfileStore
             deserialize: json => JsonConvert.DeserializeObject<ExportProfileDocument>(json),
             documentLabel: "Export profiles");
         List<ExportProfile> profiles = NormalizeProfiles(result.Value, projectKey);
-        return new LoadResult<IReadOnlyList<ExportProfile>>(profiles, result.Warnings);
+        List<string> warnings = result.Warnings.ToList();
+        if (_rules != null)
+        {
+            try
+            {
+                List<ExportProfile> station = (_rules.LoadStationFile()?.Profiles ?? new List<GisRulesProfile>())
+                    .Select(GisRulesProfileMapper.ToExportProfile)
+                    .Select(NormalizeProfile)
+                    .ToList();
+                profiles.RemoveAll(profile => profile.Scope == ExportProfileScope.Project &&
+                    station.Any(shared => string.Equals(shared.Name, profile.Name, StringComparison.OrdinalIgnoreCase)));
+                profiles.AddRange(station);
+                profiles = profiles
+                    .OrderBy(profile => profile.Scope)
+                    .ThenBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException)
+            {
+                warnings.Add($"The station's profiles could not be read ({ex.Message}).");
+            }
+        }
+
+        return new LoadResult<IReadOnlyList<ExportProfile>>(profiles, warnings);
+    }
+
+    /// <summary>
+    /// Adds this PC's project profiles for the model to the station's rules file, together with this PC's
+    /// category rules (see <see cref="GisRulesSource.MoveLocalIntoStation"/>), and sets them aside here
+    /// once the station's write is confirmed. Does nothing for a model with no station file.
+    /// </summary>
+    public void MoveLocalToStation(string projectKey, GisRulesSource rules, ICollection<string> warnings)
+    {
+        if (!rules.IsStation)
+        {
+            return;
+        }
+
+        ExportProfileDocument document = LoadDocument();
+        List<ExportProfile> local = document.ProjectProfiles != null &&
+            document.ProjectProfiles.TryGetValue(projectKey, out List<ExportProfile>? projectProfiles)
+                ? projectProfiles.Select(NormalizeProfile).Where(profile => profile.Name.Length > 0).ToList()
+                : new List<ExportProfile>();
+        List<GisRulesProfile> localProfiles = local
+            .Select(profile => GisRulesProfileMapper.FromSettings(profile.Name, profile.ToSettings()))
+            .ToList();
+        if (!rules.MoveLocalIntoStation(localProfiles, warnings) || local.Count == 0)
+        {
+            return;
+        }
+
+        string backup = _settingsFilePath + "." + ShortHash(projectKey) + ".moved-to-station";
+        File.WriteAllText(backup, JsonConvert.SerializeObject(local, JsonSettings));
+        document.ProjectProfiles!.Remove(projectKey);
+        SaveDocument(document);
     }
 
     public void SaveProfile(string projectKey, ExportProfile profile)
@@ -58,6 +122,16 @@ public sealed class ExportProfileStore
 
         ExportProfileDocument document = LoadDocument();
         ExportProfile normalizedProfile = NormalizeProfile(profile);
+        if (normalizedProfile.Scope == ExportProfileScope.Project && _rules != null)
+        {
+            MoveLocalToStation(projectKey, _rules, new List<string>());
+            _rules.ApplyToStation(new[]
+            {
+                GisRulesOperation.UpsertProfile(GisRulesProfileMapper.FromSettings(normalizedProfile.Name, normalizedProfile.ToSettings())),
+            });
+            return;
+        }
+
         if (normalizedProfile.Scope == ExportProfileScope.Project)
         {
             List<ExportProfile> profiles = GetProjectProfiles(document, projectKey);
@@ -80,6 +154,13 @@ public sealed class ExportProfileStore
 
         ExportProfileDocument document = LoadDocument();
         string normalizedName = NormalizeName(profile.Name);
+        if (profile.Scope == ExportProfileScope.Project && _rules != null)
+        {
+            MoveLocalToStation(projectKey, _rules, new List<string>());
+            _rules.ApplyToStation(new[] { GisRulesOperation.DeleteProfile(normalizedName) });
+            return;
+        }
+
         if (profile.Scope == ExportProfileScope.Project)
         {
             List<ExportProfile> profiles = GetProjectProfiles(document, projectKey);
@@ -101,6 +182,24 @@ public sealed class ExportProfileStore
             .Select(NormalizeProfile)
             .Where(profile => profile.Name.Length > 0 && profile.Scope == scope)
             .ToList();
+
+        if (scope == ExportProfileScope.Project && _rules != null)
+        {
+            MoveLocalToStation(projectKey, _rules, new List<string>());
+            List<GisRulesOperation> operations = normalizedProfiles
+                .Select(profile => GisRulesOperation.UpsertProfile(GisRulesProfileMapper.FromSettings(profile.Name, profile.ToSettings())))
+                .ToList();
+            foreach (GisRulesProfile shared in _rules.LoadStationFile()?.Profiles ?? new List<GisRulesProfile>())
+            {
+                if (!normalizedProfiles.Any(profile => string.Equals(profile.Name, shared.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    operations.Add(GisRulesOperation.DeleteProfile(shared.Name));
+                }
+            }
+
+            _rules.ApplyToStation(operations);
+            return;
+        }
 
         if (scope == ExportProfileScope.Project)
         {
@@ -136,6 +235,12 @@ public sealed class ExportProfileStore
 
         string json = JsonConvert.SerializeObject(document, JsonSettings);
         File.WriteAllText(_settingsFilePath, json);
+    }
+
+    private static string ShortHash(string value)
+    {
+        using System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create();
+        return string.Concat(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(value)).Take(4).Select(b => b.ToString("x2")));
     }
 
     private static List<ExportProfile> NormalizeProfiles(ExportProfileDocument document, string projectKey)

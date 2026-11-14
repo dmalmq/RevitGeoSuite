@@ -5,16 +5,27 @@ namespace RevitGeoSuite.FloorPlanExport.Core;
 
 public static class FloorPlanExportAppDataPaths
 {
-    public static string CurrentBaseDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "RevitGeoSuite",
-            "FloorPlanExport");
+    /// <summary>
+    /// Points the per-PC store at another folder. %APPDATA% roams to the user's other PCs, so a
+    /// test run that moves per-PC rules into a station sets this to a throwaway folder.
+    /// </summary>
+    public const string RootOverrideVariable = "REVITGEOSUITE_FLOORPLAN_DATA";
 
-    public static string LegacyBaseDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "RevitGeoExporter");
+    public static string CurrentBaseDirectory =>
+        Path.Combine(Root, "RevitGeoSuite", "FloorPlanExport");
+
+    public static string LegacyBaseDirectory => Path.Combine(Root, "RevitGeoExporter");
+
+    private static string Root
+    {
+        get
+        {
+            string? root = Environment.GetEnvironmentVariable(RootOverrideVariable);
+            return string.IsNullOrWhiteSpace(root)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
+                : root!.Trim();
+        }
+    }
 
     public static string CurrentSettingsFilePath => Path.Combine(CurrentBaseDirectory, "settings.json");
 
