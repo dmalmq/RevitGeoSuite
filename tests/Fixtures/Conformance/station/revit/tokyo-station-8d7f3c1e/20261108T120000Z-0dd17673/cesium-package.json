@@ -38,6 +38,19 @@
     "elements": "tiles/elements.json",
     "rooms": "tiles/rooms.json"
   },
+  "gis": {
+    "format": "geopackage",
+    "artifacts": [
+      {
+        "path": "gis/tokyo-station.gpkg"
+      }
+    ],
+    "rules": {
+      "source": "station",
+      "profile": "Station",
+      "hash": "1b80db8faeb1f308f8bac1283fb2058195cfd15995cf4d5109a9b2e1ebdc1bcd"
+    }
+  },
   "export": {
     "scope": "whole",
     "links": [
@@ -49,5 +62,5 @@
     "levelOfDetail": "fine",
     "exactPlacement": true
   },
-  "contentHash": "7f929a436aa26a4140c5984a4f6ca2c6650db15573c80b339dafa621bc52dfa3"
+  "contentHash": "0dd17673254a580dabb53953f04282a9029af531e44c306d5655cbdfb7859024"
 }

@@ -1,0 +1,61 @@
+{
+  "schema": "revitgeosuite.gis-rules",
+  "version": 1,
+  "categoryRules": [
+    {
+      "type": "floorCategory",
+      "match": "Concourse Floor",
+      "value": "walkway"
+    },
+    {
+      "type": "acceptedOpeningFamily",
+      "match": "Gate Opening"
+    }
+  ],
+  "profiles": [
+    {
+      "name": "Station",
+      "targetEpsg": 6677,
+      "coordinateMode": "sharedCoordinates",
+      "featureTypes": [
+        "unit",
+        "detail",
+        "opening",
+        "level",
+        "fixture"
+      ],
+      "unitGeometrySource": "unset",
+      "unitAttributeSource": "unset",
+      "roomCategoryParameter": "Name",
+      "includeLinkedModels": false,
+      "selectedLinkInstanceIds": [],
+      "unitCategories": [],
+      "simplifyStairUnits": false,
+      "simplifyEscalatorUnits": false,
+      "use3DSectionBox": false,
+      "sectionBoxAboveFloorMeters": 1.2,
+      "sectionBoxBelowFloorMeters": 0.0,
+      "geometryRepair": {
+        "Enabled": false,
+        "MinimumPolygonAreaSquareMeters": 0.01,
+        "MinimumOpeningLengthMeters": 0.1,
+        "SimplifyToleranceMeters": 0.0,
+        "OpeningSnapDistanceMeters": 0.2,
+        "ElevatorOpeningSnapDistanceMeters": 0.2,
+        "MergeNearbyBoundaryThresholdMeters": 0.15,
+        "MaxHoleSizeMeters": 0.05,
+        "LevelBoundaryGapClosingThresholdMeters": 0.2,
+        "LevelBoundaryMaxHoleSizeMeters": 0.1
+      },
+      "schemaProfiles": [],
+      "activeSchemaProfile": "Core IMDF",
+      "validationPolicies": [],
+      "activeValidationPolicy": "Recommended"
+    }
+  ],
+  "changed": {
+    "utc": "2026-11-08T12:00:00Z",
+    "user": "station-pc",
+    "revitGeoSuite": "1.0.0.0"
+  }
+}
