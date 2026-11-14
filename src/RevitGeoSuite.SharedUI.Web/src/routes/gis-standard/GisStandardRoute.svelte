@@ -17,7 +17,8 @@
   import ParametersPanel from './ParametersPanel.svelte'
 
   type Tab = 'standard' | 'parameters' | 'drift'
-  let tab = $state<Tab>('standard')
+  // #/gis-standard/drift opens on the GDB edits tab: the export page links there.
+  let tab = $state<Tab>(window.location.hash.endsWith('/gis-standard/drift') ? 'drift' : 'standard')
 
   let model = $state<GisStandardInspectResponse | null>(null)
   let loading = $state(false)

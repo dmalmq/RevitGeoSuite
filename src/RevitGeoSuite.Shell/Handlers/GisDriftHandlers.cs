@@ -8,6 +8,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.Shell.Overlay;
+using RevitGeoSuite.Shell.Standards;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.GisTools;
@@ -78,6 +79,20 @@ public sealed class GisDriftInspectHandler : IRpcHandler
     }
 }
 
+/// <summary>The count of GDB edits that wait in the model's own drift file, for the export page's notice. Reads only.</summary>
+public sealed class GisDriftWaitingHandler : IRpcHandler
+{
+    public string Method => "gisDrift.waiting";
+
+    public Task<object?> HandleAsync(object? payload) =>
+        RevitContext.Instance.InvokeAsync(app =>
+        {
+            Document? doc = app.ActiveUIDocument?.Document;
+            (int count, string path) = doc == null || doc.IsFamilyDocument ? (0, string.Empty) : GisDriftWork.Waiting(doc);
+            return (object?)new GisDriftWaitingResponse { Count = count, Path = path };
+        });
+}
+
 /// <summary>Review GDB edits: writes the ticked GDB values that the file still plans, in one transaction.</summary>
 public sealed class GisDriftApplyHandler : IRpcHandler
 {
@@ -99,6 +114,7 @@ public sealed class GisDriftApplyHandler : IRpcHandler
             }
 
             (IReadOnlyList<string> log, IReadOnlyList<string> notWritten) = GisStandardWriter.ApplyDrift(doc, changes);
+            GisStandardNotifier.Instance.Refresh(doc, force: true);
             return new GisStandardApplyResponse { Log = log.ToArray(), Skipped = skipped.Concat(notWritten).ToArray() };
         });
     }
@@ -208,6 +224,7 @@ public sealed class GisShapeApplyHandler : IRpcHandler
             }
 
             app.ActiveUIDocument?.RefreshActiveView();
+            GisStandardNotifier.Instance.Refresh(doc, force: true);
             return (object?)new GisStandardApplyResponse { Log = log.ToArray(), Skipped = skipped.ToArray() };
         });
     }
@@ -252,6 +269,33 @@ internal static class GisDriftWork
         {
             throw new InvalidOperationException($"Could not read the drift file {path}: {error.Message}", error);
         }
+    }
+
+    /// <summary>
+    /// The GDB edits in the model's own drift file (the station's, not a hand-picked one) that the
+    /// model does not match yet, and that file's path. 0 when there is no file; an unreadable file
+    /// counts as 0 here and shows its error on the GDB edits tab.
+    /// </summary>
+    public static (int Count, string Path) Waiting(Document document)
+    {
+        string expected = GisDriftSource.Locate(document).ExpectedPath;
+        if (expected.Length == 0 || !File.Exists(expected))
+        {
+            return (0, string.Empty);
+        }
+
+        GisDriftFile file;
+        try
+        {
+            file = Read(expected);
+        }
+        catch (InvalidOperationException)
+        {
+            return (0, expected);
+        }
+
+        (IReadOnlyList<GisDriftChange> changes, IReadOnlyList<string> problems) = Plan(document, file);
+        return (GisDrift.Waiting(changes, problems, ShapeEditWork.Plan(document, file)), expected);
     }
 
     public static (IReadOnlyList<GisDriftChange> Changes, IReadOnlyList<string> Problems) Plan(Document document, GisDriftFile file) =>

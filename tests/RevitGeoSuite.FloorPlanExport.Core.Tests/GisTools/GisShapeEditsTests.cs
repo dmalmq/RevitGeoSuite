@@ -50,7 +50,7 @@ public sealed class GisShapeEditsTests
     private static GisDriftShape Shape(string edit, string uniqueId, params Polygon2D[] outline) =>
         new(edit, "m|" + uniqueId + "|0", uniqueId, "unit", "ショップ", "lvl-1f", string.Empty, false, Gdb(outline));
 
-    private static (IReadOnlyList<ShapeEdit> Edits, IReadOnlyList<string> Problems) Plan(GisDriftShape[] shapes, ShapeFloor[] floors, int fileEpsg = 6677, int modelEpsg = 6677) =>
+    private static ShapePlan Plan(GisDriftShape[] shapes, ShapeFloor[] floors, int fileEpsg = 6677, int modelEpsg = 6677) =>
         GisShapeEdits.Plan(
             new GisDriftFile("m", "v1", Array.Empty<GisDriftRow>(), fileEpsg, shapes),
             floors.ToDictionary(floor => floor.UniqueId),
@@ -358,6 +358,37 @@ public sealed class GisShapeEditsTests
         Assert.Equal(
             "unit ショップ reshaped: floor 101 has curved edges, which the GDB's straight-segment outline would replace with short lines, so its sketch is not redrawn. Reshape it in Revit by hand.",
             Assert.Single(problems));
+    }
+
+    [Fact]
+    public void OnlyFloorsThatAlreadyHaveTheGdbOutlineStopWaiting()
+    {
+        ShapePlan plan = Plan(
+            new[]
+            {
+                Shape(GisDrift.Reshaped, "same", Rect(0, 0, 10, 10)),
+                Shape(GisDrift.Reshaped, "wider", Rect(0, 0, 12, 10)),
+                Shape(GisDrift.Reshaped, "no-floor", Rect(0, 0, 12, 10)),
+                Shape(GisDrift.Split, "split", Rect(0, 0, 5, 10)),
+            },
+            new[]
+            {
+                new ShapeFloor("same", 101, new[] { Rect(0, 0, 10, 10) }),
+                new ShapeFloor("wider", 102, new[] { Rect(0, 0, 10, 10) }),
+            });
+
+        Assert.Equal(3, plan.Waiting);
+    }
+
+    [Fact]
+    public void ShapesInAnotherCrsAllWait()
+    {
+        ShapePlan plan = Plan(
+            new[] { Shape(GisDrift.Reshaped, "a", Rect(0, 0, 10, 10)), Shape(GisDrift.Reshaped, "b", Rect(0, 0, 10, 10)) },
+            new[] { new ShapeFloor("a", 101, new[] { Rect(0, 0, 10, 10) }) },
+            fileEpsg: 4326);
+
+        Assert.Equal(2, plan.Waiting);
     }
 
     [Fact]
