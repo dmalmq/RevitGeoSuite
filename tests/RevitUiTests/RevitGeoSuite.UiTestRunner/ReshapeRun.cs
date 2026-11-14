@@ -295,6 +295,7 @@ internal sealed partial class GisStandardRun
         }
 
         FloorScanRow[] scan = FloorScan();
+        bool cutOffByFixture = false;
         FloorScanRow? floor = scan.FirstOrDefault(row => Redrawable(row) && row.Dependents.Any(NearEast));
         if (floor == null)
         {
@@ -322,6 +323,7 @@ internal sealed partial class GisStandardRun
             }
 
             step.Note($"No floor has an opening or hosted family within 1 m of its east edge, so the fixture cut one: {fixture["log"]?.ToJsonString()}.");
+            cutOffByFixture = true;
             floor = FloorScan().First(row => row.Id == target.Id);
         }
 
@@ -333,7 +335,34 @@ internal sealed partial class GisStandardRun
         step.Note($"Shrink: the export polygon minus a {ShrinkBandM} m strip along its east side; the outline crosses the cut {shrunk.Crossings} time(s), kept {shrunk.Rings.Count - 1} hole(s), dropped {shrunk.DroppedHoles} hole(s) the strip reaches.");
         string path = WriteDrift("shrink.gis-drift.json", unit, ReshapeFixture.Reshaped(unit, shrunk.Rings));
         DumpFloorGeometry(step, "H", h.UniqueId, path, "beforeApply");
+        int pickSeq = host.LastEvent();
         await PickDrift(path);
+        long[] cutOff = dependents.Where(item => item.WestOfEdgeM is >= 0 && item.WestOfEdgeM < ShrinkBandM && IsOpening(item)).Select(item => item.Id).ToArray();
+        if (cutOff.Length == 0 && cutOffByFixture)
+        {
+            cutOff = dependents.Where(item => item.WestOfEdgeM is >= 0 && item.WestOfEdgeM < ShrinkBandM).Select(item => item.Id).ToArray();
+        }
+
+        if (cutOff.Length > 0)
+        {
+            // Revit refuses an outline that leaves an opening outside it ("Can't make cut-out"), so the plan
+            // names the opening as a problem and offers no card (#57 8720ba1).
+            await Shell.Page.WaitForTimeoutAsync(3000);
+            JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
+            string[] problems = Problems(drift);
+            string? line = problems.FirstOrDefault(problem => problem.Contains($"floor {h.Id} would leave opening(s)", StringComparison.Ordinal));
+            step.Check(line != null && cutOff.All(id => line.Contains(id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)),
+                $"A problem line says floor {h.Id} would leave opening(s) {string.Join(", ", cutOff)} outside its new outline (problems: {string.Join(" | ", problems)}).");
+            step.Check(line?.Contains("Can't make cut-out", StringComparison.Ordinal) == true, "It names Revit's refusal, \"Can't make cut-out\".");
+            step.Check((drift?["shapes"]?.AsArray().Count ?? 0) == 0 && await Shell.Page.GetByTestId("shape-edit").CountAsync() == 0, "There is no shape edit card.");
+            RevitEvent[] changes = host.EventsAfter(pickSeq).Where(item => item.Kind != "dialog").ToArray();
+            step.Check(changes.Length == 0, $"No Revit transaction happens ({(changes.Length == 0 ? "none" : string.Join(" / ", changes.Select(item => item.ToString())))}).");
+            string[] gone = Elements(dependents.Select(item => item.Id)).Where(row => !row.Exists).Select(row => row.Key).ToArray();
+            step.Check(gone.Length == 0, $"Every dependent is still there (missing: {string.Join(", ", gone)}).");
+            await Shot(step, "C3a-9-opening-problem");
+            return;
+        }
+
         if (!await ExpectShapeEdits(step, path))
         {
             return;
@@ -556,6 +585,9 @@ internal sealed partial class GisStandardRun
     private FloorUnit? Unit(string uniqueId) => ReshapeFixture.Pick(exportedUnits, string.Empty, uniqueId);
 
     private bool Redrawable(FloorScanRow row) => !row.HasArc && !row.ExtraSketchLines && !row.ShapeEdited && Unit(row.UniqueId) != null;
+
+    // An opening element (floor, shaft or vertical opening), as against a family instance hosted on the floor.
+    private static bool IsOpening(DependentRow item) => item.Category?.Contains("Opening", StringComparison.OrdinalIgnoreCase) == true || item.Category?.Contains("開口", StringComparison.Ordinal) == true;
 
     private static bool NearEast(DependentRow item) => item.WestOfEdgeM is >= 0 and <= 1;
 
