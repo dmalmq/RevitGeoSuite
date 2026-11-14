@@ -35,7 +35,7 @@ The test host does nothing at all unless Revit was started with `REVITGEOSUITE_U
 
 The runner checks the active document after it opens the model and before every step. If the active document is not this run's copy in the run folder, or if a workshared copy is still tied to another central model, the runner stops the whole run.
 
-The test code never reaches the installer. All three projects build into `bin\Tests\`. The installer and `install.ps1` pack only `bin\Deploy\`. The test host and the runner fail their build if their output path contains `Deploy`.
+The test code never reaches the installer. All four projects build into `bin\Tests\<project>\` (`tests\Directory.Build.props`). `install\build-release.ps1`, the installer and `install.ps1` build nothing themselves and pack only `bin\Deploy\`. The test host, the loader and the runner fail their build if their output path contains `Deploy`.
 
 ## One-time setup on the build PC
 
