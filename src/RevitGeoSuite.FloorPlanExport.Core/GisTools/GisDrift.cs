@@ -464,6 +464,14 @@ public static class GisDrift
     }
 
     /// <summary>
+    /// The GDB edits that wait for this model: the value changes still planned, the rows that
+    /// must be changed by hand (<see cref="Plan"/> lists each row at most once, as a change or a
+    /// problem), and the shapes the model does not match yet. Zero once the model agrees with the file.
+    /// </summary>
+    public static int Waiting(IReadOnlyList<GisDriftChange> changes, IReadOnlyList<string> problems, ShapePlan shapes) =>
+        changes.Count + problems.Count + shapes.Waiting;
+
+    /// <summary>
     /// The planned changes the user ticked, matched by element, parameter, binding and value. A
     /// ticked change the plan no longer holds (the model or the drift file changed since the
     /// preview) is listed, not written.

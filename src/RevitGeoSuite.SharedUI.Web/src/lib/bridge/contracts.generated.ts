@@ -472,6 +472,11 @@ export interface GisDriftInspectResponse {
   stationFolder: string
 }
 
+export interface GisDriftWaitingResponse {
+  count: number
+  path: string
+}
+
 export interface GisExportCategoryColor {
   category: string
   color: string
@@ -1265,6 +1270,7 @@ export interface RpcMethods {
   'gisDrift.clearShape': { request: ExporterEmptyRequest; response: void }
   'gisDrift.inspect': { request: GisDriftInspectRequest; response: GisDriftInspectResponse }
   'gisDrift.showShape': { request: GisShapeShowRequest; response: GisShapeShowResponse }
+  'gisDrift.waiting': { request: GisStandardEmptyRequest; response: GisDriftWaitingResponse }
   'gisParameters.apply': { request: GisParametersApplyRequest; response: GisStandardApplyResponse }
   'gisParameters.read': { request: GisStandardEmptyRequest; response: GisParametersReadResponse }
   'gisParameters.write': { request: GisStandardEmptyRequest; response: GisParametersWriteResponse }
