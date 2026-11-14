@@ -44,8 +44,7 @@ public static class ExportAuditReader
     /// <summary>Every floor with the unit category the export resolves for it, its top outline and the height of its top's lowest and highest point.</summary>
     private static IEnumerable<LayoutFloor> ReadFloors(Document document)
     {
-        string projectKey = DocumentProjectKeyBuilder.Create(document);
-        FloorCategoryResolver resolver = new(ZoneCatalog.CreateDefault(), new FloorCategoryOverrideStore().LoadWithDiagnostics(projectKey).Value);
+        FloorCategoryResolver resolver = new(ZoneCatalog.CreateDefault(), GisRulesSourceFactory.For(document).Load().Value.FloorCategoryOverrides);
         bool setUp = ModelSnapshotReader.ReadText(document.ProjectInformation, GisSharedParameters.GisStandardVersion).Length > 0;
         foreach (Floor floor in new FilteredElementCollector(document).OfClass(typeof(Floor)).WhereElementIsNotElementType().Cast<Floor>())
         {
@@ -72,7 +71,7 @@ public static class ExportAuditReader
     /// <summary>Doors, windows and accepted openings on their level, and each stair's and escalator's footprint on both of its levels.</summary>
     private static IEnumerable<LayoutOpening> ReadWaysIn(Document document, IReadOnlyList<AuditStair> stairs, IReadOnlyList<AuditFamily> families)
     {
-        IReadOnlyList<string> accepted = new AcceptedOpeningFamilyStore().LoadWithDiagnostics(DocumentProjectKeyBuilder.Create(document)).Value;
+        IReadOnlyList<string> accepted = GisRulesSourceFactory.For(document).Load().Value.AcceptedOpeningFamilies;
         foreach (FamilyInstance instance in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>())
         {
             if (instance.LevelId != ElementId.InvalidElementId && OpeningFamilyClassifier.IsAcceptedOpening(instance, accepted) && Corners(instance) is List<Point2D> corners)

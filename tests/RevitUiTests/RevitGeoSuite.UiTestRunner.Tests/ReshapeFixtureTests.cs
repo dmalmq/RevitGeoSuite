@@ -175,4 +175,12 @@ public class ReshapeFixtureTests
         Assert.Equal(9.0, shrunk.Rings[0].Max(point => point.X));
         Assert.Equal(90.0, ReshapeFixture.Area(shrunk.Rings[0]), 6);
     }
+
+    [Fact]
+    public void Names_the_drift_file_as_Kanizu_does()
+    {
+        Assert.Equal("8d7f3c1e-0000.gis-drift.json", GisStandardRun.DriftFileName("8d7f3c1e-0000"));
+        Assert.Equal("a_b_c.gis-drift.json", GisStandardRun.DriftFileName("a.b/c"));
+        Assert.Equal("___.gis-drift.json", GisStandardRun.DriftFileName("駅é_"));
+    }
 }
