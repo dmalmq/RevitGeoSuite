@@ -2,7 +2,7 @@
 
 These tests drive RevitGeoSuite inside a running Revit on the build PC, the way a person does: they click the ribbon and the page's buttons, answer the file dialogs, press Undo, and check what Revit and the page report. A run writes a report with pass or fail for each step, screenshots, and the Revit journal check. A person only looks at the screenshots.
 
-There are eight scenarios. `--scenario` picks one, and `--script` is the same option.
+The scenarios are listed here. `--scenario` picks one, and `--script` is the same option.
 
 - `gis-standard` (the default) is the GIS standard page test, run 2 of the M2/M3 Revit test. Steps 1 to 16 are automated. Step 15 uses a generated drift file until Kanizu writes a real one for the model.
 - `floor-types` checks floor type standard 2 (RevitGeoSuite #52). Set up model leaves old-named floor types alone. The audit names each old name. Fix floor types renames the old names, and a shop type takes one of the two shop types. The export carries the new categories and restrictions. It needs a build with #52 installed.
@@ -13,6 +13,7 @@ There are eight scenarios. `--scenario` picks one, and `--script` is the same op
 - `a3-fields` checks that the GeoPackage export writes elevator `levels_served`, the door fields and the GDB-owned field rows (RevitGeoSuite #45). It runs with whatever build `-RgsBuild` names.
 - `c4-waiting` checks that GDB edits waiting in the station's drift file show on the GIS standard ribbon button ("· 1 GDB edit") and as a warning on the export page, and that both go once the edit is applied (C4). It makes its own station folder with a Cesium export, which gives the copy a model id, and copies a one-shape drift file into the folder's `gis-drift` folder under the model's key. On a PC where the Cesium export's first-run setup never ran, the scenarios that export to Cesium (`c4-waiting`, `c8-network`) first save a project profile named "UI test" (GIS_ plans, EPSG:6677, output in the run folder); `Run-UiTests.ps1` restores `profiles.json` when the run ends.
 - `c8-network` checks the GIS standard page's Network tab, which shows Kanizu's walking network in Revit (C8). It makes its own station folder in the run folder with a Cesium export and writes the C8 sample network there, fitted to two adjacent levels of the model.
+- `h4-shared-rules` checks that every PC exporting a model into a station folder produces the same GIS package from the station's `gis-rules.json` (H4). It runs only with `Run-UiTests.ps1 -FloorPlanDataSandbox`, which gives Revit a per-run copy of the per-PC floor plan store.
 
 ## How it works
 
@@ -82,7 +83,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting` or `c8-network`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `georef-read` or `h4-shared-rules`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -293,6 +294,34 @@ The sample file is a copy of the C8 conformance sample, until Kanizu writes the 
 | C8.10 | Hide in Revit: the button turns back, no transaction is committed, and screenshots of A and B show the result. |
 
 Showing the network adds no element, because adding an element needs a transaction, and the steps check that none was committed. A person judges what is drawn from the screenshots.
+
+## The h4-shared-rules scenario
+
+The spec is `/mnt/project-files/shared-rules/revit-scenario.md`. It needs a build of RevitGeoSuite with the station rules (`gis-rules.json`), passed with `-RgsBuild`.
+
+```powershell
+.\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit -FloorPlanDataSandbox -RgsBuild <build folder> --scenario h4-shared-rules --model C:\dev\revit-test\auto\lumine-pristine.rvt
+```
+
+`-FloorPlanDataSandbox` is what keeps the roaming folder out of it. The script sets `REVITGEOSUITE_FLOORPLAN_DATA` to `<run>\appdata` for the Revit it starts, copies the real `%APPDATA%\RevitGeoSuite\FloorPlanExport` into `<run>\appdata\RevitGeoSuite\FloorPlanExport` before Revit starts, and writes the real folder's file list with the SHA-256 of each file to `<run>\real-folder-before.txt`. When Revit has closed it writes `real-folder-after.txt` and compares the two. A difference adds a failed `REAL` section to the report and makes the exit code 1. It installs the test host first, because the host's `ping` must report the variable. The scenario's step H4.0 reads that value from Revit and stops the whole scenario unless it is this run's `<run>\appdata`, so a Revit started without the switch never exports. With the sandbox, the script empties the sandbox copy of `settings.json`, not the real one.
+
+The station folder is `<run>\h4-station`, so every file stays under the run folder. The model has no saved floor plan profile on the build PC: the first Cesium export saves a "UI test" project profile into the sandbox store (see `NetworkRun.cs`).
+
+| Step | Checks |
+| --- | --- |
+| H4.0 | Revit's `REVITGEOSUITE_FLOORPLAN_DATA` is the run's sandbox, and `real-folder-before.txt` exists. |
+| H4.S, H4.G | Set up model and the georeference record, which the Cesium export needs. |
+| H4.1 | Notes the store's `mapping-rules` files and `profiles.json` entries. |
+| H4.2 | Run A. `gis-rules.json` has a `Station` profile with the used profile's EPSG, per-PC rule files that moved are renamed `*.moved-to-station`, the manifest has `gis.rules` with `source` `station`, a profile and a hash, and `gis-models\<id>.gis-model.json` has `links`. |
+| H4.3 | Run B. The runner renames the sandbox store to `FloorPlanExport.h4-off`, the run saves a global profile "H4 PC B" with EPSG:6676 and exports. One warning lists `(yours -> station)`, `gis.rules.hash` equals A's, `gis\gis-fields.json` is byte-equal, and every feature table of the two GeoPackages is equal row for row (ignoring fid order and `gpkg_contents.last_change`). The diff goes to the report. PC B's own store is moved to `FloorPlanExport.pc-b-<time>` and the original is renamed back. |
+| H4.4 | Run C. In the preview of the first `GIS_` plan, Category assignments, a floor type without a `gis_category` gets a category through "Add assignment". `gis-rules.json` holds the rule, no transaction is committed, and the next Cesium export has another hash. |
+| H4.5 | The runner holds `gis-rules.json` open with `FileShare.None`, and a save in the preview fails. The file is unchanged, with no `.gis-rules.*.tmp` and no `gis-rules.lock`. |
+| H4.6 | The runner writes `gis-rules.lock`, a save fails and names the lock, and once the lock is older than 30 s the save succeeds and the lock is gone. |
+| H4.7 | `icacls <station> /deny <user>:(W)`, then a Cesium export. The warning says the station is read-only, `gis.rules.source` is `local`, and nothing in the store was renamed. When the export cannot finish, the report records what it said. The deny entry is always removed again, and the step fails if it is still there. |
+| H4.8 | `"profile": "Nope"` in the model's `gis-model.json`. The export stops with the list of the station's profiles. The file is put back byte for byte. |
+| H4.9 | The real folder has the same files and hashes as before. The report's footer lists the three `gis.rules` blocks. |
+
+What a person still does: the screenshots of the warning (H4.3) and the message (H4.8) do not exist, because the runner starts the Cesium export through the bridge and no page shows the text. The report carries the text. H4.4's "Saved for station h4-station" status is a known product failure: the web preview has no status line (`ExportPreviewController.BuildFooterStatus` has no caller there), so the step reports it as known and does not fail the run. The Japanese wording is in the step's notes, for a person to read.
 
 ## The georef-read scenario
 

@@ -30,6 +30,17 @@
   %APPDATA%\pyRevit\pyRevit_config.ini for the same window and takes it out again. pyRevit reads the
   list at Revit start; a reload in that Revit drops the folder. Every run also takes entries under
   C:\dev\rgs-uitests and C:\dev\revit-test out of that roaming file, since those exist only here.
+
+  -FloorPlanDataSandbox gives the Revit this script starts its own per-PC floor plan store, so a test
+  that moves per-PC rules into a station folder never touches the roaming %APPDATA% one. It sets
+  REVITGEOSUITE_FLOORPLAN_DATA to <run folder>\appdata for that Revit, copies the real
+  %APPDATA%\RevitGeoSuite\FloorPlanExport (if there is one) to <run>\appdata\RevitGeoSuite\FloorPlanExport
+  before Revit starts, and writes the real folder's file list with the SHA-256 of each file to
+  <run>\real-folder-before.txt and, once Revit has closed, to real-folder-after.txt. A difference fails
+  the run's report and the exit code. The run folder is the --out value, or a new one that is added to
+  the runner's arguments. The page's settings.json for the run is emptied inside the sandbox, so the real
+  one is never written. It installs the test host first (Install-TestHost.ps1), so that the host reports
+  the variable in Revit; the scenario h4-shared-rules refuses to run without it.
 #>
 param(
     [switch]$StartRevit,
@@ -38,6 +49,7 @@ param(
     [string]$RgsTarget = "C:\dev\revit-test\rgs\$RevitYear",
     [string]$RgsBuild = '',
     [string]$PyRevitExtension = '',
+    [switch]$FloorPlanDataSandbox,
     [int]$StartMinutes = 5,
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$RunnerArgs
 )
@@ -51,6 +63,49 @@ $pipe = 'RevitGeoSuite.TestHost'
 
 function Test-HostPipe {
     try { return [IO.Directory]::GetFiles('\\.\pipe\') -contains "\\.\pipe\$pipe" } catch { return $false }
+}
+
+$realStore = Join-Path $env:APPDATA 'RevitGeoSuite\FloorPlanExport'
+$exportStore = $realStore
+$sandboxRoot = $null
+$runFolder = $null
+
+# One line per file, "<sha256 in lower case>  <path below the folder>": what the runner's FolderSnapshot reads.
+function Write-FolderSnapshot([string]$Folder, [string]$Path) {
+    $lines = @()
+    if (Test-Path $Folder) {
+        $root = (Resolve-Path $Folder).Path.TrimEnd('\')
+        $lines = @(Get-ChildItem $Folder -Recurse -File -Force | Sort-Object FullName | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.FullName.Substring($root.Length + 1)
+        })
+    }
+    [IO.File]::WriteAllText($Path, $(if ($lines.Count -eq 0) { '' } else { ($lines -join "`n") + "`n" }), [Text.UTF8Encoding]::new($false))
+    return $lines
+}
+
+if ($FloorPlanDataSandbox) {
+    if (-not $StartRevit) { throw '-FloorPlanDataSandbox needs -StartRevit: the variable is handed to the Revit this script starts.' }
+    if (Get-Process -Name Revit -ErrorAction SilentlyContinue) { throw 'Close Revit first: -FloorPlanDataSandbox only reaches a Revit that this script starts.' }
+    $RunnerArgs = @($RunnerArgs | Where-Object { $null -ne $_ })
+    $outIndex = [array]::IndexOf($RunnerArgs, '--out')
+    if ($outIndex -ge 0 -and $outIndex + 1 -lt $RunnerArgs.Count) {
+        $out = $RunnerArgs[$outIndex + 1]
+        if (-not [IO.Path]::IsPathRooted($out)) { $out = Join-Path (Get-Location).Path $out }
+        $runFolder = [IO.Path]::GetFullPath($out)
+    }
+    else {
+        $runFolder = Join-Path 'C:\dev\revit-test\auto' (Get-Date -Format 'yyyyMMdd-HHmmss')
+        $RunnerArgs += @('--out', $runFolder)
+    }
+    New-Item -ItemType Directory -Force -Path $runFolder | Out-Null
+    $realBefore = @(Write-FolderSnapshot $realStore (Join-Path $runFolder 'real-folder-before.txt'))
+    Write-Host "Real floor plan folder $realStore: $($realBefore.Count) file(s) on record in $runFolder\real-folder-before.txt."
+    $sandboxRoot = Join-Path $runFolder 'appdata'
+    $exportStore = Join-Path $sandboxRoot 'RevitGeoSuite\FloorPlanExport'
+    if (Test-Path $realStore) { New-Item -ItemType Directory -Force -Path (Split-Path $exportStore) | Out-Null; Copy-Item $realStore $exportStore -Recurse -Force }
+    else { New-Item -ItemType Directory -Force -Path $exportStore | Out-Null }
+    Write-Host "Per-PC floor plan store for this run: $exportStore (REVITGEOSUITE_FLOORPLAN_DATA=$sandboxRoot)."
+    & (Join-Path $PSScriptRoot 'Install-TestHost.ps1') -RevitYear $RevitYear -Target $TestHost
 }
 
 # A run that was stopped half way may have left a manifest behind; never let one stay.
@@ -115,7 +170,7 @@ function Set-PyRevitExtensions([scriptblock]$Change) {
 # export would leave a C:\dev\revit-test folder there for every PC; the files go back as they were on exit.
 $exportSettings = @{}
 foreach ($name in 'settings.json', 'profiles.json') {
-    $file = Join-Path $env:APPDATA "RevitGeoSuite\FloorPlanExport\$name"
+    $file = Join-Path $exportStore $name
     $exportSettings[$file] = $null
     if (Test-Path $file) { $exportSettings[$file] = [IO.File]::ReadAllBytes($file) }
 }
@@ -123,7 +178,7 @@ foreach ($name in 'settings.json', 'profiles.json') {
 # the default view choice (gis-model.json, else every GIS_ plan) is what the scenarios test. An empty
 # object, not a missing file: without the file RevitGeoSuite would read the legacy RevitGeoExporter one.
 # Profiles stay: the Cesium export uses the PC's first floor plan profile.
-$runSettings = Join-Path $env:APPDATA 'RevitGeoSuite\FloorPlanExport\settings.json'
+$runSettings = Join-Path $exportStore 'settings.json'
 if ($StartRevit) {
     New-Item -ItemType Directory -Force -Path (Split-Path $runSettings) | Out-Null
     [IO.File]::WriteAllText($runSettings, '{}')
@@ -169,10 +224,11 @@ if ($StartRevit) {
         $startedAt = Get-Date
         try {
             $env:REVITGEOSUITE_UITEST = '1'   # inherited by this Revit only; removed again below
+            if ($FloorPlanDataSandbox) { $env:REVITGEOSUITE_FLOORPLAN_DATA = $sandboxRoot }
             if ($RgsBuild) { $env:REVITGEOSUITE_UITEST_RGS = $rgs }
             # Revit resolves bare file names (such as a detached model's default name) against its working directory: keep that in the test folder.
             New-Item -ItemType Directory -Force -Path 'C:\dev\revit-test' | Out-Null
-            try { $process = Start-Process -FilePath $revit -WorkingDirectory 'C:\dev\revit-test' -PassThru } finally { Remove-Item Env:REVITGEOSUITE_UITEST; Remove-Item Env:REVITGEOSUITE_UITEST_RGS -ErrorAction SilentlyContinue }
+            try { $process = Start-Process -FilePath $revit -WorkingDirectory 'C:\dev\revit-test' -PassThru } finally { Remove-Item Env:REVITGEOSUITE_UITEST; Remove-Item Env:REVITGEOSUITE_UITEST_RGS -ErrorAction SilentlyContinue; Remove-Item Env:REVITGEOSUITE_FLOORPLAN_DATA -ErrorAction SilentlyContinue }
             Write-Host "Started $revit for UI tests. Waiting for the test host before taking the manifest away again..."
             $deadline = (Get-Date).AddMinutes($StartMinutes)
             while (-not (Test-HostPipe) -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
@@ -211,11 +267,30 @@ finally {
         Stop-Process -Id $process.Id -Force
         Write-Host "Closed the test Revit (process $($process.Id)) without saving."
     }
-    foreach ($file in @($exportSettings.Keys)) {
-        if ($null -eq $exportSettings[$file]) { Remove-Item $file -Force -ErrorAction SilentlyContinue }
-        else { [IO.File]::WriteAllBytes($file, $exportSettings[$file]) }
+    if ($FloorPlanDataSandbox) {
+        # Revit has closed, so nothing of the real folder can change any more: compare it with the record from before.
+        if ($process) { $null = $process.WaitForExit(15000) }
+        $realAfter = @(Write-FolderSnapshot $realStore (Join-Path $runFolder 'real-folder-after.txt'))
+        $changes = @($realAfter | Where-Object { $realBefore -notcontains $_ } | ForEach-Object { "after: $_" }) +
+            @($realBefore | Where-Object { $realAfter -notcontains $_ } | ForEach-Object { "before: $_" })
+        if ($changes.Count -gt 0) {
+            $reportPath = if ($startFailure) { $startFailure } else { Join-Path $runFolder 'report.md' }
+            $text = if (Test-Path $reportPath) { [IO.File]::ReadAllText($reportPath) } else { "# RevitGeoSuite UI test run`n" }
+            $text = $text -replace '(?m)^\*\*PASS\*\*', '**FAIL**'
+            $text += "`n## REAL. The real floor plan folder is unchanged: **FAIL**`n`n- FAILED: $realStore differs from the record in real-folder-before.txt.`n" + (($changes | ForEach-Object { "  - ``$_``" }) -join "`n") + "`n"
+            [IO.File]::WriteAllText($reportPath, $text, [Text.UTF8Encoding]::new($false))
+            Write-Host "THE REAL FLOOR PLAN FOLDER CHANGED during the run ($($changes.Count) line(s)); see $reportPath."
+            $exitCode = 1
+        }
+        else { Write-Host "The real floor plan folder $realStore is unchanged ($($realAfter.Count) file(s))." }
     }
-    Write-Host "Put the export's remembered settings back as they were: $($exportSettings.Keys -join ', ')."
+    else {
+        foreach ($file in @($exportSettings.Keys)) {
+            if ($null -eq $exportSettings[$file]) { Remove-Item $file -Force -ErrorAction SilentlyContinue }
+            else { [IO.File]::WriteAllBytes($file, $exportSettings[$file]) }
+        }
+        Write-Host "Put the export's remembered settings back as they were: $($exportSettings.Keys -join ', ')."
+    }
 }
 
 exit $exitCode
