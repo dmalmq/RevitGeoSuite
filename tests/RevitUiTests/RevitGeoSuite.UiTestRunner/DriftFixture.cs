@@ -35,6 +35,8 @@ internal static class DriftFixture
                 ["gdbRestriction"] = "",
             }),
             ["notPlaced"] = new JsonArray(),
+            ["epsg"] = 6677,
+            ["shapes"] = new JsonArray(),
         };
         return file.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
     }
