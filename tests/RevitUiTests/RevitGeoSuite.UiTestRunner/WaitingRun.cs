@@ -19,6 +19,38 @@ internal sealed partial class GisStandardRun
     private string waitingDrift = string.Empty;
     private string waitingFloor = string.Empty;
     private bool waitingApplied;
+    private string stationModelKey = string.Empty;
+
+    private string StationFolder => Path.Combine(options.OutputFolder, "station");
+
+    /// <summary>
+    /// Gives the copy a model id once per run: a Cesium export into the run's station folder records it,
+    /// and Review GDB edits matches a drift file only to a model with an id ("This model has no id yet").
+    /// Drift files the run writes afterwards name this key.
+    /// </summary>
+    private async Task EnsureStation(StepResult step)
+    {
+        if (stationModelKey.Length > 0)
+        {
+            step.Note($"Model key '{stationModelKey}' from this run's earlier Cesium export.");
+            return;
+        }
+
+        if (await ExportCesium(step, StationFolder) == null)
+        {
+            return;
+        }
+
+        JsonNode? located = await Shell.RpcAsync("gisDrift.inspect", new { path = string.Empty, pick = false });
+        string modelKey = located?["modelKey"]?.GetValue<string>() ?? string.Empty;
+        string recorded = located?["stationFolder"]?.GetValue<string>() ?? string.Empty;
+        step.Note($"Model key '{modelKey}', station folder '{recorded}'.");
+        if (step.Check(modelKey.Length > 0, "The model has a model id after the Cesium export.")
+            && step.Check(SamePath(recorded, StationFolder), $"The Cesium export recorded the run's station folder {StationFolder} ({recorded})."))
+        {
+            stationModelKey = modelKey;
+        }
+    }
 
     private async Task WaitingSteps()
     {
@@ -31,21 +63,14 @@ internal sealed partial class GisStandardRun
 
     private async Task PrepareWaiting(StepResult step)
     {
-        string station = Path.Combine(options.OutputFolder, "station");
-        if (await ExportCesium(step, station) == null)
+        await EnsureStation(step);
+        if (stationModelKey.Length == 0)
         {
             return;
         }
 
-        JsonNode? located = await Shell.RpcAsync("gisDrift.inspect", new { path = string.Empty, pick = false });
-        string modelKey = located?["modelKey"]?.GetValue<string>() ?? string.Empty;
-        string recorded = located?["stationFolder"]?.GetValue<string>() ?? string.Empty;
-        step.Note($"Model key '{modelKey}', station folder '{recorded}'.");
-        if (!step.Check(modelKey.Length > 0, "The model has a model id after the Cesium export.")
-            || !step.Check(SamePath(recorded, station), $"The Cesium export recorded the run's station folder {station} ({recorded})."))
-        {
-            return;
-        }
+        string station = StationFolder;
+        string modelKey = stationModelKey;
 
         if (!await ExportFloorUnits(step))
         {

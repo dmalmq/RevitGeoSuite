@@ -20,6 +20,8 @@ internal sealed partial class GisStandardRun
     private async Task HandDrawnSteps()
     {
         await Step("C3d.0", "The model has had Set up model once, so each level has a GIS_ plan", EnsureSetUp);
+        await Step("C3d.G", "The copy gets RevitGeoSuite's georeference record from its own coordinates, which the Cesium export needs", EnsureGeoreference);
+        await Step("C3d.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("C3d.P", "Export, delete floor F, make the hand-drawn drift files from F's unit", PrepareHandDrawn);
         await Step("C3d.1", "Pick the typed file: one 'New floor drawn in the GDB' card with its type chosen", PickHandDrawn);
         await Step("C3d.2", "Show in Revit draws the outline in the GIS_ plan, with no transaction", step => ShowShapes(step, drawn?.Floor.Level));

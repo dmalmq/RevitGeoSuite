@@ -23,6 +23,8 @@ internal sealed partial class GisStandardRun
     private async Task SplitSteps()
     {
         await Step("C3b.0", "The model has had Set up model once, so each level has a GIS_ plan", EnsureSetUp);
+        await Step("C3b.G", "The copy gets RevitGeoSuite's georeference record from its own coordinates, which the Cesium export needs", EnsureGeoreference);
+        await Step("C3b.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("C3b.P", "Export, make the split drift file, read floor F", PrepareSplit);
         await Step("C3b.1", "Pick the drift file: one split card with two dashed pieces", PickSplit);
         await Step("C3b.2", "Show in Revit draws both pieces in the GIS_ plan, with no transaction", step => ShowShapes(step, split?.Floor.Level));
@@ -37,6 +39,8 @@ internal sealed partial class GisStandardRun
     private async Task MergeSteps()
     {
         await Step("C3c.0", "The model has had Set up model once, so each level has a GIS_ plan", EnsureSetUp);
+        await Step("C3c.G", "The copy gets RevitGeoSuite's georeference record from its own coordinates, which the Cesium export needs", EnsureGeoreference);
+        await Step("C3c.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("C3c.P", "Export, pick floors K and G on one level, make the merge drift file", PrepareMerge);
         await Step("C3c.1", "Pick the drift file: one merge card", PickMerge);
         await Step("C3c.2", "Show in Revit draws both floors, with no transaction", step => ShowShapes(step, merge?.Kept.Level));
