@@ -14,6 +14,9 @@ internal sealed class SharedCoordinateProjector
 
     private readonly AffineTransform2D _transform;
 
+    /// <summary>Model feet to the project CRS in metres, as every exported position is projected.</summary>
+    public AffineTransform2D Transform => _transform;
+
     public SharedCoordinateProjector(ProjectLocation? projectLocation)
     {
         _transform = projectLocation == null

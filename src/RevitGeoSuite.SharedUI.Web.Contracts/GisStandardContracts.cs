@@ -217,8 +217,61 @@ public sealed class GisDriftInspectResponse
 
     public GisDriftChangeItem[] Changes { get; set; } = Array.Empty<GisDriftChangeItem>();
 
-    /// <summary>Rows that cannot be written, one line each.</summary>
+    /// <summary>Shape edits the page can apply, each previewed before anything changes.</summary>
+    public GisShapeEditItem[] Shapes { get; set; } = Array.Empty<GisShapeEditItem>();
+
+    /// <summary>Rows and shape edits that cannot be applied, one line each.</summary>
     public string[] Problems { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>One shape edit from the GDB: the floor's outline now and the GDB's, in model metres for the page's drawing.</summary>
+[TsExport]
+public sealed class GisShapeEditItem
+{
+    /// <summary>The floor's UniqueId: what the page sends back to show or apply the edit.</summary>
+    public string UniqueId { get; set; } = string.Empty;
+
+    /// <summary>reshape</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public long ElementId { get; set; }
+
+    /// <summary>The unit's name, or its unique id.</summary>
+    public string Feature { get; set; } = string.Empty;
+
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>The floor's outline now: rings of [x, y] in metres, model coordinates.</summary>
+    public double[][][] Before { get; set; } = Array.Empty<double[][]>();
+
+    /// <summary>The GDB's outline: rings of [x, y] in metres, model coordinates.</summary>
+    public double[][][] After { get; set; } = Array.Empty<double[][]>();
+}
+
+/// <summary>Payload of <c>gisDrift.showShape</c>: draw one edit's outlines over the floor's plan in Revit.</summary>
+[TsExport]
+public sealed class GisShapeShowRequest
+{
+    public string Path { get; set; } = string.Empty;
+
+    public string UniqueId { get; set; } = string.Empty;
+}
+
+/// <summary>Where the outlines were drawn.</summary>
+[TsExport]
+public sealed class GisShapeShowResponse
+{
+    /// <summary>The plan view the outlines are drawn in; empty when no plan shows the floor's level.</summary>
+    public string View { get; set; } = string.Empty;
+}
+
+/// <summary>Payload of <c>gisDrift.applyShapes</c>: the drift file and the shape edits the user kept ticked, by floor UniqueId.</summary>
+[TsExport]
+public sealed class GisShapeApplyRequest
+{
+    public string Path { get; set; } = string.Empty;
+
+    public string[] UniqueIds { get; set; } = Array.Empty<string>();
 }
 
 /// <summary>One GDB value to accept into one Revit parameter.</summary>

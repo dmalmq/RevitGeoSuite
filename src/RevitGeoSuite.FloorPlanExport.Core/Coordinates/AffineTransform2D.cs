@@ -40,4 +40,21 @@ public readonly struct AffineTransform2D
     {
         return TransformVector(vector.X, vector.Y);
     }
+
+    /// <summary>The transform that undoes this one. Throws when the basis is singular.</summary>
+    public AffineTransform2D Inverse()
+    {
+        double determinant = (XBasis.X * YBasis.Y) - (YBasis.X * XBasis.Y);
+        if (System.Math.Abs(determinant) < 1e-15)
+        {
+            throw new System.InvalidOperationException("The transform has no inverse: its axes are parallel.");
+        }
+
+        Point2D xBasis = new(YBasis.Y / determinant, -XBasis.Y / determinant);
+        Point2D yBasis = new(-YBasis.X / determinant, XBasis.X / determinant);
+        Point2D origin = new(
+            -((xBasis.X * Origin.X) + (yBasis.X * Origin.Y)),
+            -((xBasis.Y * Origin.X) + (yBasis.Y * Origin.Y)));
+        return new AffineTransform2D(origin, xBasis, yBasis);
+    }
 }

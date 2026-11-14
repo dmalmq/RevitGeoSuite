@@ -391,6 +391,20 @@ function gisParameters() {
 // Review GDB edits: Kanizu's drift file for this model, with a conflict and a row it cannot write.
 function gisDrift() {
   let accepted = false
+  let reshaped = false
+  // A shop the GDB widened and a concourse it cut a notch out of, in model metres.
+  const shapes = [
+    {
+      uniqueId: 'f-shop', kind: 'reshape', elementId: 412233, feature: 'コンビニ', label: 'Reshape floor 412233 (コンビニ) to the GDB outline',
+      before: [[[0, 0], [8, 0], [8, 6], [0, 6], [0, 0]]],
+      after: [[[0, 0], [10, 0], [10, 6], [0, 6], [0, 0]]]
+    },
+    {
+      uniqueId: 'f-walk', kind: 'reshape', elementId: 412240, feature: '中央通路', label: 'Reshape floor 412240 (中央通路) to the GDB outline',
+      before: [[[0, 0], [30, 0], [30, 12], [0, 12], [0, 0]]],
+      after: [[[0, 0], [30, 0], [30, 12], [18, 12], [18, 9], [12, 9], [12, 12], [0, 12], [0, 0]]]
+    }
+  ]
   const station = 'D:\\Stations\\Tokyo'
   const path = `${station}\\gis-drift\\8d7f3c1e-0000.gis-drift.json`
   // The rows of tests/Fixtures/Conformance/gis-drift/8d7f3c1e-0000.gis-drift.json, which Kanizu wrote.
@@ -412,6 +426,7 @@ function gisDrift() {
     expectedPath: path,
     appliedVersion: 'revit/tokyo-8d7f3c1e/20261110T000000Z-aaaaaaaa',
     changes: accepted ? [changes[3]] : changes,
+    shapes: reshaped ? [] : shapes,
     problems: [
       'unit 北改札 restrict: no Revit parameter holds this field; change it in Revit by hand (GDB: private).',
       'unit 北改札 level_id: no Revit parameter holds this field; change it in Revit by hand (GDB: b).'
@@ -422,6 +437,16 @@ function gisDrift() {
     'gisDrift.apply': (payload: { changes?: typeof changes }) => {
       accepted = true
       return { log: (payload?.changes ?? []).map((change) => change.label), skipped: [] }
+    },
+    'gisDrift.showShape': () => ({ view: 'GIS_1FL' }),
+    'gisDrift.clearShape': () => undefined,
+    'gisDrift.applyShapes': (payload: { uniqueIds?: string[] }) => {
+      reshaped = true
+      // Revit's notes on an edit come indented under it, as the Shell writes them.
+      const log = shapes
+        .filter((shape) => payload?.uniqueIds?.includes(shape.uniqueId))
+        .flatMap((shape) => (shape.uniqueId === 'f-walk' ? [shape.label, '  Revit deleted opening 412301, which hung on the floor outside its new outline.'] : [shape.label]))
+      return { log, skipped: [] }
     }
   }
 }
