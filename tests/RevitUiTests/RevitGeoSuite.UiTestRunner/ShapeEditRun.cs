@@ -543,7 +543,7 @@ internal sealed partial class GisStandardRun
             FloorScanRow keptRow = scan.First(row => row.UniqueId == spare.Kept.UniqueId), takenRow = scan.First(row => row.UniqueId == spare.Taken.UniqueId);
             string spareFile = WriteDrift("merge-hosted.gis-drift.json", spare.Kept, ReshapeFixture.Merged(spare.Kept, spare.Taken.UniqueId));
             merge = new MergeCase(spareFile, spare.Kept, keptRow, spare.Taken, takenRow, Element(spare.Kept.UniqueId), scan.Count(row => row.Level == keptRow.Level));
-            step.Note($"the first G is not back after the refused Undo, so this step uses the second pair: K = {keptRow.Id} ({spare.Kept.Category}), G = {takenRow.Id} ({spare.Taken.Category}) on level {keptRow.Level}.");
+            step.Note($"The first G is not back after the refused Undo, so this step uses the second pair: K = {keptRow.Id} ({spare.Kept.Category}), G = {takenRow.Id} ({spare.Taken.Category}) on level {keptRow.Level}.");
         }
 
         JsonObject fixture;
