@@ -67,6 +67,7 @@ internal sealed partial class GisStandardRun
         step.Note($"Staged {staged}: floor unit '{unit.Name}' ({unit.Category}, {unit.UniqueId}), east edge {GrowM} m east, model '{modelKey}'. C4.1 copies it to {waitingDrift}.");
         string before = RibbonButton(step)?["text"]?.GetValue<string>() ?? string.Empty;
         step.Check(!before.Contains("GDB edit", StringComparison.Ordinal), $"Before the file arrives, the button shows no GDB edits ('{OneLine(before)}').");
+        step.Note($"Button before the drift file: '{OneLine(before)}'.");
     }
 
     private async Task DriftArrives(StepResult step)
@@ -84,6 +85,7 @@ internal sealed partial class GisStandardRun
         JsonNode? button = await WaitForRibbon(text => text.Contains("· 1 GDB edit", StringComparison.Ordinal));
         string text = button?["text"]?.GetValue<string>() ?? string.Empty;
         step.Check(text.Contains("· 1 GDB edit", StringComparison.Ordinal), $"Within {RibbonWait.TotalSeconds:0} s the button reads '… · 1 GDB edit' ('{OneLine(text)}', after {(DateTime.UtcNow - copied).TotalSeconds:0} s).");
+        step.Note($"Button: '{OneLine(text)}', {(DateTime.UtcNow - copied).TotalSeconds:0} s after the copy.");
         step.Note($"Tooltip: {OneLine(button?["toolTip"]?.GetValue<string>() ?? string.Empty)}");
         RevitEvent[] changes = host.EventsAfter(seq).Where(item => item.Kind != "dialog").ToArray();
         step.Check(changes.Length == 0, $"Counting makes no Revit transaction ({(changes.Length == 0 ? "none" : string.Join(" / ", changes.Select(item => item.ToString())))}).");
@@ -132,6 +134,7 @@ internal sealed partial class GisStandardRun
         JsonNode? button = await WaitForRibbon(text => !text.Contains("GDB edit", StringComparison.Ordinal));
         string text = button?["text"]?.GetValue<string>() ?? string.Empty;
         step.Check(!text.Contains("GDB edit", StringComparison.Ordinal), $"Within {RibbonWait.TotalSeconds:0} s the button drops the count ('{OneLine(text)}').");
+        step.Note($"Button after Apply: '{OneLine(text)}'.");
         await Shell.GoToAsync("/export/geopackage");
         await Shell.Page.WaitForTimeoutAsync(3000);
         int warnings = await Shell.Text(new Regex(@"GDB edit\(s\) from Kanizu wait for this model")).CountAsync();
