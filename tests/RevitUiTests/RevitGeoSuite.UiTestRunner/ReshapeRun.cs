@@ -109,9 +109,13 @@ internal sealed partial class GisStandardRun
             return;
         }
 
+        int seq = host.LastEvent();
         await PickDrift(reshape!.Path);
         ILocator card = Shell.Page.GetByTestId("shape-edit");
         await ExpectShapeEdits(step, reshape.Path);
+        // The plan reads each floor's outline from the export preview of its GIS_ plan; that must stay read-only.
+        RevitEvent[] changes = host.EventsAfter(seq).Where(item => item.Kind != "dialog").ToArray();
+        step.Check(changes.Length == 0, $"Picking the file makes no Revit transaction, committed or rolled back ({(changes.Length == 0 ? "none" : string.Join(" / ", changes.Select(item => item.ToString())))}).");
         step.Check(await Shell.ShowsAsync(card.GetByText($"Reshape floor {reshapeBefore!.Id}")), $"The card names floor F's element id {reshapeBefore.Id}.");
         // The drawing is in model feet, so on a rotated model an east grow need not widen it; it always adds area.
         JsonElement paths = await card.First.EvaluateAsync<JsonElement>(
@@ -201,6 +205,9 @@ internal sealed partial class GisStandardRun
         await Shell.Button("Check again").Last.ClickAsync();
         await Shell.Page.WaitForTimeoutAsync(2000);
         step.Check(await Gone(shapes), "A second Check again offers nothing.");
+        JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path = reshape!.Path, pick = false });
+        string[] off = Problems(drift).Where(problem => problem.Contains("already has the GDB outline in its sketch", StringComparison.Ordinal)).ToArray();
+        step.Note(off.Length == 0 ? "No problem line says F's exported outline is still off." : $"Problem line: {string.Join(" | ", off)}");
     }
 
     private Task UndoReshape(StepResult step)
