@@ -16,11 +16,11 @@ namespace RevitGeoSuite.FloorPlanExport.GisTools;
 /// <summary>Reads the model for <see cref="GisShapeEdits"/> and applies its edits, each as one undoable step.</summary>
 public static class ShapeEditWork
 {
-    public static (IReadOnlyList<ShapeEdit> Edits, IReadOnlyList<string> Problems) Plan(Document document, GisDriftFile file)
+    public static ShapePlan Plan(Document document, GisDriftFile file)
     {
         if (file.Shapes.Count == 0)
         {
-            return (Array.Empty<ShapeEdit>(), Array.Empty<string>());
+            return ShapePlan.Empty;
         }
 
         AffineTransform2D modelToProject = new SharedCoordinateProjector(document.ActiveProjectLocation).Transform;
@@ -35,9 +35,9 @@ public static class ShapeEditWork
             }
         }
 
-        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = GisShapeEdits.Plan(file, floors, modelToProject, ModelEpsg(document));
-        List<string> all = exported.Problems.Concat(problems).ToList();
-        return (WithOpeningsInside(document, edits, all), all);
+        ShapePlan plan = GisShapeEdits.Plan(file, floors, modelToProject, ModelEpsg(document));
+        List<string> all = exported.Problems.Concat(plan.Problems).ToList();
+        return new ShapePlan(WithOpeningsInside(document, plan.Edits, all), all, plan.Waiting);
     }
 
     // An edit whose new sketch leaves an opening hosted on the floor outside is a problem, not a card: Revit would refuse it.

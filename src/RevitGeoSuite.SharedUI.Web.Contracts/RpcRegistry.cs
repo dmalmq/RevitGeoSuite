@@ -68,6 +68,7 @@ using RevitGeoSuite.SharedUI.Web.Contracts;
 [assembly: RpcMethod("gisParameters.read", typeof(GisStandardEmptyRequest), typeof(GisParametersReadResponse))]
 [assembly: RpcMethod("gisParameters.apply", typeof(GisParametersApplyRequest), typeof(GisStandardApplyResponse))]
 [assembly: RpcMethod("gisDrift.inspect", typeof(GisDriftInspectRequest), typeof(GisDriftInspectResponse))]
+[assembly: RpcMethod("gisDrift.waiting", typeof(GisStandardEmptyRequest), typeof(GisDriftWaitingResponse))]
 [assembly: RpcMethod("gisDrift.apply", typeof(GisDriftApplyRequest), typeof(GisStandardApplyResponse))]
 [assembly: RpcMethod("gisDrift.showShape", typeof(GisShapeShowRequest), typeof(GisShapeShowResponse))]
 [assembly: RpcMethod("gisDrift.clearShape", typeof(ExporterEmptyRequest), typeof(void))]

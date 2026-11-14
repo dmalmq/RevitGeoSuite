@@ -75,6 +75,7 @@
       case '/georeference':
         return GeoreferenceRoute
       case '/gis-standard':
+      case '/gis-standard/drift':
         return GisStandardRoute
       case '/import':
         return ImportRoute

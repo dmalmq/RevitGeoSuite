@@ -61,3 +61,17 @@ export function outlineDrawing(before: Rings, after: Rings, size = 160, margin =
 }
 
 const round = (value: number) => Math.round(value * 10) / 10
+
+/**
+ * The drift file's source for its one-line summary: the station folder's name and when the export
+ * it was checked against ran. Kanizu names each export's folder `yyyyMMddTHHmmssZ-<hash8>`, and the
+ * applied version is that folder's path; anything else leaves the time empty.
+ */
+export function driftSource(drift: Pick<GisDriftInspectResponse, 'stationFolder' | 'appliedVersion' | 'path'>): { station: string; applied: Date | null } {
+  const station = lastPart(drift.stationFolder) || lastPart(drift.path)
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/.exec(lastPart(drift.appliedVersion))
+  const applied = match ? new Date(Date.UTC(+match[1], +match[2] - 1, +match[3], +match[4], +match[5], +match[6])) : null
+  return { station, applied }
+}
+
+const lastPart = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? ''
