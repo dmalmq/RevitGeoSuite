@@ -10,7 +10,7 @@
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Dialog, Table } from '$lib/kit'
   import { format } from '$lib/shell'
-  import { initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked, initialShapeTypes } from '$lib/gisStandard/driftReview'
+  import { driftSource, initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked, initialShapeTypes } from '$lib/gisStandard/driftReview'
   import AppliedBanner from './AppliedBanner.svelte'
   import ProblemList from './ProblemList.svelte'
   import ShapeEditList from './ShapeEditList.svelte'
@@ -32,6 +32,7 @@
   const mismatch = $derived(drift ? modelMismatch(drift) : null)
   const otherModel = $derived(mismatch !== null)
   const needsConfirm = $derived(!!drift && confirmFirst(drift))
+  const source = $derived(drift ? driftSource(drift) : null)
 
   onMount(() => void inspect({ path: '', pick: false }))
 
@@ -109,10 +110,10 @@
 
   const applyLabel = $derived(
     mismatch === 'no-model-id'
-      ? format($t('GisStandard.Drift.ApplyUnmatched', 'Accept {0} unmatched change(s)'), ticked.length)
+      ? format($t('GisStandard.Drift.ApplyUnmatched', 'Accept {0} unmatched value change(s)'), ticked.length)
       : mismatch === 'other-model'
-        ? format($t('GisStandard.Drift.ApplyOther', 'Accept {0} change(s) from another model'), ticked.length)
-        : format($t('GisStandard.Drift.Apply', 'Accept {0} change(s)'), ticked.length)
+        ? format($t('GisStandard.Drift.ApplyOther', 'Accept {0} value change(s) from another model'), ticked.length)
+        : format($t('GisStandard.Drift.Apply', 'Accept {0} value change(s)'), ticked.length)
   )
   const empty = (value: string) => (value.length ? value : $t('GisStandard.Empty', '(empty)'))
   const none = $derived($t('GisStandard.Drift.NoModel', '(none)'))
@@ -148,8 +149,10 @@
           : $t('GisStandard.Drift.NoStation', 'This model has no station folder yet. Export it to a station once, or pick a drift file.')}
       </p>
     {:else}
-      <p class="text-small text-muted-foreground">
-        {format($t('GisStandard.Drift.From', 'From {0} (applied version {1}).'), drift.path, drift.appliedVersion || '–')}
+      <p class="text-small text-muted-foreground" title={drift.path} data-testid="drift-source">
+        {source?.applied
+          ? format($t('GisStandard.Drift.FromStation', 'GDB edits from {0}, checked against the export of {1}.'), source.station, source.applied.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))
+          : format($t('GisStandard.Drift.FromStationOnly', 'GDB edits from {0}.'), source?.station ?? '')}
       </p>
       {#if needsConfirm}
         <Banner
@@ -178,8 +181,8 @@
               <th class="w-8"></th>
               <th>{$t('GisStandard.Drift.Feature', 'Feature')}</th>
               <th>{$t('GisStandard.Parameter', 'Parameter')}</th>
-              <th>{$t('GisStandard.Drift.Revit', 'Revit')}</th>
-              <th>{$t('GisStandard.Drift.Gdb', 'GDB')}</th>
+              <th>{$t('GisStandard.Drift.Revit', 'In Revit now')}</th>
+              <th>{$t('GisStandard.Drift.Gdb', 'In the GDB (will be written)')}</th>
             </tr>
           </thead>
           <tbody>
@@ -225,7 +228,7 @@
       </Button>
       <Button icon="folder-open" onclick={() => inspect({ path: '', pick: true })} disabled={working !== null}>{$t('GisStandard.Drift.Pick', 'Pick a drift file…')}</Button>
       {#if drift && drift.shapes.length > 0}
-        <Button icon="square-pen" onclick={startShapes} disabled={working !== null || tickedShapes.length === 0 || untypedShapes > 0} busy={working === 'shapes'} title={untypedShapes > 0 ? $t('GisStandard.Shapes.NeedsType', 'Pick a floor type for each ticked hand-drawn unit first.') : undefined}>
+        <Button variant="primary" icon="square-pen" onclick={startShapes} disabled={working !== null || tickedShapes.length === 0 || untypedShapes > 0} busy={working === 'shapes'} title={untypedShapes > 0 ? $t('GisStandard.Shapes.NeedsType', 'Pick a floor type for each ticked hand-drawn unit first.') : undefined}>
           {format($t('GisStandard.Shapes.Apply', 'Apply {0} shape edit(s)'), tickedShapes.length)}
         </Button>
       {/if}
