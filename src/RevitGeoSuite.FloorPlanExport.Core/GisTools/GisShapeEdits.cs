@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using NetTopologySuite.Algorithm.Distance;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Precision;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
@@ -14,13 +15,14 @@ namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 /// <summary>A floor a shape edit can change: its outline in model feet, and why Revit cannot edit its sketch, if it cannot.</summary>
 public sealed class ShapeFloor
 {
-    public ShapeFloor(string uniqueId, long elementId, IEnumerable<Polygon2D> outline, string? cannotEdit = null, long levelId = 0)
+    public ShapeFloor(string uniqueId, long elementId, IEnumerable<Polygon2D> outline, string? cannotEdit = null, long levelId = 0, IEnumerable<Polygon2D>? sketch = null)
     {
         UniqueId = uniqueId;
         ElementId = elementId;
         Outline = outline.ToList();
         CannotEdit = cannotEdit;
         LevelId = levelId;
+        Sketch = sketch?.ToList() ?? Outline;
     }
 
     public string UniqueId { get; }
@@ -28,6 +30,12 @@ public sealed class ShapeFloor
     public long ElementId { get; }
 
     public IReadOnlyList<Polygon2D> Outline { get; }
+
+    /// <summary>
+    /// The region the floor's sketch encloses, in model feet. It differs from <see cref="Outline"/>,
+    /// the top face the export reads, where an opening, a column or a joined element cuts the floor.
+    /// </summary>
+    public IReadOnlyList<Polygon2D> Sketch { get; }
 
     /// <summary>Why the floor's sketch cannot be redrawn (a slope arrow, shape-edited points), or null.</summary>
     public string? CannotEdit { get; }
@@ -73,8 +81,8 @@ public sealed class NewFloor
 /// </summary>
 public sealed class ShapeEdit
 {
-    public ShapeEdit(ShapeEditKind kind, GisDriftShape shape, ShapeFloor floor, IReadOnlyList<Polygon2D> outline)
-        : this(kind, shape, floor, outline, Array.Empty<NewFloor>(), redrawFloor: true)
+    public ShapeEdit(ShapeEditKind kind, GisDriftShape shape, ShapeFloor floor, IReadOnlyList<Polygon2D> outline, IReadOnlyList<Polygon2D>? sketch = null)
+        : this(kind, shape, floor, outline, Array.Empty<NewFloor>(), redrawFloor: true, sketch: sketch)
     {
     }
 
@@ -85,7 +93,8 @@ public sealed class ShapeEdit
         IReadOnlyList<Polygon2D> outline,
         IReadOnlyList<NewFloor> newFloors,
         bool redrawFloor,
-        IReadOnlyList<ShapeFloor>? absorbed = null)
+        IReadOnlyList<ShapeFloor>? absorbed = null,
+        IReadOnlyList<Polygon2D>? sketch = null)
     {
         Kind = kind;
         Shape = shape;
@@ -94,6 +103,7 @@ public sealed class ShapeEdit
         NewFloors = newFloors;
         RedrawFloor = redrawFloor;
         Absorbed = absorbed ?? Array.Empty<ShapeFloor>();
+        Sketch = sketch ?? outline;
     }
 
     public ShapeEditKind Kind { get; }
@@ -102,7 +112,7 @@ public sealed class ShapeEdit
 
     public ShapeFloor Floor { get; }
 
-    /// <summary>The GDB's outline in model feet: the floor's new sketch.</summary>
+    /// <summary>The GDB's outline in model feet: the floor's top face after the edit.</summary>
     public IReadOnlyList<Polygon2D> Outline { get; }
 
     /// <summary>A split's pieces that no floor has yet, each a new floor on the kept floor's level.</summary>
@@ -113,6 +123,9 @@ public sealed class ShapeEdit
 
     /// <summary>A merge's floors that the GDB merged into this one and that are still in the model: they are deleted.</summary>
     public IReadOnlyList<ShapeFloor> Absorbed { get; }
+
+    /// <summary>The floor's new sketch in model feet: its sketch now, with what the GDB added and without what it took away.</summary>
+    public IReadOnlyList<Polygon2D> Sketch { get; }
 
     public string Label()
     {
@@ -284,10 +297,110 @@ public static class GisShapeEdits
                 continue;
             }
 
-            edits.Add(new ShapeEdit(ShapeEditKind.Reshape, shape, floor, outline));
+            List<Polygon2D> sketch = SketchFor(floor, outline);
+            if (sketch.Count != 1 || !CanSketch(sketch))
+            {
+                problems.Add($"{shape.Describe()}: floor {floor.ElementId} {CutApart}");
+                continue;
+            }
+
+            if (SameOutline(sketch, floor.Sketch))
+            {
+                problems.Add($"{shape.Describe()}: floor {floor.ElementId} {AlreadySketched(GapMetres(floor.Outline, outline))}");
+                continue;
+            }
+
+            edits.Add(new ShapeEdit(ShapeEditKind.Reshape, shape, floor, outline, sketch));
         }
 
         return new ShapePlan(OnePerFloor(edits, problems), problems, file.Shapes.Count - settled);
+    }
+
+    /// <summary>Why a sketch is not redrawn when the GDB's change would leave it in pieces or with lines Revit cannot close.</summary>
+    public const string CutApart = "would need a sketch in several parts, or one whose lines cross, to give the GDB outline around the elements that cut it. Change it in Revit by hand.";
+
+    /// <summary>Why a floor whose sketch already gives the GDB outline is not redrawn: what still differs is cut by another element.</summary>
+    public static string AlreadySketched(double gapMetres) => string.Format(
+        CultureInfo.InvariantCulture,
+        "already has the GDB outline in its sketch; its top face is up to {0:F0} cm off where another element (an opening, a column, a joined floor or wall) cuts it. Change that element, or the GDB.",
+        gapMetres * 100);
+
+    /// <summary>
+    /// The sketch that gives the GDB outline: the floor's sketch with what the GDB added to its top face
+    /// and without what the GDB took away. Cuts by other elements are in neither, so they stay out of
+    /// the sketch and keep cutting it. A difference narrower than <see cref="SameOutlineMetres"/> is
+    /// rounding, not an edit.
+    /// </summary>
+    public static List<Polygon2D> SketchFor(ShapeFloor floor, IReadOnlyList<Polygon2D> gdb)
+    {
+        NtsGeometry? sketch = Snapped(floor.Sketch);
+        NtsGeometry? top = Snapped(floor.Outline);
+        NtsGeometry? wanted = Snapped(gdb);
+        if (sketch == null || top == null || wanted == null)
+        {
+            return gdb.ToList();
+        }
+
+        NtsGeometry added = Edit(wanted.Difference(top));
+        NtsGeometry removed = Edit(top.Difference(wanted));
+        return ToFeet(GeometryPrecisionReducer.Reduce(sketch.Union(added).Difference(removed), Millimetres));
+    }
+
+    /// <summary>The parts of a difference that are an edit: wider than <see cref="SameOutlineMetres"/>, not slivers along a shared edge.</summary>
+    private static NtsGeometry Edit(NtsGeometry difference)
+    {
+        List<NtsGeometry> parts = Enumerable.Range(0, difference.NumGeometries)
+            .Select(difference.GetGeometryN)
+            .Where(part => part is Polygon && part.Area > 0 && 2 * part.Area / part.Length > SameOutlineMetres / 2)
+            .ToList();
+        return parts.Count == 0 ? Factory.CreatePolygon() : Factory.BuildGeometry(parts).Union();
+    }
+
+    private static readonly PrecisionModel Millimetres = new(1000);
+
+    private static NtsGeometry? Snapped(IReadOnlyList<Polygon2D> outline) =>
+        Shape(outline) is NtsGeometry shape ? GeometryPrecisionReducer.Reduce(shape, Millimetres) : null;
+
+    /// <summary>Polygons in metres back to model feet, each ring cleaned of points closer than <see cref="ShortestEdgeFeet"/>.</summary>
+    private static List<Polygon2D> ToFeet(NtsGeometry geometry)
+    {
+        List<Polygon2D> polygons = new();
+        for (int index = 0; index < geometry.NumGeometries; index++)
+        {
+            if (geometry.GetGeometryN(index) is not Polygon polygon || polygon.IsEmpty)
+            {
+                continue;
+            }
+
+            List<Point2D> shell = Feet(polygon.ExteriorRing);
+            if (shell.Count >= 3)
+            {
+                polygons.Add(new Polygon2D(shell, polygon.InteriorRings.Select(Feet).Where(ring => ring.Count >= 3).Cast<IReadOnlyList<Point2D>>().ToList()));
+            }
+        }
+
+        return polygons;
+    }
+
+    private static List<Point2D> Feet(LineString ring) =>
+        Clean(ring.Coordinates.Select(coordinate => new Point2D(coordinate.X / MetresPerFoot, coordinate.Y / MetresPerFoot)));
+
+    /// <summary>
+    /// A sketch's loops as polygons in model feet, by the even-odd rule Revit uses: a loop inside
+    /// another is a hole, a loop inside a hole is an island.
+    /// </summary>
+    public static List<Polygon2D> FromLoops(IEnumerable<IReadOnlyList<Point2D>> loops)
+    {
+        NtsGeometry region = Factory.CreatePolygon();
+        foreach (IReadOnlyList<Point2D> loop in loops)
+        {
+            if (Ring(loop) is LinearRing ring)
+            {
+                region = region.SymmetricDifference(Factory.CreatePolygon(ring).Buffer(0));
+            }
+        }
+
+        return ToFeet(region);
     }
 
     /// <summary>Why a floor in several parts is not redrawn: the export writes each part as its own unit, and one part's outline would replace them all.</summary>
@@ -380,7 +493,14 @@ public static class GisShapeEdits
             return settled;
         }
 
-        edits.Add(new ShapeEdit(ShapeEditKind.Split, keeper, floor, outline, missing, redraw));
+        List<Polygon2D>? sketch = redraw ? SketchFor(floor, outline) : null;
+        if (sketch != null && (sketch.Count != 1 || !CanSketch(sketch)))
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {CutApart}");
+            return settled;
+        }
+
+        edits.Add(new ShapeEdit(ShapeEditKind.Split, keeper, floor, outline, missing, redraw, sketch: sketch));
         return settled;
     }
 
@@ -466,7 +586,14 @@ public static class GisShapeEdits
             return settled;
         }
 
-        edits.Add(new ShapeEdit(ShapeEditKind.Merge, keeper, floor, outline, Array.Empty<NewFloor>(), redraw, absorbed));
+        List<Polygon2D>? sketch = redraw ? SketchFor(floor, outline) : null;
+        if (sketch != null && (sketch.Count != 1 || !CanSketch(sketch)))
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {CutApart}");
+            return settled;
+        }
+
+        edits.Add(new ShapeEdit(ShapeEditKind.Merge, keeper, floor, outline, Array.Empty<NewFloor>(), redraw, absorbed, sketch: sketch));
         return settled;
     }
 

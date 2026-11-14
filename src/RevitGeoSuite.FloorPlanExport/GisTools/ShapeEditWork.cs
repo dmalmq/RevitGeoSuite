@@ -28,7 +28,7 @@ public static class ShapeEditWork
         {
             if (document.GetElement(uniqueId) is Floor floor)
             {
-                floors[uniqueId] = new ShapeFloor(uniqueId, floor.Id.Value, FloorTopFaces.Read(floor).Outline, WhyNotEditable(document, floor), floor.LevelId.Value);
+                floors[uniqueId] = new ShapeFloor(uniqueId, floor.Id.Value, FloorTopFaces.Read(floor).Outline, WhyNotEditable(document, floor), floor.LevelId.Value, SketchOf(document, floor));
             }
         }
 
@@ -62,8 +62,8 @@ public static class ShapeEditWork
 
     /// <summary>
     /// Applies one shape edit as one undo step named after it. A reshape redraws the floor's
-    /// sketch, so the floor keeps its UniqueId, revit_key, id and parameters. A split redraws the
-    /// kept floor to its piece and adds a floor for each other piece, with the kept floor's type,
+    /// sketch by the GDB's change, so cuts by other elements stay out of it and the floor keeps its
+    /// UniqueId, revit_key, id and parameters. A split redraws the kept floor to its piece and adds a floor for each other piece, with the kept floor's type,
     /// level, offset and GIS values; the next Kanizu apply pairs each piece with its new floor. A
     /// merge deletes the floors the GDB merged into the kept one, then redraws it to the merged outline.
     /// </summary>
@@ -293,7 +293,7 @@ public static class ShapeEditWork
                 transaction.Start();
                 document.Delete(boundary);
                 SketchPlane plane = sketch.SketchPlane;
-                foreach (Polygon2D polygon in edit.Outline)
+                foreach (Polygon2D polygon in edit.Sketch)
                 {
                     foreach (IReadOnlyList<Point2D> ring in new[] { polygon.ExteriorRing }.Concat(polygon.InteriorRings))
                     {
@@ -394,6 +394,23 @@ public static class ShapeEditWork
         return extraLines ? "has a slope arrow or other sketch line besides its boundary" : null;
     }
 
+    /// <summary>The region the floor's sketch encloses, in model feet, or null when it has no sketch.</summary>
+    private static List<Polygon2D>? SketchOf(Document document, Floor floor) =>
+        document.GetElement(floor.SketchId) is Sketch sketch
+            ? GisShapeEdits.FromLoops(sketch.Profile.Cast<CurveArray>().Select(Loop))
+            : null;
+
+    // Each curve's points but its last, which the next curve starts at.
+    private static IReadOnlyList<Point2D> Loop(CurveArray loop) =>
+        loop.Cast<Curve>()
+            .SelectMany(curve =>
+            {
+                IList<XYZ> points = curve.Tessellate();
+                return points.Take(points.Count - 1);
+            })
+            .Select(point => new Point2D(point.X, point.Y))
+            .ToList();
+
     private static HashSet<ElementId> ProfileCurveIds(Sketch sketch)
     {
         HashSet<ElementId> ids = new();
@@ -461,6 +478,14 @@ public static class ShapeEditWork
                     Errors.Add(text);
                     error = true;
                 }
+            }
+
+            if (error)
+            {
+                // Without this Revit still shows the rolled-back errors in its own dialog, which waits for a click.
+                FailureHandlingOptions options = failuresAccessor.GetFailureHandlingOptions();
+                options.SetClearAfterRollback(true);
+                failuresAccessor.SetFailureHandlingOptions(options);
             }
 
             return error ? FailureProcessingResult.ProceedWithRollBack : FailureProcessingResult.Continue;
