@@ -28,11 +28,12 @@ public sealed class ShapeFloor
 
     public long ElementId { get; }
 
+    /// <summary>The floor's outline as the export writes it (its top face, less what the export trims), in model feet: what the GDB's outline is compared with.</summary>
     public IReadOnlyList<Polygon2D> Outline { get; }
 
     /// <summary>
-    /// The region the floor's sketch encloses, in model feet. It differs from <see cref="Outline"/>,
-    /// the top face the export reads, where an opening, a column or a joined element cuts the floor.
+    /// The region the floor's sketch encloses, in model feet. It differs from <see cref="Outline"/>
+    /// where an opening, a column, a joined element or an export trim cuts the floor.
     /// </summary>
     public IReadOnlyList<Polygon2D> Sketch { get; }
 
@@ -63,7 +64,7 @@ public sealed class ShapeEdit
 
     public ShapeFloor Floor { get; }
 
-    /// <summary>The GDB's outline in model feet: the floor's top face after the edit.</summary>
+    /// <summary>The GDB's outline in model feet: the floor's exported outline after the edit.</summary>
     public IReadOnlyList<Polygon2D> Outline { get; }
 
     /// <summary>The floor's new sketch in model feet: its sketch now, with what the GDB added and without what it took away.</summary>
@@ -202,12 +203,12 @@ public static class GisShapeEdits
     /// <summary>Why a floor whose sketch already gives the GDB outline is not redrawn: what still differs is cut by another element.</summary>
     public static string AlreadySketched(double gapMetres) => string.Format(
         CultureInfo.InvariantCulture,
-        "already has the GDB outline in its sketch; its top face is up to {0:F0} cm off where another element (an opening, a column, a joined floor or wall) cuts it. Change that element, or the GDB.",
+        "already has the GDB outline in its sketch; its exported outline is still up to {0:F0} cm off, where another element (an opening, a column, a joined floor or wall, an overlapping stair or escalator) cuts it. Change that element, or the GDB.",
         gapMetres * 100);
 
     /// <summary>
-    /// The sketch that gives the GDB outline: the floor's sketch with what the GDB added to its top face
-    /// and without what the GDB took away. Cuts by other elements are in neither, so they stay out of
+    /// The sketch that gives the GDB outline: the floor's sketch with what the GDB added to its exported outline
+    /// and without what the GDB took away. Cuts by other elements and export trims are in neither, so they stay out of
     /// the sketch and keep cutting it. A difference narrower than <see cref="SameOutlineMetres"/> is
     /// rounding, not an edit.
     /// </summary>
