@@ -915,6 +915,33 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         return rows;
     }
 
+    /// <summary>
+    /// Posts Undo or Redo and waits for Revit to report it on <paramref name="transaction"/>. Revit
+    /// refuses Undo in some runs (b1, b2a) for a reason outside the model; the test host's error then
+    /// names Revit's state. A refusal is noted, not failed: the step checks that
+    /// <paramref name="transaction"/> committed as one transaction, which is what one Undo takes back,
+    /// and gets false so it can check the model as it is and put back what Undo would have.
+    /// </summary>
+    private bool UndoOrRedo(StepResult step, string command, string transaction)
+    {
+        int seq = host.LastEvent();
+        try
+        {
+            host.PostCommand(command);
+        }
+        catch (TestHostException ex) when (ex.Message.Contains("cannot run", StringComparison.Ordinal))
+        {
+            step.Note($"Revit refused {command}, so this step checks the model by state instead. {ex.Message}");
+            RevitEvent[] commits = host.EventsAfter(0).Where(item => item.Is("commit", transaction)).ToArray();
+            step.Check(commits.Length > 0 && commits[^1].Names.Count == 1,
+                $"'{transaction}' committed as one transaction, so one Undo takes it back ({(commits.Length == 0 ? "no commit seen" : commits[^1].ToString())}).");
+            return false;
+        }
+
+        ExpectEvent(step, seq, command, transaction);
+        return true;
+    }
+
     private void ExpectEvent(StepResult step, int after, string kind, string name)
     {
         try

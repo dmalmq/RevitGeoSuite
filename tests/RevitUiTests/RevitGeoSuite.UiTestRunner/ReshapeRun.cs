@@ -14,7 +14,7 @@ namespace RevitGeoSuite.UiTestRunner;
 internal sealed partial class GisStandardRun
 {
     private const double GrowM = 1.0;
-    private const double ShrinkBandM = 1.5;
+    private const double ShrinkBandM = 1.0;
     private const string SlopeArrow = "has a slope arrow or other sketch line besides its boundary";
     private const string CurvedEdges = "has curved edges, which the GDB's straight-segment outline would replace with short lines";
 
@@ -68,7 +68,34 @@ internal sealed partial class GisStandardRun
         reshape = ReshapeShape.Read(path);
         reshapeBefore = Element(reshape.UniqueId);
         step.Note($"F = {reshape.UniqueId}, element {reshapeBefore.Id}, type {reshapeBefore.TypeName}, box {Box(reshapeBefore)}.");
-        step.Check(reshapeBefore.Exists, $"Floor F ({reshape.UniqueId}) is in the model.");
+        if (step.Check(reshapeBefore.Exists, $"Floor F ({reshape.UniqueId}) is in the model."))
+        {
+            DumpFloorGeometry(step, "afterPrepare");
+        }
+    }
+
+    private readonly JsonObject floorGeometry = new();
+
+    /// <summary>
+    /// Adds floor F's sketch profile and top-face loops (model feet) under <paramref name="moment"/> to
+    /// C3a-floor-F-geometry.json in the run folder, with the drift file, so the port thread can rebuild
+    /// offline the sketch Apply submits.
+    /// </summary>
+    private void DumpFloorGeometry(StepResult step, string moment)
+    {
+        string path = Path.Combine(options.OutputFolder, "C3a-floor-F-geometry.json");
+        try
+        {
+            floorGeometry[moment] = host.Call("floorGeometry", new { uniqueId = reshape!.UniqueId });
+            floorGeometry["driftPath"] = reshape.Path;
+            floorGeometry["drift"] = JsonNode.Parse(File.ReadAllText(reshape.Path));
+            File.WriteAllText(path, floorGeometry.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            step.Note($"Floor F's geometry ({moment}) is in {path}.");
+        }
+        catch (TestHostException ex)
+        {
+            step.Note($"Floor F's geometry ({moment}) could not be read: {ex.Message}");
+        }
     }
 
     private async Task PickReshape(StepResult step)
@@ -80,7 +107,7 @@ internal sealed partial class GisStandardRun
 
         await PickDrift(reshape!.Path);
         ILocator card = Shell.Page.GetByTestId("shape-edit");
-        step.Check(await Shell.ShowsAsync(Shell.Text("Shape edits (1)"), 60000), "The page shows 'Shape edits (1)'.");
+        await ExpectShapeEdits(step, reshape.Path);
         step.Check(await Shell.ShowsAsync(card.GetByText($"Reshape floor {reshapeBefore!.Id}")), $"The card names floor F's element id {reshapeBefore.Id}.");
         // The drawing is in model feet, so on a rotated model an east grow need not widen it; it always adds area.
         JsonElement paths = await card.First.EvaluateAsync<JsonElement>(
@@ -138,6 +165,7 @@ internal sealed partial class GisStandardRun
             return;
         }
 
+        DumpFloorGeometry(step, "beforeApply");
         int seq = host.LastEvent();
         string[] log = await ApplyShapes(step, 1);
         step.Note($"Log: {string.Join(" / ", log)}");
@@ -271,9 +299,11 @@ internal sealed partial class GisStandardRun
         DependentRow[] dependents = h.Dependents;
         step.Note($"H = floor {h.Id} ({h.UniqueId}, level {h.Level}). Dependents: {string.Join("; ", dependents.Select(item => $"{item.Id} {item.Name} ({item.Category}) {Metres(item.WestOfEdgeM)} west of the east edge"))}.");
         FloorUnit unit = Unit(h.UniqueId)!;
-        string path = WriteDrift("shrink.gis-drift.json", unit, ReshapeFixture.Reshaped(unit, ReshapeFixture.ShrinkEast(unit, ShrinkBandM)));
+        ShrunkOutline shrunk = ReshapeFixture.ShrinkEast(unit, ShrinkBandM);
+        step.Note($"Shrink: the export polygon minus a {ShrinkBandM} m strip along its east side; the outline crosses the cut {shrunk.Crossings} time(s), kept {shrunk.Rings.Count - 1} hole(s), dropped {shrunk.DroppedHoles} hole(s) the strip reaches.");
+        string path = WriteDrift("shrink.gis-drift.json", unit, ReshapeFixture.Reshaped(unit, shrunk.Rings));
         await PickDrift(path);
-        if (!step.Check(await Shell.ShowsAsync(Shell.Text("Shape edits (1)"), 60000), "The shrink file shows one shape edit."))
+        if (!await ExpectShapeEdits(step, path))
         {
             return;
         }
@@ -422,6 +452,20 @@ internal sealed partial class GisStandardRun
         step.Note($"Revit dialogs: {(dialogs.Length > 0 ? dialogs : "none")}.");
         step.Note($"Revit events since Apply: {string.Join(" ", host.RawEventsAfter(seq))}");
         await Shot(step, $"{step.Id}-apply-result-top");
+    }
+
+    /// <summary>Checks that the page shows one shape edit card; when it does not, the problems list goes into the report.</summary>
+    private async Task<bool> ExpectShapeEdits(StepResult step, string path)
+    {
+        if (step.Check(await Shell.ShowsAsync(Shell.Text("Shape edits (1)"), 60000), $"The page shows 'Shape edits (1)' for {Path.GetFileName(path)}."))
+        {
+            return true;
+        }
+
+        JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
+        string[] problems = Problems(drift);
+        step.Note($"No card. Problems ({problems.Length}): {(problems.Length == 0 ? "none" : string.Join(" | ", problems))}.");
+        return false;
     }
 
     private async Task PickDrift(string path)

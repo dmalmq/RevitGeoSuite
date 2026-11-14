@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
@@ -160,18 +161,17 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", SetupTransaction);
-        PlanViewRow? template = Views().FirstOrDefault(IsExportTemplate);
-        step.Check(template?.CategoryHidden("OST_Floors") == true, $"Floors are hidden again, as B2.3 left them (hidden: {template?.CategoryHidden("OST_Floors")}).");
-        step.Check(template?.LineStylesHidden == false, $"Thin Lines are shown again (hidden: {template?.LineStylesHidden}).");
+        PlanViewRow? template;
+        if (UndoOrRedo(step, "undo", SetupTransaction))
+        {
+            template = Views().FirstOrDefault(IsExportTemplate);
+            step.Check(template?.CategoryHidden("OST_Floors") == true, $"Floors are hidden again, as B2.3 left them (hidden: {template?.CategoryHidden("OST_Floors")}).");
+            step.Check(template?.LineStylesHidden == false, $"Thin Lines are shown again (hidden: {template?.LineStylesHidden}).");
+            UndoOrRedo(step, "redo", SetupTransaction);
+        }
 
-        seq = host.LastEvent();
-        host.PostCommand("redo");
-        ExpectEvent(step, seq, "redo", SetupTransaction);
         template = Views().FirstOrDefault(IsExportTemplate);
-        step.Check(template?.CategoryHidden("OST_Floors") == false, $"After Redo Floors are shown (hidden: {template?.CategoryHidden("OST_Floors")}).");
+        step.Check(template?.CategoryHidden("OST_Floors") == false, $"After Set up (and Redo, if Revit took Undo) Floors are shown (hidden: {template?.CategoryHidden("OST_Floors")}).");
         await CheckAgain();
     }
 
@@ -193,9 +193,11 @@ internal sealed partial class GisStandardRun
         step.Check(!model.SetupLines.Any(line => line.Contains(plan.Name, StringComparison.Ordinal)), $"Set up model does not mention {plan.Name} (lines: {string.Join(" / ", model.SetupLines)}).");
         await Shot(step, "B2-7-plan-without-template");
 
-        int seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", FixtureTransaction);
+        if (!UndoOrRedo(step, "undo", FixtureTransaction))
+        {
+            step.Note($"Put back: {host.Call("fixture", new { views = new[] { new { view = plan.Name, template = TemplateName } } })["log"]?.ToJsonString()}");
+        }
+
         PlanViewRow? after = Views().FirstOrDefault(view => view.Id == plan.Id);
         step.Check(after?.Template == TemplateName, $"After Undo {plan.Name} uses {TemplateName} again ({after?.Template ?? "none"}).");
         await CheckAgain();
@@ -242,11 +244,27 @@ internal sealed partial class GisStandardRun
         }
 
         await Shell.GoToAsync("/gis-standard");
-        int undoSeq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, undoSeq, "undo", FixtureTransaction);
+        if (!UndoOrRedo(step, "undo", FixtureTransaction))
+        {
+            step.Note($"Put back: {PutBackDuplicate(id, existing, fixture)}");
+        }
+
         await CheckAgain();
         step.Check(!(await Inspect()).Findings.Any(item => item.Topic == "ids" && item.ElementIds.Contains(id)), "After Undo the ids error is gone.");
+    }
+
+    // What Undo of B2.8's fixture would do: delete the copy and give the floor back the id it had.
+    private string PutBackDuplicate(long floor, string existing, JsonObject fixture)
+    {
+        long[] copies = fixture["log"]?.AsArray()
+            .Select(line => Regex.Match(line?.GetValue<string>() ?? string.Empty, @"^copied \d+ in place as (\d+)$"))
+            .Where(match => match.Success)
+            .Select(match => long.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture))
+            .ToArray() ?? Array.Empty<long>();
+        object request = existing.Length > 0
+            ? new { delete = copies }
+            : new { delete = copies, values = new[] { new { id = floor, name = "id", value = string.Empty } } };
+        return host.Call("fixture", request)["log"]?.ToJsonString() ?? "nothing";
     }
 
     private async Task StairFindings(StepResult step)

@@ -81,8 +81,22 @@ internal static class ReshapeFixture
         return rings;
     }
 
-    /// <summary>The unit with its east edge moved <paramref name="bandM"/> west, as C3a.9's shrink does.</summary>
-    public static List<List<(double X, double Y)>> ShrinkEast(FloorUnit unit, double bandM) => Grow(unit, -bandM);
+    /// <summary>
+    /// C3a.9's shrink: the unit minus a <paramref name="bandM"/> strip along its east side. The exterior
+    /// ring is clipped at the cut; a hole is kept only when it lies wholly west of the cut, since one the
+    /// strip reaches is no longer inside the outline. Crossings counts the exterior ring's edges that
+    /// cross the cut: more than two means the clip joined separate parts along the cut line.
+    /// </summary>
+    public static ShrunkOutline ShrinkEast(FloorUnit unit, double bandM)
+    {
+        double cut = unit.Rings[0].Max(point => point.X) - bandM;
+        IReadOnlyList<(double X, double Y)> exterior = unit.Rings[0];
+        int crossings = exterior.Zip(exterior.Skip(1)).Count(edge => (edge.First.X < cut) != (edge.Second.X < cut));
+        var rings = new List<List<(double X, double Y)>> { Clip(exterior, cut, keepWest: true) };
+        List<List<(double X, double Y)>> holes = unit.Rings.Skip(1).Select(ring => ring.ToList()).ToList();
+        rings.AddRange(holes.Where(ring => ring.All(point => point.X < cut)));
+        return new ShrunkOutline(rings, crossings, holes.Count - (rings.Count - 1));
+    }
 
     /// <summary>
     /// The unit cut in two at the middle of its east-west extent, as make_reshape_fixture.py --split does;
@@ -290,6 +304,9 @@ internal static class ReshapeFixture
 
     private static string Text(SqliteDataReader reader, int column) => reader.IsDBNull(column) ? string.Empty : Convert.ToString(reader.GetValue(column)) ?? string.Empty;
 }
+
+/// <summary>A shrunk outline (exterior ring first, then the holes kept), with what the cut did.</summary>
+internal sealed record ShrunkOutline(List<List<(double X, double Y)>> Rings, int Crossings, int DroppedHoles);
 
 /// <summary>GeoPackage binary geometry (polygon or multipolygon) to polygons, each a list of rings.</summary>
 internal static class GeoPackageGeometry

@@ -154,6 +154,57 @@ internal static class FloorCommands
         };
     }
 
+    /// <summary>
+    /// One floor's outline as Revit holds it, in model feet (internal coordinates): its sketch profile
+    /// loops and its top faces' edge loops, each curve tessellated, plus the project position of the
+    /// model origin and axes, so a GDB outline can be taken into the same coordinates offline.
+    /// </summary>
+    public static Dictionary<string, object?> FloorGeometry(UIApplication app, string uniqueId)
+    {
+        Document document = Active(app);
+        Floor floor = document.GetElement(uniqueId) as Floor ?? throw new ArgumentException($"No floor has UniqueId {uniqueId}.");
+        Sketch? sketch = document.GetElement(floor.SketchId) as Sketch;
+        List<List<double[]>> profile = sketch == null
+            ? new List<List<double[]>>()
+            : sketch.Profile.Cast<CurveArray>().Select(loop => Points(loop.Cast<Curve>())).ToList();
+        List<List<double[]>> top = HostObjectUtils.GetTopFaces(floor)
+            .Select(reference => floor.GetGeometryObjectFromReference(reference) as Face)
+            .Where(face => face != null)
+            .SelectMany(face => face!.GetEdgesAsCurveLoops())
+            .Select(loop => Points(loop))
+            .ToList();
+        ProjectLocation location = document.ActiveProjectLocation;
+        Dictionary<string, object?> Position(XYZ point)
+        {
+            ProjectPosition position = location.GetProjectPosition(point);
+            return new Dictionary<string, object?> { ["eastWest"] = position.EastWest, ["northSouth"] = position.NorthSouth, ["elevation"] = position.Elevation, ["angle"] = position.Angle };
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["id"] = floor.Id.Value,
+            ["uniqueId"] = floor.UniqueId,
+            ["units"] = "model feet, internal coordinates",
+            ["sketchId"] = floor.SketchId.Value,
+            ["sketchProfile"] = profile,
+            ["topFaces"] = top,
+            ["projectPosition"] = new Dictionary<string, object?>
+            {
+                ["origin"] = Position(XYZ.Zero),
+                ["basisX"] = Position(XYZ.BasisX),
+                ["basisY"] = Position(XYZ.BasisY),
+            },
+        };
+    }
+
+    // Each curve's tessellation without its last point, which is the next curve's first.
+    private static List<double[]> Points(IEnumerable<Curve> loop) =>
+        loop.SelectMany(curve =>
+        {
+            IList<XYZ> points = curve.Tessellate();
+            return points.Take(points.Count - 1);
+        }).Select(point => new[] { point.X, point.Y, point.Z }).ToList();
+
     private static XYZ? Location(Element element) =>
         element.Location is LocationPoint point ? point.Point
         : element.get_BoundingBox(null) is BoundingBoxXYZ box ? (box.Min + box.Max) / 2

@@ -102,7 +102,7 @@ internal static class ViewCommands
 
     /// <summary>
     /// One view edit inside the fixture transaction: {view, hide: [...], show: [...], hideLineStyles: [...],
-    /// showLineStyles: [...], template: "none"}. The view may be a view template.
+    /// showLineStyles: [...], template: "none" or a view template name}. The view may be a view template.
     /// </summary>
     public static IEnumerable<string> Edit(Document document, Dictionary<string, object?> edit)
     {
@@ -134,10 +134,18 @@ internal static class ViewCommands
             yield return $"{(hide ? "hid" : "showed")} line style {document.GetElement(style)?.Name ?? string.Join("/", spellings)} in {name}";
         }
 
-        if (edit.TryGetValue("template", out object? template) && Equals(template, "none"))
+        string template = edit.TryGetValue("template", out object? given) ? Convert.ToString(given, CultureInfo.InvariantCulture) ?? string.Empty : string.Empty;
+        if (template == "none")
         {
             view.ViewTemplateId = ElementId.InvalidElementId;
             yield return $"removed the view template of {name}";
+        }
+        else if (template.Length > 0)
+        {
+            View applied = new FilteredElementCollector(document).OfClass(typeof(View)).Cast<View>().FirstOrDefault(candidate => candidate.IsTemplate && candidate.Name == template)
+                ?? throw new ArgumentException($"No view template named '{template}'.");
+            view.ViewTemplateId = applied.Id;
+            yield return $"gave {name} the view template {template}";
         }
     }
 

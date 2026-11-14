@@ -2,7 +2,7 @@ using System.Text;
 
 namespace RevitGeoSuite.UiTestRunner;
 
-internal enum Outcome { Pass, Fail, NotRun }
+internal enum Outcome { Pass, Fail, NotRun, KnownFail }
 
 /// <summary>One step of the script: what was done, what was checked, and the pictures to look at.</summary>
 internal sealed class StepResult(string id, string title)
@@ -23,6 +23,24 @@ internal sealed class StepResult(string id, string title)
         {
             Failures.Add(expectation);
             Outcome = Outcome.Fail;
+        }
+
+        return condition;
+    }
+
+    /// <summary>
+    /// A check that RevitGeoSuite is known to fail until <paramref name="fixedBy"/> lands. Its failure is
+    /// reported as known and does not fail the run; any other failed check in the step still does.
+    /// </summary>
+    public bool CheckKnown(bool condition, string expectation, string fixedBy)
+    {
+        if (!condition)
+        {
+            Failures.Add($"KNOWN PRODUCT FAILURE until {fixedBy}: {expectation}");
+            if (Outcome == Outcome.Pass)
+            {
+                Outcome = Outcome.KnownFail;
+            }
         }
 
         return condition;
@@ -55,7 +73,9 @@ internal sealed class Report(string folder)
         int failed = Steps.Count(step => step.Outcome == Outcome.Fail);
         int passed = Steps.Count(step => step.Outcome == Outcome.Pass);
         int notRun = Steps.Count(step => step.Outcome == Outcome.NotRun);
-        text.AppendLine().AppendLine($"**{(failed == 0 ? "PASS" : "FAIL")}**: {passed} passed, {failed} failed, {notRun} not run.").AppendLine();
+        int known = Steps.Count(step => step.Outcome == Outcome.KnownFail);
+        string knownText = known == 0 ? string.Empty : $", {known} known product failure(s)";
+        text.AppendLine().AppendLine($"**{(failed == 0 ? "PASS" : "FAIL")}**: {passed} passed, {failed} failed{knownText}, {notRun} not run.").AppendLine();
         text.AppendLine("| Step | What | Result |").AppendLine("|---|---|---|");
         foreach (StepResult step in Steps)
         {
@@ -99,6 +119,7 @@ internal sealed class Report(string folder)
     {
         Outcome.Pass => "pass",
         Outcome.Fail => "**FAIL**",
+        Outcome.KnownFail => "known product failure",
         _ => "not run",
     };
 

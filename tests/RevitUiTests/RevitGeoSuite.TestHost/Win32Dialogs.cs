@@ -26,8 +26,7 @@ internal static class Win32Dialogs
     private const int OkButtonId = 1;
     private const int CancelButtonId = 2;
     private const uint WM_CLOSE = 0x0010;
-    private const uint WM_MDIACTIVATE = 0x0222;
-    private const uint WM_MDIGETACTIVE = 0x0229;
+    private const int SwRestore = 9;
     private const uint WM_SETTEXT = 0x000C;
     private const uint BM_CLICK = 0x00F5;
 
@@ -141,35 +140,28 @@ internal static class Win32Dialogs
     }
 
     /// <summary>
-    /// Gives keyboard focus to Revit's active view window (the active MDI child). A view the API opened
-    /// may not be the frame Revit routes commands to until it has focus, and then Undo is refused.
+    /// Brings Revit's main window to the front and says what was in front before (another window of
+    /// Revit, such as the RevitGeoSuite page, or another program).
     /// </summary>
-    public static string FocusActiveView()
+    public static string ActivateMainWindow()
     {
         IntPtr window = Process.GetCurrentProcess().MainWindowHandle;
-        IntPtr client = Descendants(window).FirstOrDefault(child => ClassOf(child) == "MDIClient");
-        if (client == IntPtr.Zero)
+        if (window == IntPtr.Zero)
         {
-            return "no MDIClient window";
+            return "Revit's main window is not available";
         }
 
-        IntPtr active = SendMessage(client, WM_MDIGETACTIVE, IntPtr.Zero, IntPtr.Zero);
-        if (active == IntPtr.Zero)
+        IntPtr before = GetForegroundWindow();
+        GetWindowThreadProcessId(before, out uint owner);
+        string was = before == window
+            ? "Revit's main window was in front"
+            : $"'{TitleOf(before)}' ({ClassOf(before)}, {(owner == (uint)Process.GetCurrentProcess().Id ? "Revit" : "another program")}) was in front";
+        if (IsIconic(window))
         {
-            return "no active view window";
+            ShowWindow(window, SwRestore);
         }
 
-        PostMessage(client, WM_MDIACTIVATE, active, IntPtr.Zero);
-        try
-        {
-            AutomationElement.FromHandle(active).SetFocus();
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ElementNotAvailableException)
-        {
-            return $"activated view window '{TitleOf(active)}' (focus refused: {ex.Message})";
-        }
-
-        return $"focused view window '{TitleOf(active)}'";
+        return $"{was}; Revit's main window {(SetForegroundWindow(window) ? "brought to the front" : "could not be brought to the front")}";
     }
 
     /// <summary>
@@ -382,12 +374,15 @@ internal static class Win32Dialogs
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
     [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out RECT rect);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int capacity);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, string lParam);
-    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

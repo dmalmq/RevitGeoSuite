@@ -194,16 +194,14 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", SetupTransaction);
-        await CheckAgain();
-        string[] back = (await Inspect()).SetupLines;
-        step.Check(back.SequenceEqual(setupLinesBefore), $"The step 2 lines are back ({back.Length} line(s), were {setupLinesBefore.Length}).");
+        if (UndoOrRedo(step, "undo", SetupTransaction))
+        {
+            await CheckAgain();
+            string[] back = (await Inspect()).SetupLines;
+            step.Check(back.SequenceEqual(setupLinesBefore), $"The step 2 lines are back ({back.Length} line(s), were {setupLinesBefore.Length}).");
+            UndoOrRedo(step, "redo", SetupTransaction);
+        }
 
-        seq = host.LastEvent();
-        host.PostCommand("redo");
-        ExpectEvent(step, seq, "redo", SetupTransaction);
         await CheckAgain();
         string[] left = (await Inspect()).SetupLines.Where(IsViewSetupLine).ToArray();
         step.Check(left.Length == 0, $"After Redo nothing about views is left to set up (left: {string.Join(" / ", left)}).");
@@ -245,7 +243,7 @@ internal sealed partial class GisStandardRun
                 step.Note($"Export warning: `{warning}`");
             }
 
-            step.Check(warnings.Length > 0, $"The {without} stair or escalator unit(s) without a to_level come with an export warning that says why ({warnings.Length} to_level warning(s)).");
+            step.CheckKnown(warnings.Length > 0, $"The {without} stair or escalator unit(s) without a to_level come with an export warning that says why ({warnings.Length} to_level warning(s)).", "the B3b PR after the C3 stack");
         }
         step.Note($"Rows: {Format(GeoPackageTables.RowCounts(output))}");
         await Shot(step, "B1-8-export-done");

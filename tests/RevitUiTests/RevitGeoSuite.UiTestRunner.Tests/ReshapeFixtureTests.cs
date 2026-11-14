@@ -156,6 +156,23 @@ public class ReshapeFixtureTests
         var unit = new FloorUnit("m|n|0", "n", "notched", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)ring });
 
         Assert.Equal(new[] { (0.0, 0.0), (11.0, 0.0), (11.2, 10.0), (7.0, 10.0), (7.0, 9.0), (6.0, 9.0), (6.0, 10.0), (0.0, 10.0), (0.0, 0.0) }, ReshapeFixture.Grow(unit, 1)[0]);
-        Assert.Equal(new[] { (0.0, 0.0), (9.0, 0.0), (9.2, 10.0), (7.0, 10.0), (7.0, 9.0), (6.0, 9.0), (6.0, 10.0), (0.0, 10.0), (0.0, 0.0) }, ReshapeFixture.ShrinkEast(unit, 1)[0]);
+    }
+
+    [Fact]
+    public void Shrink_cuts_a_strip_off_the_east_side_and_keeps_only_the_holes_west_of_it()
+    {
+        var ring = new List<(double X, double Y)> { (0, 0), (10, 0), (10, 10), (0, 10), (0, 0) };
+        var west = new List<(double X, double Y)> { (2, 2), (3, 2), (3, 3), (2, 3), (2, 2) };
+        var east = new List<(double X, double Y)> { (9.2, 4), (9.6, 4), (9.6, 4.4), (9.2, 4.4), (9.2, 4) };
+        var unit = new FloorUnit("m|n|0", "n", "holed", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)ring, west, east });
+
+        ShrunkOutline shrunk = ReshapeFixture.ShrinkEast(unit, 1);
+
+        Assert.Equal(2, shrunk.Crossings);
+        Assert.Equal(1, shrunk.DroppedHoles);
+        Assert.Equal(2, shrunk.Rings.Count);
+        Assert.Equal(west, shrunk.Rings[1]);
+        Assert.Equal(9.0, shrunk.Rings[0].Max(point => point.X));
+        Assert.Equal(90.0, ReshapeFixture.Area(shrunk.Rings[0]), 6);
     }
 }
