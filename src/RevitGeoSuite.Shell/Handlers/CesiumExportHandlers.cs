@@ -87,7 +87,7 @@ public sealed class CesiumExportStateHandler : IRpcHandler
         return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
         {
             string projectKey = DocumentProjectKeyBuilder.Create(document);
-            IReadOnlyList<ExportProfile> profiles = new ExportProfileStore().LoadWithDiagnostics(projectKey).Value;
+            IReadOnlyList<ExportProfile> profiles = new ExportProfileStore(rules: GisRulesSourceFactory.For(document)).LoadWithDiagnostics(projectKey).Value;
             CesiumViewerSettings viewerSettings = new CesiumViewerSettingsStore().Load();
             Tiles3DExportState? tilesState = new Tiles3DExportStateService().Load(new RevitDocumentHandle(document));
 
@@ -184,6 +184,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 ModelId = tiles.ModelId,
                 LevelMap = gis.LevelMap,
                 GisLayers = new List<string> { "unit", "detail", "opening", "fixture", "level" },
+                GisRules = gis.Rules,
                 Export = tiles.Export,
                 });
 
@@ -281,6 +282,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         public List<string> ArtifactPaths = new();
         public List<CesiumPackageLevelMapEntry> LevelMap = new();
         public FloorGeoPackageExportResult ExportResult = new();
+        public CesiumPackageGisRules? Rules;
     }
 
     private static Tiles3DStepResult RunTilesExport(
@@ -352,7 +354,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         CancellationToken cancellationToken)
     {
         string projectKey = DocumentProjectKeyBuilder.Create(document);
-        IReadOnlyList<ExportProfile> profiles = new ExportProfileStore().LoadWithDiagnostics(projectKey).Value;
+        IReadOnlyList<ExportProfile> profiles = new ExportProfileStore(rules: GisRulesSourceFactory.For(document)).LoadWithDiagnostics(projectKey).Value;
         ExportProfile profile = profiles.FirstOrDefault(candidate =>
                 string.Equals(candidate.Name, request.FloorPlanProfileName, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException(
@@ -392,6 +394,9 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             ArtifactPaths = result.ArtifactResults.Select(artifact => artifact.OutputFilePath).ToList(),
             LevelMap = CesiumExportSupport.BuildLevelMap(document),
             ExportResult = result,
+            Rules = result.GisRules == null
+                ? null
+                : new CesiumPackageGisRules { Source = result.GisRules.Source, Profile = result.GisRules.Profile, Hash = result.GisRules.Hash },
         };
     }
 }

@@ -24,16 +24,13 @@ public sealed class ExportPreviewService
     private readonly ViewExportContextProvider _contextProvider;
     private readonly PreviewExportMetadataProvider _metadataProvider;
     private readonly PreviewPaletteResolver _paletteResolver;
-    private readonly FloorCategoryOverrideStore _floorCategoryOverrideStore;
-    private readonly RoomCategoryOverrideStore _roomCategoryOverrideStore;
-    private readonly FamilyCategoryOverrideStore _familyCategoryOverrideStore;
-    private readonly AcceptedOpeningFamilyStore _acceptedOpeningFamilyStore;
+    private readonly GisRulesSource _rules;
+    private ProjectMappingRules _loadedRules;
     private readonly PreviewCategoryAssignmentSession _floorAssignmentSession;
     private readonly PreviewCategoryAssignmentSession _roomAssignmentSession;
     private readonly IReadOnlyList<string> _loadWarnings;
     private readonly StairDrawingSettings _stairDrawingSettings;
     private readonly GisFieldList _fieldList;
-    private readonly string _projectKey;
     private readonly IReadOnlyList<string> _supportedCategories;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly IReadOnlyList<string> _acceptedOpeningFamilies;
@@ -85,36 +82,23 @@ public sealed class ExportPreviewService
         _document = document;
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
         _zoneCatalog = zoneCatalog;
-        _floorCategoryOverrideStore = new FloorCategoryOverrideStore();
-        _roomCategoryOverrideStore = new RoomCategoryOverrideStore();
-        _familyCategoryOverrideStore = new FamilyCategoryOverrideStore();
-        _acceptedOpeningFamilyStore = new AcceptedOpeningFamilyStore();
+        _rules = GisRulesSourceFactory.For(document);
         _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
         _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, _unitGeometrySource, unitAttributeSource);
         _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
         _roomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
-        _projectKey = DocumentProjectKeyBuilder.Create(document);
-        LoadResult<IReadOnlyDictionary<string, string>> floorOverrideLoad =
-            _floorCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
-        LoadResult<IReadOnlyDictionary<string, string>> roomOverrideLoad =
-            _roomCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
-        LoadResult<IReadOnlyDictionary<string, string>> familyOverrideLoad =
-            _familyCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
-        LoadResult<IReadOnlyList<string>> acceptedOpeningLoad =
-            _acceptedOpeningFamilyStore.LoadWithDiagnostics(_projectKey);
-        _floorAssignmentSession = new PreviewCategoryAssignmentSession(floorOverrideLoad.Value);
-        _roomAssignmentSession = new PreviewCategoryAssignmentSession(roomOverrideLoad.Value);
-        _familyCategoryOverrides = familyOverrideLoad.Value;
-        _acceptedOpeningFamilies = acceptedOpeningLoad.Value;
+        LoadResult<ProjectMappingRules> rulesLoad = _rules.Load();
+        _loadedRules = rulesLoad.Value;
+        _floorAssignmentSession = new PreviewCategoryAssignmentSession(_loadedRules.FloorCategoryOverrides);
+        _roomAssignmentSession = new PreviewCategoryAssignmentSession(_loadedRules.RoomCategoryOverrides);
+        _familyCategoryOverrides = _loadedRules.FamilyCategoryOverrides;
+        _acceptedOpeningFamilies = _loadedRules.AcceptedOpeningFamilies;
         List<string> gisModelWarnings = new();
         GisModelSettings gisModelSettings = GisModelSettings.Load(document, gisModelWarnings);
         _stairDrawingSettings = gisModelSettings.StairDrawingSettings;
         _fieldList = gisModelSettings.LoadFieldList(gisModelWarnings);
         gisModelWarnings.AddRange(FloorGeoPackageExporter.GisStandardWarnings(GisStandardStateReader.Check(document)));
-        _loadWarnings = floorOverrideLoad.Warnings
-            .Concat(roomOverrideLoad.Warnings)
-            .Concat(familyOverrideLoad.Warnings)
-            .Concat(acceptedOpeningLoad.Warnings)
+        _loadWarnings = rulesLoad.Warnings
             .Concat(gisModelWarnings)
             .ToList();
         _preparer = new FloorExportDataPreparer(document, zoneCatalog);
@@ -155,6 +139,11 @@ public sealed class ExportPreviewService
         };
     }
 
+    /// <summary>"Saved for station ..." when assignments are saved to the station's rules file; null for this PC's.</summary>
+    public string? RulesSavedStatus => _rules.SavedStatus;
+
+    public string RulesStationName => _rules.StationName;
+
     public bool HasPendingFloorCategoryChanges =>
         _floorAssignmentSession.HasPendingChanges || _roomAssignmentSession.HasPendingChanges;
 
@@ -175,15 +164,19 @@ public sealed class ExportPreviewService
             return;
         }
 
-        if (_floorAssignmentSession.HasPendingChanges)
-        {
-            _floorCategoryOverrideStore.Save(_projectKey, _floorAssignmentSession.ApplyPendingChanges());
-        }
-
-        if (_roomAssignmentSession.HasPendingChanges)
-        {
-            _roomCategoryOverrideStore.Save(_projectKey, _roomAssignmentSession.ApplyPendingChanges());
-        }
+        IReadOnlyDictionary<string, string> floor = _floorAssignmentSession.HasPendingChanges
+            ? _floorAssignmentSession.ApplyPendingChanges()
+            : _loadedRules.FloorCategoryOverrides;
+        IReadOnlyDictionary<string, string> room = _roomAssignmentSession.HasPendingChanges
+            ? _roomAssignmentSession.ApplyPendingChanges()
+            : _loadedRules.RoomCategoryOverrides;
+        ProjectMappingRules saved = ProjectMappingRules.Create(
+            floor,
+            room,
+            _loadedRules.FamilyCategoryOverrides,
+            _loadedRules.AcceptedOpeningFamilies);
+        _rules.Save(_loadedRules, saved);
+        _loadedRules = saved;
     }
 
     public void DiscardPendingFloorCategoryOverrides()

@@ -14,6 +14,7 @@ using RevitGeoSuite.FloorPlanExport.Core.GeoPackage;
 using RevitGeoSuite.FloorPlanExport.Core.Geometry;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
+using RevitGeoSuite.FloorPlanExport.Core.Utilities;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
 using RevitGeoSuite.FloorPlanExport.Core.Shapefile;
 using RevitGeoSuite.FloorPlanExport.Core.Validation;
@@ -116,7 +117,8 @@ public sealed class FloorGeoPackageExporter
         double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
         bool keep3DTempViewsForDebug = false,
-        IReadOnlyList<string>? unitCategories = null)
+        IReadOnlyList<string>? unitCategories = null,
+        GisRulesSource? rulesSource = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -162,21 +164,9 @@ public sealed class FloorGeoPackageExporter
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
         ViewExportContextProvider contextProvider = new(_document);
         string projectKey = DocumentProjectKeyBuilder.Create(_document);
-        FloorCategoryOverrideStore floorCategoryOverrideStore = new();
-        var overrideLoad = floorCategoryOverrideStore.LoadWithDiagnostics(projectKey);
-        setupWarnings.AddRange(overrideLoad.Warnings);
-
-        RoomCategoryOverrideStore roomCategoryOverrideStore = new();
-        var roomOverrideLoad = roomCategoryOverrideStore.LoadWithDiagnostics(projectKey);
-        setupWarnings.AddRange(roomOverrideLoad.Warnings);
-
-        FamilyCategoryOverrideStore familyCategoryOverrideStore = new();
-        var familyOverrideLoad = familyCategoryOverrideStore.LoadWithDiagnostics(projectKey);
-        setupWarnings.AddRange(familyOverrideLoad.Warnings);
-
-        AcceptedOpeningFamilyStore acceptedOpeningFamilyStore = new();
-        var acceptedOpeningLoad = acceptedOpeningFamilyStore.LoadWithDiagnostics(projectKey);
-        setupWarnings.AddRange(acceptedOpeningLoad.Warnings);
+        LoadResult<ProjectMappingRules> rulesLoad = (rulesSource ?? GisRulesSourceFactory.For(_document)).Load();
+        setupWarnings.AddRange(rulesLoad.Warnings);
+        ProjectMappingRules mappingRules = rulesLoad.Value;
         GisModelSettings gisModelSettings = GisModelSettings.Load(_document, setupWarnings);
         GisFieldList fieldList = gisModelSettings.LoadFieldList(setupWarnings);
         WriteFieldList(outputDirectory, fieldList, setupWarnings);
@@ -195,8 +185,8 @@ public sealed class FloorGeoPackageExporter
         IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
             exportViews,
             zoneCatalog,
-            familyOverrideLoad.Value,
-            acceptedOpeningLoad.Value,
+            mappingRules.FamilyCategoryOverrides,
+            mappingRules.AcceptedOpeningFamilies,
             effectiveLinkExportOptions,
             threeDViewScope);
         EnsureSharedParameters(parameterManager, setupWarnings, fieldList.ExtraParameters());
@@ -212,10 +202,10 @@ public sealed class FloorGeoPackageExporter
             metadataProvider,
             new FloorExportPreparationOptions
             {
-                FloorCategoryOverrides = overrideLoad.Value,
-                RoomCategoryOverrides = roomOverrideLoad.Value,
-                FamilyCategoryOverrides = familyOverrideLoad.Value,
-                AcceptedOpeningFamilies = acceptedOpeningLoad.Value,
+                FloorCategoryOverrides = mappingRules.FloorCategoryOverrides,
+                RoomCategoryOverrides = mappingRules.RoomCategoryOverrides,
+                FamilyCategoryOverrides = mappingRules.FamilyCategoryOverrides,
+                AcceptedOpeningFamilies = mappingRules.AcceptedOpeningFamilies,
                 GeometryRepairOptions = effectiveGeometryRepairOptions,
                 UnitSource = unitSource,
                 UnitGeometrySource = unitGeometrySource,
@@ -246,10 +236,10 @@ public sealed class FloorGeoPackageExporter
             contexts,
             resultWithSetupWarnings,
             incrementalExportMode,
-            overrideLoad.Value,
-            roomOverrideLoad.Value,
-            familyOverrideLoad.Value,
-            acceptedOpeningLoad.Value,
+            mappingRules.FloorCategoryOverrides,
+            mappingRules.RoomCategoryOverrides,
+            mappingRules.FamilyCategoryOverrides,
+            mappingRules.AcceptedOpeningFamilies,
             effectiveGeometryRepairOptions,
             effectivePackageOptions,
             profileName,

@@ -103,6 +103,7 @@ public static class CesiumPackageFolderComposer
                 })
                 .ToList(),
             PackageManifest = FindRelative(root, "package-manifest.json").FirstOrDefault(),
+            Rules = inputs.GisRules,
         };
     }
 
