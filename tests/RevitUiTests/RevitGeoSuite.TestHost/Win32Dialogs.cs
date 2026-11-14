@@ -161,7 +161,31 @@ internal static class Win32Dialogs
             ShowWindow(window, SwRestore);
         }
 
-        return $"{was}; Revit's main window {(SetForegroundWindow(window) ? "brought to the front" : "could not be brought to the front")}";
+        // Windows lets a process take the foreground only from the window that has it, so join this
+        // thread's input to the foreground window's thread for the call, as that window's own click would.
+        bool front = SetForegroundWindow(window);
+        string how = "directly";
+        if (!front)
+        {
+            uint foregroundThread = GetWindowThreadProcessId(before, out _);
+            uint thisThread = GetCurrentThreadId();
+            bool attached = foregroundThread != 0 && foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true);
+            try
+            {
+                BringWindowToTop(window);
+                front = SetForegroundWindow(window);
+                how = attached ? "with input attached to the window in front" : "without attaching input";
+            }
+            finally
+            {
+                if (attached)
+                {
+                    AttachThreadInput(thisThread, foregroundThread, false);
+                }
+            }
+        }
+
+        return $"{was}; Revit's main window {(front && GetForegroundWindow() == window ? $"brought to the front ({how})" : $"could not be brought to the front ({how})")}";
     }
 
     /// <summary>
@@ -375,6 +399,9 @@ internal static class Win32Dialogs
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool on);
+    [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr window);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);

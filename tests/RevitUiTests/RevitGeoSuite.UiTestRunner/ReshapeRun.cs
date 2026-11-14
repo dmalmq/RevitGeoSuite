@@ -22,6 +22,7 @@ internal sealed partial class GisStandardRun
     private ReshapeShape? reshape;
     private ElementRow? reshapeBefore;
     private bool reshapeApplied;
+    private bool reshapeUndone = true;
 
     private async Task ReshapeSteps()
     {
@@ -176,7 +177,7 @@ internal sealed partial class GisStandardRun
         step.Check(commits.Count(item => item.Names.Any(each => each.StartsWith("Reshape floor ", StringComparison.Ordinal))) >= 1 && commits.All(item => item.Names.All(each => each == name)),
             $"Every commit is named '{name}' (one undo step is proven in C3a.6).");
         ElementRow after = Element(reshape.UniqueId);
-        reshapeApplied = after.Exists;
+        reshapeApplied = after.Exists && host.EventsAfter(seq).Any(item => item.Is("commit", name));
         step.Check(after.Exists && after.Id == reshapeBefore.Id, $"Floor F keeps its UniqueId and element id ({after.Id}).");
         step.Check(after.TypeId == reshapeBefore.TypeId, $"Floor F keeps its type ({after.TypeName}).");
         step.Check(!SameBox(after, reshapeBefore), $"Floor F's box changed: {Box(reshapeBefore)} to {Box(after)}.");
@@ -207,9 +208,12 @@ internal sealed partial class GisStandardRun
             return Task.CompletedTask;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label));
+        if (!UndoOrRedo(step, "undo", ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label)))
+        {
+            reshapeUndone = false;
+            return Task.CompletedTask;
+        }
+
         ElementRow after = Element(reshape.UniqueId);
         step.Check(SameBox(after, reshapeBefore), $"One Undo puts floor F's box back ({Box(after)}, was {Box(reshapeBefore)}).");
         return Task.CompletedTask;
@@ -223,9 +227,11 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("redo");
-        ExpectEvent(step, seq, "redo", ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label));
+        if (reshapeUndone)
+        {
+            UndoOrRedo(step, "redo", ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label));
+        }
+
         string output = await OpenExport(step, string.Empty, "export2", keepDefaultViews: true);
         bool exported = await ExportNow(step);
         await Shell.GoToAsync("/gis-standard");
@@ -234,7 +240,7 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        FloorUnit? unit = ReshapeFixture.Pick(ReshapeFixture.FloorUnits(output), string.Empty, reshape.UniqueId);
+        FloorUnit? unit = ReshapeFixture.Pick(ReshapeFixture.FloorUnits(output), string.Empty, reshape!.UniqueId);
         if (!step.Check(unit != null, $"The second export has floor F ({reshape.UniqueId}) as one polygon."))
         {
             return;
@@ -336,9 +342,11 @@ internal sealed partial class GisStandardRun
 
         await Shot(step, "C3a-9-shrink-applied");
         RevitShot(step, "C3a-9-shrink");
-        seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", name);
+        if (!UndoOrRedo(step, "undo", name))
+        {
+            return;
+        }
+
         string[] missing = Elements(dependents.Select(item => item.Id)).Where(row => !row.Exists).Select(row => row.Key).ToArray();
         step.Check(missing.Length == 0, $"Undo brings every dependent back (missing: {string.Join(", ", missing)}).");
     }
