@@ -72,6 +72,8 @@ public sealed class CesiumPackageBuildInputs
 
     public List<string>? GisLayers { get; set; }
 
+    public CesiumPackageGisRules? GisRules { get; set; }
+
     /// <summary>What the 3D Tiles export covered and how; written as the manifest's <c>export</c>.</summary>
     public CesiumPackageExport? Export { get; set; }
 }
@@ -358,6 +360,7 @@ public sealed class CesiumPackageLayoutBuilder
                 })
                 .ToList(),
             PackageManifest = packageManifest,
+            Rules = inputs.GisRules,
         };
     }
 
