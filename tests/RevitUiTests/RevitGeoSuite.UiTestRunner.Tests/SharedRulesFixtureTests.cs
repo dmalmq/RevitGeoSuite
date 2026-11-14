@@ -73,6 +73,8 @@ public class SharedRulesFixtureTests
 
         Assert.Equal("retail", StationRules.FloorRule(file.Node, "床 A")!["value"]!.GetValue<string>());
         Assert.Null(StationRules.FloorRule(file.Node, "Hall"));
+        Assert.Equal("x", StationRules.AssignmentRule(file.Node, "Hall")!["value"]!.GetValue<string>());
+        Assert.Equal("retail", StationRules.AssignmentRule(file.Node, "床 A")!["value"]!.GetValue<string>());
         Assert.Equal("{\"targetEpsg\":6677,\"coordinateMode\":\"x\"}", StationRules.Settings(StationRules.Profile(file.Node, "station")!));
     }
 

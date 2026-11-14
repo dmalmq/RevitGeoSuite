@@ -174,6 +174,14 @@ internal static class StationRules
         rules["categoryRules"]?.AsArray().FirstOrDefault(rule =>
             rule?["type"]?.GetValue<string>() == "floorCategory" && string.Equals(rule["match"]?.GetValue<string>(), floorType, StringComparison.Ordinal));
 
+    /// <summary>
+    /// The rule a preview assignment saves. With room or hybrid attributes (the default for floor
+    /// geometry) the preview saves a roomCategory rule; with floor attributes a floorCategory rule.
+    /// </summary>
+    public static JsonNode? AssignmentRule(JsonNode rules, string match) =>
+        rules["categoryRules"]?.AsArray().FirstOrDefault(rule =>
+            rule?["type"]?.GetValue<string>() is "floorCategory" or "roomCategory" && string.Equals(rule["match"]?.GetValue<string>(), match, StringComparison.Ordinal));
+
     /// <summary>A profile's settings without its name, as compact JSON, so two profiles can be compared.</summary>
     public static string Settings(JsonNode profile)
     {

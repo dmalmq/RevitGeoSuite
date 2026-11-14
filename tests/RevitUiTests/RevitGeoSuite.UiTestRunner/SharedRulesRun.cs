@@ -243,8 +243,10 @@ internal sealed partial class GisStandardRun
             $"The Category assignments dialog shows '{saidSaved}' after the save.");
         step.Note("Japanese wording of the same line: 'プレビューの床割り当てを保存しました。ステーション「" + Path.GetFileName(rules.Station) + "」に保存しました。'");
         await Shot(step, "H4-4-preview-saved");
-        JsonNode? rule = StationRules.FloorRule(StationRules.Read(rules.Station), rules.FloorType);
-        step.Check(rule?["value"]?.GetValue<string>() == rules.CategoryOne, $"gis-rules.json has floorCategory '{rules.FloorType}' = '{rules.CategoryOne}' ({rule?.ToJsonString() ?? "no rule"}).");
+        JsonNode stationRules = StationRules.Read(rules.Station);
+        JsonNode? rule = StationRules.AssignmentRule(stationRules, rules.FloorType);
+        step.Check(rule?["value"]?.GetValue<string>() == rules.CategoryOne, $"gis-rules.json has a category rule '{rules.FloorType}' = '{rules.CategoryOne}' ({rule?.ToJsonString() ?? "no rule"}).");
+        step.Note($"The preview assigns by {await PreviewAssignmentSource()}; the station's category rules are {stationRules["categoryRules"]?.ToJsonString() ?? "absent"}.");
 
         await Shell.GoToAsync("/gis-standard");
         CesiumRun? run = await ExportCesium(step, rules.Station);
@@ -331,7 +333,7 @@ internal sealed partial class GisStandardRun
             AssignmentResult saved = await AssignInPreview(rules.FloorType, rules.CategoryTwo);
             step.Check(saved.Saved, $"The save succeeds once the lock is stale ({saved.Error}).");
             step.Check(!File.Exists(lockPath), "gis-rules.lock is gone after the save.");
-            JsonNode? rule = StationRules.FloorRule(StationRules.Read(rules.Station), rules.FloorType);
+            JsonNode? rule = StationRules.AssignmentRule(StationRules.Read(rules.Station), rules.FloorType);
             step.Check(rule?["value"]?.GetValue<string>() == rules.CategoryTwo, $"gis-rules.json has '{rules.FloorType}' = '{rules.CategoryTwo}' ({rule?.ToJsonString() ?? "no rule"}).");
         }
         finally
@@ -480,6 +482,12 @@ internal sealed partial class GisStandardRun
         return true;
     }
 
+    private async Task<string> PreviewAssignmentSource()
+    {
+        JsonNode? state = await Shell.RpcAsync("floorplan.preview.getInitialState");
+        return state?["assignmentSummary"]?["sourceLabel"]?.GetValue<string>() ?? state?["assignmentSourceLabel"]?.GetValue<string>() ?? "an unknown source";
+    }
+
     private record AssignmentResult(bool Saved, string Error);
 
     private async Task<AssignmentResult> AssignInPreview(string floorType, string category)
@@ -497,7 +505,30 @@ internal sealed partial class GisStandardRun
         }
 
         string error = await Shell.AlertTextAsync();
+        await CloseAssignments();
         return new AssignmentResult(error.Length == 0, error);
+    }
+
+    // A failed save leaves the dialog open over the preview, which hides the next step's controls.
+    private async Task CloseAssignments()
+    {
+        ILocator dialog = Shell.Page.GetByRole(AriaRole.Dialog, new() { Name = "Category assignments" });
+        if (!await dialog.IsVisibleAsync())
+        {
+            return;
+        }
+
+        ILocator close = dialog.GetByRole(AriaRole.Button, new() { Name = "Close", Exact = true });
+        if (await close.CountAsync() > 0)
+        {
+            await close.First.ClickAsync();
+        }
+        else
+        {
+            await Shell.Page.Keyboard.PressAsync("Escape");
+        }
+
+        await dialog.WaitForAsync(new() { State = WaitForSelectorState.Hidden, Timeout = 5000 });
     }
 
     private static void CheckNothingLeft(StepResult step, string station, bool expectLock)
