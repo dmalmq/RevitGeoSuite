@@ -16,6 +16,7 @@ internal sealed partial class GisStandardRun
 
     private SplitCase? split;
     private long? newFloor;
+    private bool splitUndone;
     private MergeCase? merge;
 
     private async Task SplitSteps()
@@ -190,9 +191,12 @@ internal sealed partial class GisStandardRun
             return Task.CompletedTask;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", SplitTransaction(split));
+        if (!UndoOrRedo(step, "undo", SplitTransaction(split)))
+        {
+            return Task.CompletedTask;
+        }
+
+        splitUndone = true;
         step.Check(!Element(id).Exists, $"One Undo removes the new floor {id}.");
         ElementRow kept = Element(split.Unit.UniqueId);
         step.Check(SameBox(kept, split.Before) && SameArea(kept.AreaM2, split.Before.AreaM2 ?? 0), $"The same Undo gives F its old outline (area {kept.AreaM2:0.0} m², was {split.Before.AreaM2:0.0} m²).");
@@ -207,9 +211,29 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("redo");
-        ExpectEvent(step, seq, "redo", SplitTransaction(split));
+        string name = SplitTransaction(split);
+        if (splitUndone && !UndoOrRedo(step, "redo", name))
+        {
+            // The split is undone after C3b.6, so exporting now would compare the old floor. Apply the
+            // same file again, as a person would after a refused Redo; the new floor then has a new id.
+            int seq = host.LastEvent();
+            await PickDrift(split.Path);
+            if (!await ExpectShapeEdits(step, split.Path))
+            {
+                return;
+            }
+
+            string[] again = await ApplyShapes(step, 1);
+            step.Note($"Applied the drift file again instead of Redo. Log: {string.Join(" / ", again)}");
+            Match created = again.Select(line => Regex.Match(line, @"^New floor (\d+)")).FirstOrDefault(match => match.Success) ?? Match.Empty;
+            if (!step.Check(host.EventsAfter(seq).Any(item => item.Is("commit", name)) && created.Success, $"Applying again commits '{name}' and lists a new floor."))
+            {
+                return;
+            }
+
+            id = long.Parse(created.Groups[1].Value, CultureInfo.InvariantCulture);
+        }
+
         string? newUniqueId = Element(id).UniqueId;
         string output = await OpenExport(step, string.Empty, "export2", keepDefaultViews: true);
         bool exported = await ExportNow(step);
@@ -316,9 +340,12 @@ internal sealed partial class GisStandardRun
             return Task.CompletedTask;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", MergeTransaction(merge));
+        if (!UndoOrRedo(step, "undo", MergeTransaction(merge)))
+        {
+            return Task.CompletedTask;
+        }
+
+        merge = merge with { Applied = false };
         ElementRow back = Element(merge.Taken.UniqueId);
         step.Check(back.Exists && back.Id == merge.Taken.Id, $"G is back with its UniqueId ({back.Id}).");
         return Task.CompletedTask;
@@ -362,6 +389,12 @@ internal sealed partial class GisStandardRun
             return;
         }
 
+        if (merge.Applied)
+        {
+            step.NotRun($"G ({merge.Taken.Id}) is still merged away: Revit refused the Undo in C3c.6.");
+            return;
+        }
+
         JsonObject fixture;
         try
         {
@@ -388,10 +421,10 @@ internal sealed partial class GisStandardRun
         step.Check(!Element(merge.Taken.UniqueId).Exists, $"G ({merge.Taken.Id}) is deleted although it hosts opening {opening}.");
         step.Check(opening != 0 && !Element(opening).Exists, $"Opening {opening} is gone with it.");
         step.Check(log.Any(line => line.Contains(opening.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)), $"The result names opening {opening} before the delete.");
-        seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", MergeTransaction(merge));
-        step.Check(Element(merge.Taken.UniqueId).Exists && Element(opening).Exists, "One Undo brings G and the opening back.");
+        if (UndoOrRedo(step, "undo", MergeTransaction(merge)))
+        {
+            step.Check(Element(merge.Taken.UniqueId).Exists && Element(opening).Exists, "One Undo brings G and the opening back.");
+        }
     }
 
     /// <summary>
