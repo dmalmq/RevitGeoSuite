@@ -11,6 +11,7 @@ There are eight scenarios. `--scenario` picks one, and `--script` is the same op
 - `c3a-reshape` checks that Review GDB edits reshapes a floor to the GDB outline (RevitGeoSuite #57). It makes its own drift file from its own export, so the build PC runs one command. With `--drift <file>`, it uses that file instead.
 - `c3b-split`, `c3c-merge` and `c3d-hand-drawn` check that Review GDB edits splits a floor by the GDB's pieces, merges floors that the GDB merged, and creates a floor for a unit drawn by hand in the GDB (C3b, C3c, C3d). They prepare themselves the same way.
 - `a3-fields` checks that the GeoPackage export writes elevator `levels_served`, the door fields and the GDB-owned field rows (RevitGeoSuite #45). It runs with whatever build `-RgsBuild` names.
+- `c4-waiting` checks that GDB edits waiting in the station's drift file show on the GIS standard ribbon button ("· 1 GDB edit") and as a warning on the export page, and that both go once the edit is applied (C4). It makes its own station folder with a Cesium export, which gives the copy a model id, and copies a one-shape drift file into the folder's `gis-drift` folder under the model's key. On a PC where the Cesium export's first-run setup never ran, the scenarios that export to Cesium (`c4-waiting`, `c8-network`) first save a project profile named "UI test" (GIS_ plans, EPSG:6677, output in the run folder); `Run-UiTests.ps1` restores `profiles.json` when the run ends.
 - `c8-network` checks the GIS standard page's Network tab, which shows Kanizu's walking network in Revit (C8). It makes its own station folder in the run folder with a Cesium export and writes the C8 sample network there, fitted to two adjacent levels of the model.
 
 ## How it works
@@ -20,7 +21,7 @@ There are eight scenarios. `--scenario` picks one, and `--script` is the same op
 | `RevitGeoSuite.TestHost.Loader` | The DLL that the Revit manifest names. It holds no test logic. In a Revit started for a run, it loads the test host next to it. Otherwise it loads nothing. |
 | `RevitGeoSuite.TestHost` | A test-only Revit add-in, installed on the build PC only. It listens on the named pipe `RevitGeoSuite.TestHost`, which only the signed-in user can open. No network port is opened. |
 | `RevitGeoSuite.UiTestRunner` | A .NET 8 console app. It drives the web page with Playwright over WebView2's DevTools protocol, and drives Revit through the test host. |
-| `RevitGeoSuite.UiTestRunner.Tests` | Unit tests for the runner's own logic. They run in CI on Linux and Windows. |
+| `RevitGeoSuite.UiTestRunner.Tests` | Unit tests for the runner's own logic. They run in CI on Linux and Windows. `ShellPageRpcTests` also sends bridge requests through `ShellPage` to a stand-in page that copies each message through JSON as WebView2 does; it runs only where a Chromium is found (`REVITGEOSUITE_TEST_CHROMIUM`, or `/opt/pw-browsers/chromium` in a cloud session, with `dotnet test -p:PlaywrightPlatform=linux`). |
 
 The test host does nothing at all unless Revit was started with `REVITGEOSUITE_UITEST=1`. `Run-UiTests.ps1 -StartRevit` sets that variable for the one Revit it starts. In any other Revit session on the build PC, the add-in still loads but opens no pipe, adds no event hooks, and opens no DevTools port. When a Revit was started for tests, the test host does these things:
 
@@ -81,7 +82,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields` or `c8-network`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting` or `c8-network`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
