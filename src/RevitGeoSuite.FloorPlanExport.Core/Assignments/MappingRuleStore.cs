@@ -16,6 +16,8 @@ public sealed class MappingRuleStore
         Formatting = Formatting.Indented,
     };
 
+    public const string MovedSuffix = ".moved-to-station";
+
     private readonly string _rootDirectory;
     private readonly string _legacyBaseDirectory;
 
@@ -85,6 +87,36 @@ public sealed class MappingRuleStore
             },
             JsonSettings);
         File.WriteAllText(path, json);
+    }
+
+    /// <summary>
+    /// Sets this PC's rules for the project aside once they are in the station's rules file: each
+    /// file is renamed to <c>&lt;name&gt;.moved-to-station</c>, so it is never read or merged again.
+    /// </summary>
+    public void MarkMovedToStation(string projectKey)
+    {
+        string name = GetHashedFileName(projectKey);
+        foreach (string path in new[]
+        {
+            GetFilePath(projectKey),
+            Path.Combine(GetLegacyRootDirectory("floor-category-overrides"), name),
+            Path.Combine(GetLegacyRootDirectory("family-category-overrides"), name),
+            Path.Combine(GetLegacyRootDirectory("accepted-opening-families"), name),
+        })
+        {
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            string moved = path + MovedSuffix;
+            if (File.Exists(moved))
+            {
+                File.Delete(moved);
+            }
+
+            File.Move(path, moved);
+        }
     }
 
     public void ExportToFile(string projectKey, ProjectMappingRules rules, string exportPath)

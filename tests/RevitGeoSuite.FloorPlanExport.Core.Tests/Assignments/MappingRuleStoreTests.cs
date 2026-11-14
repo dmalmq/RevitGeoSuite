@@ -102,6 +102,47 @@ public sealed class MappingRuleStoreTests
         }
     }
 
+    [Fact]
+    public void Save_KeepsOneProjectsRulesApartFromAnotherProject()
+    {
+        string tempDirectory = CreateTempDirectory();
+        try
+        {
+            MappingRuleStore store = new(tempDirectory);
+            store.Save("project-a", ProjectMappingRules.Create(new Dictionary<string, string> { ["Wrong Floor Name"] = "walkway" }, null, null, null));
+            store.Save("project-b", ProjectMappingRules.Create(new Dictionary<string, string> { ["Wrong Floor Name"] = "nonpublic" }, null, null, null));
+
+            store.Save("project-a", ProjectMappingRules.Empty);
+
+            Assert.Empty(store.Load("project-a").FloorCategoryOverrides);
+            Assert.Equal("nonpublic", store.Load("project-b").FloorCategoryOverrides["Wrong Floor Name"]);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadWithDiagnostics_ReturnsWarningAndEmptyRulesForMalformedJson()
+    {
+        string tempDirectory = CreateTempDirectory();
+        try
+        {
+            MappingRuleStore store = new(tempDirectory);
+            File.WriteAllText(Path.Combine(tempDirectory, ComputeProjectFileName("project-a")), "{bad json");
+
+            LoadResult<ProjectMappingRules> result = store.LoadWithDiagnostics("project-a");
+
+            Assert.Empty(result.Value.Rules);
+            Assert.Single(result.Warnings);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
     private static string CreateTempDirectory()
     {
         string path = Path.Combine(

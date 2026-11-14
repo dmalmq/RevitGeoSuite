@@ -1,0 +1,44 @@
+{
+  "schema": "revitgeosuite.gis-model",
+  "version": 1,
+  "identity": {
+    "modelId": "8d7f3c1e-0000-4000-8000-000000000001",
+    "station": "station",
+    "building": "Tokyo Station",
+    "crsEpsg": 6677
+  },
+  "levels": [
+    {
+      "uniqueId": "lv-host-1fl",
+      "name": "1FL",
+      "levelId": "gis-1f",
+      "ordinal": 1,
+      "shortName": "1F"
+    }
+  ],
+  "views": [
+    {
+      "uniqueId": "view-gis-1fl",
+      "name": "GIS_1FL"
+    }
+  ],
+  "links": [
+    {
+      "uniqueId": "link-platform-1",
+      "name": "Platform.rvt : 1"
+    }
+  ],
+  "drawingRules": {
+    "stairs": {
+      "stepSpacingMeters": 0.6,
+      "stopBeforeMiddleMeters": 1.1,
+      "overlapMeters": 1.8
+    }
+  },
+  "fields": "standard",
+  "versions": {
+    "standard": 1,
+    "lastExportRevitGeoSuite": "1.0.0.0",
+    "lastExportUtc": "2026-11-08T12:00:00Z"
+  }
+}

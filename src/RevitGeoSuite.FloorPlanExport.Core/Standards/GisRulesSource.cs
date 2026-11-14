@@ -1,0 +1,352 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using RevitGeoSuite.FloorPlanExport.Core.Assignments;
+using RevitGeoSuite.FloorPlanExport.Core.Utilities;
+
+namespace RevitGeoSuite.FloorPlanExport.Core.Standards;
+
+/// <summary>What a station's rules file holds for one export, as the manifest's <c>gis.rules</c> says it.</summary>
+public sealed class GisRulesStamp
+{
+    public const string StationKind = "station";
+    public const string LocalKind = "local";
+
+    public GisRulesStamp(string source, string profile, string hash)
+    {
+        Source = source;
+        Profile = profile;
+        Hash = hash;
+    }
+
+    /// <summary><see cref="StationKind"/> or <see cref="LocalKind"/>.</summary>
+    public string Source { get; }
+
+    public string Profile { get; }
+
+    public string Hash { get; }
+}
+
+/// <summary>
+/// Where one model's category rules and shared profiles live: the station's
+/// <c>gis-rules.json</c> when the model has a station folder, else this PC's per-project files.
+/// Every reader and writer of those rules goes through here, so the choice is made in one place.
+/// </summary>
+public sealed class GisRulesSource
+{
+    private readonly string _projectKey;
+    private readonly MappingRuleStore _perPcRules;
+    private readonly GisRulesStore? _station;
+
+    private GisRulesSource(string projectKey, MappingRuleStore perPcRules, GisRulesStore? station, string stationFolder)
+    {
+        _projectKey = projectKey;
+        _perPcRules = perPcRules;
+        _station = station;
+        StationFolder = stationFolder;
+    }
+
+    public bool IsStation => _station != null;
+
+    /// <summary>The station folder, also when this source fell back to this PC's rules; empty when there is none.</summary>
+    public string StationFolder { get; }
+
+    public string StationName => StationFolder.Length == 0
+        ? string.Empty
+        : new DirectoryInfo(StationFolder.TrimEnd('\\', '/')).Name;
+
+    public string StationFilePath => StationFolder.Length == 0 ? string.Empty : GisRulesFile.PathFor(StationFolder);
+
+    /// <summary>The line a dialog shows after a save that went to the station's file; null for this PC's rules.</summary>
+    public string? SavedStatus => IsStation ? $"Saved for station {StationName}" : null;
+
+    /// <summary>
+    /// The source for a model: the station's file when the model has a station folder that exists,
+    /// else this PC's rules. A model with a station folder that cannot be reached is read from this
+    /// PC; <see cref="ForExport"/> says so.
+    /// </summary>
+    public static GisRulesSource Resolve(string? stationFolder, string projectKey, MappingRuleStore? perPcRules = null, GisRulesStoreOptions? options = null)
+    {
+        MappingRuleStore perPc = perPcRules ?? new MappingRuleStore();
+        string folder = (stationFolder ?? string.Empty).Trim();
+        if (folder.Length > 0 && Directory.Exists(folder))
+        {
+            return new GisRulesSource(projectKey, perPc, new GisRulesStore(GisRulesFile.PathFor(folder), options), folder);
+        }
+
+        return new GisRulesSource(projectKey, perPc, null, folder);
+    }
+
+    /// <summary>
+    /// The source an export runs on. When the station's file cannot be read as it is or the station
+    /// cannot be written to, the export uses this PC's rules, adds a warning and renames nothing;
+    /// an unreadable version of the file stops the export, since its rules would be skipped.
+    /// </summary>
+    public GisRulesSource ForExport(ICollection<string> warnings)
+    {
+        if (_station == null)
+        {
+            if (StationFolder.Length > 0)
+            {
+                warnings.Add($"The station folder {StationFolder} cannot be reached. This export uses this PC's rules, not the station's, and its package says so.");
+            }
+
+            return this;
+        }
+
+        bool readable = true;
+        try
+        {
+            _station.TryLoad();
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            readable = false;
+        }
+
+        if (!readable || !_station.CanWrite())
+        {
+            warnings.Add($"The station folder {StationFolder} is read-only or cannot be reached. This export uses this PC's rules, not the station's, and its package says so.");
+            return WithoutStation();
+        }
+
+        return this;
+    }
+
+    /// <summary>The same model read from this PC's rules only.</summary>
+    public GisRulesSource WithoutStation()
+    {
+        return new GisRulesSource(_projectKey, _perPcRules, null, StationFolder);
+    }
+
+    /// <summary>
+    /// The rules an export resolves. Read from a station, this PC's rules that have not moved in yet
+    /// count where the station has no entry for the same key, as the move will add them; nothing is
+    /// written or renamed.
+    /// </summary>
+    public LoadResult<ProjectMappingRules> Load()
+    {
+        if (_station == null)
+        {
+            return _perPcRules.LoadWithDiagnostics(_projectKey);
+        }
+
+        try
+        {
+            GisRulesFile? file = _station.TryLoad();
+            LoadResult<ProjectMappingRules> local = _perPcRules.LoadWithDiagnostics(_projectKey);
+            GisRulesFile resolved = GisRulesMigrationPlan.Create(file, local.Value, Array.Empty<GisRulesProfile>()).AppliedTo(file);
+            return new LoadResult<ProjectMappingRules>(resolved.ToMappingRules(), local.Warnings);
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException)
+        {
+            return new LoadResult<ProjectMappingRules>(
+                ProjectMappingRules.Empty,
+                new[] { $"The station's rules file {_station.Path} could not be read ({ex.Message}). No station rules apply." });
+        }
+    }
+
+    /// <summary>The station's file, or null when the source is this PC's or the file does not exist yet.</summary>
+    public GisRulesFile? LoadStationFile()
+    {
+        return _station?.TryLoad();
+    }
+
+    /// <summary>
+    /// Saves the change from <paramref name="before"/> (what the caller loaded) to
+    /// <paramref name="after"/>. A save to the station first moves this PC's rules in, then writes one
+    /// operation per changed rule, so a rule another PC changed meanwhile stays; this PC's rules are
+    /// replaced whole as before.
+    /// </summary>
+    public void Save(ProjectMappingRules before, ProjectMappingRules after)
+    {
+        if (_station == null)
+        {
+            _perPcRules.Save(_projectKey, after);
+            return;
+        }
+
+        MoveLocalIntoStation(Array.Empty<GisRulesProfile>(), new List<string>());
+        Dictionary<(MappingRuleType, string), MappingRule> was = before.Rules.ToDictionary(rule => (rule.RuleType, rule.MatchValue));
+        Dictionary<(MappingRuleType, string), MappingRule> now = after.Rules.ToDictionary(rule => (rule.RuleType, rule.MatchValue));
+        List<GisRulesOperation> operations = new();
+        foreach (MappingRule rule in after.Rules)
+        {
+            if (!was.TryGetValue((rule.RuleType, rule.MatchValue), out MappingRule? old) || !string.Equals(old.ResolvedValue, rule.ResolvedValue, StringComparison.Ordinal))
+            {
+                operations.Add(GisRulesOperation.UpsertRule(rule));
+            }
+        }
+
+        foreach (MappingRule rule in before.Rules.Where(rule => !now.ContainsKey((rule.RuleType, rule.MatchValue))))
+        {
+            operations.Add(GisRulesOperation.DeleteRule(rule.RuleType, rule.MatchValue));
+        }
+
+        if (operations.Count > 0)
+        {
+            _station.Apply(operations);
+        }
+    }
+
+    /// <summary>
+    /// The station profile <paramref name="profileName"/> an export into the station uses. When the
+    /// station has none and the name is the default one, it is created from <paramref name="fromRun"/>,
+    /// the settings of the export that creates it; another name the station lacks stops the export.
+    /// Where the station's profile differs from <paramref name="fromRun"/>, the station's settings
+    /// are used and one warning lists each difference.
+    /// </summary>
+    public GisRulesProfile ResolveStationProfile(string profileName, GisRulesProfile fromRun, ICollection<string> warnings)
+    {
+        GisRulesStore station = _station ?? throw new InvalidOperationException("This model has no station rules file.");
+        GisRulesFile? file = station.TryLoad();
+        GisRulesProfile? profile = file?.FindProfile(profileName);
+        if (profile == null)
+        {
+            if (!string.Equals(profileName.Trim(), GisModelFile.DefaultProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                List<string> existing = (file?.Profiles ?? new List<GisRulesProfile>()).Select(candidate => candidate.Name).ToList();
+                throw new InvalidOperationException(
+                    $"The model's gis-model.json names the profile '{profileName}', but the rules file of station '{StationName}' " +
+                    (existing.Count == 0 ? "has no profiles." : $"has only: {string.Join(", ", existing)}.") +
+                    " Save that profile for the station in the export dialog, or change \"profile\" in gis-model.json.");
+            }
+
+            GisRulesProfile created = fromRun.Clone();
+            created.Name = GisModelFile.DefaultProfileName;
+            profile = station.Apply(new[] { GisRulesOperation.AddProfile(created) }).FindProfile(GisModelFile.DefaultProfileName)!;
+        }
+
+        IReadOnlyList<string> differences = GisRulesProfile.Differences(fromRun, profile);
+        if (differences.Count > 0)
+        {
+            warnings.Add(
+                $"This export uses the station profile '{profile.Name}' of station '{StationName}', whose settings differ from this export's own " +
+                $"(yours -> station): {string.Join("; ", differences)}.");
+        }
+
+        return profile;
+    }
+
+    /// <summary>
+    /// What <see cref="ResolveStationProfile"/> would warn about, read only, for a dialog to show before
+    /// the export: each setting of <paramref name="yours"/> that the station profile
+    /// <paramref name="profileName"/> replaces, as <c>setting: yours -&gt; station</c>. Empty when the
+    /// model has no station file, the station has no such profile yet, or its file cannot be read.
+    /// </summary>
+    public IReadOnlyList<string> StationOverrides(string profileName, GisRulesProfile yours)
+    {
+        try
+        {
+            GisRulesProfile? station = _station?.TryLoad()?.FindProfile(profileName);
+            return station == null ? Array.Empty<string>() : GisRulesProfile.Differences(yours, station);
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    public void ApplyToStation(IReadOnlyList<GisRulesOperation> operations)
+    {
+        (_station ?? throw new InvalidOperationException("This model has no station rules file.")).Apply(operations);
+    }
+
+    /// <summary>
+    /// Adds this PC's rules and project profiles for the model to the station's file where the station
+    /// has no entry for the same key or name, then sets this PC's rules aside. A conflict keeps the
+    /// station's value and becomes a warning. Throws when the station's write cannot be confirmed, and
+    /// then nothing is renamed. Returns true when this PC's rules were set aside, so the caller can set
+    /// its profiles aside too.
+    /// </summary>
+    public bool MoveLocalIntoStation(IReadOnlyList<GisRulesProfile> localProfiles, ICollection<string> warnings)
+    {
+        if (_station == null)
+        {
+            return false;
+        }
+
+        ProjectMappingRules local = _perPcRules.LoadWithDiagnostics(_projectKey).Value;
+        if (local.Rules.Count == 0 && localProfiles.Count == 0)
+        {
+            return false;
+        }
+
+        GisRulesMigrationPlan plan = GisRulesMigrationPlan.Create(_station.TryLoad(), local, localProfiles);
+        if (plan.Operations.Count > 0)
+        {
+            _station.Apply(plan.Operations);
+        }
+
+        foreach (string warning in plan.Warnings)
+        {
+            warnings.Add(warning);
+        }
+
+        _perPcRules.MarkMovedToStation(_projectKey);
+        return true;
+    }
+}
+
+/// <summary>What moving this PC's rules and project profiles into a station's file adds, and what conflicts.</summary>
+public sealed class GisRulesMigrationPlan
+{
+    private GisRulesMigrationPlan(IReadOnlyList<GisRulesOperation> operations, IReadOnlyList<string> warnings)
+    {
+        Operations = operations;
+        Warnings = warnings;
+    }
+
+    public IReadOnlyList<GisRulesOperation> Operations { get; }
+
+    public IReadOnlyList<string> Warnings { get; }
+
+    /// <summary>A copy of <paramref name="station"/> with the plan's operations applied, in memory only.</summary>
+    public GisRulesFile AppliedTo(GisRulesFile? station)
+    {
+        GisRulesFile copy = station == null ? new GisRulesFile() : GisRulesFile.Parse(station.ToJson(), GisRulesFile.FileName);
+        foreach (GisRulesOperation operation in Operations)
+        {
+            operation.ApplyTo(copy);
+        }
+
+        return copy;
+    }
+
+    public static GisRulesMigrationPlan Create(GisRulesFile? station, ProjectMappingRules local, IReadOnlyList<GisRulesProfile> localProfiles)
+    {
+        GisRulesFile current = station ?? new GisRulesFile();
+        List<GisRulesOperation> operations = new();
+        List<string> warnings = new();
+        foreach (MappingRule rule in local.Rules)
+        {
+            GisRulesRule? existing = current.CategoryRules.FirstOrDefault(candidate =>
+                candidate.Type == rule.RuleType && string.Equals(candidate.Match, rule.MatchValue, StringComparison.Ordinal));
+            if (existing == null)
+            {
+                operations.Add(GisRulesOperation.UpsertRule(rule));
+            }
+            else if (!string.Equals(existing.Value, rule.ResolvedValue, StringComparison.Ordinal))
+            {
+                warnings.Add(
+                    $"{rule.RuleType} '{rule.MatchValue}' is '{rule.ResolvedValue}' on this PC and '{existing.Value}' in the station's rules. The station's value is kept.");
+            }
+        }
+
+        foreach (GisRulesProfile profile in localProfiles)
+        {
+            GisRulesProfile? existing = current.FindProfile(profile.Name);
+            if (existing == null)
+            {
+                operations.Add(GisRulesOperation.UpsertProfile(profile));
+            }
+            else if (!Newtonsoft.Json.Linq.JToken.DeepEquals(existing.ToToken(), profile.ToToken()))
+            {
+                warnings.Add($"The profile '{profile.Name}' differs on this PC and in the station's rules. The station's profile is kept.");
+            }
+        }
+
+        return new GisRulesMigrationPlan(operations, warnings);
+    }
+}

@@ -112,7 +112,7 @@ public sealed class FloorPlanHeadlessExporter
             settings.RoomCategoryParameterName,
             settings.SimplifyStairUnits,
             settings.SimplifyEscalatorUnits,
-            settings.LinkExportOptions,
+            GisModelSettings.ApplyRecordedLinks(_document, settings.LinkExportOptions, viewWarnings),
             activeSchemaProfile,
             activeValidationPolicyProfile,
             settings.Use3DSectionBoxExport,
@@ -130,7 +130,7 @@ public sealed class FloorPlanHeadlessExporter
             _uiDocument,
             projectKey,
             GetAvailableFloorTypeNames(),
-            new ExportProfileStore());
+            new ExportProfileStore(rules: GisRulesSourceFactory.For(_document)));
 
         FloorGeoPackageExportResult result = workflow.RunExportCore(
             request,

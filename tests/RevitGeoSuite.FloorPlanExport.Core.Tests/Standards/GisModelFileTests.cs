@@ -167,4 +167,49 @@ public sealed class GisModelFileTests : IDisposable
     }
 
     private static IEnumerable<string> Ids(IEnumerable<(string Id, string Name)> views) => views.Select(view => view.Id);
+
+    [Fact]
+    public void Profile_IsStationWhenTheFileNamesNone_AndIsKeptWhenItNamesOne()
+    {
+        GisModelFile none = GisModelFile.Parse("{\"schema\":\"revitgeosuite.gis-model\",\"version\":1}", "test");
+        GisModelFile named = GisModelFile.Parse("{\"schema\":\"revitgeosuite.gis-model\",\"version\":1,\"profile\":\"Night\"}", "test");
+
+        Assert.Equal("Station", none.ProfileName);
+        Assert.DoesNotContain("rofile", none.ToJson());
+        Assert.Equal("Night", named.ProfileName);
+        Assert.Contains("\"profile\": \"Night\"", named.ToJson());
+    }
+
+    [Fact]
+    public void Links_AreAbsentUntilAnExportRecordsThem_AndRoundTripByUniqueId()
+    {
+        GisModelFile none = GisModelFile.Parse("{\"schema\":\"revitgeosuite.gis-model\",\"version\":1}", "test");
+        GisModelFile recorded = GisModelFile.CreateDefault();
+        recorded.Links = new List<GisModelLink> { new() { UniqueId = "link-platform-1", Name = "Platform.rvt : 1" } };
+
+        GisModelFile read = GisModelFile.Parse(recorded.ToJson(), "test");
+
+        Assert.Null(none.Links);
+        Assert.DoesNotContain("\"links\"", none.ToJson());
+        Assert.Equal("link-platform-1", Assert.Single(read.Links!).UniqueId);
+        Assert.Equal("Platform.rvt : 1", read.Links![0].Name);
+        Assert.Contains("\"links\": []", GisModelFile.Parse("{\"schema\":\"revitgeosuite.gis-model\",\"version\":1,\"links\":[]}", "test").ToJson());
+    }
+
+    [Fact]
+    public void MatchLinks_FindsLinksByUniqueIdAndNamesTheOnesThatAreGone()
+    {
+        GisModelFile file = GisModelFile.CreateDefault();
+        file.Links = new List<GisModelLink>
+        {
+            new() { UniqueId = "link-b", Name = "B.rvt : 1" },
+            new() { UniqueId = "link-gone", Name = "Gone.rvt : 1" },
+        };
+        (string Id, long ElementId)[] available = { ("LINK-B", 22), ("link-c", 33) };
+
+        (IReadOnlyList<(string Id, long ElementId)> found, IReadOnlyList<GisModelLink> missing) = file.MatchLinks(available, link => link.Id);
+
+        Assert.Equal(new long[] { 22 }, found.Select(link => link.ElementId));
+        Assert.Equal("Gone.rvt : 1", Assert.Single(missing).Name);
+    }
 }

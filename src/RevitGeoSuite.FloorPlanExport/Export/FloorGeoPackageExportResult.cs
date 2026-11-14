@@ -1,4 +1,5 @@
 using System;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -32,6 +33,9 @@ public sealed class FloorGeoPackageExportResult
     public string? PackageDirectoryPath { get; private set; }
 
     public string? PackageManifestPath { get; private set; }
+
+    /// <summary>The rules this export used, as the package manifest's <c>gis.rules</c> says it.</summary>
+    public GisRulesStamp? GisRules { get; set; }
 
     public ExportChangeSummary? ChangeSummary { get; private set; }
 

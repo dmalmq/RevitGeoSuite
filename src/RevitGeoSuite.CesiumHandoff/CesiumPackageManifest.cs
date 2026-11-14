@@ -206,6 +206,23 @@ public sealed class CesiumPackageGis
     public List<CesiumPackageGisArtifact>? Artifacts { get; set; }
 
     public string? PackageManifest { get; set; }
+
+    /// <summary>The category rules and profile the GIS export used, so a reader can tell when they changed between two exports.</summary>
+    public CesiumPackageGisRules? Rules { get; set; }
+}
+
+/// <summary>
+/// <c>gis.rules</c>: where the export's category rules came from (<c>station</c>, the station's
+/// <c>gis-rules.json</c>, or <c>local</c>, this PC's own), the profile it used, and the sha256 of the
+/// canonical JSON of the rules plus that profile.
+/// </summary>
+public sealed class CesiumPackageGisRules
+{
+    public string Source { get; set; } = string.Empty;
+
+    public string Profile { get; set; } = string.Empty;
+
+    public string Hash { get; set; } = string.Empty;
 }
 
 public sealed class CesiumPackageGisArtifact

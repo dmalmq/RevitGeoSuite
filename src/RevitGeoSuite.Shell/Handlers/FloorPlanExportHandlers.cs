@@ -8,6 +8,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.FloorPlanExport.Commands;
 using RevitGeoSuite.FloorPlanExport.Core;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.FloorPlanExport.UI;
 using RevitGeoSuite.SharedUI.Shell;
@@ -21,6 +22,7 @@ internal sealed class FloorPlanExportSessionManager
     private FloorPlanExportSession? session;
     private Document? sessionDocument;
     private string? sessionProjectKey;
+    private string? sessionStationFolder;
 
     public FloorPlanExportSessionManager(WebRpcBridge bridge)
     {
@@ -71,8 +73,10 @@ internal sealed class FloorPlanExportSessionManager
         }
 
         string projectKey = DocumentProjectKeyBuilder.Create(document);
+        GisRulesSource rules = GisRulesSourceFactory.For(document);
         if (session != null &&
-            string.Equals(sessionProjectKey, projectKey, StringComparison.Ordinal))
+            string.Equals(sessionProjectKey, projectKey, StringComparison.Ordinal) &&
+            string.Equals(sessionStationFolder, rules.StationFolder, StringComparison.Ordinal))
         {
             return session;
         }
@@ -86,9 +90,9 @@ internal sealed class FloorPlanExportSessionManager
             throw new InvalidOperationException("No exportable plan views were found.");
         }
 
-        SettingsBundle bundle = new(projectKey);
+        ExportProfileStore profileStore = new(rules: rules);
+        SettingsBundle bundle = new(projectKey, profileStore: profileStore, rules: rules);
         SettingsBundleSnapshot snapshot = bundle.Load();
-        ExportProfileStore profileStore = new();
         IReadOnlyList<string> availableFloorTypeNames = GetAvailableFloorTypeNames(document);
         IReadOnlyList<LinkSelectionItem> availableLinks = GetAvailableLinks(document);
         ModelCoordinateInfo coordinateInfo = new ModelCoordinateInfoReader().Read(document);
@@ -110,9 +114,12 @@ internal sealed class FloorPlanExportSessionManager
             workflow.SaveProfile,
             workflow.DeleteProfile,
             (request, progress) => workflow.RunExportCore(request, coordinateInfo, progress),
-            coordinateInfo);
+            coordinateInfo,
+            () => workflow.RulesSavedStatus,
+            workflow.DescribeStationOverrides);
         sessionDocument = document;
         sessionProjectKey = projectKey;
+        sessionStationFolder = rules.StationFolder;
         return session;
     }
 

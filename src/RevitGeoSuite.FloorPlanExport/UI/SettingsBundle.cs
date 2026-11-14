@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using RevitGeoSuite.FloorPlanExport.Core.Assignments;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.UI;
 
@@ -17,27 +18,27 @@ public sealed class SettingsBundle
     private readonly string _projectKey;
     private readonly ExportDialogSettingsStore _settingsStore;
     private readonly ExportProfileStore _profileStore;
-    private readonly MappingRuleStore _mappingRuleStore;
+    private readonly GisRulesSource _rules;
 
     public SettingsBundle(
         string projectKey,
         ExportDialogSettingsStore? settingsStore = null,
         ExportProfileStore? profileStore = null,
-        MappingRuleStore? mappingRuleStore = null)
+        GisRulesSource? rules = null)
     {
         _projectKey = string.IsNullOrWhiteSpace(projectKey)
             ? throw new ArgumentException("A project key is required.", nameof(projectKey))
             : projectKey.Trim();
         _settingsStore = settingsStore ?? new ExportDialogSettingsStore();
         _profileStore = profileStore ?? new ExportProfileStore();
-        _mappingRuleStore = mappingRuleStore ?? new MappingRuleStore();
+        _rules = rules ?? GisRulesSource.Resolve(null, _projectKey);
     }
 
     public SettingsBundleSnapshot Load()
     {
         var settingsLoad = _settingsStore.LoadWithDiagnostics();
         var profilesLoad = _profileStore.LoadWithDiagnostics(_projectKey);
-        var mappingsLoad = _mappingRuleStore.LoadWithDiagnostics(_projectKey);
+        var mappingsLoad = _rules.Load();
 
         return new SettingsBundleSnapshot
         {
@@ -55,7 +56,7 @@ public sealed class SettingsBundle
 
     public void SaveProjectMappings(ProjectMappingRules rules)
     {
-        _mappingRuleStore.Save(_projectKey, rules);
+        _rules.Save(_rules.Load().Value, rules);
     }
 
     public void ReplaceProfiles(SettingsScope scope, IEnumerable<ExportProfile> profiles)

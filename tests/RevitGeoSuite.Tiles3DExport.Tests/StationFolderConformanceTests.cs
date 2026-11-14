@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using RevitGeoSuite.CesiumHandoff;
 using RevitGeoSuite.Core.Coordinates;
+using RevitGeoSuite.FloorPlanExport.Core.Assignments;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using Xunit;
 
 namespace RevitGeoSuite.Tiles3DExport.Tests;
@@ -107,6 +109,8 @@ public sealed class StationFolderConformanceTests
     private static CesiumPackageLayout WriteSampleStation(string station)
     {
         Tiles3DExportPackage package = SamplePackage();
+        GisRulesStamp rules = WriteStationRules(station);
+        WriteGisModel(station);
         CesiumPackageLayout staging = CesiumStationFolder.CreateStagingLayout(station);
 
         // The tileset is not part of the link contract (Kanizu places the model from the
@@ -116,6 +120,11 @@ public sealed class StationFolderConformanceTests
         WriteText(Path.Combine(staging.TilesDirectory, package.LevelManifestFileName), new Tiles3DLevelManifestWriter().BuildJson(package));
         WriteText(Path.Combine(staging.TilesDirectory, package.ElementIndexFileName), new Tiles3DElementIndexWriter().BuildJson(package));
         WriteText(Path.Combine(staging.TilesDirectory, package.RoomIndexFileName), new Tiles3DRoomIndexWriter().BuildJson(package.Rooms!));
+
+        // The GIS export's database is not part of the link contract either; the manifest only needs
+        // an artifact to describe, so the sample carries a fixed stand-in.
+        Directory.CreateDirectory(staging.GisDirectory);
+        WriteText(Path.Combine(staging.GisDirectory, "tokyo-station.gpkg"), "stand-in for the sample's GeoPackage");
 
         CesiumPackageManifest manifest = new CesiumPackageLayoutBuilder().WriteManifest(staging, new CesiumPackageBuildInputs
         {
@@ -136,6 +145,7 @@ public sealed class StationFolderConformanceTests
             AnchorEasting = Easting,
             AnchorNorthing = Northing,
             ModelId = "8d7f3c1e-0000-4000-8000-000000000001",
+            GisRules = new CesiumPackageGisRules { Source = rules.Source, Profile = rules.Profile, Hash = rules.Hash },
             Export = CesiumPackageExportDescriber.Describe(
                 isViewScope: false,
                 viewUniqueId: null,
@@ -150,6 +160,50 @@ public sealed class StationFolderConformanceTests
         manifest.CreatedUtc = new DateTime(2026, 11, 8, 12, 0, 0, DateTimeKind.Utc);
         WriteText(staging.ManifestPath, CesiumPackageManifestSerializer.Serialize(manifest));
         return CesiumStationFolder.Publish(staging, station, manifest);
+    }
+
+    /// <summary>The model's <c>gis-model.json</c> after a station export, written by the real writer with a fixed clock.</summary>
+    private static void WriteGisModel(string station)
+    {
+        GisModelFile file = GisModelFile.CreateFromTemplate();
+        file.Identity.ModelId = "8d7f3c1e-0000-4000-8000-000000000001";
+        file.Identity.Station = new DirectoryInfo(station).Name;
+        file.Identity.Building = "Tokyo Station";
+        file.Identity.CrsEpsg = 6677;
+        file.Levels = new List<GisModelLevel>
+        {
+            new() { UniqueId = "lv-host-1fl", Name = "1FL", LevelId = "gis-1f", Ordinal = 1, ShortName = "1F" },
+        };
+        file.Views = new List<GisModelView> { new() { UniqueId = "view-gis-1fl", Name = "GIS_1FL" } };
+        file.Links = new List<GisModelLink> { new() { UniqueId = "link-platform-1", Name = "Platform.rvt : 1" } };
+        file.Versions.Standard = 1;
+        file.Versions.LastExportRevitGeoSuite = "1.0.0.0";
+        file.Versions.LastExportUtc = "2026-11-08T12:00:00Z";
+        file.Save(GisModelFile.PathFor(station, file.Identity.ModelId));
+    }
+
+    /// <summary>The station's <c>gis-rules.json</c>, written by the real writer with a fixed stamp.</summary>
+    private static GisRulesStamp WriteStationRules(string station)
+    {
+        GisRulesProfile profile = new()
+        {
+            Name = GisModelFile.DefaultProfileName,
+            SchemaProfiles = new List<RevitGeoSuite.FloorPlanExport.Core.Schema.SchemaProfile>(),
+            ValidationPolicies = new List<RevitGeoSuite.FloorPlanExport.Core.Validation.ValidationPolicyProfile>(),
+        };
+        GisRulesStore store = new(
+            GisRulesFile.PathFor(station),
+            new GisRulesStoreOptions { Stamp = () => new GisRulesChanged { Utc = "2026-11-08T12:00:00Z", User = "station-pc", RevitGeoSuite = "1.0.0.0" } });
+        GisRulesFile written = store.Apply(new[]
+        {
+            GisRulesOperation.UpsertRule(new MappingRule { RuleType = MappingRuleType.FloorCategory, MatchValue = "Concourse Floor", ResolvedValue = "walkway" }),
+            GisRulesOperation.UpsertRule(new MappingRule { RuleType = MappingRuleType.AcceptedOpeningFamily, MatchValue = "Gate Opening" }),
+            GisRulesOperation.UpsertProfile(profile),
+        });
+        return new GisRulesStamp(
+            GisRulesStamp.StationKind,
+            profile.Name,
+            GisRulesHash.Compute(written.ToMappingRules().Rules, written.FindProfile(profile.Name)!));
     }
 
     private static Tiles3DExportPackage SamplePackage()

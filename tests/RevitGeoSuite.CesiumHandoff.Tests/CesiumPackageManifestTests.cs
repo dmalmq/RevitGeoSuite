@@ -68,6 +68,20 @@ public sealed class CesiumPackageManifestTests
     }
 
     [Fact]
+    public void GisRules_AreWrittenUnderGisAndReadBack()
+    {
+        CesiumPackageManifest manifest = CreateSample();
+        manifest.Gis!.Rules = new CesiumPackageGisRules { Source = "station", Profile = "Station", Hash = "ab12" };
+
+        string json = CesiumPackageManifestSerializer.Serialize(manifest);
+        CesiumPackageGisRules parsed = CesiumPackageManifestSerializer.Deserialize(json).Gis!.Rules!;
+
+        Assert.Contains("\"rules\": {", json);
+        Assert.Equal(("station", "Station", "ab12"), (parsed.Source, parsed.Profile, parsed.Hash));
+        Assert.DoesNotContain("\"rules\"", CesiumPackageManifestSerializer.Serialize(CreateSample()));
+    }
+
+    [Fact]
     public void Serialize_UsesCamelCasePropertyNames()
     {
         string json = CesiumPackageManifestSerializer.Serialize(CreateSample());
