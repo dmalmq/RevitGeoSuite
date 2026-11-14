@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { initiallyUnticked, modelMismatch, needsConfirm, outlineDrawing, shapesInitiallyUnticked } from '../driftReview'
+import { initiallyUnticked, modelMismatch, driftSource, needsConfirm, outlineDrawing, shapesInitiallyUnticked } from '../driftReview'
 
 const change = (conflict: boolean) => ({
   uniqueId: 'u', layer: 'unit', field: 'name', feature: 'f', parameter: 'name', binding: 'instance',
@@ -51,5 +51,21 @@ describe('shape edits', () => {
     expect(drawing.viewBox).toBe('0 0 100 100')
     expect(drawing.before).toBe('M0 75L50 75L50 25L0 25L0 75Z')
     expect(drawing.after).toBe('M0 75L100 75L100 25L0 25L0 75Z')
+  })
+})
+
+describe('drift source line', () => {
+  it('names the station folder and reads the export time from the applied version', () => {
+    const source = driftSource({
+      stationFolder: 'C:\\stations\\Shinjuku',
+      appliedVersion: 'revit/lumine/20261113T081205Z-1a2b3c4d',
+      path: 'C:\\stations\\Shinjuku\\revit\\lumine\\drift.json',
+    })
+    expect(source.station).toBe('Shinjuku')
+    expect(source.applied?.toISOString()).toBe('2026-11-13T08:12:05.000Z')
+  })
+
+  it('falls back to the file name and no time when the file has neither', () => {
+    expect(driftSource({ stationFolder: '', appliedVersion: '', path: 'D:/picked/drift.json' })).toEqual({ station: 'drift.json', applied: null })
   })
 })
