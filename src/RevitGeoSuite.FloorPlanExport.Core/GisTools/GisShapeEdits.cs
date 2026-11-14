@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using NetTopologySuite.Algorithm.Distance;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Operation.Buffer;
 using NetTopologySuite.Precision;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
@@ -157,15 +158,16 @@ public static class GisShapeEdits
                 continue;
             }
 
-            if (!CanSketch(outline))
-            {
-                problems.Add($"{shape.Describe()}: {CrossesItself}");
-                continue;
-            }
-
+            // What the floor is comes first: a curved floor is not redrawn, whatever the GDB outline looks like.
             if (floor.CannotEdit != null)
             {
                 problems.Add($"{shape.Describe()}: floor {floor.ElementId} {floor.CannotEdit}, so its sketch is not redrawn. Reshape it in Revit by hand.");
+                continue;
+            }
+
+            if (!CanSketch(outline))
+            {
+                problems.Add($"{shape.Describe()}: {CrossesItself}");
                 continue;
             }
 
@@ -221,8 +223,21 @@ public static class GisShapeEdits
 
         NtsGeometry added = Edit(wanted.Difference(top));
         NtsGeometry removed = Edit(top.Difference(wanted));
-        return ToFeet(GeometryPrecisionReducer.Reduce(sketch.Union(added).Difference(removed), Millimetres));
+        return ToFeet(GeometryPrecisionReducer.Reduce(Sealed(sketch.Union(added).Difference(removed)), Millimetres));
     }
+
+    /// <summary>
+    /// The sketch without the hairline gaps, holes and walls left where the sketch and the top face
+    /// are a fraction of a millimetre apart: Revit cannot cut out a loop that thin. Closes, then
+    /// opens, by half of <see cref="SameOutlineMetres"/>; mitred corners stay square.
+    /// </summary>
+    private static NtsGeometry Sealed(NtsGeometry region)
+    {
+        double seal = SameOutlineMetres / 2;
+        return region.Buffer(seal, Mitred).Buffer(-seal, Mitred).Buffer(-seal, Mitred).Buffer(seal, Mitred);
+    }
+
+    private static readonly BufferParameters Mitred = new() { JoinStyle = JoinStyle.Mitre, MitreLimit = 10 };
 
     /// <summary>The parts of a difference that are an edit: wider than <see cref="SameOutlineMetres"/>, not slivers along a shared edge.</summary>
     private static NtsGeometry Edit(NtsGeometry difference)
