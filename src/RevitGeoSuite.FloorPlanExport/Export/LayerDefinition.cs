@@ -27,6 +27,7 @@ public static class LayerDefinition
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
                 new AttributeDefinition(VerticalCirculation.DirectionAttributeName, ExportAttributeType.Text),
                 new AttributeDefinition(VerticalCirculation.ToLevelAttributeName, ExportAttributeType.Text),
+                new AttributeDefinition(VerticalCirculation.LevelsServedAttributeName, ExportAttributeType.Text),
                 new AttributeDefinition("source", ExportAttributeType.Text),
                 new AttributeDefinition("display_point", ExportAttributeType.Text),
                 new AttributeDefinition("preview_fill_color", ExportAttributeType.Text),

@@ -59,13 +59,14 @@ public sealed class GisStandardTests
     }
 
     [Fact]
-    public void SharedParameters_HaveTheTwelveStandardNamesWithUniqueGuids()
+    public void SharedParameters_HaveTheStandardNamesWithUniqueGuids()
     {
         Assert.Equal(
             new[]
             {
                 "id", "level_id", "name", "short_name", "category", "ordinal",
-                "gis_category", "gis_restriction", "gis_kind", "gis_direction", "gis_key", "gis_standard_version",
+                "gis_category", "gis_restriction", "gis_kind", "gis_direction",
+                "gis_levels_served", "gis_door", "gis_access_con", "gis_key", "gis_standard_version",
             },
             GisSharedParameters.All.Select(definition => definition.Name));
         Assert.Equal(GisSharedParameters.All.Count, GisSharedParameters.All.Select(definition => definition.Guid).Distinct().Count());
@@ -105,6 +106,15 @@ public sealed class GisStandardTests
         Assert.Contains("OST_Stairs", definition.Categories);
         Assert.Contains("OST_GenericModel", definition.Categories);
         Assert.Contains("OST_SpecialityEquipment", definition.Categories);
+    }
+
+    [Fact]
+    public void LevelsServed_IsAnInstanceParameter_BoundToMechanicalEquipment_WhereLumineDrawsItsElevators()
+    {
+        // LUMINE's 63 elevator objects share one type, so a type value could not differ per shaft.
+        Assert.True(GisSharedParameters.TryGet(GisSharedParameters.GisLevelsServed, out GisParameterDefinition definition));
+        Assert.Equal(GisParameterBinding.Instance, definition.Binding);
+        Assert.Equal(new[] { "OST_GenericModel", "OST_SpecialityEquipment", "OST_MechanicalEquipment" }, definition.Categories);
     }
 
     [Fact]
