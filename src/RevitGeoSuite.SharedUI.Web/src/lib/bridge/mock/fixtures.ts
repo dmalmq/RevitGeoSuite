@@ -395,24 +395,33 @@ function gisDrift() {
   // A shop the GDB widened and a concourse it cut a notch out of, in model metres.
   const shapes = [
     {
-      uniqueId: 'f-shop', kind: 'reshape', floors: 1, elementId: 412233, feature: 'コンビニ', label: 'Reshape floor 412233 (コンビニ) to the GDB outline',
+      uniqueId: 'f-shop', kind: 'reshape', floors: 1, typeName: '', elementId: 412233, feature: 'コンビニ', label: 'Reshape floor 412233 (コンビニ) to the GDB outline',
       before: [[[0, 0], [8, 0], [8, 6], [0, 6], [0, 0]]],
       after: [[[0, 0], [10, 0], [10, 6], [0, 6], [0, 0]]]
     },
     {
-      uniqueId: 'f-walk', kind: 'reshape', floors: 1, elementId: 412240, feature: '中央通路', label: 'Reshape floor 412240 (中央通路) to the GDB outline',
+      uniqueId: 'f-walk', kind: 'reshape', floors: 1, typeName: '', elementId: 412240, feature: '中央通路', label: 'Reshape floor 412240 (中央通路) to the GDB outline',
       before: [[[0, 0], [30, 0], [30, 12], [0, 12], [0, 0]]],
       after: [[[0, 0], [30, 0], [30, 12], [18, 12], [18, 9], [12, 9], [12, 12], [0, 12], [0, 0]]]
     },
     {
-      uniqueId: 'f-store', kind: 'split', floors: 2, elementId: 412250, feature: '売店', label: 'Split floor 412250 (売店) into 2 floors by the GDB',
+      uniqueId: 'f-store', kind: 'split', floors: 2, typeName: '', elementId: 412250, feature: '売店', label: 'Split floor 412250 (売店) into 2 floors by the GDB',
       before: [[[0, 0], [12, 0], [12, 8], [0, 8], [0, 0]]],
       after: [[[0, 0], [7, 0], [7, 8], [0, 8], [0, 0]], [[7, 0], [12, 0], [12, 8], [7, 8], [7, 0]]]
     },
     {
-      uniqueId: 'f-wait', kind: 'merge', floors: 2, elementId: 412260, feature: '待合室', label: 'Merge floor(s) 412261 into floor 412260 (待合室) by the GDB',
+      uniqueId: 'f-wait', kind: 'merge', floors: 2, typeName: '', elementId: 412260, feature: '待合室', label: 'Merge floor(s) 412261 into floor 412260 (待合室) by the GDB',
       before: [[[0, 0], [6, 0], [6, 6], [0, 6], [0, 0]], [[6, 0], [10, 0], [10, 6], [6, 6], [6, 0]]],
       after: [[[0, 0], [10, 0], [10, 6], [0, 6], [0, 0]]]
+    },
+    // Hand-drawn in the GDB: one whose category names a standard type, one the page asks about.
+    {
+      uniqueId: 'handDrawn:4', kind: 'create', floors: 1, typeName: 'j ラチ外店舗_床', elementId: 0, feature: 'ポップアップ', label: 'Create a floor for the hand-drawn unit ポップアップ from the GDB',
+      before: [], after: [[[0, 0], [4, 0], [4, 3], [0, 3], [0, 0]]]
+    },
+    {
+      uniqueId: 'handDrawn:5', kind: 'create', floors: 1, typeName: '', elementId: 0, feature: '休憩所', label: 'Create a floor for the hand-drawn unit 休憩所 from the GDB',
+      before: [], after: [[[0, 0], [6, 0], [3, 4], [0, 0]]]
     }
   ]
   const station = 'D:\\Stations\\Tokyo'
@@ -437,6 +446,7 @@ function gisDrift() {
     appliedVersion: 'revit/tokyo-8d7f3c1e/20261110T000000Z-aaaaaaaa',
     changes: accepted ? [changes[3]] : changes,
     shapes: reshaped ? [] : shapes,
+    shapeFloorTypes: ['j ラチ外コンコース_床', 'j ラチ内コンコース_床', 'j ラチ外店舗_床', 'j ラチ内店舗_床'],
     problems: [
       'unit 北改札 restrict: no Revit parameter holds this field; change it in Revit by hand (GDB: private).',
       'unit 北改札 level_id: no Revit parameter holds this field; change it in Revit by hand (GDB: b).'

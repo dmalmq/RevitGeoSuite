@@ -467,6 +467,7 @@ export interface GisDriftInspectResponse {
   modelKey: string
   path: string
   problems: string[]
+  shapeFloorTypes: string[]
   shapes: GisShapeEditItem[]
   source: string
   stationFolder: string
@@ -561,6 +562,7 @@ export interface GisSelectElementsResponse {
 
 export interface GisShapeApplyRequest {
   path: string
+  types: GisShapeTypeChoice[]
   uniqueIds: string[]
 }
 
@@ -572,6 +574,7 @@ export interface GisShapeEditItem {
   floors: number
   kind: string
   label: string
+  typeName: string
   uniqueId: string
 }
 
@@ -582,6 +585,11 @@ export interface GisShapeShowRequest {
 
 export interface GisShapeShowResponse {
   view: string
+}
+
+export interface GisShapeTypeChoice {
+  typeName: string
+  uniqueId: string
 }
 
 export interface GisStandardApplyResponse {

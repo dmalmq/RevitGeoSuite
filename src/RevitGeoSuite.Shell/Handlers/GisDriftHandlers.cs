@@ -73,6 +73,7 @@ public sealed class GisDriftInspectHandler : IRpcHandler
             response.Changes = changes.Select(GisDriftWork.Item).ToArray();
             (IReadOnlyList<ShapeEdit> shapes, IReadOnlyList<string> shapeProblems) = ShapeEditWork.Plan(doc, file);
             response.Shapes = shapes.Select(GisDriftWork.Item).ToArray();
+            response.ShapeFloorTypes = shapes.Any(edit => edit.Kind == ShapeEditKind.Create) ? ShapeEditWork.StandardFloorTypesIn(doc).ToArray() : Array.Empty<string>();
             response.Problems = problems.Concat(shapeProblems).ToArray();
             return response;
         });
@@ -133,12 +134,15 @@ public sealed class GisShapeShowHandler : IRpcHandler
             UIDocument uiDocument = app.ActiveUIDocument ?? throw new InvalidOperationException("No active Revit document.");
             Document doc = uiDocument.Document;
             ShapeEdit edit = GisDriftWork.Find(doc, request.Path, request.UniqueId);
-            if (doc.GetElement(edit.Floor.UniqueId) is not Floor floor || ShapeEditWork.PlanViewOf(doc, floor.LevelId) is not ViewPlan view)
+            // A hand-drawn unit has no floor yet: draw it at its level's elevation.
+            Floor? floor = doc.GetElement(edit.Floor.UniqueId) as Floor;
+            ElementId levelId = floor?.LevelId ?? new ElementId(edit.Floor.LevelId);
+            if (ShapeEditWork.PlanViewOf(doc, levelId) is not ViewPlan view)
             {
                 return (object?)new GisShapeShowResponse();
             }
 
-            double z = FloorTopZ(floor) + 0.15;
+            double z = (floor != null ? FloorTopZ(floor) : (doc.GetElement(levelId) as Level)?.ProjectElevation ?? 0) + 0.15;
             List<OverlayLine> lines = edit.Absorbed.Select(floor => floor.Outline).Prepend(edit.Floor.Outline).SelectMany(outline => Lines(outline, z, new Color(128, 128, 128)))
                 .Concat(edit.NewFloors.Select(piece => piece.Outline).Prepend(edit.Outline).SelectMany(outline => Lines(outline, z, new Color(234, 88, 12))))
                 .ToList();
@@ -148,7 +152,11 @@ public sealed class GisShapeShowHandler : IRpcHandler
                 uiDocument.ActiveView = view;
             }
 
-            uiDocument.ShowElements(floor.Id);
+            if (floor != null)
+            {
+                uiDocument.ShowElements(floor.Id);
+            }
+
             uiDocument.RefreshActiveView();
             return new GisShapeShowResponse { View = view.Name };
         });
@@ -213,7 +221,8 @@ public sealed class GisShapeApplyHandler : IRpcHandler
 
                 try
                 {
-                    IReadOnlyList<string> notes = ShapeEditWork.Apply(doc, edit);
+                    string? typeName = request.Types.FirstOrDefault(choice => choice.UniqueId == uniqueId)?.TypeName;
+                    IReadOnlyList<string> notes = ShapeEditWork.Apply(doc, edit, string.IsNullOrEmpty(typeName) ? null : typeName);
                     log.Add(edit.Label());
                     log.AddRange(notes.Select(note => "  " + note));
                 }
@@ -249,9 +258,16 @@ internal static class GisDriftWork
         {
             ShapeEditKind.Split => "split",
             ShapeEditKind.Merge => "merge",
+            ShapeEditKind.Create => "create",
             _ => "reshape",
         },
-        Floors = edit.Kind == ShapeEditKind.Merge ? edit.Absorbed.Count + 1 : edit.NewFloors.Count + 1,
+        Floors = edit.Kind switch
+        {
+            ShapeEditKind.Merge => edit.Absorbed.Count + 1,
+            ShapeEditKind.Create => 1,
+            _ => edit.NewFloors.Count + 1,
+        },
+        TypeName = edit.Kind == ShapeEditKind.Create ? edit.NewFloors[0].TypeName ?? string.Empty : string.Empty,
         ElementId = edit.Floor.ElementId,
         Feature = edit.Shape.Label.Length > 0 ? edit.Shape.Label : edit.Floor.UniqueId,
         Label = edit.Label(),

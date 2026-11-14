@@ -51,6 +51,7 @@ public enum ShapeEditKind
     Reshape,
     Split,
     Merge,
+    Create,
 }
 
 /// <summary>
@@ -112,6 +113,7 @@ public sealed class ShapeEdit
 
     public GisDriftShape Shape { get; }
 
+    /// <summary>The floor the edit changes. For a create, a floor not made yet: its key is <see cref="GisShapeEdits.HandDrawnKey"/>, its element id 0, and its level the one to draw on.</summary>
     public ShapeFloor Floor { get; }
 
     /// <summary>The GDB's outline in model feet: the floor's exported outline after the edit.</summary>
@@ -129,12 +131,16 @@ public sealed class ShapeEdit
     /// <summary>The floor's new sketch in model feet: its sketch now, with what the GDB added and without what it took away.</summary>
     public IReadOnlyList<Polygon2D> Sketch { get; }
 
+    private string DrawnName() =>
+        NewFloors.Count > 0 && NewFloors[0].Values.TryGetValue("name", out string? name) ? name : Shape.Label;
+
     public string Label()
     {
         string name = Shape.Label.Length > 0 ? " (" + Shape.Label + ")" : string.Empty;
         return Kind switch
         {
             ShapeEditKind.Split => string.Format(CultureInfo.InvariantCulture, "Split floor {0}{1} into {2} floors by the GDB", Floor.ElementId, name, NewFloors.Count + 1),
+            ShapeEditKind.Create => "Create a floor for the hand-drawn unit" + (DrawnName().Length > 0 ? " " + DrawnName() : string.Empty) + " from the GDB",
             ShapeEditKind.Merge => string.Format(
                 CultureInfo.InvariantCulture,
                 "Merge floor(s) {0} into floor {1}{2} by the GDB",
@@ -211,12 +217,14 @@ public static class GisShapeEdits
     /// <param name="modelToProject">The export's transform from model feet to the project CRS in metres.</param>
     /// <param name="modelEpsg">The model's project CRS, or 0 when unknown.</param>
     /// <param name="standard">The GIS standard, to turn a new floor's GDB category into a parameter value and a floor type; null takes the kept floor's.</param>
+    /// <param name="levels">Revit level ids by their <c>level_id</c> value, for hand-drawn units; null when there are none. Floors on those levels belong in <paramref name="floors"/>, so a unit drawn before counts as done.</param>
     public static ShapePlan Plan(
         GisDriftFile file,
         IReadOnlyDictionary<string, ShapeFloor> floors,
         AffineTransform2D modelToProject,
         int modelEpsg,
-        GisToolStandard? standard = null)
+        GisToolStandard? standard = null,
+        IReadOnlyDictionary<string, long>? levels = null)
     {
         if (file is null)
         {
@@ -254,7 +262,12 @@ public static class GisShapeEdits
             settled += PlanMerge(group.ToList(), floors, projectToModel, edits, problems);
         }
 
-        foreach (GisDriftShape shape in file.Shapes.Where(shape => shape.Edit != GisDrift.Split && shape.Edit != GisDrift.Merged))
+        foreach (GisDriftShape shape in file.Shapes.Where(shape => shape.Edit == GisDrift.HandDrawn))
+        {
+            settled += PlanCreate(shape, HandDrawnKey(shape), floors, levels, projectToModel, standard, edits, problems);
+        }
+
+        foreach (GisDriftShape shape in file.Shapes.Where(shape => shape.Edit != GisDrift.Split && shape.Edit != GisDrift.Merged && shape.Edit != GisDrift.HandDrawn))
         {
             if (shape.Edit != GisDrift.Reshaped)
             {
@@ -660,6 +673,67 @@ public static class GisShapeEdits
 
         edits.Add(new ShapeEdit(ShapeEditKind.Merge, keeper, floor, outline, Array.Empty<NewFloor>(), redraw, absorbed, sketch: sketch));
         return settled;
+    }
+
+    /// <summary>
+    /// What the page and the apply call a hand-drawn unit by, since it has no element yet: its level
+    /// and the middle of its outline to 10 cm. It comes from the unit itself, not its place in the
+    /// file, so a file Kanizu wrote again between the read and the apply cannot hand the user's
+    /// choice of type to another unit. Two units with one key are both listed, not applied.
+    /// </summary>
+    public static string HandDrawnKey(GisDriftShape shape)
+    {
+        List<(double X, double Y)> points = shape.Outline.SelectMany(polygon => polygon.Take(1)).SelectMany(ring => ring).ToList();
+        double x = points.Count > 0 ? points.Average(point => point.X) : 0;
+        double y = points.Count > 0 ? points.Average(point => point.Y) : 0;
+        return string.Format(CultureInfo.InvariantCulture, "handDrawn:{0}@{1:F1},{2:F1}", shape.LevelId, x, y);
+    }
+
+    /// <summary>
+    /// Plans a floor for a unit drawn by hand in the GDB, on the Revit level its <c>level_id</c>
+    /// names. A floor on that level that already has the outline means it was made before. The
+    /// type comes from the unit's GDB category and restriction when Kanizu wrote them; otherwise
+    /// the page asks for one. Returns 1 when the model already has it.
+    /// </summary>
+    private static int PlanCreate(
+        GisDriftShape shape,
+        string key,
+        IReadOnlyDictionary<string, ShapeFloor> floors,
+        IReadOnlyDictionary<string, long>? levels,
+        AffineTransform2D projectToModel,
+        GisToolStandard? standard,
+        List<ShapeEdit> edits,
+        List<string> problems)
+    {
+        if (shape.LevelId.Length == 0 || levels == null || !levels.TryGetValue(shape.LevelId, out long levelId))
+        {
+            problems.Add($"{shape.Describe()}: no level of this model has level_id {(shape.LevelId.Length > 0 ? shape.LevelId : "(none)")}, so there is no level to draw it on. Draw it in Revit by hand.");
+            return 0;
+        }
+
+        List<Polygon2D> outline = ToModel(shape.Outline, projectToModel);
+        if (outline.Count != 1)
+        {
+            problems.Add(outline.Count == 0
+                ? $"{shape.Describe()}: the GDB outline has no area."
+                : $"{shape.Describe()}: the GDB outline has {outline.Count} separate parts, which one floor cannot hold. Draw them in Revit by hand.");
+            return 0;
+        }
+
+        if (floors.Values.Any(floor => floor.LevelId == levelId && SameOutline(floor.Outline, outline)))
+        {
+            return 1;
+        }
+
+        if (!CanSketch(outline))
+        {
+            problems.Add($"{shape.Describe()}: {CrossesItself}");
+            return 0;
+        }
+
+        NewFloor floor = NewFloorOf(shape, outline, standard, problems);
+        edits.Add(new ShapeEdit(ShapeEditKind.Create, shape, new ShapeFloor(key, 0, Array.Empty<Polygon2D>(), levelId: levelId), outline, new[] { floor }, redrawFloor: false));
+        return 0;
     }
 
     /// <summary>

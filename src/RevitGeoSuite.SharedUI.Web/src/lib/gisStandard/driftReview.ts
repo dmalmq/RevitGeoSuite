@@ -1,4 +1,4 @@
-import type { GisDriftInspectResponse } from '$lib/bridge/contracts.generated'
+import type { GisShapeEditItem, GisDriftInspectResponse } from '$lib/bridge/contracts.generated'
 
 type Drift = Pick<GisDriftInspectResponse, 'modelKey' | 'fileModel' | 'source' | 'changes'>
 
@@ -30,6 +30,17 @@ export function needsConfirm(drift: Drift): boolean {
 /** Shape edits start ticked for the open model's own file and unticked on a mismatch, by floor UniqueId. */
 export function shapesInitiallyUnticked(drift: Drift & Pick<GisDriftInspectResponse, 'shapes'>): Set<string> {
   return modelMismatch(drift) !== null ? new Set(drift.shapes.map((shape) => shape.uniqueId)) : new Set()
+}
+
+/**
+ * The floor type each hand-drawn unit starts with: the standard type its GDB category and
+ * restriction name, when Kanizu wrote them. A unit without one has no entry, so the page asks.
+ */
+export function initialShapeTypes(shapes: Pick<GisShapeEditItem, 'uniqueId' | 'kind' | 'typeName'>[], floorTypes: string[]): Record<string, string> {
+  // A type the model does not have yet would show as no choice while Apply is enabled: ask instead.
+  return Object.fromEntries(
+    shapes.filter((shape) => shape.kind === 'create' && shape.typeName && floorTypes.includes(shape.typeName)).map((shape) => [shape.uniqueId, shape.typeName])
+  )
 }
 
 type Rings = number[][][]

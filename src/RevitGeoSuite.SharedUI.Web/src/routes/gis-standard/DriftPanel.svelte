@@ -10,7 +10,7 @@
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Dialog, Table } from '$lib/kit'
   import { format } from '$lib/shell'
-  import { driftSource, initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked } from '$lib/gisStandard/driftReview'
+  import { driftSource, initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked, initialShapeTypes } from '$lib/gisStandard/driftReview'
   import AppliedBanner from './AppliedBanner.svelte'
   import ProblemList from './ProblemList.svelte'
   import ShapeEditList from './ShapeEditList.svelte'
@@ -26,6 +26,9 @@
 
   const ticked = $derived((drift?.changes ?? []).filter((_, index) => !unticked.has(index)))
   const tickedShapes = $derived((drift?.shapes ?? []).filter((shape) => !shapesUnticked.has(shape.uniqueId)))
+  // A hand-drawn unit's floor type: the one its GDB category names, until the user picks another.
+  let shapeTypes = $state<Record<string, string>>({})
+  const untypedShapes = $derived(tickedShapes.filter((shape) => shape.kind === 'create' && !shapeTypes[shape.uniqueId]).length)
   const mismatch = $derived(drift ? modelMismatch(drift) : null)
   const otherModel = $derived(mismatch !== null)
   const needsConfirm = $derived(!!drift && confirmFirst(drift))
@@ -42,6 +45,7 @@
       drift = response
       unticked = initiallyUnticked(response)
       shapesUnticked = shapesInitiallyUnticked(response)
+      shapeTypes = initialShapeTypes(response.shapes, response.shapeFloorTypes)
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
     } finally {
@@ -68,7 +72,10 @@
     error = null
     const path = drift.path
     try {
-      applied = { ...(await request('gisDrift.applyShapes', { path, uniqueIds: tickedShapes.map((shape) => shape.uniqueId) })), shapes: true }
+      const types = tickedShapes
+        .filter((shape) => shape.kind === 'create')
+        .map((shape) => ({ uniqueId: shape.uniqueId, typeName: shapeTypes[shape.uniqueId] ?? '' }))
+      applied = { ...(await request('gisDrift.applyShapes', { path, uniqueIds: tickedShapes.map((shape) => shape.uniqueId), types })), shapes: true }
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
     } finally {
@@ -202,7 +209,15 @@
       {#if drift.shapes.length > 0}
         <!-- A new read starts a new list, so a preview from the old one is cleared and no button says "Hide". -->
         {#key drift}
-          <ShapeEditList shapes={drift.shapes} path={drift.path} bind:unticked={shapesUnticked} disabled={working !== null} onerror={(message) => (error = message)} />
+          <ShapeEditList
+            shapes={drift.shapes}
+            path={drift.path}
+            floorTypes={drift.shapeFloorTypes}
+            bind:unticked={shapesUnticked}
+            bind:types={shapeTypes}
+            disabled={working !== null}
+            onerror={(message) => (error = message)}
+          />
         {/key}
       {/if}
       <ProblemList problems={drift.problems} />
@@ -213,7 +228,7 @@
       </Button>
       <Button icon="folder-open" onclick={() => inspect({ path: '', pick: true })} disabled={working !== null}>{$t('GisStandard.Drift.Pick', 'Pick a drift file…')}</Button>
       {#if drift && drift.shapes.length > 0}
-        <Button variant="primary" icon="square-pen" onclick={startShapes} disabled={working !== null || tickedShapes.length === 0} busy={working === 'shapes'}>
+        <Button variant="primary" icon="square-pen" onclick={startShapes} disabled={working !== null || tickedShapes.length === 0 || untypedShapes > 0} busy={working === 'shapes'} title={untypedShapes > 0 ? $t('GisStandard.Shapes.NeedsType', 'Pick a floor type for each ticked hand-drawn unit first.') : undefined}>
           {format($t('GisStandard.Shapes.Apply', 'Apply {0} shape edit(s)'), tickedShapes.length)}
         </Button>
       {/if}

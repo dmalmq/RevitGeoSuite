@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { initiallyUnticked, modelMismatch, driftSource, needsConfirm, outlineDrawing, shapesInitiallyUnticked } from '../driftReview'
+import { driftSource, initialShapeTypes, initiallyUnticked, modelMismatch, needsConfirm, outlineDrawing, shapesInitiallyUnticked } from '../driftReview'
 
 const change = (conflict: boolean) => ({
   uniqueId: 'u', layer: 'unit', field: 'name', feature: 'f', parameter: 'name', binding: 'instance',
@@ -37,11 +37,24 @@ describe('drift review ticks', () => {
 })
 
 describe('shape edits', () => {
-  const shape = { uniqueId: 'f-1', kind: 'reshape', floors: 1, elementId: 1, feature: 'f', label: 'l', before: [], after: [] }
+  const shape = { uniqueId: 'f-1', kind: 'reshape', floors: 1, typeName: '', elementId: 1, feature: 'f', label: 'l', before: [], after: [] }
 
   it('start ticked for the model own file and unticked for another model', () => {
     expect([...shapesInitiallyUnticked({ modelKey: 'm1', fileModel: 'm1', source: 'station', changes: [], shapes: [shape] })]).toEqual([])
     expect([...shapesInitiallyUnticked({ modelKey: 'm1', fileModel: 'm2', source: 'station', changes: [], shapes: [shape] })]).toEqual(['f-1'])
+  })
+
+  it('starts a hand-drawn unit on the type its GDB category names, and asks when there is none', () => {
+    const types = initialShapeTypes([
+      { uniqueId: 'handDrawn:0', kind: 'create', typeName: 'j ラチ外店舗_床' },
+      { uniqueId: 'handDrawn:1', kind: 'create', typeName: '' },
+      { uniqueId: 'f-1', kind: 'reshape', typeName: '' }
+    ], ['j ラチ外店舗_床'])
+    expect(types).toEqual({ 'handDrawn:0': 'j ラチ外店舗_床' })
+  })
+
+  it('asks for a type the model does not have yet', () => {
+    expect(initialShapeTypes([{ uniqueId: 'handDrawn:0', kind: 'create', typeName: 'j ラチ外店舗_床' }], ['j ラチ内店舗_床'])).toEqual({})
   })
 
   it('draws both outlines in one square with north up', () => {
