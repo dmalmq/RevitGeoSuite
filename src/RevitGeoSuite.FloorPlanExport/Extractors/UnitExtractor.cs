@@ -48,6 +48,10 @@ public sealed class UnitExtractor
     private IReadOnlyList<ElevatorStop>? _elevatorStops;
     private IReadOnlyDictionary<long, IReadOnlyList<ElevatorCar>>? _elevatorShafts;
     private const double FeetToMeters = 0.3048d;
+
+    // Elevator warnings already given in this export: the views each have their own warning list.
+    private readonly HashSet<string> _reportedLevelsServed = new(StringComparer.Ordinal);
+    private readonly HashSet<long> _reportedLoneShafts = new();
     private readonly FloorCategoryResolver _floorCategoryResolver;
     private readonly RoomCategoryResolver _roomCategoryResolver;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
@@ -990,25 +994,31 @@ public sealed class UnitExtractor
             shaft = ToElevatorCar(elevator) is { } car ? new[] { car } : Array.Empty<ElevatorCar>();
         }
 
-        string? levelsServed = ReadStringParameter(elevator, GisSharedParameters.GisLevelsServed) ??
-            shaft.OrderBy(car => car.Bottom)
-                .Select(car => _document.GetElement(new ElementId(car.Id)) as FamilyInstance)
-                .Select(other => other == null ? null : ReadStringParameter(other, GisSharedParameters.GisLevelsServed))
-                .FirstOrDefault(value => value != null);
+        List<FamilyInstance> objects = new() { elevator };
+        objects.AddRange(shaft
+            .Where(car => car.Id != elevator.Id.Value)
+            .OrderBy(car => car.Bottom)
+            .Select(car => _document.GetElement(new ElementId(car.Id)) as FamilyInstance)
+            .Where(other => other != null)!);
+
+        // An instance value on any object of the shaft wins over a type value: one type often serves every shaft.
+        string? levelsServed =
+            objects.Select(other => Trimmed(other.LookupParameter(GisSharedParameters.GisLevelsServed)?.AsString())).FirstOrDefault(value => value != null) ??
+            objects.Select(other => Trimmed(other.Symbol?.LookupParameter(GisSharedParameters.GisLevelsServed)?.AsString())).FirstOrDefault(value => value != null);
         List<string> unknown = new();
         IReadOnlyList<string> stops = VerticalCirculation.ResolveLevelsServed(levels, shaft, levelsServed, unknown);
         long shaftId = shaft.Count == 0 ? elevator.Id.Value : shaft.Min(car => car.Id);
         string label = $"Elevator {shaftId} ({GetFamilyName(elevator)})";
-        if (unknown.Count > 0)
+        if (unknown.Count > 0 && _reportedLevelsServed.Add(levelsServed!))
         {
-            AddOnce(warnings, $"{label}: gis_levels_served names {string.Join(", ", unknown)}, which match no level name or short_name in this export.");
+            warnings.Add($"gis_levels_served '{levelsServed}' (first on {label}) names {string.Join(", ", unknown)}, which match no level name or short_name in this export.");
         }
 
         if (stops.Count == 0)
         {
-            if (levelsServed == null)
+            if (levelsServed == null && _reportedLoneShafts.Add(shaftId))
             {
-                AddOnce(warnings, $"{label} has no elevator object in the same plan spot on another exported level, so levels_served is empty. Set gis_levels_served on its type.");
+                warnings.Add($"{label} has no elevator object in the same plan spot on another exported level, so levels_served is empty. Set gis_levels_served on it.");
             }
 
             return null;
@@ -3281,6 +3291,11 @@ public sealed class UnitExtractor
     public static bool HasMappedGisKind(FamilyInstance familyInstance)
     {
         return VerticalCirculation.TryMapGisKind(GetGisKind(familyInstance), out _);
+    }
+
+    private static string? Trimmed(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
     }
 
     private static string? ReadStringParameter(FamilyInstance familyInstance, string parameterName)

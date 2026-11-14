@@ -25,7 +25,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | `gis_restriction` | type | floors, generic models, specialty equipment; empty means by location |
 | `gis_kind` | type | generic models, specialty equipment (escalator, moving_walkway, elevator, ticket_gate) |
 | `gis_direction` | instance | stairs, generic models, specialty equipment (up, down, both) |
-| `gis_levels_served` | type | generic models, specialty equipment, mechanical equipment; the levels an elevator stops at, by level name or `short_name`, separated by commas; empty means the levels of the elevator objects drawn in the same plan spot |
+| `gis_levels_served` | instance | generic models, specialty equipment, mechanical equipment; the levels an elevator stops at, by level name or `short_name`, separated by commas, set on any one floor's object of the shaft; empty means the levels of the elevator objects drawn in the same plan spot |
 | `gis_door` | type | doors; the opening's `door` field |
 | `gis_access_con` | type | doors; the opening's `access_con` field |
 | `gis_key` | instance, not user editable | floors, rooms, stairs, generic models, specialty equipment, columns; the export writes the element's first `revit_key` (part 0) here |

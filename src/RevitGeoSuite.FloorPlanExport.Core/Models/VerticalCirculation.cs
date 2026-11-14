@@ -134,7 +134,7 @@ public static class VerticalCirculation
 
     /// <summary>
     /// The export ids of the levels a shaft's elevator stops at, lowest first. With <paramref name="levelsServed"/>
-    /// (the type's <c>gis_levels_served</c>: level names or short names) those levels, and names that
+    /// (<c>gis_levels_served</c> on an object of the shaft: level names or short names) those levels, and names that
     /// match no level go to <paramref name="unknownNames"/>. Without it, the levels each car in the shaft
     /// stands on or spans, and nothing when that is fewer than two.
     /// </summary>

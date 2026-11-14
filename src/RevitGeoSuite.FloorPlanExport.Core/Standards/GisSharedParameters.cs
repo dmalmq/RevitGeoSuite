@@ -183,9 +183,9 @@ public static class GisSharedParameters
             GisLevelsServed,
             new Guid("26b16279-ebcb-4baa-9a7e-b07addf4e5b4"),
             GisParameterDataType.Text,
-            GisParameterBinding.Type,
+            GisParameterBinding.Instance,
             new[] { GenericModel, SpecialtyEquipment, MechanicalEquipment },
-            "Levels an elevator of this type stops at, by level name or short_name, separated by commas. Empty means the levels of the elevator objects in the same plan spot."),
+            "Levels this elevator stops at, by level name or short_name, separated by commas. Set it on any one floor's object of the shaft. Empty means the levels of the elevator objects in the same plan spot."),
         new GisParameterDefinition(
             GisDoor,
             new Guid("e413bbb1-dab0-4acd-9b16-eeac608dca9b"),

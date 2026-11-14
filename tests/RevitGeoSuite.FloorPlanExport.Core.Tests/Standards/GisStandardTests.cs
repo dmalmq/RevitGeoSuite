@@ -109,9 +109,11 @@ public sealed class GisStandardTests
     }
 
     [Fact]
-    public void LevelsServed_IsBoundToMechanicalEquipment_WhereLumineDrawsItsElevators()
+    public void LevelsServed_IsAnInstanceParameter_BoundToMechanicalEquipment_WhereLumineDrawsItsElevators()
     {
+        // LUMINE's 63 elevator objects share one type, so a type value could not differ per shaft.
         Assert.True(GisSharedParameters.TryGet(GisSharedParameters.GisLevelsServed, out GisParameterDefinition definition));
+        Assert.Equal(GisParameterBinding.Instance, definition.Binding);
         Assert.Equal(new[] { "OST_GenericModel", "OST_SpecialityEquipment", "OST_MechanicalEquipment" }, definition.Categories);
     }
 

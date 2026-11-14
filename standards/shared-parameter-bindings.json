@@ -139,7 +139,7 @@
       "name": "gis_levels_served",
       "guid": "26b16279-ebcb-4baa-9a7e-b07addf4e5b4",
       "data_type": "text",
-      "binding": "type",
+      "binding": "instance",
       "categories": [
         "OST_GenericModel",
         "OST_SpecialityEquipment",
