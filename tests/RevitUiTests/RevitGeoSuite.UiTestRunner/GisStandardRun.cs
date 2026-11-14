@@ -851,20 +851,22 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     }
 
     /// <summary>
-    /// Waits for this Revit's WebView2 to write its DevTools port. The first page after a cold start
-    /// (a PC idle overnight, a WebView2 update) can take minutes, so the wait is 5 minutes, with the
-    /// ribbon button clicked once more halfway in case the first click went nowhere.
+    /// Waits for this Revit's WebView2 to write its DevTools port, for up to 5 minutes. A posted ribbon
+    /// click can be lost: on the build PC the port once came 1 s after a second click at 151 s. The button
+    /// only shows the one shell window (GetOrCreateWindow), so clicking again is safe; the runner clicks
+    /// again 30 s after the first click and every 60 s after that, and notes each click so a lost one shows.
     /// </summary>
     private async Task<int> WaitForPort(StepResult step, DateTime revitStartedUtc)
     {
         DateTime start = DateTime.UtcNow;
-        bool clickedAgain = false;
+        TimeSpan nextClick = TimeSpan.FromSeconds(30);
+        int clicks = 1;
         while (true)
         {
             try
             {
                 int port = DevToolsPort.Read(options.DevToolsFile, revitStartedUtc);
-                step.Note($"The page's DevTools port was ready {(DateTime.UtcNow - start).TotalSeconds:0} s after the ribbon click.");
+                step.Note($"The page's DevTools port was ready {(DateTime.UtcNow - start).TotalSeconds:0} s after the first ribbon click, after {clicks} click(s).");
                 return port;
             }
             catch (InvalidOperationException ex)
@@ -875,10 +877,11 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
                     throw new InvalidOperationException($"{ex.Message} Waited {waited.TotalSeconds:0} s. Revit dialogs: {host.Call("windows")["windows"]?.ToJsonString()}.");
                 }
 
-                if (!clickedAgain && waited > TimeSpan.FromMinutes(2.5))
+                if (waited > nextClick)
                 {
-                    clickedAgain = true;
-                    step.Note($"No DevTools port {waited.TotalSeconds:0} s after the ribbon click; clicking it again. Revit dialogs: {host.Call("windows")["windows"]?.ToJsonString()}.");
+                    nextClick += TimeSpan.FromSeconds(60);
+                    clicks++;
+                    step.Note($"No DevTools port {waited.TotalSeconds:0} s after the first ribbon click; clicking it again (click {clicks}). Revit dialogs: {host.Call("windows")["windows"]?.ToJsonString()}.");
                     host.Call("ribbon", new { tab = Tab, panel = Panel, button = "GisStandard" });
                 }
 

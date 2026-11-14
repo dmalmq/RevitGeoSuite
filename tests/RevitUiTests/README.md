@@ -22,7 +22,7 @@ The scenarios are listed here. `--scenario` picks one, and `--script` is the sam
 | `RevitGeoSuite.TestHost.Loader` | The DLL that the Revit manifest names. It holds no test logic. In a Revit started for a run, it loads the test host next to it. Otherwise it loads nothing. |
 | `RevitGeoSuite.TestHost` | A test-only Revit add-in, installed on the build PC only. It listens on the named pipe `RevitGeoSuite.TestHost`, which only the signed-in user can open. No network port is opened. |
 | `RevitGeoSuite.UiTestRunner` | A .NET 8 console app. It drives the web page with Playwright over WebView2's DevTools protocol, and drives Revit through the test host. |
-| `RevitGeoSuite.UiTestRunner.Tests` | Unit tests for the runner's own logic. They run in CI on Linux and Windows. |
+| `RevitGeoSuite.UiTestRunner.Tests` | Unit tests for the runner's own logic. They run in CI on Linux and Windows. `ShellPageRpcTests` also sends bridge requests through `ShellPage` to a stand-in page that copies each message through JSON as WebView2 does; it runs only where a Chromium is found (`REVITGEOSUITE_TEST_CHROMIUM`, or `/opt/pw-browsers/chromium` in a cloud session, with `dotnet test -p:PlaywrightPlatform=linux`). |
 
 The test host does nothing at all unless Revit was started with `REVITGEOSUITE_UITEST=1`. `Run-UiTests.ps1 -StartRevit` sets that variable for the one Revit it starts. In any other Revit session on the build PC, the add-in still loads but opens no pipe, adds no event hooks, and opens no DevTools port. When a Revit was started for tests, the test host does these things:
 
