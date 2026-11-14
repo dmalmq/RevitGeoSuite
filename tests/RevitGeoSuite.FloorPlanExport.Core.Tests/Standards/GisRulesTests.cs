@@ -240,6 +240,47 @@ public sealed class GisRulesTests : IDisposable
         Assert.False(File.Exists(LockPath));
     }
 
+    [Theory]
+    [InlineData(-5)]
+    [InlineData(5)]
+    public void Apply_JudgesTheLocksAgeOnTheSharesClockWhateverThisPcsClockSays(int localClockSkewHours)
+    {
+        Directory.CreateDirectory(Station);
+        GisRulesStoreOptions options = FastOptions();
+        options.UtcNow = () => DateTime.UtcNow.AddHours(localClockSkewHours);
+        GisRulesStore store = NewStore(options);
+        File.WriteAllText(LockPath, "{\"machine\":\"PC-SHINJUKU-07\",\"user\":\"hanako\",\"utc\":\"2026-11-14T09:00:00Z\"}");
+        File.SetLastWriteTimeUtc(LockPath, DateTime.UtcNow.AddSeconds(-10));
+
+        Assert.Throws<IOException>(() => store.Apply(new[] { GisRulesOperation.UpsertRule(Floor("Fresh", "walkway")) }));
+        Assert.True(File.Exists(LockPath));
+
+        File.SetLastWriteTimeUtc(LockPath, DateTime.UtcNow.AddSeconds(-31));
+        store.Apply(new[] { GisRulesOperation.UpsertRule(Floor("Stale", "walkway")) });
+
+        Assert.Equal("walkway", GisRulesFile.TryLoad(RulesPath)!.ToMappingRules().FloorCategoryOverrides["Stale"]);
+        Assert.False(File.Exists(LockPath));
+        Assert.Empty(Directory.GetFiles(Station, ".gis-rules.*.tmp"));
+    }
+
+    [Fact]
+    public void Apply_KeepsATempFileYoungerThanAnHourOnTheSharesClock()
+    {
+        GisRulesStoreOptions options = FastOptions();
+        options.UtcNow = () => DateTime.UtcNow.AddHours(5);
+        GisRulesStore store = NewStore(options);
+        string young = Path.Combine(Station, ".gis-rules.young000.tmp");
+        string old = Path.Combine(Station, ".gis-rules.old00000.tmp");
+        File.WriteAllText(young, string.Empty);
+        File.WriteAllText(old, string.Empty);
+        File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddHours(-2));
+
+        store.Apply(new[] { GisRulesOperation.UpsertRule(Floor("A", "walkway")) });
+
+        Assert.True(File.Exists(young));
+        Assert.False(File.Exists(old));
+    }
+
     [Fact]
     public void Apply_WritesNothingWhenTheFileAlreadyHoldsTheOperations()
     {

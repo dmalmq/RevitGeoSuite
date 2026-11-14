@@ -30,11 +30,14 @@ public sealed class GisRulesStoreOptions
 
     public Func<GisRulesChanged> Stamp { get; set; } = DefaultStamp;
 
-    /// <summary>A temporary file older than this is left over from a crashed write and is removed.</summary>
+    /// <summary>A temporary file older than this, measured against the share's clock, is left over from a crashed write and is removed.</summary>
     public TimeSpan StaleTempAge { get; set; } = TimeSpan.FromHours(1);
 
-    /// <summary>A lock file older than this is left over from a crashed write and may be taken over.</summary>
+    /// <summary>A lock file older than this, measured against the share's clock, is left over from a crashed write and may be taken over.</summary>
     public TimeSpan StaleLockAge { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>This PC's clock. Only written into the lock for display; ages are measured on the share's clock.</summary>
+    public Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
 
     private static void SwapIn(string temp, string target)
     {
@@ -152,7 +155,7 @@ public sealed class GisRulesStore
             return false;
         }
 
-        string probe = System.IO.Path.Combine(directory, TempPrefix + Guid.NewGuid().ToString("N").Substring(0, 8) + TempSuffix);
+        string probe = NewTempPath(directory);
         try
         {
             File.WriteAllText(probe, string.Empty);
@@ -175,7 +178,7 @@ public sealed class GisRulesStore
         {
             ["machine"] = Environment.MachineName,
             ["user"] = Environment.UserName,
-            ["utc"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
+            ["utc"] = _options.UtcNow().ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
             ["token"] = token,
         }.ToString(Newtonsoft.Json.Formatting.None);
 
@@ -186,7 +189,8 @@ public sealed class GisRulesStore
                 return;
             }
 
-            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(LockPath) > _options.StaleLockAge)
+            DateTime? shareNow = ShareUtcNow(System.IO.Path.GetDirectoryName(LockPath)!);
+            if (shareNow.HasValue && shareNow.Value - File.GetLastWriteTimeUtc(LockPath) > _options.StaleLockAge)
             {
                 TryDelete(LockPath);
                 if (TryCreateLock(body))
@@ -261,7 +265,7 @@ public sealed class GisRulesStore
         Directory.CreateDirectory(directory);
         RemoveStaleTemps(directory);
 
-        string temp = System.IO.Path.Combine(directory, TempPrefix + Guid.NewGuid().ToString("N").Substring(0, 8) + TempSuffix);
+        string temp = NewTempPath(directory);
         try
         {
             File.WriteAllText(temp, file.ToJson(), new UTF8Encoding(false));
@@ -284,13 +288,44 @@ public sealed class GisRulesStore
         }
     }
 
+    /// <summary>
+    /// The share's clock, read as the write time of a probe file created in <paramref name="directory"/>,
+    /// because PCs' clocks drift from the share and from each other. Null when no probe can be written.
+    /// </summary>
+    private static DateTime? ShareUtcNow(string directory)
+    {
+        string probe = NewTempPath(directory);
+        try
+        {
+            File.WriteAllText(probe, string.Empty);
+            return File.GetLastWriteTimeUtc(probe);
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            return null;
+        }
+        finally
+        {
+            TryDelete(probe);
+        }
+    }
+
+    private static string NewTempPath(string directory) =>
+        System.IO.Path.Combine(directory, TempPrefix + Guid.NewGuid().ToString("N").Substring(0, 8) + TempSuffix);
+
     private void RemoveStaleTemps(string directory)
     {
+        DateTime? shareNow = ShareUtcNow(directory);
+        if (!shareNow.HasValue)
+        {
+            return;
+        }
+
         try
         {
             foreach (string stale in Directory.EnumerateFiles(directory, TempPrefix + "*" + TempSuffix))
             {
-                if (DateTime.UtcNow - File.GetLastWriteTimeUtc(stale) > _options.StaleTempAge)
+                if (shareNow.Value - File.GetLastWriteTimeUtc(stale) > _options.StaleTempAge)
                 {
                     TryDelete(stale);
                 }
