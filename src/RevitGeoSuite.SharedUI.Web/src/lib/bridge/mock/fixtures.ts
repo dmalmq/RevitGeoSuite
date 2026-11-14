@@ -395,14 +395,24 @@ function gisDrift() {
   // A shop the GDB widened and a concourse it cut a notch out of, in model metres.
   const shapes = [
     {
-      uniqueId: 'f-shop', kind: 'reshape', elementId: 412233, feature: 'コンビニ', label: 'Reshape floor 412233 (コンビニ) to the GDB outline',
+      uniqueId: 'f-shop', kind: 'reshape', floors: 1, elementId: 412233, feature: 'コンビニ', label: 'Reshape floor 412233 (コンビニ) to the GDB outline',
       before: [[[0, 0], [8, 0], [8, 6], [0, 6], [0, 0]]],
       after: [[[0, 0], [10, 0], [10, 6], [0, 6], [0, 0]]]
     },
     {
-      uniqueId: 'f-walk', kind: 'reshape', elementId: 412240, feature: '中央通路', label: 'Reshape floor 412240 (中央通路) to the GDB outline',
+      uniqueId: 'f-walk', kind: 'reshape', floors: 1, elementId: 412240, feature: '中央通路', label: 'Reshape floor 412240 (中央通路) to the GDB outline',
       before: [[[0, 0], [30, 0], [30, 12], [0, 12], [0, 0]]],
       after: [[[0, 0], [30, 0], [30, 12], [18, 12], [18, 9], [12, 9], [12, 12], [0, 12], [0, 0]]]
+    },
+    {
+      uniqueId: 'f-store', kind: 'split', floors: 2, elementId: 412250, feature: '売店', label: 'Split floor 412250 (売店) into 2 floors by the GDB',
+      before: [[[0, 0], [12, 0], [12, 8], [0, 8], [0, 0]]],
+      after: [[[0, 0], [7, 0], [7, 8], [0, 8], [0, 0]], [[7, 0], [12, 0], [12, 8], [7, 8], [7, 0]]]
+    },
+    {
+      uniqueId: 'f-wait', kind: 'merge', floors: 2, elementId: 412260, feature: '待合室', label: 'Merge floor(s) 412261 into floor 412260 (待合室) by the GDB',
+      before: [[[0, 0], [6, 0], [6, 6], [0, 6], [0, 0]], [[6, 0], [10, 0], [10, 6], [6, 6], [6, 0]]],
+      after: [[[0, 0], [10, 0], [10, 6], [0, 6], [0, 0]]]
     }
   ]
   const station = 'D:\\Stations\\Tokyo'

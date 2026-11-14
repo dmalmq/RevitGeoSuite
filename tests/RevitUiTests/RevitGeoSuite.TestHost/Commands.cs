@@ -96,6 +96,7 @@ internal sealed class Commands
             ["root"] = root,
             ["armed"] = recorder.Armed,
             ["webViewArguments"] = Environment.GetEnvironmentVariable(TestHostApp.WebViewArgumentsVariable),
+            ["floorPlanData"] = Environment.GetEnvironmentVariable("REVITGEOSUITE_FLOORPLAN_DATA") ?? string.Empty,
             ["revit"] = api.Run(app => app.Application.VersionNumber + " " + app.Application.VersionBuild, Quick),
             ["testHost"] = HostBuild(),
             ["rgs"] = TestHostApp.RgsStatus,

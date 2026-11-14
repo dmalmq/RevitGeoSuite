@@ -300,7 +300,7 @@ internal sealed partial class GisStandardRun
     /// bridge with the first floor plan profile. This records <paramref name="station"/> as the model's
     /// station folder, which is where the Network tab looks for Kanizu's file.
     /// </summary>
-    private async Task<CesiumRun?> ExportCesium(StepResult step, string station)
+    private async Task<CesiumRun?> ExportCesium(StepResult step, string station, string? profileName = null, CesiumAttempt? attempt = null)
     {
         JsonNode? state = await Shell.RpcAsync("cesium.export.getState");
         string[] profiles = state?["floorPlanProfiles"]?.AsArray().Select(name => name!.GetValue<string>()).ToArray() ?? Array.Empty<string>();
@@ -316,6 +316,12 @@ internal sealed partial class GisStandardRun
             return null;
         }
 
+        string profile = profileName ?? profiles[0];
+        if (!step.Check(profiles.Contains(profile, StringComparer.OrdinalIgnoreCase), $"The Cesium export offers the floor plan profile '{profile}' ({string.Join(", ", profiles)})."))
+        {
+            return null;
+        }
+
         Directory.CreateDirectory(station);
         int seq = host.LastEvent();
         JsonNode? result;
@@ -324,7 +330,7 @@ internal sealed partial class GisStandardRun
             result = await Shell.JobAsync("cesium.export.run", new
             {
                 outputFolder = station,
-                floorPlanProfileName = profiles[0],
+                floorPlanProfileName = profile,
                 push = false,
                 scope = "whole",
                 lod = "coarse",
@@ -336,14 +342,24 @@ internal sealed partial class GisStandardRun
         }
         catch (PlaywrightException ex)
         {
-            step.Check(false, $"The Cesium export to {station} finishes: {ex.Message.Split('\n')[0]}");
+            string message = ex.Message.Split('\n')[0];
+            if (attempt == null)
+            {
+                step.Check(false, $"The Cesium export to {station} finishes: {message}");
+            }
+            else
+            {
+                attempt.Error = message;
+                step.Note($"The Cesium export to {station} (profile '{profile}') stopped: {message}");
+            }
+
             return null;
         }
 
         string root = result?["packageRoot"]?.GetValue<string>() ?? string.Empty;
         string[] warnings = result?["warnings"]?.AsArray().Select(item => item!.GetValue<string>()).ToArray() ?? Array.Empty<string>();
         string commits = string.Join(" / ", host.EventsAfter(seq).Where(item => item.Kind == "commit"));
-        step.Note($"Cesium export (profile '{profiles[0]}', coarse) to {root}: {result?["summary"]}. Warnings: {(warnings.Length == 0 ? "none" : string.Join(" | ", warnings))}. Transactions: {(commits.Length == 0 ? "none" : commits)}.");
+        step.Note($"Cesium export (profile '{profile}', coarse) to {root}: {result?["summary"]}. Warnings: {(warnings.Length == 0 ? "none" : string.Join(" | ", warnings))}. Transactions: {(commits.Length == 0 ? "none" : commits)}.");
         if (!step.Check(Directory.Exists(root), $"The Cesium package exists ({root})."))
         {
             return null;
@@ -351,7 +367,7 @@ internal sealed partial class GisStandardRun
 
         string tiles = result?["tilesetPath"]?.GetValue<string>() is { Length: > 0 } tileset ? Path.GetDirectoryName(tileset)! : root;
         int tileFiles = Directory.Exists(tiles) ? Directory.GetFiles(tiles, "*", SearchOption.AllDirectories).Count(file => file.EndsWith(".b3dm", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)) : 0;
-        return new CesiumRun(root, tileFiles);
+        return new CesiumRun(root, tileFiles, warnings, profile);
     }
 
     private const string TestProfileName = "UI test";
@@ -362,7 +378,7 @@ internal sealed partial class GisStandardRun
     /// page's own defaults, the GIS_ plans, EPSG:6677 and an output folder inside the run folder. It goes
     /// to the roaming profiles.json, which Run-UiTests.ps1 puts back as it was when the run ends.
     /// </summary>
-    private async Task SaveTestProfile(StepResult step)
+    private async Task SaveTestProfile(StepResult step, string name = TestProfileName, string scope = "project", int epsg = 6677)
     {
         await Shell.GoToAsync("/export/geopackage");
         JsonNode initial = await Shell.RpcAsync("floorplan.getInitialState") ?? throw new InvalidOperationException("floorplan.getInitialState returned nothing.");
@@ -380,9 +396,10 @@ internal sealed partial class GisStandardRun
         string folder = Path.Combine(options.OutputFolder, "profile-export");
         Directory.CreateDirectory(folder);
         settings["outputDirectory"] = folder;
-        settings["targetEpsg"] = 6677;
-        await Shell.RpcAsync("floorplan.saveProfile", new { scope = "project", name = TestProfileName, settings });
-        step.Note($"This PC had no floor plan export profile (the Cesium export's first-run setup never ran), so the run saved project profile '{TestProfileName}': {settings["selectedViewIds"]!.AsArray().Count} view(s), EPSG:6677, output {folder}. Run-UiTests.ps1 restores profiles.json when the run ends.");
+        settings["targetEpsg"] = epsg;
+        await Shell.RpcAsync("floorplan.saveProfile", new { scope, name, settings });
+        string why = name == TestProfileName ? "This PC had no floor plan export profile (the Cesium export's first-run setup never ran), so the run saved" : "The run saved";
+        step.Note($"{why} {scope} profile '{name}': {settings["selectedViewIds"]!.AsArray().Count} view(s), EPSG:{epsg}, output {folder}. Run-UiTests.ps1 restores profiles.json when the run ends.");
         await Shell.GoToAsync("/gis-standard");
     }
 
@@ -432,4 +449,10 @@ internal sealed partial class GisStandardRun
 
 internal sealed record NetworkCase(string Path, JsonObject Written, NetworkCounts Expected, string Lower, string Upper, int Epsg, string GisBefore, CesiumRun CesiumBefore);
 
-internal sealed record CesiumRun(string PackageRoot, int TileFiles);
+internal sealed record CesiumRun(string PackageRoot, int TileFiles, string[] Warnings, string Profile);
+
+/// <summary>Lets a step that expects the Cesium export to stop read why it stopped, instead of failing.</summary>
+internal sealed class CesiumAttempt
+{
+    public string? Error { get; set; }
+}
