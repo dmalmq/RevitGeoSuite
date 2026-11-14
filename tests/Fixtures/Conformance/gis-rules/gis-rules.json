@@ -41,7 +41,6 @@
       "unitAttributeSource": "hybrid",
       "roomCategoryParameter": "Name",
       "includeLinkedModels": false,
-      "selectedLinkInstanceIds": [],
       "unitCategories": [
         "walkway",
         "retail"

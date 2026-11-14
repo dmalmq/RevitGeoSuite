@@ -11,7 +11,8 @@ namespace RevitGeoSuite.FloorPlanExport.UI;
 
 /// <summary>
 /// Maps between the export dialog's settings and the station's <see cref="GisRulesProfile"/>,
-/// which holds only the settings that shape the output. What stays per PC (output folder,
+/// which holds only the settings that shape the output. The selected link instances are the host
+/// model's, so they go to its gis-model.json instead. What stays per PC (output folder,
 /// language, diagnostics and QGIS side outputs, post-export actions, debug views, packaging and
 /// output format) is neither written to the station nor taken from it.
 /// </summary>
@@ -42,7 +43,6 @@ internal static class GisRulesProfileMapper
             UnitAttributeSource = attributeSource,
             RoomCategoryParameter = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim(),
             IncludeLinkedModels = settings.LinkExportOptions?.IncludeLinkedModels ?? false,
-            SelectedLinkInstanceIds = (settings.LinkExportOptions?.SelectedLinkInstanceIds ?? new List<long>()).Distinct().OrderBy(id => id).ToList(),
             UnitCategories = (settings.UnitCategories ?? new List<string>())
                 .Where(category => !string.IsNullOrWhiteSpace(category))
                 .Select(category => category.Trim())
@@ -105,11 +105,7 @@ internal static class GisRulesProfileMapper
         settings.UnitAttributeSource = profile.UnitAttributeSource;
         settings.UnitSource = UnitExportSettingsResolver.ToLegacy(profile.UnitGeometrySource, profile.UnitAttributeSource);
         settings.RoomCategoryParameterName = profile.RoomCategoryParameter;
-        settings.LinkExportOptions = new LinkExportOptions
-        {
-            IncludeLinkedModels = profile.IncludeLinkedModels,
-            SelectedLinkInstanceIds = profile.SelectedLinkInstanceIds.ToList(),
-        };
+        settings.LinkExportOptions = new LinkExportOptions { IncludeLinkedModels = profile.IncludeLinkedModels };
         settings.UnitCategories = profile.UnitCategories.ToList();
         settings.SimplifyStairUnits = profile.SimplifyStairUnits;
         settings.SimplifyEscalatorUnits = profile.SimplifyEscalatorUnits;
@@ -125,12 +121,14 @@ internal static class GisRulesProfileMapper
 
     /// <summary>
     /// <paramref name="request"/> with the station profile's settings in place of its own, for an
-    /// export into a station. Every selected view is exported, with no incremental baseline.
+    /// export into a station. Every selected view is exported, with no incremental baseline. The
+    /// linked models stay the request's: their ids belong to this host model, not to the station.
     /// </summary>
     public static ExportDialogResult Overlay(ExportDialogResult request, GisRulesProfile profile)
     {
         ExportDialogSettings settings = new();
         ApplyTo(profile, settings);
+        settings.LinkExportOptions.SelectedLinkInstanceIds = request.LinkExportOptions?.SelectedLinkInstanceIds?.Distinct().ToList() ?? new List<long>();
         SchemaProfile schema = SchemaProfile.ResolveActive(settings.SchemaProfiles, settings.ActiveSchemaProfileName);
         ValidationPolicyProfile policy = ValidationPolicyProfile
             .NormalizeProfiles(settings.ValidationPolicyProfiles)

@@ -112,7 +112,7 @@ public sealed class FloorPlanHeadlessExporter
             settings.RoomCategoryParameterName,
             settings.SimplifyStairUnits,
             settings.SimplifyEscalatorUnits,
-            settings.LinkExportOptions,
+            GisModelSettings.ApplyRecordedLinks(_document, settings.LinkExportOptions, viewWarnings),
             activeSchemaProfile,
             activeValidationPolicyProfile,
             settings.Use3DSectionBoxExport,

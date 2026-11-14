@@ -110,6 +110,7 @@ public sealed class StationFolderConformanceTests
     {
         Tiles3DExportPackage package = SamplePackage();
         GisRulesStamp rules = WriteStationRules(station);
+        WriteGisModel(station);
         CesiumPackageLayout staging = CesiumStationFolder.CreateStagingLayout(station);
 
         // The tileset is not part of the link contract (Kanizu places the model from the
@@ -159,6 +160,26 @@ public sealed class StationFolderConformanceTests
         manifest.CreatedUtc = new DateTime(2026, 11, 8, 12, 0, 0, DateTimeKind.Utc);
         WriteText(staging.ManifestPath, CesiumPackageManifestSerializer.Serialize(manifest));
         return CesiumStationFolder.Publish(staging, station, manifest);
+    }
+
+    /// <summary>The model's <c>gis-model.json</c> after a station export, written by the real writer with a fixed clock.</summary>
+    private static void WriteGisModel(string station)
+    {
+        GisModelFile file = GisModelFile.CreateFromTemplate();
+        file.Identity.ModelId = "8d7f3c1e-0000-4000-8000-000000000001";
+        file.Identity.Station = new DirectoryInfo(station).Name;
+        file.Identity.Building = "Tokyo Station";
+        file.Identity.CrsEpsg = 6677;
+        file.Levels = new List<GisModelLevel>
+        {
+            new() { UniqueId = "lv-host-1fl", Name = "1FL", LevelId = "gis-1f", Ordinal = 1, ShortName = "1F" },
+        };
+        file.Views = new List<GisModelView> { new() { UniqueId = "view-gis-1fl", Name = "GIS_1FL" } };
+        file.Links = new List<GisModelLink> { new() { UniqueId = "link-platform-1", Name = "Platform.rvt : 1" } };
+        file.Versions.Standard = 1;
+        file.Versions.LastExportRevitGeoSuite = "1.0.0.0";
+        file.Versions.LastExportUtc = "2026-11-08T12:00:00Z";
+        file.Save(GisModelFile.PathFor(station, file.Identity.ModelId));
     }
 
     /// <summary>The station's <c>gis-rules.json</c>, written by the real writer with a fixed stamp.</summary>

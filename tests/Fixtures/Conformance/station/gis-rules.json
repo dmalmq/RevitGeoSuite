@@ -28,7 +28,6 @@
       "unitAttributeSource": "unset",
       "roomCategoryParameter": "Name",
       "includeLinkedModels": false,
-      "selectedLinkInstanceIds": [],
       "unitCategories": [],
       "simplifyStairUnits": false,
       "simplifyEscalatorUnits": false,

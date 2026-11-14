@@ -51,6 +51,13 @@ public sealed class GisModelFile
     [JsonProperty("views")]
     public List<GisModelView> Views { get; set; } = new();
 
+    /// <summary>
+    /// The linked models the model's last station export took, by link instance UniqueId. Null (absent)
+    /// until an export records them; an empty list means that export took none.
+    /// </summary>
+    [JsonProperty("links", NullValueHandling = NullValueHandling.Ignore)]
+    public List<GisModelLink>? Links { get; set; }
+
     [JsonProperty("drawingRules")]
     public GisModelDrawingRules DrawingRules { get; set; } = new();
 
@@ -142,6 +149,7 @@ public sealed class GisModelFile
         file.Identity ??= new GisModelIdentity();
         file.Levels = (file.Levels ?? new List<GisModelLevel>()).Where(level => level != null).ToList();
         file.Views = (file.Views ?? new List<GisModelView>()).Where(view => view != null).ToList();
+        file.Links = file.Links?.Where(link => link != null && !string.IsNullOrWhiteSpace(link.UniqueId)).ToList();
         file.DrawingRules ??= new GisModelDrawingRules();
         file.DrawingRules.Stairs ??= new GisModelStairRules();
         file.Versions ??= new GisModelVersions();
@@ -266,6 +274,28 @@ public sealed class GisModelFile
         List<T> matched = matchedIndexes.Select(index => candidates[index]).ToList();
         return matched;
     }
+
+    /// <summary>The links the file lists that <paramref name="available"/> holds, by UniqueId, and those it does not.</summary>
+    public (IReadOnlyList<T> Found, IReadOnlyList<GisModelLink> Missing) MatchLinks<T>(IEnumerable<T> available, Func<T, string> uniqueId)
+    {
+        List<T> candidates = available.ToList();
+        List<T> found = new();
+        List<GisModelLink> missing = new();
+        foreach (GisModelLink link in Links ?? new List<GisModelLink>())
+        {
+            int index = candidates.FindIndex(candidate => string.Equals(uniqueId(candidate), link.UniqueId, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
+            {
+                missing.Add(link);
+            }
+            else if (!found.Contains(candidates[index]))
+            {
+                found.Add(candidates[index]);
+            }
+        }
+
+        return (found, missing);
+    }
 }
 
 public sealed class GisModelIdentity
@@ -307,6 +337,16 @@ public sealed class GisModelLevel
 
 public sealed class GisModelView
 {
+    [JsonProperty("uniqueId")]
+    public string UniqueId { get; set; } = string.Empty;
+
+    [JsonProperty("name")]
+    public string Name { get; set; } = string.Empty;
+}
+
+public sealed class GisModelLink
+{
+    /// <summary>The link instance's <c>UniqueId</c> in the host model.</summary>
     [JsonProperty("uniqueId")]
     public string UniqueId { get; set; } = string.Empty;
 

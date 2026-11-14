@@ -189,12 +189,14 @@ public sealed class ExportWorkflowCoordinator
 
         // The model's gis-model.json on the share remembers what this export used. Only the
         // station export (headless) records its views, so a one-off dialog export of a single
-        // view does not change what every PC exports next.
+        // view does not change what every PC exports next. Every export records its linked models,
+        // since a station profile no longer carries them and the dialog is where they are picked.
         List<string> gisModelWarnings = new();
         GisModelSettings.RecordExport(
             _document,
             recordViewsInGisModel ? request.SelectedViews : Array.Empty<ViewPlan>(),
             request.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs ? request.TargetEpsg : coordinateInfo.ResolvedSourceEpsg,
+            request.LinkExportOptions,
             gisModelWarnings);
         result.AddWarnings(gisModelWarnings);
         result.AddWarnings(rulesWarnings);

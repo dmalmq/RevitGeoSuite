@@ -235,9 +235,6 @@ public sealed class GisRulesProfile
     [JsonProperty("includeLinkedModels")]
     public bool IncludeLinkedModels { get; set; }
 
-    [JsonProperty("selectedLinkInstanceIds")]
-    public List<long> SelectedLinkInstanceIds { get; set; } = new();
-
     [JsonProperty("unitCategories")]
     public List<string> UnitCategories { get; set; } = new();
 

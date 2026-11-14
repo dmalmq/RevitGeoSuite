@@ -99,13 +99,14 @@ public sealed class GisModelSettings
 
     /// <summary>
     /// Writes what this export used into the model's <c>gis-model.json</c>: identity, levels,
-    /// versions and, when <paramref name="exportedViews"/> holds any, the views. Does nothing when
-    /// the model has no station folder. Never throws.
+    /// versions, the linked models it selected and, when <paramref name="exportedViews"/> holds any,
+    /// the views. Does nothing when the model has no station folder. Never throws.
     /// </summary>
     public static void RecordExport(
         Document document,
         IReadOnlyList<ViewPlan> exportedViews,
         int? crsEpsg,
+        LinkExportOptions? linkOptions,
         ICollection<string>? warnings)
     {
         (string? path, string stationFolder, string modelId) = ResolvePath(document);
@@ -118,12 +119,52 @@ public sealed class GisModelSettings
         {
             GisModelFile file = GisModelFile.TryLoad(path) ?? GisModelFile.CreateFromTemplate();
             Fill(file, document, stationFolder, modelId, exportedViews, crsEpsg);
+            if (linkOptions != null)
+            {
+                file.Links = (linkOptions.SelectedLinkInstanceIds ?? new List<long>())
+                    .Distinct()
+                    .Select(id => document.GetElement(new ElementId(id)) as RevitLinkInstance)
+                    .Where(instance => instance != null)
+                    .Select(instance => new GisModelLink { UniqueId = instance!.UniqueId, Name = instance.Name ?? string.Empty })
+                    .ToList();
+            }
+
             file.Save(path);
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException)
         {
             warnings?.Add($"The model's GIS settings file {path} could not be written ({ex.Message}).");
         }
+    }
+
+    /// <summary>
+    /// <paramref name="linkOptions"/> with the linked models the model's <c>gis-model.json</c> lists
+    /// in place of its own selection, found by link instance UniqueId; a listed link that is gone
+    /// is skipped with a warning. Unchanged when the file lists none.
+    /// </summary>
+    public static LinkExportOptions ApplyRecordedLinks(Document document, LinkExportOptions? linkOptions, ICollection<string> warnings)
+    {
+        LinkExportOptions options = linkOptions?.Clone() ?? new LinkExportOptions();
+        GisModelFile? file = Load(document, warnings: null).File;
+        if (file?.Links == null)
+        {
+            return options;
+        }
+
+        List<RevitLinkInstance> instances = new FilteredElementCollector(document)
+            .OfClass(typeof(RevitLinkInstance))
+            .Cast<RevitLinkInstance>()
+            .ToList();
+        (IReadOnlyList<RevitLinkInstance> found, IReadOnlyList<GisModelLink> missing) = file.MatchLinks(instances, instance => instance.UniqueId);
+        if (missing.Count > 0)
+        {
+            warnings.Add(
+                $"The model's gis-model.json lists {file.Links.Count} linked models, but {missing.Count} no longer exist " +
+                $"({string.Join(", ", missing.Select(link => string.IsNullOrEmpty(link.Name) ? link.UniqueId : link.Name))}); this export skips them.");
+        }
+
+        options.SelectedLinkInstanceIds = found.Select(instance => instance.Id.Value).ToList();
+        return options;
     }
 
     /// <summary>The station folder and model id kept in the model, or empty strings when it has either not yet.</summary>
