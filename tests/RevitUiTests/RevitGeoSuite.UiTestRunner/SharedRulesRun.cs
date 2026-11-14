@@ -240,7 +240,7 @@ internal sealed partial class GisStandardRun
         string saidSaved = $"Saved for station {Path.GetFileName(rules.Station)}";
         step.Check(
             saved.DialogText.Contains(saidSaved, StringComparison.Ordinal),
-            $"The Category assignments dialog shows '{saidSaved}' after the save.");
+            $"The Category assignments dialog shows '{saidSaved}' after the save (dialog text: {saved.DialogText.ReplaceLineEndings(" ")}).");
         step.Note("Japanese wording of the same line: 'プレビューの床割り当てを保存しました。ステーション「" + Path.GetFileName(rules.Station) + "」に保存しました。'");
         await Shot(step, "H4-4-preview-saved");
         JsonNode stationRules = StationRules.Read(rules.Station);
@@ -456,6 +456,7 @@ internal sealed partial class GisStandardRun
         // The export page keeps its wizard step while it stays mounted, so a step that ended on
         // Preview would leave "Filter views..." out of reach. Leaving the route resets it to step 1.
         await Shell.GoToAsync("/gis-standard");
+        await Shell.Button(new Regex("^Category assignments")).WaitForAsync(new() { State = WaitForSelectorState.Hidden, Timeout = 10000 });
         await OpenExport(step, plan!.Name, folderName);
         if (!step.Check(await Shell.ShowsAsync(Shell.Button(new Regex("^Category assignments")), 600000), "The preview loads."))
         {
