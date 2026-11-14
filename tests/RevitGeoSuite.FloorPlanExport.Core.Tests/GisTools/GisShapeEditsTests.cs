@@ -139,6 +139,36 @@ public sealed class GisShapeEditsTests
     }
 
     [Fact]
+    public void ASketchEdgeAFractionOfAMillimetreFromTheTopFaceLeavesNoSliverHole()
+    {
+        // The sketch's east edge and the top face's round to grid lines 1 mm apart; the GDB grows the top face 1 m east.
+        ShapeFloor floor = new("a", 101, new[] { Rect(0, 0, 10.0005001, 10) }, sketch: new[] { Rect(0, 0, 10.0004999, 10) });
+
+        List<Polygon2D> sketch = GisShapeEdits.SketchFor(floor, new[] { Rect(0, 0, 11.0005001, 10) });
+
+        Polygon2D only = Assert.Single(sketch);
+        Assert.Empty(only.InteriorRings);
+        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(0, 0, 11, 10) }, sketch));
+    }
+
+    [Fact]
+    public void ASketchCornerAFractionOfAMillimetreFromTheTopFaceLeavesNoSliverSpike()
+    {
+        // The GDB removes a notch whose edge sits a hair inside the sketch's: no 1 mm wall is left standing.
+        ShapeFloor floor = new("a", 101, new[] { Rect(0, 0, 10, 10) }, sketch: new[] { Rect(0, 0, 10.0004999, 10) });
+
+        List<Polygon2D> sketch = GisShapeEdits.SketchFor(floor, new[] { new Polygon2D(new[]
+        {
+            new Point2D(0, 0), new Point2D(10 * Feet, 0), new Point2D(10 * Feet, 8 * Feet), new Point2D(9 * Feet, 8 * Feet),
+            new Point2D(9 * Feet, 10 * Feet), new Point2D(0, 10 * Feet),
+        }) });
+
+        Assert.Single(sketch);
+        Assert.Equal(98, Area(sketch), 2);
+        Assert.True(sketch[0].ExteriorRing.Count <= 7, string.Join(" ", sketch[0].ExteriorRing.Select(point => $"({point.X * 0.3048:F4},{point.Y * 0.3048:F4})")));
+    }
+
+    [Fact]
     public void SketchLoopsFollowTheEvenOddRule()
     {
         List<Polygon2D> region = GisShapeEdits.FromLoops(new[] { Rect(0, 0, 10, 10).ExteriorRing, Rect(4, 4, 5, 5).ExteriorRing, Rect(20, 0, 22, 2).ExteriorRing });
