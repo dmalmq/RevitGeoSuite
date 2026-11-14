@@ -333,6 +333,23 @@ public static class GisShapeEdits
         return polygons;
     }
 
+    /// <summary>
+    /// The openings a new sketch leaves outside it: Revit refuses such a sketch ("Can't make
+    /// cut-out") rather than delete the opening. Each is an opening's id and outline in model feet.
+    /// </summary>
+    public static List<long> OpeningsOutside(IReadOnlyList<Polygon2D> sketch, IEnumerable<(long Id, Polygon2D Outline)> openings)
+    {
+        NtsGeometry? region = Shape(sketch)?.Buffer(SameOutlineMetres / 2);
+        return openings
+            .Where(opening => region == null || Shape(new[] { opening.Outline }) is not NtsGeometry cut || !region.Covers(cut))
+            .Select(opening => opening.Id)
+            .ToList();
+    }
+
+    /// <summary>Why a floor is not redrawn when its new sketch leaves openings hosted on it outside.</summary>
+    public static string OpeningsLeftOutside(IReadOnlyList<long> openings) =>
+        $"would leave opening(s) {string.Join(", ", openings.Select(id => id.ToString(CultureInfo.InvariantCulture)))} outside its new outline, and Revit refuses that (\"Can't make cut-out\"). Delete or move the opening(s) in Revit first, then apply again.";
+
     /// <summary>Polygons in project metres, as the export writes them, in model feet.</summary>
     public static List<Polygon2D> ToModel(IEnumerable<Polygon2D> projectPolygons, AffineTransform2D projectToModel) =>
         ToModel(

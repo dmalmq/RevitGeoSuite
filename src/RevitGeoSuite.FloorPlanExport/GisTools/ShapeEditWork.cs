@@ -36,7 +36,54 @@ public static class ShapeEditWork
         }
 
         (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = GisShapeEdits.Plan(file, floors, modelToProject, ModelEpsg(document));
-        return (edits, exported.Problems.Concat(problems).ToList());
+        List<string> all = exported.Problems.Concat(problems).ToList();
+        return (WithOpeningsInside(document, edits, all), all);
+    }
+
+    // An edit whose new sketch leaves an opening hosted on the floor outside is a problem, not a card: Revit would refuse it.
+    private static List<ShapeEdit> WithOpeningsInside(Document document, IEnumerable<ShapeEdit> edits, List<string> problems)
+    {
+        List<ShapeEdit> kept = new();
+        foreach (ShapeEdit edit in edits)
+        {
+            List<long> outside = document.GetElement(edit.Floor.UniqueId) is Floor floor
+                ? GisShapeEdits.OpeningsOutside(edit.Sketch, OpeningsOn(floor))
+                : new List<long>();
+            if (outside.Count == 0)
+            {
+                kept.Add(edit);
+            }
+            else
+            {
+                problems.Add($"{edit.Shape.Describe()}: floor {edit.Floor.ElementId} {GisShapeEdits.OpeningsLeftOutside(outside)}");
+            }
+        }
+
+        return kept;
+    }
+
+    /// <summary>The openings hosted on the floor, each with its outline in model feet.</summary>
+    private static IEnumerable<(long Id, Polygon2D Outline)> OpeningsOn(Floor floor) =>
+        floor.GetDependentElements(new ElementClassFilter(typeof(Opening)))
+            .Select(id => floor.Document.GetElement(id))
+            .OfType<Opening>()
+            .Where(opening => opening.Host?.Id == floor.Id)
+            .Select(opening => (opening.Id.Value, Outline(opening)))
+            .Where(entry => entry.Item2.ExteriorRing.Count >= 3)
+            .ToList();
+
+    private static Polygon2D Outline(Opening opening)
+    {
+        if (opening.IsRectBoundary)
+        {
+            IList<XYZ> corners = opening.BoundaryRect;
+            XYZ a = corners[0];
+            XYZ b = corners[1];
+            return new Polygon2D(new[] { new Point2D(a.X, a.Y), new Point2D(b.X, a.Y), new Point2D(b.X, b.Y), new Point2D(a.X, b.Y) });
+        }
+
+        CurveArray curves = opening.BoundaryCurves;
+        return new Polygon2D(Loop(curves));
     }
 
     /// <summary>
