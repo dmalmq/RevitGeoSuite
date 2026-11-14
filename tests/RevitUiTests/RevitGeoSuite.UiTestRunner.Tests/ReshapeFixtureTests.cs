@@ -219,4 +219,16 @@ public class ReshapeFixtureTests
         // Two squares joined at one corner: the ring passes (5, 5) twice.
         Assert.False(ReshapeFixture.IsSimple(new (double, double)[] { (0, 0), (5, 0), (5, 5), (10, 5), (10, 10), (5, 10), (5, 5), (0, 5), (0, 0) }));
     }
+
+    [Fact]
+    public void Hand_drawn_names_and_a_crossing_outline()
+    {
+        var unnamed = new FloorUnit("m|u|0", "u", "", "L1", "walkway", 6677, new[] { Square });
+        Assert.Equal("drawn", ReshapeFixture.DrawnName(unnamed));
+        Assert.Equal("Shop (drawn)", ReshapeFixture.DrawnName(unnamed with { Name = "Shop" }));
+        JsonObject shape = ReshapeFixture.HandDrawnCrossing(unnamed)[0];
+        var ring = shape["outline"]!["coordinates"]![0]!.AsArray().Select(point => (point![0]!.GetValue<double>(), point[1]!.GetValue<double>())).ToList();
+        Assert.False(ReshapeFixture.IsSimple(ring));
+        Assert.Equal("drawn crossing", shape["gdbName"]!.GetValue<string>());
+    }
 }

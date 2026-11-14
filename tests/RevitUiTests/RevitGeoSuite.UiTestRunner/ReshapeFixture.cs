@@ -299,6 +299,21 @@ internal static class ReshapeFixture
         return new[] { kept, piece };
     }
 
+    /// <summary>The name the hand-drawn fixture gives F's unit: "&lt;name&gt; (drawn)", or "drawn" for an unnamed unit.</summary>
+    public static string DrawnName(FloorUnit unit) => unit.Name.Length > 0 ? unit.Name + " (drawn)" : "drawn";
+
+    /// <summary>A `handDrawn` unit whose outline crosses itself: F's unit with its first two vertices swapped (a bow-tie corner).</summary>
+    public static JsonObject[] HandDrawnCrossing(FloorUnit unit)
+    {
+        List<(double X, double Y)> ring = unit.Rings[0].ToList();
+        (ring[1], ring[2]) = (ring[2], ring[1]);
+        JsonObject[] shapes = HandDrawn(unit with { Rings = new[] { (IReadOnlyList<(double X, double Y)>)ring } });
+        string name = DrawnName(unit) + " crossing";
+        shapes[0]["label"] = name;
+        shapes[0]["gdbName"] = name;
+        return shapes;
+    }
+
     /// <summary>The GDB name the split fixture gives the new piece: "&lt;name&gt; east", or "east" for an unnamed unit.</summary>
     public static string SplitName(FloorUnit unit) => unit.Name.Length > 0 ? unit.Name + " east" : "east";
 
@@ -327,7 +342,7 @@ internal static class ReshapeFixture
     /// </summary>
     public static JsonObject[] HandDrawn(FloorUnit unit, bool withType = true, string? levelId = null)
     {
-        string name = unit.Name + " (drawn)";
+        string name = DrawnName(unit);
         var coordinates = new JsonArray(unit.Rings.Select(ring => (JsonNode)new JsonArray(ring.Select(point => (JsonNode)new JsonArray(point.X, point.Y)).ToArray())).ToArray());
         var drawn = new JsonObject
         {
