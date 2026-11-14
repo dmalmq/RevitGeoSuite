@@ -144,11 +144,29 @@ internal static class UndoProbe
         public Dictionary<string, object?> Reply() => new() { ["typed"] = Typed, ["typing"] = Detail };
     }
 
+    // Revit's main window is in front: the process's main window, or a top-level window of this process
+    // with the frame's title "Autodesk Revit <version> - [<model> - <view>]" (Revit 2024 shows its frame as
+    // a second WPF window of that name, and keys typed there reach Revit: redo #13 in c3d at 921b29b).
+    // Another program, another Revit, the shell window and Revit's dialogs (titled "Autodesk Revit
+    // <version>" with no model) do not count.
     private static bool RevitInFront(out string front)
     {
         front = Win32Dialogs.ActivateMainWindow();
         IntPtr main = Process.GetCurrentProcess().MainWindowHandle;
-        return main != IntPtr.Zero && GetForegroundWindow() == main;
+        IntPtr now = GetForegroundWindow();
+        if (now == IntPtr.Zero)
+        {
+            front += "; no window is in front";
+            return false;
+        }
+
+        if (now == main || (Ours(now) && Title(now).StartsWith("Autodesk Revit", StringComparison.Ordinal) && Title(now).Contains(" - [")))
+        {
+            return true;
+        }
+
+        front += $"; '{Title(now)}' ({Class(now)}, {(Ours(now) ? "Revit's process" : "another program")}) is in front";
+        return false;
     }
 
     private static IntPtr[] ShellWindows()
