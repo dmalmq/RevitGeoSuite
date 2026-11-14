@@ -569,6 +569,7 @@ export interface GisShapeEditItem {
   before: number[][][]
   elementId: number
   feature: string
+  floors: number
   kind: string
   label: string
   uniqueId: string

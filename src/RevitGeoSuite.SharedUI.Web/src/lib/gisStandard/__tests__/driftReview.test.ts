@@ -37,7 +37,7 @@ describe('drift review ticks', () => {
 })
 
 describe('shape edits', () => {
-  const shape = { uniqueId: 'f-1', kind: 'reshape', elementId: 1, feature: 'f', label: 'l', before: [], after: [] }
+  const shape = { uniqueId: 'f-1', kind: 'reshape', floors: 1, elementId: 1, feature: 'f', label: 'l', before: [], after: [] }
 
   it('start ticked for the model own file and unticked for another model', () => {
     expect([...shapesInitiallyUnticked({ modelKey: 'm1', fileModel: 'm1', source: 'station', changes: [], shapes: [shape] })]).toEqual([])
