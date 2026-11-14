@@ -239,7 +239,7 @@ internal sealed partial class GisStandardRun
         NoCommit(step, seq);
         string saidSaved = $"Saved for station {Path.GetFileName(rules.Station)}";
         step.Check(
-            (await Shell.Page.InnerTextAsync("body")).Contains(saidSaved, StringComparison.Ordinal),
+            saved.DialogText.Contains(saidSaved, StringComparison.Ordinal),
             $"The Category assignments dialog shows '{saidSaved}' after the save.");
         step.Note("Japanese wording of the same line: 'プレビューの床割り当てを保存しました。ステーション「" + Path.GetFileName(rules.Station) + "」に保存しました。'");
         await Shot(step, "H4-4-preview-saved");
@@ -453,6 +453,9 @@ internal sealed partial class GisStandardRun
             return false;
         }
 
+        // The export page keeps its wizard step while it stays mounted, so a step that ended on
+        // Preview would leave "Filter views..." out of reach. Leaving the route resets it to step 1.
+        await Shell.GoToAsync("/gis-standard");
         await OpenExport(step, plan!.Name, folderName);
         if (!step.Check(await Shell.ShowsAsync(Shell.Button(new Regex("^Category assignments")), 600000), "The preview loads."))
         {
@@ -488,7 +491,7 @@ internal sealed partial class GisStandardRun
         return state?["assignmentSummary"]?["sourceLabel"]?.GetValue<string>() ?? state?["assignmentSourceLabel"]?.GetValue<string>() ?? "an unknown source";
     }
 
-    private record AssignmentResult(bool Saved, string Error);
+    private record AssignmentResult(bool Saved, string Error, string DialogText);
 
     private async Task<AssignmentResult> AssignInPreview(string floorType, string category)
     {
@@ -505,14 +508,17 @@ internal sealed partial class GisStandardRun
         }
 
         string error = await Shell.AlertTextAsync();
+        string dialogText = await AssignmentsDialog().InnerTextAsync();
         await CloseAssignments();
-        return new AssignmentResult(error.Length == 0, error);
+        return new AssignmentResult(error.Length == 0, error, dialogText);
     }
+
+    private ILocator AssignmentsDialog() => Shell.Page.GetByRole(AriaRole.Dialog, new() { Name = "Category assignments" });
 
     // A failed save leaves the dialog open over the preview, which hides the next step's controls.
     private async Task CloseAssignments()
     {
-        ILocator dialog = Shell.Page.GetByRole(AriaRole.Dialog, new() { Name = "Category assignments" });
+        ILocator dialog = AssignmentsDialog();
         if (!await dialog.IsVisibleAsync())
         {
             return;
