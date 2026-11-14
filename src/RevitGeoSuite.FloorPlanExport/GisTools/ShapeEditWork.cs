@@ -491,11 +491,12 @@ public static class ShapeEditWork
     private static string Loops(IReadOnlyList<Polygon2D> sketch) =>
         $"sketch of {sketch.Count} part(s), {sketch.Sum(polygon => polygon.InteriorRings.Count)} hole(s), {sketch.Sum(polygon => polygon.ExteriorRing.Count + polygon.InteriorRings.Sum(ring => ring.Count))} line(s)";
 
-    /// <summary>A named element that depends on the floor (an opening, a hosted family), or empty for sketch parts and internals.</summary>
+    /// <summary>A named element that depends on the floor (an opening, a hosted family), or empty for sketch parts, including an opening's own sketch, and internals.</summary>
     private static string Describe(Element? element) =>
         element switch
         {
             Opening => "opening",
+            Sketch or SketchPlane or CurveElement => string.Empty,
             FamilyInstance instance => $"{instance.Symbol?.FamilyName ?? "family"} ({instance.Category?.Name ?? "element"})",
             null => string.Empty,
             _ when element.Category?.CategoryType == CategoryType.Model => element.Category.Name,
