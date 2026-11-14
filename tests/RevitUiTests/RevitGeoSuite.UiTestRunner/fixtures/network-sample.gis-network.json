@@ -1,0 +1,248 @@
+{
+  "schema": "kanizu.gis-network",
+  "version": 1,
+  "model": "3f2a9c1e-0000-4000-8000-000000000001",
+  "basedOn": "revit/sample-station-3f2a9c1e/20261113T050000Z-ab12cd34",
+  "writtenUtc": "2026-11-13T05:30:00Z",
+  "kanizu": "0.1.12",
+  "epsg": 6677,
+  "levels": [
+    {
+      "levelId": "lvl-b1",
+      "floorKey": "-1",
+      "ordinal": -1,
+      "shortName": "B1"
+    },
+    {
+      "levelId": "lvl-1f",
+      "floorKey": "0",
+      "ordinal": 0,
+      "shortName": "1F"
+    },
+    {
+      "levelId": "lvl-2f",
+      "floorKey": "1",
+      "ordinal": 1,
+      "shortName": "2F"
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "levelId": "lvl-1f",
+      "line": [
+        [
+          -7130.0,
+          -34560.0
+        ],
+        [
+          -7120.0,
+          -34560.0
+        ]
+      ],
+      "oneWay": false,
+      "stepFree": true,
+      "passageType": 0
+    },
+    {
+      "id": 2,
+      "levelId": "lvl-1f",
+      "line": [
+        [
+          -7120.0,
+          -34560.0
+        ],
+        [
+          -7110.0,
+          -34555.0
+        ],
+        [
+          -7100.0,
+          -34555.0
+        ]
+      ],
+      "oneWay": true,
+      "stepFree": true,
+      "passageType": 0
+    },
+    {
+      "id": 3,
+      "levelId": "lvl-2f",
+      "line": [
+        [
+          -7130.0,
+          -34540.0
+        ],
+        [
+          -7100.0,
+          -34540.0
+        ]
+      ],
+      "oneWay": false,
+      "stepFree": true,
+      "passageType": 0
+    },
+    {
+      "id": 4,
+      "levelId": "lvl-b1",
+      "line": [
+        [
+          -7130.0,
+          -34580.0
+        ],
+        [
+          -7100.0,
+          -34580.0
+        ]
+      ],
+      "oneWay": false,
+      "stepFree": false,
+      "passageType": 0
+    }
+  ],
+  "connectors": [
+    {
+      "id": 10,
+      "kind": "stairs",
+      "revitKey": "3f2a9c1e|stair-uid|0",
+      "uniqueId": "stair-uid",
+      "from": {
+        "levelId": "lvl-1f",
+        "at": [
+          -7125.0,
+          -34558.0
+        ]
+      },
+      "to": {
+        "levelId": "lvl-2f",
+        "at": [
+          -7125.0,
+          -34545.0
+        ]
+      },
+      "oneWay": false,
+      "stepFree": false,
+      "passageType": 11
+    },
+    {
+      "id": 11,
+      "kind": "escalator",
+      "revitKey": "3f2a9c1e|esc-uid|0",
+      "uniqueId": "esc-uid",
+      "from": {
+        "levelId": "lvl-1f",
+        "at": [
+          -7115.0,
+          -34558.0
+        ]
+      },
+      "to": {
+        "levelId": "lvl-2f",
+        "at": [
+          -7115.0,
+          -34545.0
+        ]
+      },
+      "oneWay": true,
+      "stepFree": false,
+      "passageType": 21
+    },
+    {
+      "id": 12,
+      "kind": "elevator",
+      "revitKey": "3f2a9c1e|lift-uid|0",
+      "uniqueId": "lift-uid",
+      "from": {
+        "levelId": "lvl-b1",
+        "at": [
+          -7105.0,
+          -34570.0
+        ]
+      },
+      "to": {
+        "levelId": "lvl-1f",
+        "at": [
+          -7105.0,
+          -34570.0
+        ]
+      },
+      "oneWay": false,
+      "stepFree": true,
+      "passageType": 31
+    },
+    {
+      "id": 13,
+      "kind": "ramp",
+      "revitKey": "3f2a9c1e|ramp-uid|0",
+      "uniqueId": "ramp-uid",
+      "from": {
+        "levelId": "lvl-b1",
+        "at": [
+          -7130.0,
+          -34575.0
+        ]
+      },
+      "to": {
+        "levelId": "lvl-1f",
+        "at": [
+          -7130.0,
+          -34563.0
+        ]
+      },
+      "oneWay": false,
+      "stepFree": true,
+      "passageType": 41
+    },
+    {
+      "id": 14,
+      "kind": "movingwalkway",
+      "revitKey": null,
+      "uniqueId": null,
+      "from": {
+        "levelId": "lvl-1f",
+        "at": [
+          -7100.0,
+          -34556.0
+        ]
+      },
+      "to": {
+        "levelId": "lvl-2f",
+        "at": [
+          -7100.0,
+          -34541.0
+        ]
+      },
+      "oneWay": true,
+      "stepFree": true,
+      "passageType": 0
+    }
+  ],
+  "findings": [
+    {
+      "kind": "transitWithoutLink",
+      "levelId": "lvl-2f",
+      "at": [
+        -7090.0,
+        -34540.0
+      ],
+      "revitKey": "3f2a9c1e|stair2-uid|0",
+      "uniqueId": "stair2-uid",
+      "linkId": null,
+      "detail": "stairs on 2F match no unit on the next floor"
+    },
+    {
+      "kind": "floorWithoutConnector",
+      "levelId": null,
+      "at": null,
+      "revitKey": null,
+      "uniqueId": null,
+      "linkId": null,
+      "detail": "floor 3F has links but no level connector reaches it"
+    }
+  ],
+  "notShown": {
+    "links": 0,
+    "connectors": 0,
+    "findings": 0
+  }
+}
