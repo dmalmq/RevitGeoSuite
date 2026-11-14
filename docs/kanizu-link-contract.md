@@ -9,6 +9,7 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
   kanizu-link.json              Kanizu writes; RevitGeoSuite never reads it
   gis-models/                   RevitGeoSuite writes and reads; Kanizu does not read it yet
     <model id>.gis-model.json     one model's GIS export settings
+  gis-rules.json                RevitGeoSuite writes (any PC); Kanizu reads. The station's category rules and profiles
   gis-drift/                    Kanizu writes; RevitGeoSuite's pyRevit tools read
     <model id>.gis-drift.json     GDB edits to fields this model owns
   revit/                        RevitGeoSuite writes; Kanizu reads, and removes old versions
@@ -20,6 +21,8 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
 ```
 
 Every file has one writer, so two people on the share never overwrite each other.
+
+`gis-rules.json` is the one file several PCs write, as per-key operations that never replace each other's keys (see its section below).
 
 - RevitGeoSuite builds a version in a hidden `revit/.tmp-<id>/` folder, writes the manifest last and renames the folder into place (`CesiumStationFolder.Publish`). A reader skips folders whose names start with `.`, and treats a visible folder without `cesium-package.json` as not RevitGeoSuite's: Kanizu lists it as skipped and says why.
 - The model folder is the building name's slug plus the first 8 hex digits of the model id (`CesiumStationFolder.ModelFolderName`), or the building id without a model id. It is for people reading the share. A reader groups versions by model id, not by folder: renaming the building in Revit starts a new folder for the same model. A version without a model id is counted with the model id other versions in its folder carry, or else by its folder.
@@ -39,6 +42,7 @@ Every file has one writer, so two people on the share never overwrite each other
 | `crs.projectEpsg` | The project CRS of every plane-grid coordinate in the package. |
 | `anchor` | Where the tileset's east-north-up frame sits: `lat`, `lon`, `elevationMeters` (ellipsoidal), `geoidOffsetMeters`, `geoidModel` (`EGM2008` or `typed`), `orthometricHeightMeters`, `heightDatum` (`TP` or `unknown`), and the plane `easting`, `northing`. A reader places the model from these source numbers, with its own geoid if it has a better one, rather than trusting the tileset's transform. |
 | `tiles.levels`, `tiles.elements`, `tiles.rooms` | Paths of the index files below, relative to the version folder. Absent when the export did not write them. A path never leaves the version folder. |
+| `gis.rules` | Which category rules and profile the floor plan export used, below. Absent when the package has no `gis` section. |
 | `export` | What the 3D Tiles export covered and how, below. Absent on packages from before it was written, and on packages that "Send to Cesium viewer" (`cesium.push`) wraps around an existing export folder later, because that step cannot know which settings made the folder. A reader treats a missing `export` as unknown settings. |
 
 ### `export`
@@ -52,6 +56,27 @@ Two versions compare element by element only when their `export` sections match.
 | `links` | The link instances whose elements were exported, each its `uniqueId` (the UniqueId of the link instance in the host) and `name` (the instance's name, such as `Platform.rvt : 1`, for display). Empty when only the host was exported. |
 | `levelOfDetail` | `coarse`, `medium` or `fine`. |
 | `exactPlacement` | `true` when every vertex was unprojected from the project CRS into the anchor's frame, `false` when plane-grid metres were used as east-north-up (a twist of about 0.04° at Tokyo). |
+
+### `gis.rules`
+
+| Field | Meaning |
+|---|---|
+| `source` | `station` when the rules came from the station's `gis-rules.json`, `local` when they came from the exporting PC's own files: the model has no station folder, or the station folder could not be reached or written to during this export (the export result then carries a warning). |
+| `profile` | The profile the export used. With `source` `station` it is the model's `gis-model.json` `profile`, `Station` when absent. |
+| `hash` | `sha256`, lower-case hex, of the canonical JSON (below) of the category rules plus that profile. |
+
+When the version being applied has another `hash` than the version applied last, the review says the station rules changed between the two exports, so some changes may come from the rules and not from model edits.
+
+**Canonical JSON.** The hashed text is the UTF-8 encoding, with no byte order mark, of one object with two members, `categoryRules` and `profile`, written like this:
+
+- No whitespace outside strings. Object members are sorted by key, ordinal comparison of the NFC-normalised key; a member whose value is `null` is left out. Array order stays, except `categoryRules`.
+- Strings are NFC-normalised. `"` is written `\"` and `\` is written `\\`; a character below U+0020 is written `\u` and four lower-case hex digits; every other character is written as itself (no `\n`-style escapes, no escaping of `/` or of non-ASCII).
+- `categoryRules` holds the rules as the file writes them (`type`, `match` and, when it has one, `value`), sorted by `type` and then `match`, both compared ordinally after NFC normalisation.
+- `profile` is the profile object as the file holds it, `name` included. RevitGeoSuite always writes a profile with every key, so the file's own JSON gives the same bytes.
+- `true` and `false` as such; an integer in decimal. Any other number is the shortest digit string that reads back as the same double (shortest round trip), written positionally, never with an exponent: `1.25E-05` is `0.0000125`, `1.0` is `1`, `0.0` is `0`.
+- `changed` and the file's `schema` and `version` are not part of it.
+
+`tests/Fixtures/Conformance/gis-rules/` holds a rules file and `expected-hash.txt`, the hash of its rules and its profile `Station`; RevitGeoSuite and Kanizu both assert it.
 
 ## `tiles/levels.json` (version 2)
 
@@ -82,10 +107,26 @@ One model's GIS export settings, kept on the share so every PC exports the model
 | `levels` | The levels with a GIS `level_id`, and those of the listed views: `uniqueId`, `name`, `levelId`, `ordinal`, `shortName`. Their pairing with Kanizu floors stays in `kanizu-link.json`. |
 | `views` | The plan views of the last Cesium export, `uniqueId` and `name`. Only that export writes them, so a one-off dialog export does not change them. The Cesium export takes these before the profile's own views, and warns when some no longer exist; the export dialog preselects them when its profile stores none. Without a list, both take the `GIS_` views. |
 | `drawingRules.stairs` | `stepSpacingMeters` (0.60), `stopBeforeMiddleMeters` (1.10), `overlapMeters` (1.80, 0 tiles the two floors exactly). A missing number takes the standard's. Edited by hand on the share; the export never changes them. |
+| `profile` | The profile of the station's `gis-rules.json` the model exports with. Absent means `Station`, which is created from the standard's defaults the first time the station has none. A name the station's file does not have stops the export, with a message that lists the profiles it has. |
 | `fields` | Which field list the model exports with: `standard` for the one shipped in `standards/fields.json`, or the path of a station's own list (relative to the station folder, such as `fields.json`, or absolute). |
 | `versions` | `standard` (the model's `gis_standard_version` at the last export), `lastExportRevitGeoSuite`, `lastExportUtc` |
 
 RevitGeoSuite writes it through a temporary file and a rename, and keeps fields it does not know, so a file written by a newer RevitGeoSuite keeps them through an export from an older one.
+
+## `gis-rules.json` (version 1)
+
+The category rules and export profiles one station shares, so two PCs exporting the same model into the same station folder give the same GIS package. RevitGeoSuite writes it from any PC; Kanizu reads it and never writes it. A model with no station folder keeps its rules and profiles on the PC (`%APPDATA%\RevitGeoSuite\FloorPlanExport`) and its package says `gis.rules.source` is `local`. The format is [`GisRulesFile`](../src/RevitGeoSuite.FloorPlanExport.Core/Standards/GisRulesFile.cs); a reader refuses a version it does not know and ignores fields it does not know.
+
+| Field | Meaning |
+|---|---|
+| `schema`, `version` | `revitgeosuite.gis-rules` and `1` |
+| `categoryRules` | One set for the station, every model. Each row is `type` (`floorCategory`, `roomCategory`, `familyCategory`, `acceptedOpeningFamily`), `match` and `value` (the category; absent for `acceptedOpeningFamily`). They sit below the type parameter `gis_category`: an element's `category`, then its type's `gis_category`, then these rules, then the type-name catalog. |
+| `profiles` | Named export profiles with the settings that shape the output: `targetEpsg`, `coordinateMode`, `featureTypes`, `unitGeometrySource`, `unitAttributeSource`, `roomCategoryParameter`, `includeLinkedModels`, `selectedLinkInstanceIds`, `unitCategories`, `simplifyStairUnits`, `simplifyEscalatorUnits`, `use3DSectionBox` with its two offsets, `geometryRepair`, `schemaProfiles` with `activeSchemaProfile`, and `validationPolicies` with `activeValidationPolicy`. The output folder, language, diagnostics and QGIS side outputs, post-export actions and debug views stay on each PC. A station export always exports all of the views it selects, with no incremental baseline. |
+| `changed` | `utc`, `user` (the Windows user name) and `revitGeoSuite` (the version) of the last write, for display. |
+
+Several PCs write the file, each save as a set of operations on single keys: set or delete one rule (by `type` and `match`) or one profile (by `name`). A writer applies its operations to a fresh read, writes a temporary file beside it (`.gis-rules.<id>.tmp`) and swaps it in, retries the swap up to five times with 100 to 800 ms between tries when the share refuses it, then reads the file again and applies its operations once more if another PC's write replaced its own. So two PCs changing different keys both land. Two PCs changing the same key in the same moment end with the last write. A reader never sees half a file. Temporary files older than an hour are removed by the next writer.
+
+The first export, or the first explicit save of a rule or profile, of a model on a PC adds that PC's rules and project profiles for the model to the file where the station has no entry for the same key or name, and renames the PC's file to `<name>.moved-to-station` once the station's write is read back. A station value that differs is kept and listed as a warning in the export result, and a rule deleted from the station does not come back.
 
 ## `gis/gis-fields.json` (version 1)
 
