@@ -19,6 +19,8 @@ internal sealed partial class GisStandardRun
     private const string StationRulesFile = "gis-rules.json";
     private const string PcBProfile = "H4 PC B";
     private const string OffSuffix = ".h4-off";
+    private const string SeededFloorType = "H4 per-PC seed (no such floor type)";
+    private const string SeededCategory = "walkway";
 
     private SharedRulesCase? shared;
 
@@ -27,7 +29,7 @@ internal sealed partial class GisStandardRun
         await Step("H4.0", "Revit runs on this run's own per-PC store, and the real one is on record", SandboxGuard);
         await Step("H4.S", "The model has had Set up model once, so each level has a GIS_ plan", step => Gated(step, EnsureSetUp));
         await Step("H4.G", "The copy gets RevitGeoSuite's georeference record from its own coordinates, which the Cesium export needs", step => Gated(step, EnsureGeoreference));
-        await Step("H4.1", "Note what the per-PC store holds", step => Gated(step, NoteStore));
+        await Step("H4.1", "Note what the per-PC store holds and give this model a per-PC rule", step => Gated(step, NoteStore));
         await Step("H4.2", "Run A (PC A): Cesium export into the station moves the per-PC rules and profile in", step => Gated(step, RunA));
         await Step("H4.3", "Run B (PC B, no local rules): the same hash and the same GIS package, one warning for the other EPSG", step => Gated(step, RunB));
         await Step("H4.4", "Run C: a category saved in the preview goes to the station and changes the hash", step => Gated(step, RunC));
@@ -97,6 +99,8 @@ internal sealed partial class GisStandardRun
             step.Note($"profiles.json: {string.Join("; ", root.Select(pair => $"{pair.Key} {Summary(pair.Value)}"))}.");
         }
 
+        rules.SeededRuleFile = PerPcRules.AddFloorRule(rules.Store, modelCopy, SeededFloorType, SeededCategory);
+        step.Check(File.Exists(rules.SeededRuleFile), $"The per-PC rule floorCategory '{SeededFloorType}' = '{SeededCategory}' is written for this model as mapping-rules\\{Path.GetFileName(rules.SeededRuleFile)} (project key {PerPcRules.ProjectKey(modelCopy)}).");
         step.Note($"All files in the store: {string.Join(", ", RelativeFiles(rules.Store))}.");
         step.Note($"Model: {modelCopy}.");
         return Task.CompletedTask;
@@ -141,6 +145,11 @@ internal sealed partial class GisStandardRun
         }
 
         step.Note($"gis-rules.json categoryRules: {file["categoryRules"]?.AsArray().Count ?? 0}.");
+        JsonNode? seeded = StationRules.FloorRule(file, SeededFloorType);
+        step.Check(seeded?["value"]?.GetValue<string>() == SeededCategory, $"The per-PC rule floorCategory '{SeededFloorType}' = '{SeededCategory}' moved into gis-rules.json ({seeded?.ToJsonString() ?? "no rule"}).");
+        step.Check(
+            !File.Exists(rules.SeededRuleFile) && File.Exists(rules.SeededRuleFile + ".moved-to-station"),
+            $"This model's per-PC rules file {Path.GetFileName(rules.SeededRuleFile)} was renamed to {Path.GetFileName(rules.SeededRuleFile)}.moved-to-station.");
         string[] after = RelativeFiles(rules.Store);
         string[] moved = ruleFilesBefore.Where(name => !after.Contains(name, StringComparer.OrdinalIgnoreCase)).ToArray();
         foreach (string name in moved)
@@ -573,6 +582,7 @@ internal sealed class SharedRulesCase(string station, string store, string store
     public string Store { get; } = store;
     public string StoreOff { get; } = storeOff;
     public string ModelFile { get; set; } = string.Empty;
+    public string SeededRuleFile { get; set; } = string.Empty;
     public string FloorType { get; set; } = string.Empty;
     public string CategoryOne { get; set; } = string.Empty;
     public string CategoryTwo { get; set; } = string.Empty;

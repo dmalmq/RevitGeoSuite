@@ -77,6 +77,46 @@ public class SharedRulesFixtureTests
     }
 
     [Fact]
+    public void A_per_pc_rules_file_is_named_and_written_as_mapping_rule_store_does()
+    {
+        // The name and the text are what RevitGeoSuite's MappingRuleStore.Save wrote for this key and rule.
+        Assert.Equal("21d310b3708ac8eeb5269a5d1e38b6dbd5976b2ed5c4f152136e147873d5be6c.json", PerPcRules.FileName(@"path:C:\RUNS\H4\LUMINE-PRISTINE-UITEST.RVT"));
+        string store = Directory.CreateTempSubdirectory("uitest-per-pc").FullName;
+        string model = Path.Combine(store, "lumine-pristine-uitest.rvt");
+
+        string written = PerPcRules.AddFloorRule(store, model, "H4 seed", "walkway");
+
+        string key = "path:" + Path.GetFullPath(model).ToUpperInvariant();
+        Assert.Equal(Path.Combine(store, "mapping-rules", PerPcRules.FileName(key)), written);
+        string expected = $$"""
+            {
+              "ProjectKey": {{System.Text.Json.JsonSerializer.Serialize(key)}},
+              "Rules": [
+                {
+                  "RuleType": 0,
+                  "MatchValue": "H4 seed",
+                  "ResolvedValue": "walkway"
+                }
+              ]
+            }
+            """;
+        Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(expected), System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(written))));
+    }
+
+    [Fact]
+    public void Adding_a_per_pc_rule_keeps_the_rules_the_file_holds()
+    {
+        string store = Directory.CreateTempSubdirectory("uitest-per-pc").FullName;
+        string model = Path.Combine(store, "model.rvt");
+        PerPcRules.AddFloorRule(store, model, "A", "walkway");
+
+        string written = PerPcRules.AddFloorRule(store, model, "B", "retail");
+
+        System.Text.Json.Nodes.JsonArray rules = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(written))!["Rules"]!.AsArray();
+        Assert.Equal(new[] { "A", "B" }, rules.Select(rule => rule!["MatchValue"]!.GetValue<string>()));
+    }
+
+    [Fact]
     public void Packages_with_the_same_rows_are_equal_whatever_the_fid_order_and_last_change()
     {
         string a = Package("a", lastChange: "2026-11-14T01:00:00Z", rows: new[] { (1, "shop", "x"), (2, "walkway", "y") });

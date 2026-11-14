@@ -133,6 +133,35 @@ internal sealed record RulesStamp(string Source, string Profile, string Hash)
 }
 
 /// <summary>Reads a station's gis-rules.json.</summary>
+/// <summary>
+/// A per-PC rules file as RevitGeoSuite's MappingRuleStore writes it: <c>mapping-rules\&lt;sha256 of the
+/// project key&gt;.json</c>, where the project key of a saved model is <c>path:</c> and its full path in
+/// upper case (DocumentProjectKeyBuilder), and RuleType is the enum's number.
+/// </summary>
+internal static class PerPcRules
+{
+    public const int FloorCategory = 0;
+
+    public static string ProjectKey(string modelPath) => "path:" + Path.GetFullPath(modelPath.Trim()).ToUpperInvariant();
+
+    public static string FileName(string projectKey) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(projectKey.Trim()))).ToLowerInvariant() + ".json";
+
+    /// <summary>Adds a floor category rule to the model's file in <paramref name="store"/>, keeping the rules it holds, and returns the file.</summary>
+    public static string AddFloorRule(string store, string modelPath, string floorType, string category)
+    {
+        string key = ProjectKey(modelPath);
+        string path = Path.Combine(store, "mapping-rules", FileName(key));
+        JsonObject document = File.Exists(path)
+            ? JsonNode.Parse(File.ReadAllText(path, Encoding.UTF8))!.AsObject()
+            : new JsonObject { ["ProjectKey"] = key, ["Rules"] = new JsonArray() };
+        document["Rules"]!.AsArray().Add(new JsonObject { ["RuleType"] = FloorCategory, ["MatchValue"] = floorType, ["ResolvedValue"] = category });
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, document.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+        return path;
+    }
+}
+
 internal static class StationRules
 {
     public static JsonNode Read(string stationFolder) =>
