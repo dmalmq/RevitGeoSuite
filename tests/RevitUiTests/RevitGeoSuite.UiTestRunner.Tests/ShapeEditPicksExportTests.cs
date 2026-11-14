@@ -38,6 +38,13 @@ public sealed class ShapeEditPicksExportTests
             output.WriteLine($"merge K {kept.UniqueId} {kept.Category} G {taken.UniqueId} {taken.Category} level {kept.LevelId} gap {gap:0.00}");
         }
 
+        var spare = splits.Skip(1).FirstOrDefault(pair => pair.Cut.NewPieceOnEastSide(1.0));
+        string many = string.Join(", ", parts.Where(pair => pair.Value > 1).Take(5).Select(pair => $"{pair.Key} ({pair.Value} parts)"));
+        output.WriteLine("PICKS (what c3b-split and c3c-merge would choose, before Revit's own checks):");
+        output.WriteLine(splits.Count == 0 ? "  C3b split F: none" : $"  C3b split F: {Describe(splits[0].Unit, parts)}, cut {splits[0].Cut.Axis} = {splits[0].Cut.At:0.00}, kept {ReshapeFixture.Area(splits[0].Cut.West):0.0} m², new {ReshapeFixture.Area(splits[0].Cut.East):0.0} m²");
+        output.WriteLine(spare.Unit == null ? "  C3b.8 floor: none" : $"  C3b.8 floor: {Describe(spare.Unit, parts)}, cut {spare.Cut.Axis} = {spare.Cut.At:0.00}");
+        output.WriteLine(merges.Count == 0 ? "  C3c K/G: none" : $"  C3c K: {Describe(merges[0].Kept, parts)}; G: {Describe(merges[0].Taken, parts)}; level {merges[0].Kept.LevelId}, gap {merges[0].Gap:0.00} m");
+        output.WriteLine($"  Multi-part floors (C3c.9 takes one on K's level): {many}");
         Assert.NotEmpty(splits);
         Assert.Contains(splits.Skip(1), pair => pair.Cut.NewPieceOnEastSide(1.0));
         Assert.All(splits, pair =>
@@ -49,6 +56,9 @@ public sealed class ShapeEditPicksExportTests
         Assert.All(merges, pair => Assert.True(parts[pair.Kept.UniqueId] == 1 && parts[pair.Taken.UniqueId] == 1));
         Assert.Contains(parts, pair => pair.Value > 1);
     }
+
+    private static string Describe(FloorUnit unit, IReadOnlyDictionary<string, int> parts) =>
+        $"{unit.UniqueId} {unit.Category} '{unit.Name}' level {unit.LevelId}, {parts.GetValueOrDefault(unit.UniqueId)} part(s)";
 
     // No two non-adjacent edges of the closed ring touch or cross.
     private static bool Simple(List<(double X, double Y)> ring)
