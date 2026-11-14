@@ -177,7 +177,7 @@ The scenario does the check list's Prepare part itself. It exports the GeoPackag
 | C3a.3 | "Hide in Revit": no transaction, and a Revit screenshot without the outlines. |
 | C3a.4 | "Apply 1 shape edit(s)", confirming the dialog if one opens. The banner reads "1 floor(s) reshaped". A commit named `Reshape floor <id> (<label>) to the GDB outline` arrives, and no commit has another name. F keeps its UniqueId, element id and type, and its box changes. The box change is recorded in model feet. The project CRS east the fixture grew is not model X on a rotated model, so the 1 cm check is in C3a.7. |
 | C3a.5 | The shape edit card is gone after the apply, and after another Check again. |
-| C3a.P, C3a.4 | Floor F's sketch profile loops and top-face loops (model feet, tessellated), the project position of the model axes, and the drift file go to `C3a-floor-F-geometry.json` in the run folder, after C3a.P and again just before Apply. |
+| C3a.P, C3a.4 | Floor F's sketch profile loops and top-face loops (model feet, tessellated), the project position of the model axes, and the drift file go to `C3a-floor-F-geometry.json` in the run folder, after C3a.P and again just before Apply. C3a.9 writes the same for floor H, with the shrink drift file, to `C3a-floor-H-geometry.json`. |
 | C3a.6 | One Undo gives the `undo` event of that name, and F's box is back. |
 | C3a.7 | Redo, then an export to `<run>\export2`. F's exported outline is the GDB outline within 1 cm. This is the largest distance from a vertex of either outline to the other's edges. |
 | C3a.8 | A floor with a slope arrow or another extra sketch line, given a reshape, shows up in the problems with that reason, and no card appears. Not run when no exported floor has one. |

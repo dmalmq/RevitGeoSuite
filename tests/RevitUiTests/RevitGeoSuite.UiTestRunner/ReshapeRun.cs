@@ -75,27 +75,30 @@ internal sealed partial class GisStandardRun
         }
     }
 
-    private readonly JsonObject floorGeometry = new();
+    private readonly Dictionary<string, JsonObject> floorGeometry = new();
+
+    private void DumpFloorGeometry(StepResult step, string moment) => DumpFloorGeometry(step, "F", reshape!.UniqueId, reshape.Path, moment);
 
     /// <summary>
-    /// Adds floor F's sketch profile and top-face loops (model feet) under <paramref name="moment"/> to
-    /// C3a-floor-F-geometry.json in the run folder, with the drift file, so the port thread can rebuild
-    /// offline the sketch Apply submits.
+    /// Adds a floor's sketch profile and top-face loops (model feet) under <paramref name="moment"/> to
+    /// C3a-floor-&lt;letter&gt;-geometry.json in the run folder, with the drift file, so the port thread can
+    /// rebuild offline the sketch Apply submits.
     /// </summary>
-    private void DumpFloorGeometry(StepResult step, string moment)
+    private void DumpFloorGeometry(StepResult step, string letter, string uniqueId, string driftPath, string moment)
     {
-        string path = Path.Combine(options.OutputFolder, "C3a-floor-F-geometry.json");
+        string path = Path.Combine(options.OutputFolder, $"C3a-floor-{letter}-geometry.json");
+        JsonObject file = floorGeometry.TryGetValue(letter, out JsonObject? existing) ? existing : floorGeometry[letter] = new JsonObject();
         try
         {
-            floorGeometry[moment] = host.Call("floorGeometry", new { uniqueId = reshape!.UniqueId });
-            floorGeometry["driftPath"] = reshape.Path;
-            floorGeometry["drift"] = JsonNode.Parse(File.ReadAllText(reshape.Path));
-            File.WriteAllText(path, floorGeometry.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            step.Note($"Floor F's geometry ({moment}) is in {path}.");
+            file[moment] = host.Call("floorGeometry", new { uniqueId });
+            file["driftPath"] = driftPath;
+            file["drift"] = JsonNode.Parse(File.ReadAllText(driftPath));
+            File.WriteAllText(path, file.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            step.Note($"Floor {letter}'s geometry ({moment}) is in {path}.");
         }
         catch (TestHostException ex)
         {
-            step.Note($"Floor F's geometry ({moment}) could not be read: {ex.Message}");
+            step.Note($"Floor {letter}'s geometry ({moment}) could not be read: {ex.Message}");
         }
     }
 
@@ -308,6 +311,7 @@ internal sealed partial class GisStandardRun
         ShrunkOutline shrunk = ReshapeFixture.ShrinkEast(unit, ShrinkBandM);
         step.Note($"Shrink: the export polygon minus a {ShrinkBandM} m strip along its east side; the outline crosses the cut {shrunk.Crossings} time(s), kept {shrunk.Rings.Count - 1} hole(s), dropped {shrunk.DroppedHoles} hole(s) the strip reaches.");
         string path = WriteDrift("shrink.gis-drift.json", unit, ReshapeFixture.Reshaped(unit, shrunk.Rings));
+        DumpFloorGeometry(step, "H", h.UniqueId, path, "beforeApply");
         await PickDrift(path);
         if (!await ExpectShapeEdits(step, path))
         {
