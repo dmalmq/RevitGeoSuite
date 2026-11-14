@@ -121,5 +121,242 @@
   ],
   "notPlaced": [
     "8d7f3c1e-0000|x|0"
+  ],
+  "epsg": 6677,
+  "shapes": [
+    {
+      "edit": "reshaped",
+      "revitKey": "8d7f3c1e-0000|u-1|0",
+      "uniqueId": "u-1",
+      "layer": "unit",
+      "label": "北改札",
+      "levelId": "lvl-1f",
+      "outline": {
+        "coordinates": [
+          [
+            [
+              -5900.0,
+              -35000.0
+            ],
+            [
+              -5890.0,
+              -35000.0
+            ],
+            [
+              -5890.0,
+              -34985.0
+            ],
+            [
+              -5900.0,
+              -34985.0
+            ],
+            [
+              -5900.0,
+              -35000.0
+            ]
+          ]
+        ],
+        "type": "Polygon"
+      }
+    },
+    {
+      "edit": "split",
+      "revitKey": "8d7f3c1e-0000|u-4|0",
+      "uniqueId": "u-4",
+      "layer": "unit",
+      "label": "店舗A",
+      "levelId": "lvl-1f",
+      "group": "8d7f3c1e-0000|u-4|0",
+      "keeps": true,
+      "outline": {
+        "coordinates": [
+          [
+            [
+              -5880.0,
+              -35000.0
+            ],
+            [
+              -5875.0,
+              -35000.0
+            ],
+            [
+              -5875.0,
+              -34990.0
+            ],
+            [
+              -5880.0,
+              -34990.0
+            ],
+            [
+              -5880.0,
+              -35000.0
+            ]
+          ]
+        ],
+        "type": "Polygon"
+      }
+    },
+    {
+      "edit": "split",
+      "revitKey": "8d7f3c1e-0000|u-4|0",
+      "uniqueId": "u-4",
+      "layer": "unit",
+      "label": "店舗A",
+      "levelId": "lvl-1f",
+      "group": "8d7f3c1e-0000|u-4|0",
+      "outline": {
+        "coordinates": [
+          [
+            [
+              -5875.0,
+              -35000.0
+            ],
+            [
+              -5870.0,
+              -35000.0
+            ],
+            [
+              -5870.0,
+              -34990.0
+            ],
+            [
+              -5875.0,
+              -34990.0
+            ],
+            [
+              -5875.0,
+              -35000.0
+            ]
+          ]
+        ],
+        "type": "Polygon"
+      }
+    },
+    {
+      "edit": "merged",
+      "revitKey": "8d7f3c1e-0000|u-5|0",
+      "uniqueId": "u-5",
+      "layer": "unit",
+      "label": "店舗B",
+      "levelId": "lvl-1f",
+      "group": "8d7f3c1e-0000|u-5|0",
+      "keeps": true,
+      "outline": {
+        "coordinates": [
+          [
+            [
+              -5860.0,
+              -35000.0
+            ],
+            [
+              -5840.0,
+              -35000.0
+            ],
+            [
+              -5840.0,
+              -34990.0
+            ],
+            [
+              -5860.0,
+              -34990.0
+            ],
+            [
+              -5860.0,
+              -35000.0
+            ]
+          ]
+        ],
+        "type": "Polygon"
+      }
+    },
+    {
+      "edit": "merged",
+      "revitKey": "8d7f3c1e-0000|u-6|0",
+      "uniqueId": "u-6",
+      "layer": "unit",
+      "label": "店舗C",
+      "levelId": "",
+      "group": "8d7f3c1e-0000|u-5|0",
+      "outline": null
+    },
+    {
+      "edit": "handDrawn",
+      "revitKey": "",
+      "uniqueId": "",
+      "layer": "unit",
+      "label": "コインロッカー",
+      "levelId": "lvl-1f",
+      "outline": {
+        "coordinates": [
+          [
+            [
+              -5800.0,
+              -35000.0
+            ],
+            [
+              -5797.0,
+              -35000.0
+            ],
+            [
+              -5797.0,
+              -34998.0
+            ],
+            [
+              -5800.0,
+              -34998.0
+            ],
+            [
+              -5800.0,
+              -35000.0
+            ]
+          ]
+        ],
+        "type": "Polygon"
+      }
+    },
+    {
+      "edit": "deleted",
+      "revitKey": "8d7f3c1e-0000|u-7|0",
+      "uniqueId": "u-7",
+      "layer": "unit",
+      "label": "店舗D",
+      "levelId": "",
+      "outline": null
+    },
+    {
+      "edit": "moved",
+      "revitKey": "8d7f3c1e-0000|u-8|0",
+      "uniqueId": "u-8",
+      "layer": "unit",
+      "label": "店舗E",
+      "levelId": "lvl-1f",
+      "outline": {
+        "coordinates": [
+          [
+            [
+              -5820.0,
+              -35000.0
+            ],
+            [
+              -5810.0,
+              -35000.0
+            ],
+            [
+              -5810.0,
+              -34990.0
+            ],
+            [
+              -5820.0,
+              -34990.0
+            ],
+            [
+              -5820.0,
+              -35000.0
+            ]
+          ]
+        ],
+        "type": "Polygon"
+      }
+    }
   ]
 }
