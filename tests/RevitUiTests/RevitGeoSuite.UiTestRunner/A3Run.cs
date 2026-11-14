@@ -24,14 +24,14 @@ internal sealed partial class GisStandardRun
     private async Task A3Steps()
     {
         await Step("A3.0", "Set up model (it binds the new parameters)", EnsureSetUp);
-        await Step("A3.A", "Rule A: gis_levels_served, gis_door and gis_access_con bound as type parameters; name includes Doors", A3Bindings);
+        await Step("A3.A", "Rule A: gis_levels_served an instance parameter; gis_door and gis_access_con type parameters; name includes Doors", A3Bindings);
         await Step("A3.P", "Export 'probe' with the span settings, to find the elements the export makes elevator units of", step => A3Export(step, "probe"));
         await Step("A3.1", "List the probe's elevator elements by shaft; E is the lowest object of the first shaft on two or more levels", A3Elevators);
         await Step("A3.2", "Export 'span': GeoPackage per level, the Copy 1 views, shared coordinates", step => A3Export(step, "span"));
         await Step("A3.3", "Pick the test door from the span export; fill it, and set E's gis_levels_served to two levels and ZZ", A3Fill);
         await Step("A3.4", "Export 'override' with the same settings", step => A3Export(step, "override"));
         await Step("A3.B", "Rule B (span): each shaft's rows share its levels lowest first; a lone object is empty with a warning", A3Span);
-        await Step("A3.C", "Rule C (override): every row of E's shaft holds the two named levels, lowest first; one warning names ZZ", A3Override);
+        await Step("A3.C", "Rule C (override): every row of E's shaft holds the two named levels, lowest first, other shafts keep their span; one warning names ZZ", A3Override);
         await Step("A3.D", "Rule D (override): the test door's row has automatic / test / A3 test door; only its type's doors have values", A3Door);
         await Step("A3.E", "Rule E: no warning about a missing door, access_con or name", A3NoMissing);
         await Step("A3.F", "Rule F: gis-fields.json has the 7 rows as specified", A3Fields);
@@ -47,8 +47,8 @@ internal sealed partial class GisStandardRun
 
         string?[] Categories(string name) => rows.First(row => (string?)row!["name"] == name)!["categories"]?.AsArray().Select(item => (string?)item).ToArray() ?? Array.Empty<string?>();
         string? Binding(string name) => (string?)rows.First(row => (string?)row!["name"] == name)!["binding"];
-        step.Check(Binding("gis_levels_served") == "type" && Categories("gis_levels_served").Contains("OST_GenericModel") && Categories("gis_levels_served").Contains("OST_SpecialityEquipment"),
-            "gis_levels_served is a type parameter on Generic Models and Specialty Equipment.");
+        step.Check(Binding("gis_levels_served") == "instance" && new[] { "OST_GenericModel", "OST_SpecialityEquipment", "OST_MechanicalEquipment" }.All(category => Categories("gis_levels_served").Contains(category)),
+            "gis_levels_served is an instance parameter on Generic Models, Specialty Equipment and Mechanical Equipment.");
         step.Check(Binding("gis_door") == "type" && Categories("gis_door").Contains("OST_Doors"), "gis_door is a type parameter on Doors.");
         step.Check(Binding("gis_access_con") == "type" && Categories("gis_access_con").Contains("OST_Doors"), "gis_access_con is a type parameter on Doors.");
         step.Check(Binding("name") == "instance" && Categories("name").Contains("OST_Doors"), "name is an instance parameter whose categories include Doors.");
@@ -103,12 +103,12 @@ internal sealed partial class GisStandardRun
         int[] shared = Enumerable.Range(0, a3.Shafts.Length).Where(index => a3.Shafts[index] != a3.EShaft && a3.Shafts[index].Any(elevator => elevator.TypeId == a3.E.TypeId)).Select(index => index + 1).ToArray();
         step.Note($"E = elevator {a3.E.Id} ({a3.E.Family} / {a3.E.Type}, level {a3.E.Level}), the lowest of shaft {Array.IndexOf(a3.Shafts, a3.EShaft) + 1} ({a3.EShaft!.Length} object(s)).");
         step.Note(shared.Length == 0 ? "No other shaft uses E's type." : $"Shaft(s) {string.Join(", ", shared)} also use E's type, so the override reaches them too.");
-        var empty = a3.EShaft!.Where(elevator => !string.IsNullOrEmpty(elevator.LevelsServed)).Select(elevator => elevator.TypeId).Where(type => type > 0).Distinct()
-            .Select(type => new { id = type, name = "gis_levels_served", value = string.Empty }).ToArray();
+        var empty = a3.EShaft!.Where(elevator => !string.IsNullOrEmpty(elevator.LevelsServed))
+            .Select(elevator => new { id = elevator.Id, name = "gis_levels_served", value = string.Empty }).ToArray();
         if (empty.Length > 0)
         {
             JsonObject fixture = host.Call("fixture", new { values = empty });
-            step.Note($"Emptied gis_levels_served on {empty.Length} type(s) of E's shaft. Fixture: {fixture["log"]?.ToJsonString()}.");
+            step.Note($"Emptied gis_levels_served on {empty.Length} element(s) of E's shaft. Fixture: {fixture["log"]?.ToJsonString()}.");
         }
 
         return Task.CompletedTask;
@@ -187,17 +187,17 @@ internal sealed partial class GisStandardRun
         step.Note($"Test door {a3.Door.Id} ({a3.Door.Family} / {a3.Door.Type}, type {a3.Door.TypeId}). Fixture: {fixture["log"]?.ToJsonString()}.");
         if (a3.E != null && step.Check(a3.Levels.Length >= 2, "The export has at least two levels to name."))
         {
-            LevelRow[] named = a3.Levels.Take(2).ToArray();
+            LevelRow[] named = a3.Levels.OrderBy(level => level.ElevationFt).Take(2).ToArray();
             string value = $"{named[0].Name}, {named[1].Name}, {A3Fixture.UnknownLevelName}";
             try
             {
-                JsonObject levels = host.Call("fixture", new { values = new[] { new { id = a3.E.TypeId, name = "gis_levels_served", value } } });
+                JsonObject levels = host.Call("fixture", new { values = new[] { new { id = a3.E.Id, name = "gis_levels_served", value } } });
                 a3.Named = named;
-                step.Note($"E's type {a3.E.TypeId}: gis_levels_served = '{value}'. Fixture: {levels["log"]?.ToJsonString()}.");
+                step.Note($"E {a3.E.Id} (instance): gis_levels_served = '{value}'. Fixture: {levels["log"]?.ToJsonString()}.");
             }
             catch (TestHostException ex) when (ex.Message.Contains("has no parameter", StringComparison.Ordinal))
             {
-                step.Check(false, $"E ({a3.E.Family} / {a3.E.Type}, category {a3.E.Category}, type {a3.E.TypeId}) has no gis_levels_served to fill: Set up binds it to the categories A3.A lists, and {a3.E.Category} is not one of them. A3.C cannot run.");
+                step.Check(false, $"E {a3.E.Id} ({a3.E.Family} / {a3.E.Type}, category {a3.E.Category}) has no gis_levels_served to fill: Set up binds it to the categories A3.A lists, and {a3.E.Category} is not one of them. A3.C cannot run.");
             }
         }
         step.Note("The door is filled here, after the span export, because only an export says which doors it writes as openings; rules D and E read the override export.");
@@ -288,11 +288,26 @@ internal sealed partial class GisStandardRun
             }
         }
 
-        HashSet<string> sharedType = a3.Elevators.Where(elevator => elevator.TypeId == a3.E.TypeId && !members.Contains(elevator.UniqueId)).Select(elevator => elevator.UniqueId).ToHashSet(StringComparer.Ordinal);
-        int reached = rows.Count(row => sharedType.Contains(A3Fixture.UniqueId(row)) && A3Fixture.Value(row, "levels_served")?.Replace(" ", string.Empty, StringComparison.Ordinal) == expected);
-        step.Note($"Other elevator objects of E's type: {sharedType.Count}; rows of theirs with the override: {reached} (expected, not a failure).");
+        // Every other shaft keeps the value the span export gave it: the override is on E's instance only.
+        if (a3.Exports.TryGetValue("span", out A3Output? span))
+        {
+            Dictionary<string, string> before = ElevatorUnits(span.Folder)
+                .GroupBy(row => $"{A3Fixture.Value(row, "revit_key")}|{A3Fixture.Value(row, "id")}")
+                .ToDictionary(group => group.Key, group => A3Fixture.Value(group.First(), "levels_served") ?? string.Empty);
+            string[] changed = rows.Where(row => !members.Contains(A3Fixture.UniqueId(row)))
+                .Where(row => before.TryGetValue($"{A3Fixture.Value(row, "revit_key")}|{A3Fixture.Value(row, "id")}", out string? was) && was != (A3Fixture.Value(row, "levels_served") ?? string.Empty))
+                .Select(row => $"{A3Fixture.Value(row, "id")} '{before[$"{A3Fixture.Value(row, "revit_key")}|{A3Fixture.Value(row, "id")}"]}' -> '{A3Fixture.Value(row, "levels_served")}'")
+                .ToArray();
+            step.Check(changed.Length == 0, $"Every other shaft's rows keep their span levels_served ({rows.Count - mine.Count} row(s); changed: {(changed.Length == 0 ? "none" : string.Join("; ", changed))}).");
+        }
+
         string[] zz = export.Warnings.Where(warning => warning.Contains("match no level name or short_name", StringComparison.Ordinal) && Regex.IsMatch(warning, $@"\b{A3Fixture.UnknownLevelName}\b")).ToArray();
         step.Check(zz.Length == 1, $"Exactly one warning says {A3Fixture.UnknownLevelName} matches no level name or short_name ({zz.Length}: {string.Join(" | ", zz)}).");
+        static bool Vertical(string warning) => warning.Contains("Vertical subtraction", StringComparison.Ordinal);
+        string[] others = export.Warnings.Where(A3Fixture.IsElevatorWarning).Except(zz).Where(warning => !Vertical(warning)).ToArray();
+        int vertical = export.Warnings.Count(Vertical);
+        step.Check(others.Length == 0 && vertical == 2,
+            $"Besides the ZZ warning, the elevator warnings are the 2 'Vertical subtraction' ones ({vertical} of those; others: {(others.Length == 0 ? "none" : string.Join(" | ", others))}).");
         return Task.CompletedTask;
     }
 

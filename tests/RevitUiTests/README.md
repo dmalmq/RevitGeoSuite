@@ -239,6 +239,8 @@ The commit events of each apply are recorded. One undo step is proven by pressin
 
 ## The a3-fields scenario
 
+From RevitGeoSuite #45 head c1c09d0 on, `gis_levels_served` is an instance parameter (Generic Models, Specialty Equipment, Mechanical Equipment): A3.1 empties it and A3.3 fills it on the elements of E's shaft and on E itself, and rule C checks that every other shaft keeps its span value.
+
 The spec is `/mnt/project-files/revit-template-review/a3-ui-scenario.md`.
 
 ```powershell

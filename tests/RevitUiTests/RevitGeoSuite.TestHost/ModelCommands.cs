@@ -100,7 +100,8 @@ internal static class ModelCommands
             ["yMaxM"] = box == null ? null : box.Max.Y * FeetToMetres,
             ["zMinM"] = box == null ? null : box.Min.Z * FeetToMetres,
             ["zMaxM"] = box == null ? null : box.Max.Z * FeetToMetres,
-            ["levelsServed"] = type?.LookupParameter("gis_levels_served")?.AsString(),
+            // An instance parameter from RevitGeoSuite #45's c1c09d0 on; a type parameter before.
+            ["levelsServed"] = element.LookupParameter("gis_levels_served")?.AsString() ?? type?.LookupParameter("gis_levels_served")?.AsString(),
         };
     }
 
