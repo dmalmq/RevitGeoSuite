@@ -134,8 +134,16 @@ public sealed class GisDriftShape
         string levelId,
         string group,
         bool keeps,
-        IReadOnlyList<IReadOnlyList<IReadOnlyList<(double X, double Y)>>> outline)
+        IReadOnlyList<IReadOnlyList<IReadOnlyList<(double X, double Y)>>> outline,
+        string gdbName = "",
+        string gdbAltName = "",
+        string gdbCategory = "",
+        string gdbRestriction = "")
     {
+        GdbName = gdbName;
+        GdbAltName = gdbAltName;
+        GdbCategory = gdbCategory;
+        GdbRestriction = gdbRestriction;
         Edit = edit;
         RevitKey = revitKey;
         UniqueId = uniqueId;
@@ -170,6 +178,18 @@ public sealed class GisDriftShape
 
     /// <summary>The GDB outline in <see cref="GisDriftFile.Epsg"/>: polygons, each a list of rings (the outer one first), each point X easting and Y northing whatever axis order the EPSG code names. Empty for a deleted unit and for the units a merge took in.</summary>
     public IReadOnlyList<IReadOnlyList<IReadOnlyList<(double X, double Y)>>> Outline { get; }
+
+    /// <summary>Optional, on a split piece that becomes a new floor and on a hand-drawn unit: the GDB's <c>name</c>. Empty when Kanizu did not write it.</summary>
+    public string GdbName { get; }
+
+    /// <summary>Optional, as <see cref="GdbName"/>: the GDB's <c>alt_name</c>.</summary>
+    public string GdbAltName { get; }
+
+    /// <summary>Optional, as <see cref="GdbName"/>: the IMDF category, spelled as on category rows.</summary>
+    public string GdbCategory { get; }
+
+    /// <summary>Optional, as <see cref="GdbName"/>: the restriction, spelled as on category rows.</summary>
+    public string GdbRestriction { get; }
 
     public string Describe() => $"{Layer} {(Label.Length > 0 ? Label : UniqueId)} {Edit}";
 }
@@ -365,7 +385,11 @@ public static class GisDrift
                     Text(entry["levelId"]),
                     Text(entry["group"]),
                     Truthy(entry["keeps"]),
-                    Polygons(entry["outline"])));
+                    Polygons(entry["outline"]),
+                    Text(entry["gdbName"]),
+                    Text(entry["gdbAltName"]),
+                    Text(entry["gdbCategory"]),
+                    Text(entry["gdbRestriction"])));
             }
         }
 

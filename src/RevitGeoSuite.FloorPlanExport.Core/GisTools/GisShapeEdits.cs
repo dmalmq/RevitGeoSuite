@@ -9,18 +9,20 @@ using NetTopologySuite.Precision;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
 /// <summary>A floor a shape edit can change: its outline in model feet, and why Revit cannot edit its sketch, if it cannot.</summary>
 public sealed class ShapeFloor
 {
-    public ShapeFloor(string uniqueId, long elementId, IEnumerable<Polygon2D> outline, string? cannotEdit = null, IEnumerable<Polygon2D>? sketch = null)
+    public ShapeFloor(string uniqueId, long elementId, IEnumerable<Polygon2D> outline, string? cannotEdit = null, long levelId = 0, IEnumerable<Polygon2D>? sketch = null)
     {
         UniqueId = uniqueId;
         ElementId = elementId;
         Outline = outline.ToList();
         CannotEdit = cannotEdit;
+        LevelId = levelId;
         Sketch = sketch?.ToList() ?? Outline;
     }
 
@@ -39,22 +41,70 @@ public sealed class ShapeFloor
 
     /// <summary>Why the floor's sketch cannot be redrawn (a slope arrow, shape-edited points), or null.</summary>
     public string? CannotEdit { get; }
+
+    /// <summary>The floor's Revit level, so a split piece can be found among the floors beside its keeper.</summary>
+    public long LevelId { get; }
 }
 
 public enum ShapeEditKind
 {
     Reshape,
+    Split,
+    Merge,
 }
 
-/// <summary>One shape edit to apply: the floor it changes, its outline now and the GDB's, both in model feet.</summary>
+/// <summary>
+/// A floor a shape edit adds: its outline in model feet, the GDB values it takes over the kept
+/// floor's (parameter name to value), and the standard floor type its GDB category and
+/// restriction name, or null to take the kept floor's type.
+/// </summary>
+public sealed class NewFloor
+{
+    public NewFloor(GisDriftShape piece, IReadOnlyList<Polygon2D> outline, IReadOnlyDictionary<string, string> values, string? typeName)
+    {
+        Piece = piece;
+        Outline = outline;
+        Values = values;
+        TypeName = typeName;
+    }
+
+    public GisDriftShape Piece { get; }
+
+    public IReadOnlyList<Polygon2D> Outline { get; }
+
+    public IReadOnlyDictionary<string, string> Values { get; }
+
+    public string? TypeName { get; }
+}
+
+/// <summary>
+/// One shape edit to apply: the floor it changes, its outline now and the GDB's, all in model feet.
+/// A split also lists the pieces that become new floors beside it.
+/// </summary>
 public sealed class ShapeEdit
 {
     public ShapeEdit(ShapeEditKind kind, GisDriftShape shape, ShapeFloor floor, IReadOnlyList<Polygon2D> outline, IReadOnlyList<Polygon2D>? sketch = null)
+        : this(kind, shape, floor, outline, Array.Empty<NewFloor>(), redrawFloor: true, sketch: sketch)
+    {
+    }
+
+    public ShapeEdit(
+        ShapeEditKind kind,
+        GisDriftShape shape,
+        ShapeFloor floor,
+        IReadOnlyList<Polygon2D> outline,
+        IReadOnlyList<NewFloor> newFloors,
+        bool redrawFloor,
+        IReadOnlyList<ShapeFloor>? absorbed = null,
+        IReadOnlyList<Polygon2D>? sketch = null)
     {
         Kind = kind;
         Shape = shape;
         Floor = floor;
         Outline = outline;
+        NewFloors = newFloors;
+        RedrawFloor = redrawFloor;
+        Absorbed = absorbed ?? Array.Empty<ShapeFloor>();
         Sketch = sketch ?? outline;
     }
 
@@ -67,14 +117,33 @@ public sealed class ShapeEdit
     /// <summary>The GDB's outline in model feet: the floor's exported outline after the edit.</summary>
     public IReadOnlyList<Polygon2D> Outline { get; }
 
+    /// <summary>A split's pieces that no floor has yet, each a new floor on the kept floor's level.</summary>
+    public IReadOnlyList<NewFloor> NewFloors { get; }
+
+    /// <summary>False when the floor already has <see cref="Outline"/> and only new floors are missing, or only absorbed floors are left.</summary>
+    public bool RedrawFloor { get; }
+
+    /// <summary>A merge's floors that the GDB merged into this one and that are still in the model: they are deleted.</summary>
+    public IReadOnlyList<ShapeFloor> Absorbed { get; }
+
     /// <summary>The floor's new sketch in model feet: its sketch now, with what the GDB added and without what it took away.</summary>
     public IReadOnlyList<Polygon2D> Sketch { get; }
 
-    public string Label() => string.Format(
-        CultureInfo.InvariantCulture,
-        "Reshape floor {0}{1} to the GDB outline",
-        Floor.ElementId,
-        Shape.Label.Length > 0 ? " (" + Shape.Label + ")" : string.Empty);
+    public string Label()
+    {
+        string name = Shape.Label.Length > 0 ? " (" + Shape.Label + ")" : string.Empty;
+        return Kind switch
+        {
+            ShapeEditKind.Split => string.Format(CultureInfo.InvariantCulture, "Split floor {0}{1} into {2} floors by the GDB", Floor.ElementId, name, NewFloors.Count + 1),
+            ShapeEditKind.Merge => string.Format(
+                CultureInfo.InvariantCulture,
+                "Merge floor(s) {0} into floor {1}{2} by the GDB",
+                string.Join(", ", Absorbed.Select(floor => floor.ElementId.ToString(CultureInfo.InvariantCulture))),
+                Floor.ElementId,
+                name),
+            _ => string.Format(CultureInfo.InvariantCulture, "Reshape floor {0}{1} to the GDB outline", Floor.ElementId, name),
+        };
+    }
 }
 
 /// <summary>What a drift file's shapes need: the edits Review GDB edits can apply, what has to be done by hand, and how many shapes still wait.</summary>
@@ -114,6 +183,19 @@ public static class GisShapeEdits
     /// <summary>The reason <see cref="ShapeFloor.CannotEdit"/> gives for a floor with arcs or splines in its boundary.</summary>
     public const string CurvedEdges = "has curved edges, which the GDB's straight-segment outline would replace with short lines";
 
+    /// <summary>
+    /// The standard's floor instance parameters a split's new floors take from the kept floor:
+    /// name, category, level and the like. Not <c>id</c> or <c>gis_key</c>, which name one element.
+    /// </summary>
+    public static IReadOnlyList<string> CopiedToNewFloors { get; } = GisSharedParameters.All
+        .Where(definition => definition.Binding == GisParameterBinding.Instance && definition.Categories.Contains("OST_Floors"))
+        .Select(definition => definition.Name)
+        .Where(name => name != "id" && name != "gis_key")
+        .ToList();
+
+    /// <summary>The reason <see cref="ShapeFloor.CannotEdit"/> gives for an element a merge would delete that is not a floor.</summary>
+    public const string NotAFloor = "is not a floor";
+
     /// <summary>Outlines closer than this everywhere are the same.</summary>
     public const double SameOutlineMetres = 0.01;
 
@@ -128,11 +210,13 @@ public static class GisShapeEdits
     /// <param name="floors">The model's floors by UniqueId.</param>
     /// <param name="modelToProject">The export's transform from model feet to the project CRS in metres.</param>
     /// <param name="modelEpsg">The model's project CRS, or 0 when unknown.</param>
+    /// <param name="standard">The GIS standard, to turn a new floor's GDB category into a parameter value and a floor type; null takes the kept floor's.</param>
     public static ShapePlan Plan(
         GisDriftFile file,
         IReadOnlyDictionary<string, ShapeFloor> floors,
         AffineTransform2D modelToProject,
-        int modelEpsg)
+        int modelEpsg,
+        GisToolStandard? standard = null)
     {
         if (file is null)
         {
@@ -160,7 +244,17 @@ public static class GisShapeEdits
 
         AffineTransform2D projectToModel = modelToProject.Inverse();
         int settled = 0;
-        foreach (GisDriftShape shape in file.Shapes)
+        foreach (IGrouping<string, GisDriftShape> group in file.Shapes.Where(shape => shape.Edit == GisDrift.Split).GroupBy(shape => shape.Group.Length > 0 ? shape.Group : shape.RevitKey))
+        {
+            settled += PlanSplit(group.ToList(), floors, projectToModel, standard, edits, problems);
+        }
+
+        foreach (IGrouping<string, GisDriftShape> group in file.Shapes.Where(shape => shape.Edit == GisDrift.Merged).GroupBy(shape => shape.Group.Length > 0 ? shape.Group : shape.RevitKey))
+        {
+            settled += PlanMerge(group.ToList(), floors, projectToModel, edits, problems);
+        }
+
+        foreach (GisDriftShape shape in file.Shapes.Where(shape => shape.Edit != GisDrift.Split && shape.Edit != GisDrift.Merged))
         {
             if (shape.Edit != GisDrift.Reshaped)
             {
@@ -339,6 +433,231 @@ public static class GisShapeEdits
         }
 
         return edits.Where(edit => !twice.Contains(edit.Floor.UniqueId)).ToList();
+    }
+
+    /// <summary>
+    /// Plans one split: the kept floor takes its piece's outline, and each other piece becomes a new
+    /// floor unless a floor on the same level already has its outline. Returns how many of the
+    /// group's pieces the model already matches.
+    /// </summary>
+    private static int PlanSplit(
+        IReadOnlyList<GisDriftShape> pieces,
+        IReadOnlyDictionary<string, ShapeFloor> floors,
+        AffineTransform2D projectToModel,
+        GisToolStandard? standard,
+        List<ShapeEdit> edits,
+        List<string> problems)
+    {
+        List<GisDriftShape> keepers = pieces.Where(piece => piece.Keeps).ToList();
+        if (keepers.Count != 1)
+        {
+            problems.Add($"{pieces[0].Describe()}: the drift file has {keepers.Count} pieces of this split that keep the floor, not 1. Split it in Revit by hand.");
+            return 0;
+        }
+
+        GisDriftShape keeper = keepers[0];
+        if (!floors.TryGetValue(keeper.UniqueId, out ShapeFloor? floor))
+        {
+            problems.Add($"{keeper.Describe()}: no floor in this model has unique id {keeper.UniqueId}. Units from rooms and families are split in Revit by hand.");
+            return 0;
+        }
+
+        List<Polygon2D> outline = ToModel(keeper.Outline, projectToModel);
+        List<(GisDriftShape Piece, List<Polygon2D> Outline)> others = pieces
+            .Where(piece => !piece.Keeps)
+            .Select(piece => (piece, ToModel(piece.Outline, projectToModel)))
+            .ToList();
+        if (outline.Count == 0 || others.Any(other => other.Outline.Count == 0))
+        {
+            problems.Add($"{keeper.Describe()}: a piece of this split has no area in the GDB outline.");
+            return 0;
+        }
+
+        if (!CanSketch(outline) || others.Any(other => !CanSketch(other.Outline)))
+        {
+            problems.Add($"{keeper.Describe()}: {CrossesItself}");
+            return 0;
+        }
+
+        // A new floor is one polygon, so a piece in several parts could never be read back as drawn.
+        if (others.Any(other => other.Outline.Count > 1))
+        {
+            problems.Add($"{keeper.Describe()}: a piece of this split is in several separate parts in the GDB. Split it in Revit by hand.");
+            return 0;
+        }
+
+        bool redraw = !SameOutline(floor.Outline, outline);
+        if (redraw && floor.Outline.Count > 1)
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {InParts(floor)}");
+            return 0;
+        }
+
+        List<NewFloor> missing = others
+            .Where(other => !floors.Values.Any(existing => existing.UniqueId != floor.UniqueId && existing.LevelId == floor.LevelId && SameOutline(existing.Outline, other.Outline)))
+            .Select(other => NewFloorOf(other.Piece, other.Outline, standard, problems))
+            .ToList();
+        int settled = (redraw ? 0 : 1) + (others.Count - missing.Count);
+        if (!redraw && missing.Count == 0)
+        {
+            return settled;
+        }
+
+        if (redraw && floor.CannotEdit != null)
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {floor.CannotEdit}, so its sketch is not redrawn. Split it in Revit by hand.");
+            return settled;
+        }
+
+        List<Polygon2D>? sketch = redraw ? SketchFor(floor, outline) : null;
+        if (sketch != null && (sketch.Count != 1 || !CanSketch(sketch)))
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {CutApart}");
+            return settled;
+        }
+
+        edits.Add(new ShapeEdit(ShapeEditKind.Split, keeper, floor, outline, missing, redraw, sketch: sketch));
+        return settled;
+    }
+
+    /// <summary>
+    /// Plans one merge: the floor that keeps its row takes the merged outline, and the floors the
+    /// GDB merged into it are deleted. A floor already gone counts as done, so a second read offers
+    /// nothing. Returns how many of the group's shapes the model already matches.
+    /// </summary>
+    private static int PlanMerge(
+        IReadOnlyList<GisDriftShape> shapes,
+        IReadOnlyDictionary<string, ShapeFloor> floors,
+        AffineTransform2D projectToModel,
+        List<ShapeEdit> edits,
+        List<string> problems)
+    {
+        List<GisDriftShape> keepers = shapes.Where(shape => shape.Keeps).ToList();
+        if (keepers.Count != 1)
+        {
+            problems.Add($"{shapes[0].Describe()}: the drift file has {keepers.Count} units of this merge that keep their row, not 1. Merge them in Revit by hand.");
+            return 0;
+        }
+
+        GisDriftShape keeper = keepers[0];
+        if (!floors.TryGetValue(keeper.UniqueId, out ShapeFloor? floor) || floor.CannotEdit == NotAFloor)
+        {
+            problems.Add($"{keeper.Describe()}: no floor in this model has unique id {keeper.UniqueId}. Units from rooms and families are merged in Revit by hand.");
+            return 0;
+        }
+
+        List<Polygon2D> outline = ToModel(keeper.Outline, projectToModel);
+        if (outline.Count == 0)
+        {
+            problems.Add($"{keeper.Describe()}: the GDB outline has no area.");
+            return 0;
+        }
+
+        if (!CanSketch(outline))
+        {
+            problems.Add($"{keeper.Describe()}: {CrossesItself}");
+            return 0;
+        }
+
+        List<ShapeFloor> absorbed = new();
+        int settled = 0;
+        foreach (GisDriftShape gone in shapes.Where(shape => !shape.Keeps))
+        {
+            if (!floors.TryGetValue(gone.UniqueId, out ShapeFloor? other))
+            {
+                settled++;
+            }
+            else if (other.CannotEdit == NotAFloor)
+            {
+                problems.Add($"{gone.Describe()}: element {other.ElementId} {NotAFloor}, so the merge does not delete it. Merge it in Revit by hand.");
+                return settled;
+            }
+            else if (other.Outline.Count > 1)
+            {
+                problems.Add($"{gone.Describe()}: floor {other.ElementId} {InParts(other)}");
+                return settled;
+            }
+            else
+            {
+                absorbed.Add(other);
+            }
+        }
+
+        bool redraw = !SameOutline(floor.Outline, outline);
+        if (redraw && floor.Outline.Count > 1)
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {InParts(floor)}");
+            return settled;
+        }
+
+        settled += redraw ? 0 : 1;
+        if (!redraw && absorbed.Count == 0)
+        {
+            return settled;
+        }
+
+        if (redraw && floor.CannotEdit != null)
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {floor.CannotEdit}, so its sketch is not redrawn. Merge it in Revit by hand.");
+            return settled;
+        }
+
+        List<Polygon2D>? sketch = redraw ? SketchFor(floor, outline) : null;
+        if (sketch != null && (sketch.Count != 1 || !CanSketch(sketch)))
+        {
+            problems.Add($"{keeper.Describe()}: floor {floor.ElementId} {CutApart}");
+            return settled;
+        }
+
+        edits.Add(new ShapeEdit(ShapeEditKind.Merge, keeper, floor, outline, Array.Empty<NewFloor>(), redraw, absorbed, sketch: sketch));
+        return settled;
+    }
+
+    /// <summary>
+    /// A new floor for a piece: the GDB name, alt_name and category the piece carries, as the
+    /// parameters name, short_name and category, and the standard floor type of its category and
+    /// restriction. A field the piece does not carry, or a category the standard does not know,
+    /// leaves the kept floor's value or type.
+    /// </summary>
+    public static NewFloor NewFloorOf(GisDriftShape piece, IReadOnlyList<Polygon2D> outline, GisToolStandard? standard, List<string> problems)
+    {
+        Dictionary<string, string> values = new(StringComparer.Ordinal);
+        if (piece.GdbName.Length > 0)
+        {
+            values["name"] = piece.GdbName;
+        }
+
+        if (piece.GdbAltName.Length > 0)
+        {
+            values["short_name"] = piece.GdbAltName;
+        }
+
+        string? typeName = null;
+        if (piece.GdbCategory.Length > 0 && standard != null)
+        {
+            (string? category, string? problem) = ParameterTable.CheckValue("category", piece.GdbCategory, standard);
+            if (category != null)
+            {
+                values["category"] = category;
+            }
+            else
+            {
+                problems.Add($"{piece.Describe()}: {problem} The new floor takes the kept floor's category.");
+            }
+
+            typeName = StandardTypeFor(piece.GdbCategory, piece.GdbRestriction, standard)?.Name;
+        }
+
+        return new NewFloor(piece, outline, values, typeName);
+    }
+
+    /// <summary>The standard floor type of a GDB category and restriction, spelled as on category rows; null when none matches.</summary>
+    public static StandardFloorType? StandardTypeFor(string category, string restriction, GisToolStandard standard)
+    {
+        string wanted = ImdfRestrictionNormalizer.FloorTypeRestriction(restriction) ?? string.Empty;
+        return standard.FloorTypes.FirstOrDefault(type =>
+            string.Equals(type.GisCategory, category, StringComparison.Ordinal)
+            && (ImdfRestrictionNormalizer.FloorTypeRestriction(type.GisRestriction) ?? string.Empty) == wanted);
     }
 
     /// <summary>The GDB outline in model feet, each ring cleaned of points closer than <see cref="ShortestEdgeFeet"/>; rings left with fewer than 3 points are dropped.</summary>
