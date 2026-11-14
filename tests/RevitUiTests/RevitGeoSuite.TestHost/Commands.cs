@@ -56,6 +56,10 @@ internal sealed class Commands
                 "doors" => api.Run(ModelCommands.Doors, Quick),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
                 "redo" => PostOrPress("ID_EDIT_REDO", "Redo", "やり直し"),
+                "undoProbe" => UndoState(),
+                "shellWindow" => new Dictionary<string, object?> { ["did"] = UndoProbe.Shell(Text(request, "action")), ["last"] = recorder.LastSequence },
+                "clickView" => new Dictionary<string, object?> { ["did"] = api.Run(UndoProbe.ViewRectangle, Quick) is { } rectangle ? UndoProbe.ClickView(rectangle) : "no open view" },
+                "ctrlZ" => new Dictionary<string, object?> { ["did"] = UndoProbe.CtrlZ(), ["last"] = recorder.LastSequence },
                 "elements" => api.Run(app => FloorCommands.Elements(app, Strings(request, "uniqueIds"), Longs(request, "ids")), Quick),
                 "firstOf" => api.Run(app => FloorCommands.FirstOf(app, Text(request, "category")), Quick),
                 "floorGeometry" => api.Run(app => FloorCommands.FloorGeometry(app, Text(request, "uniqueId")), Quick),
@@ -321,6 +325,18 @@ internal sealed class Commands
                 return pressed;
             }
         }
+    }
+
+    // Revit's command state (API thread) and the windows (this thread), together.
+    private Dictionary<string, object?> UndoState()
+    {
+        Dictionary<string, object?> state = api.Run(UndoProbe.Commands, Quick);
+        foreach (KeyValuePair<string, object?> pair in UndoProbe.Windows())
+        {
+            state[pair.Key] = pair.Value;
+        }
+
+        return state;
     }
 
     // What decides whether Revit enables a command: the active document and whether a transaction is

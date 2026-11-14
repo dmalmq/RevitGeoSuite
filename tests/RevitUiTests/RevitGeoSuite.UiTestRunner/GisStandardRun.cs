@@ -98,6 +98,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         new("c3b-split", "Review GDB edits splits a floor by the GDB's pieces (C3b).", run => run.SplitSteps()),
         new("c3c-merge", "Review GDB edits merges floors the GDB merged (C3c).", run => run.MergeSteps()),
         new("c3d-hand-drawn", "Review GDB edits creates a floor for a unit drawn by hand in the GDB (C3d).", run => run.HandDrawnSteps()),
+        new("undo-probe", "where Revit offers Undo after a fixture and after an Apply, and whether Ctrl+Z works (diagnosis).", run => run.UndoProbeSteps()),
         new("a3-fields", "the export writes elevator levels_served, door fields and GDB-owned field rows (RevitGeoSuite #45).", run => run.A3Steps()),
         new("georef-read", "reads RevitGeoSuite's georeference record and Revit's coordinates from a copy of the model; changes nothing.", run => run.Step("G.R", "Read the georeference record and coordinates", run.ReadGeoreference)),
         new("c4-waiting", "GDB edits waiting in the station's drift file show on the GIS standard button and the export page, and go once applied (C4).", run => run.WaitingSteps()),
