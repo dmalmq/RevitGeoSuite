@@ -249,6 +249,16 @@ internal sealed partial class GisStandardRun
         NetworkFixture.Write(network.Path, network.Written);
         await ReadAgain();
         step.Check(await Shell.ShowsAsync(Shell.Text(network.Expected.CountsLine), 15000), $"With the file put back, Read again reads '{network.Expected.CountsLine}' ({await CountsLine()}).");
+
+        // C8.7's Read again while shown could not draw another EPSG, so Show hid the network; show it again for C8.10.
+        ILocator show = Visible(Shell.Button("Show in Revit"));
+        if (await show.CountAsync() > 0)
+        {
+            step.Note("The network was hidden by C8.7 or this step, so the step clicks Show in Revit again.");
+            await show.ClickAsync();
+        }
+
+        step.Check(await Shell.ShowsAsync(Visible(Shell.Button("Hide in Revit")), 30000), "The network is shown again ('Hide in Revit').");
     }
 
     private async Task NetworkAudit(StepResult step)
