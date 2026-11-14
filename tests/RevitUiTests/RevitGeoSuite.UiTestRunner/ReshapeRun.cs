@@ -385,6 +385,19 @@ internal sealed partial class GisStandardRun
         // C3a's build says "floor(s) reshaped"; from C3b on, every shape edit says "shape edit(s) applied".
         Regex banner = new($@"^{count} (floor\(s\) reshaped|shape edit\(s\) applied)");
         bool applied = await Shell.ShowsAsync(Shell.Text(banner), 120000);
+        if (!applied)
+        {
+            // A Revit error or warning dialog (such as "Error - cannot be ignored … Quit sketching")
+            // holds the add-in until someone answers it. Record its text and cancel it, as a person
+            // would, so the page can finish and show its own result and log.
+            JsonObject closed = host.Call("closeDialogs", new { timeoutMs = 20000 });
+            if (closed["closed"]?.AsArray() is { Count: > 0 } dialogs)
+            {
+                step.Check(false, $"Revit showed {dialogs.Count} dialog(s) during Apply; cancelled: {dialogs.ToJsonString()}");
+                applied = await Shell.ShowsAsync(Shell.Text(banner), 60000);
+            }
+        }
+
         await RecordApplyResult(step, seq);
         step.Check(applied, $"The banner reads '{count} floor(s) reshaped' or '{count} shape edit(s) applied'.");
         return await ReadAppliedLog();

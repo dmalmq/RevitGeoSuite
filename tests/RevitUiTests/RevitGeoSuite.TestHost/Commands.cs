@@ -20,6 +20,11 @@ internal sealed class Commands
     private readonly EventRecorder recorder;
     private readonly string root;
 
+    // The view Revit showed when the test host opened the model: Revit activated it itself. Undo is
+    // refused after the API switches views (B1.6, B2.2), and going back to this view is the way out.
+    private long? openedViewId;
+    private string openedViewDocument = string.Empty;
+
     public Commands(ApiQueue api, EventRecorder recorder, string root)
     {
         this.api = api;
@@ -153,6 +158,8 @@ internal sealed class Commands
                 document.SaveAs(detached, save);
             }
 
+            openedViewId = app.ActiveUIDocument?.ActiveView?.Id.Value;
+            openedViewDocument = document.PathName;
             Dictionary<string, object?> described = Describe(document);
             described["unloadedReferences"] = unloaded;
             return described;
@@ -232,7 +239,7 @@ internal sealed class Commands
     private Dictionary<string, object?> Activate(Dictionary<string, object?> request)
     {
         string path = TestRoot.Require(root, Text(request, "path"));
-        return api.Run(app => Describe(app.OpenAndActivateDocument(path).Document), Slow);
+        return api.Run(app => Describe(OpenAndRemember(app, path)), Slow);
     }
 
     // Closes every other open document under the test folder, without saving. Documents elsewhere
@@ -299,24 +306,70 @@ internal sealed class Commands
         }
         catch (InvalidOperationException refused) when (refused.Message.Contains("cannot run"))
         {
-            // Second try: give the active view window focus (an API-opened view may not be the frame
-            // Revit routes commands to), then post again. Last: press the toolbar button.
-            string focus = Win32Dialogs.FocusActiveView();
-            System.Threading.Thread.Sleep(500);
+            // Revit refuses Undo after the API switched the active view (b1 after B1.6, b2a after B2.2's
+            // Select buttons) and accepts it when the view Revit opened the model in is still active
+            // (c3a). So go back to that view by closing the views the API opened, then post again.
+            string back = api.Run(ReturnToOpenedView, Quick);
+            System.Threading.Thread.Sleep(1000);
             try
             {
                 Dictionary<string, object?> posted = Post(id);
-                posted["after"] = focus;
+                posted["after"] = back;
                 return posted;
             }
             catch (InvalidOperationException again) when (again.Message.Contains("cannot run"))
             {
                 Dictionary<string, object?> pressed = Win32Dialogs.PressMainWindowButton(
-                    buttonNames.Concat(new[] { id }).ToArray(), $"{refused.Message} After {focus}, still refused.");
+                    buttonNames.Concat(new[] { id }).ToArray(), $"{refused.Message} After {back}, still refused.");
                 pressed["last"] = recorder.LastSequence;
                 return pressed;
             }
         }
+    }
+
+    private Document OpenAndRemember(UIApplication app, string path)
+    {
+        Document document = app.OpenAndActivateDocument(path).Document;
+        openedViewId = app.ActiveUIDocument?.ActiveView?.Id.Value;
+        openedViewDocument = document.PathName;
+        return document;
+    }
+
+    private string ReturnToOpenedView(UIApplication app)
+    {
+        UIDocument ui = app.ActiveUIDocument ?? throw new InvalidOperationException("No active document.");
+        long active = ui.ActiveView.Id.Value;
+        if (openedViewId is not long opened || !string.Equals(openedViewDocument, ui.Document.PathName, StringComparison.OrdinalIgnoreCase)
+            || ui.Document.GetElement(new ElementId(opened)) is not View original)
+        {
+            return $"no recorded opening view (active view '{ui.ActiveView.Name}')";
+        }
+
+        var log = new List<string>();
+        if (active != opened)
+        {
+            if (!ui.GetOpenUIViews().Any(view => view.ViewId.Value == opened))
+            {
+                ui.ActiveView = original;
+                log.Add($"activated '{original.Name}'");
+            }
+
+            foreach (UIView view in ui.GetOpenUIViews().Where(view => view.ViewId.Value != opened).ToList())
+            {
+                string name = ui.Document.GetElement(view.ViewId)?.Name ?? view.ViewId.Value.ToString(CultureInfo.InvariantCulture);
+                try
+                {
+                    view.Close();
+                    log.Add($"closed '{name}'");
+                }
+                catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+                {
+                    log.Add($"could not close '{name}': {ex.Message}");
+                }
+            }
+        }
+
+        return $"returning to the opening view '{original.Name}' ({(log.Count == 0 ? "it was active" : string.Join(", ", log))}; active now '{ui.ActiveView.Name}')";
     }
 
     private Dictionary<string, object?> Post(string id) => api.Run(app =>
@@ -503,7 +556,7 @@ internal sealed class Commands
             Document family = app.Application.NewFamilyDocument(template);
             family.SaveAs(path, new SaveAsOptions { OverwriteExistingFile = true });
             family.Close(false);
-            return Describe(app.OpenAndActivateDocument(path).Document);
+            return Describe(OpenAndRemember(app, path));
         }, Slow);
     }
 

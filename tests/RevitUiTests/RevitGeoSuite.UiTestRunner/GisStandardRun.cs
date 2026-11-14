@@ -228,8 +228,16 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
 
     private async Task OpenPage(StepResult step, DateTime revitStartedUtc)
     {
+        // A port file from an earlier Revit names a dead port; take it away so only this Revit's counts.
+        string portFile = options.DevToolsFile;
+        if (File.Exists(portFile) && File.GetLastWriteTimeUtc(portFile) < revitStartedUtc)
+        {
+            File.Delete(portFile);
+            step.Note($"Deleted {portFile} from an earlier Revit session.");
+        }
+
         host.Call("ribbon", new { tab = Tab, panel = Panel, button = "GisStandard" });
-        int port = await WaitForPort(revitStartedUtc);
+        int port = await WaitForPort(step, revitStartedUtc);
         shell = await ShellPage.AttachAsync(port, TimeSpan.FromSeconds(60));
         step.Note($"DevTools port {port} (127.0.0.1), page {Shell.Page.Url}.");
         await Shell.UseEnglishAsync();
@@ -840,18 +848,39 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
     }
 
-    private async Task<int> WaitForPort(DateTime revitStartedUtc)
+    /// <summary>
+    /// Waits for this Revit's WebView2 to write its DevTools port. The first page after a cold start
+    /// (a PC idle overnight, a WebView2 update) can take minutes, so the wait is 5 minutes, with the
+    /// ribbon button clicked once more halfway in case the first click went nowhere.
+    /// </summary>
+    private async Task<int> WaitForPort(StepResult step, DateTime revitStartedUtc)
     {
-        DateTime end = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+        DateTime start = DateTime.UtcNow;
+        bool clickedAgain = false;
         while (true)
         {
             try
             {
-                return DevToolsPort.Read(options.DevToolsFile, revitStartedUtc);
+                int port = DevToolsPort.Read(options.DevToolsFile, revitStartedUtc);
+                step.Note($"The page's DevTools port was ready {(DateTime.UtcNow - start).TotalSeconds:0} s after the ribbon click.");
+                return port;
             }
-            catch (InvalidOperationException) when (DateTime.UtcNow < end)
+            catch (InvalidOperationException ex)
             {
-                await Task.Delay(500);
+                TimeSpan waited = DateTime.UtcNow - start;
+                if (waited > TimeSpan.FromMinutes(5))
+                {
+                    throw new InvalidOperationException($"{ex.Message} Waited {waited.TotalSeconds:0} s. Revit dialogs: {host.Call("windows")["windows"]?.ToJsonString()}.");
+                }
+
+                if (!clickedAgain && waited > TimeSpan.FromMinutes(2.5))
+                {
+                    clickedAgain = true;
+                    step.Note($"No DevTools port {waited.TotalSeconds:0} s after the ribbon click; clicking it again. Revit dialogs: {host.Call("windows")["windows"]?.ToJsonString()}.");
+                    host.Call("ribbon", new { tab = Tab, panel = Panel, button = "GisStandard" });
+                }
+
+                await Task.Delay(1000);
             }
         }
     }
