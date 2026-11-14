@@ -76,6 +76,7 @@ public sealed class GisModelFile
     private IDictionary<string, JToken>? UnknownFields { get; set; }
 
     /// <summary>The name of the station profile this model exports with.</summary>
+    [JsonIgnore]
     public string ProfileName => string.IsNullOrWhiteSpace(Profile) ? DefaultProfileName : Profile!.Trim();
 
     /// <summary>The file for a model in a station folder.</summary>

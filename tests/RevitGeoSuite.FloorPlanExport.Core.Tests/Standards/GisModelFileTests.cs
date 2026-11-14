@@ -175,7 +175,7 @@ public sealed class GisModelFileTests : IDisposable
         GisModelFile named = GisModelFile.Parse("{\"schema\":\"revitgeosuite.gis-model\",\"version\":1,\"profile\":\"Night\"}", "test");
 
         Assert.Equal("Station", none.ProfileName);
-        Assert.DoesNotContain("\"profile\"", none.ToJson());
+        Assert.DoesNotContain("rofile", none.ToJson());
         Assert.Equal("Night", named.ProfileName);
         Assert.Contains("\"profile\": \"Night\"", named.ToJson());
     }
