@@ -19,6 +19,7 @@ internal sealed partial class GisStandardRun
     private bool splitUndone;
     private (FloorUnit Unit, List<(double X, double Y)> West, List<(double X, double Y)> East)? splitSpare;
     private MergeCase? merge;
+    private (FloorUnit Kept, FloorUnit Taken)? mergeSpare;
     private bool splitCard;
     private bool mergeCard;
 
@@ -70,15 +71,50 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        (FloorUnit unit, SplitCut pieces) = candidates[0];
-        splitSpare = candidates.Skip(1).Where(pair => pair.Cut.NewPieceOnEastSide(1.0)).Select(pair => ((FloorUnit Unit, List<(double X, double Y)> West, List<(double X, double Y)> East)?)(pair.Unit, pair.Cut.West, pair.Cut.East)).FirstOrDefault();
-        string path = WriteDrift("split.gis-drift.json", unit, ReshapeFixture.SplitShapes(unit, pieces.West, pieces.East));
+        // The export shows the outline only. Elements that cut a floor (openings, shafts) can make the plan refuse
+        // it, so floors hosting nothing go first and each candidate is read by the plan (no Revit change) until
+        // one gives a card. C3b.8 then takes the next one that gives a card and whose new piece is east.
+        candidates = candidates.OrderBy(pair => scan.First(row => row.UniqueId == pair.Unit.UniqueId).Dependents.Length == 0 ? 0 : 1).ToList();
+        var offered = new List<(FloorUnit Unit, SplitCut Cut, string Path)>();
+        foreach (var (candidate, cut) in candidates.Take(12))
+        {
+            string probe = WriteDrift($"split-{offered.Count + 1}.gis-drift.json", candidate, ReshapeFixture.SplitShapes(candidate, cut.West, cut.East));
+            (int shapes, string[] problems) = await Probe(probe);
+            if (shapes > 0)
+            {
+                offered.Add((candidate, cut, probe));
+                if (offered.Count > 1 && cut.NewPieceOnEastSide(1.0))
+                {
+                    break;
+                }
+            }
+            else
+            {
+                step.Note($"Skipped {candidate.Category} floor {candidate.UniqueId}: {string.Join(" | ", problems)}");
+                File.Delete(probe);
+            }
+        }
+
+        if (!step.Check(offered.Count > 0, $"The plan offers a split card for one of the first {Math.Min(12, candidates.Count)} candidates."))
+        {
+            return;
+        }
+
+        (FloorUnit unit, SplitCut pieces, string path) = offered[0];
+        splitSpare = offered.Skip(1).Where(pair => pair.Cut.NewPieceOnEastSide(1.0)).Select(pair => ((FloorUnit Unit, List<(double X, double Y)> West, List<(double X, double Y)> East)?)(pair.Unit, pair.Cut.West, pair.Cut.East)).FirstOrDefault();
         FloorScanRow floor = scan.First(row => row.UniqueId == unit.UniqueId);
         ElementRow before = Element(unit.UniqueId);
         Dictionary<string, string?> values = Values(before.Id!.Value, GisFields);
         split = new SplitCase(path, unit, floor, before, values, pieces.West, pieces.East, scan.Count(row => row.Level == floor.Level));
         step.Note($"Wrote {path}: '{unit.Name}' ({unit.Category}) cut along {pieces.Axis} = {pieces.At:0.00}, kept piece {ReshapeFixture.Area(pieces.West):0.0} m², new piece {ReshapeFixture.Area(pieces.East):0.0} m².");
         step.Note($"F = {unit.UniqueId}, element {before.Id}, type {before.TypeName} ({before.TypeId}), level {floor.Level} ({before.LevelId}), offset {Feet(before.HeightOffsetFt ?? 0)} ft, area {before.AreaM2:0.0} m², {split.FloorsOnLevel} floor(s) on the level. Values: {Describe(values)}.");
+    }
+
+    /// <summary>What the plan makes of a drift file, read without picking it and without touching Revit.</summary>
+    private async Task<(int Shapes, string[] Problems)> Probe(string path)
+    {
+        JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
+        return (drift?["shapes"]?.AsArray().Count ?? 0, Problems(drift));
     }
 
     private async Task PickSplit(StepResult step)
@@ -333,6 +369,10 @@ internal sealed partial class GisStandardRun
         }
 
         (FloorUnit keptUnit, FloorUnit takenUnit, double distance) = pairs[0];
+        mergeSpare = pairs.Skip(1)
+            .Where(pair => pair.Taken.UniqueId != takenUnit.UniqueId && pair.Kept.UniqueId != takenUnit.UniqueId)
+            .Select(pair => ((FloorUnit Kept, FloorUnit Taken)?)(pair.Kept, pair.Taken))
+            .FirstOrDefault();
         FloorScanRow keptRow = Row(keptUnit.UniqueId)!, takenRow = Row(takenUnit.UniqueId)!;
         string path = WriteDrift("merge.gis-drift.json", keptUnit, ReshapeFixture.Merged(keptUnit, takenUnit.UniqueId));
         merge = new MergeCase(path, keptUnit, keptRow, takenUnit, takenRow, Element(keptUnit.UniqueId), scan.Count(row => row.Level == keptRow.Level));
@@ -484,16 +524,26 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        if (merge.Applied)
-        {
-            step.NotRun($"G ({merge.Taken.Id}) is still merged away: Revit refused the Undo in C3c.6.");
-            return;
-        }
-
         if (!mergeCard)
         {
             step.NotRun("C3c.1 showed no merge card.");
             return;
+        }
+
+        if (merge.Applied)
+        {
+            // Revit refused the Undo in C3c.6, so G is still gone: use the next pair, which no step has touched.
+            if (mergeSpare is not { } spare)
+            {
+                step.NotRun($"G ({merge.Taken.Id}) is still merged away (Revit refused the Undo in C3c.6) and there is no second pair.");
+                return;
+            }
+
+            FloorScanRow[] scan = FloorScan();
+            FloorScanRow keptRow = scan.First(row => row.UniqueId == spare.Kept.UniqueId), takenRow = scan.First(row => row.UniqueId == spare.Taken.UniqueId);
+            string spareFile = WriteDrift("merge-hosted.gis-drift.json", spare.Kept, ReshapeFixture.Merged(spare.Kept, spare.Taken.UniqueId));
+            merge = new MergeCase(spareFile, spare.Kept, keptRow, spare.Taken, takenRow, Element(spare.Kept.UniqueId), scan.Count(row => row.Level == keptRow.Level));
+            step.Note($"the first G is not back after the refused Undo, so this step uses the second pair: K = {keptRow.Id} ({spare.Kept.Category}), G = {takenRow.Id} ({spare.Taken.Category}) on level {keptRow.Level}.");
         }
 
         JsonObject fixture;
