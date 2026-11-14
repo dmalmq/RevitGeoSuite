@@ -254,6 +254,59 @@ public sealed class GisShapeEditsTests
         Assert.InRange(GisShapeEdits.GapMetres(sketch, new[] { LumineSketch }), 0.9, 1.1);
     }
 
+    // LUMINE floor 6481239 cut across at model y = 5397 ft, as the c3b run cut it: whichever side keeps the
+    // floor, the export trims on the other side must not leave the kept sketch in parts.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ASplitAcrossTheExportTrimsOfALumineFloorIsOneCard(bool keepSouth)
+    {
+        Polygon2D south = Clip(LumineExported, 5397, below: true);
+        Polygon2D north = Clip(LumineExported, 5397, below: false);
+        ShapeFloor floor = new("f", 6481239, new[] { LumineExported }, sketch: new[] { LumineSketch }, levelId: 7);
+
+        ShapePlan plan = Plan(new[] { Piece("f", keepSouth, south), Piece("f", !keepSouth, north) }, new[] { floor });
+
+        Assert.Empty(plan.Problems);
+        ShapeEdit edit = Assert.Single(plan.Edits);
+        Assert.True(GisShapeEdits.CanSketch(edit.Sketch));
+        Assert.Single(edit.Sketch);
+
+        // A trim left on the new piece's side goes to the new floor, so the floor under the stair stays.
+        NewFloor added = Assert.Single(edit.NewFloors);
+        Polygon2D piece = keepSouth ? north : south;
+        Assert.Single(added.Outline);
+        Assert.InRange(Area(added.Outline) - Area(new[] { piece }), -0.01, 5);
+        Assert.InRange(Area(edit.Sketch) + Area(added.Outline), Area(new[] { LumineSketch }) - 0.5, Area(new[] { LumineSketch }) + 0.5);
+    }
+
+    private static Polygon2D Clip(Polygon2D polygon, double y, bool below)
+    {
+        bool Inside(Point2D point) => below ? point.Y <= y : point.Y >= y;
+        Point2D Cross(Point2D a, Point2D b) => new(a.X + (y - a.Y) / (b.Y - a.Y) * (b.X - a.X), y);
+        List<Point2D> ring = polygon.ExteriorRing.Take(polygon.ExteriorRing.Count - 1).ToList();
+        List<Point2D> clipped = new();
+        for (int index = 0; index < ring.Count; index++)
+        {
+            Point2D current = ring[index], previous = ring[(index + ring.Count - 1) % ring.Count];
+            if (Inside(current))
+            {
+                if (!Inside(previous))
+                {
+                    clipped.Add(Cross(previous, current));
+                }
+
+                clipped.Add(current);
+            }
+            else if (Inside(previous))
+            {
+                clipped.Add(Cross(previous, current));
+            }
+        }
+
+        return new Polygon2D(clipped);
+    }
+
     [Fact]
     public void AFloorWhoseExportOutlineIsTheGdbOutlineIsSettled()
     {
