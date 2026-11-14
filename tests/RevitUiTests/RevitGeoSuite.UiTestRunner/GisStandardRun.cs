@@ -924,9 +924,11 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     /// <summary>
     /// Undo or Redo, and waits for Revit to report it on <paramref name="transaction"/>. When Revit does not
     /// offer the command (the build PC, always), the test host types Ctrl+Z or Ctrl+Y into Revit's main
-    /// window, which works there for RevitGeoSuite's Apply (undo-probe). If no undo or redo event follows,
-    /// the step notes it and checks by state: <paramref name="transaction"/> committed as one transaction,
-    /// which is what one Undo takes back; it gets false so it can check the model as it is.
+    /// window, which works there for RevitGeoSuite's Apply (undo-probe). Once the command was posted or
+    /// typed, the step fails unless Revit reports an undo or redo of <paramref name="transaction"/>.
+    /// Only when Revit refused and nothing was typed (Revit's window not in front, or an older test
+    /// host) does the step note it and check by state: <paramref name="transaction"/> committed as one
+    /// transaction, which is what one Undo takes back. Returns true only when the event came.
     /// </summary>
     private bool UndoOrRedo(StepResult step, string command, string transaction)
     {
@@ -936,27 +938,33 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         {
             reply = host.PostCommand(command);
         }
-        catch (TestHostException ex)
+        catch (TestHostException ex) when (ex.Message.Contains("cannot run", StringComparison.Ordinal))
         {
-            return ByState(ex.Message);
+            return ByState($"Revit refused {command}. {ex.Message}");
         }
 
-        if (reply["typed"] is JsonNode typed)
+        if (reply["refused"] is JsonNode refused)
         {
-            step.Note($"Revit did not offer {command} ({reply["refused"]}), so the test host typed it: {typed}.");
+            if (reply["typed"]?.GetValue<bool>() != true)
+            {
+                return ByState($"Revit refused {command} ({refused}) and the test host typed nothing: {reply["typing"]}. State at the refusal: {reply["state"]}");
+            }
+
+            step.Note($"Revit did not offer {command} ({refused}), so the test host typed it: {reply["typing"]}.");
         }
 
+        RevitEvent found;
         try
         {
-            RevitEvent found = host.WaitForEvent(seq, item => item.Is(command, transaction), EventWait, $"{command} of '{transaction}'");
-            step.Note($"Revit: {found}");
-            return true;
+            found = host.WaitForEvent(seq, item => item.Kind == command, EventWait, $"{command} of '{transaction}'");
         }
         catch (TimeoutException ex)
         {
-            RevitEvent[] other = host.EventsAfter(seq).Where(item => item.Kind != "dialog").ToArray();
-            return ByState($"{ex.Message} Events instead: {(other.Length == 0 ? "none" : string.Join(" / ", other.Select(item => item.ToString())))}. State at the refusal: {reply["state"]}");
+            step.Check(false, $"{(reply["refused"] == null ? "Revit took the posted" : "The test host typed")} {command}, but nothing was {command}ne. {ex.Message}");
+            return false;
         }
+
+        return step.Check(found.Is(command, transaction), $"Revit's {command} is of '{transaction}' ({found}).");
 
         bool ByState(string why)
         {

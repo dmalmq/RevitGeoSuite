@@ -28,13 +28,30 @@ internal sealed partial class GisStandardRun
             return;
         }
 
+        long id = floor!.Id;
+        string before = GisKey(id);
         int seq = host.LastEvent();
-        JsonObject fixture = host.Call("fixture", new { values = new[] { new { id = floor!.Id, name = "gis_key", value = "undo-probe" } } });
+        JsonObject fixture = host.Call("fixture", new { values = new[] { new { id, name = "gis_key", value = "undo-probe" } } });
         step.Note($"Fixture: {fixture["log"]?.ToJsonString()}.");
         RevitEvent? commit = host.EventsAfter(seq).LastOrDefault(item => item.Kind == "commit");
         step.Check(commit != null, $"The fixture committed ({commit?.ToString() ?? "no commit seen"}).");
-        await ProbeStates(step, commit?.Names.FirstOrDefault() ?? string.Empty);
+        try
+        {
+            await ProbeStates(step, commit?.Names.FirstOrDefault() ?? string.Empty);
+        }
+        finally
+        {
+            // Ctrl+Z does not take the fixture back on the build PC, so put gis_key back through the host.
+            if (GisKey(id) != before)
+            {
+                host.Call("fixture", new { values = new[] { new { id, name = "gis_key", value = before } } });
+                step.Note($"Put floor {id}'s gis_key back to '{before}'.");
+            }
+        }
     }
+
+    private string GisKey(long id) =>
+        host.Call("params", new { ids = new[] { id }, names = new[] { "gis_key" } })["elements"]![id.ToString(System.Globalization.CultureInfo.InvariantCulture)]?["gis_key"]?.GetValue<string>() ?? string.Empty;
 
     private async Task ProbeApply(StepResult step)
     {
@@ -63,6 +80,7 @@ internal sealed partial class GisStandardRun
     }
 
     // Each state is noted as one line; Ctrl+Z goes last, with the shell window hidden, then the window comes back.
+    // The window comes back even when a step throws, so the rest of the session keeps its shell window.
     private async Task ProbeStates(StepResult step, string transaction)
     {
         void Record(string state) => step.Note($"[{state}] {host.Call("undoProbe").ToJsonString()}");
@@ -70,21 +88,28 @@ internal sealed partial class GisStandardRun
         Record("as left, shell window in front");
         step.Note($"Click in the view: {host.Call("clickView")["did"]}.");
         Record("after a click in the active view");
-        step.Note($"Shell window: {host.Call("shellWindow", new { action = "minimize" })["did"]}.");
-        Record("shell window minimised");
-        step.Note($"Shell window: {host.Call("shellWindow", new { action = "hide" })["did"]}.");
-        Record("shell window hidden");
-        step.Note($"Click in the view: {host.Call("clickView")["did"]}.");
-        Record("shell window hidden, after a click in the view");
+        try
+        {
+            step.Note($"Shell window: {host.Call("shellWindow", new { action = "minimize" })["did"]}.");
+            Record("shell window minimised");
+            step.Note($"Shell window: {host.Call("shellWindow", new { action = "hide" })["did"]}.");
+            Record("shell window hidden");
+            step.Note($"Click in the view: {host.Call("clickView")["did"]}.");
+            Record("shell window hidden, after a click in the view");
 
-        int seq = host.LastEvent();
-        step.Note($"Ctrl+Z: {host.Call("ctrlZ")["did"]}.");
-        await Shell.Page.WaitForTimeoutAsync(2000);
-        RevitEvent[] after = host.EventsAfter(seq).Where(item => item.Kind != "dialog").ToArray();
-        bool undone = after.Any(item => item.Kind == "undo");
-        step.Note($"After Ctrl+Z: {(after.Length == 0 ? "no Revit event" : string.Join(" / ", after.Select(item => item.ToString())))}. {(undone ? $"Ctrl+Z undid '{transaction}'." : $"Ctrl+Z did not undo '{transaction}'.")}");
-        Record("after Ctrl+Z");
-        step.Note($"Shell window: {host.Call("shellWindow", new { action = "show" })["did"]}; {host.Call("shellWindow", new { action = "restore" })["did"]}.");
-        Record("shell window back");
+            int seq = host.LastEvent();
+            JsonObject typed = host.Call("ctrlZ");
+            step.Note($"Ctrl+Z: {typed["typing"]}.");
+            await Shell.Page.WaitForTimeoutAsync(2000);
+            RevitEvent[] after = host.EventsAfter(seq).Where(item => item.Kind != "dialog").ToArray();
+            bool undone = after.Any(item => item.Kind == "undo");
+            step.Note($"After Ctrl+Z: {(after.Length == 0 ? "no Revit event" : string.Join(" / ", after.Select(item => item.ToString())))}. {(typed["typed"]?.GetValue<bool>() != true ? "Nothing was typed." : undone ? $"Ctrl+Z undid '{transaction}'." : $"Ctrl+Z did not undo '{transaction}'.")}");
+            Record("after Ctrl+Z");
+        }
+        finally
+        {
+            step.Note($"Shell window: {host.Call("shellWindow", new { action = "show" })["did"]}; {host.Call("shellWindow", new { action = "restore" })["did"]}.");
+            Record("shell window back");
+        }
     }
 }

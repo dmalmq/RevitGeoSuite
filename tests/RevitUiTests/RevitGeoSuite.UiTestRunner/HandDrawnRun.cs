@@ -79,7 +79,8 @@ internal sealed partial class GisStandardRun
             unit,
             floor,
             before,
-            scan.Count(row => row.Level == floor.Level) - 1) { ExpectedType = expectedType };
+            scan.Count(row => row.Level == floor.Level) - 1)
+        { ExpectedType = expectedType };
         step.Note($"Wrote {drawn.Path} (category {unit.Category}, restriction '{restriction}') and {drawn.UntypedPath}: '{drawn.Name}' on level_id {unit.LevelId}.");
     }
 

@@ -59,7 +59,7 @@ internal sealed class Commands
                 "undoProbe" => UndoState(),
                 "shellWindow" => new Dictionary<string, object?> { ["did"] = UndoProbe.Shell(Text(request, "action")), ["last"] = recorder.LastSequence },
                 "clickView" => new Dictionary<string, object?> { ["did"] = api.Run(UndoProbe.ViewRectangle, Quick) is { } rectangle ? UndoProbe.ClickView(rectangle) : "no open view" },
-                "ctrlZ" => new Dictionary<string, object?> { ["did"] = UndoProbe.CtrlZ(), ["last"] = recorder.LastSequence },
+                "ctrlZ" => CtrlZ(),
                 "elements" => api.Run(app => FloorCommands.Elements(app, Strings(request, "uniqueIds"), Longs(request, "ids")), Quick),
                 "firstOf" => api.Run(app => FloorCommands.FirstOf(app, Text(request, "category")), Quick),
                 "floorGeometry" => api.Run(app => FloorCommands.FloorGeometry(app, Text(request, "uniqueId")), Quick),
@@ -310,14 +310,19 @@ internal sealed class Commands
         catch (InvalidOperationException refused) when (refused.Message.Contains("cannot run"))
         {
             string state = api.Run(app => CommandState(app, id), Quick);
-            return new Dictionary<string, object?>
-            {
-                ["typed"] = UndoProbe.Control(letter),
-                ["refused"] = refused.Message,
-                ["state"] = state,
-                ["last"] = recorder.LastSequence,
-            };
+            Dictionary<string, object?> reply = UndoProbe.Control(letter).Reply();
+            reply["refused"] = refused.Message;
+            reply["state"] = state;
+            reply["last"] = recorder.LastSequence;
+            return reply;
         }
+    }
+
+    private Dictionary<string, object?> CtrlZ()
+    {
+        Dictionary<string, object?> reply = UndoProbe.CtrlZ().Reply();
+        reply["last"] = recorder.LastSequence;
+        return reply;
     }
 
     // Revit's command state (API thread) and the windows (this thread), together.

@@ -84,34 +84,71 @@ internal static class UndoProbe
         return (rectangle.Left, rectangle.Top, rectangle.Right, rectangle.Bottom);
     }
 
-    /// <summary>Brings Revit forward and clicks near the view's lower-left corner, then Escape to clear any selection.</summary>
+    /// <summary>
+    /// Brings Revit forward and clicks near the view's lower-left corner, then Escape to clear any selection.
+    /// Clicks nothing unless Revit's main window is in front, so the click cannot land in another program.
+    /// </summary>
     public static string ClickView((int Left, int Top, int Right, int Bottom) rectangle)
     {
-        string front = Win32Dialogs.ActivateMainWindow();
+        if (!RevitInFront(out string front))
+        {
+            return $"{front}; clicked nothing";
+        }
+
         int x = rectangle.Left + 20, y = rectangle.Bottom - 20;
         SetCursorPos(x, y);
-        Send(Mouse(0x0002), Mouse(0x0004));
+        if (!Send(Mouse(0x0002), Mouse(0x0004)))
+        {
+            return $"{front}; Windows did not take the click at ({x}, {y})";
+        }
+
         Thread.Sleep(300);
-        Send(Key(0x1B, false), Key(0x1B, true));
+        bool escaped = Send(Key(0x1B, false), Key(0x1B, true));
         Thread.Sleep(500);
-        return $"{front}; clicked the view at ({x}, {y})";
+        return $"{front}; clicked the view at ({x}, {y}){(escaped ? "" : ", Windows did not take Escape")}";
     }
 
     /// <summary>Ctrl+Z as a person types it, into Revit's main window brought forward.</summary>
-    public static string CtrlZ() => Control('Z');
+    public static Typing CtrlZ() => Control('Z');
 
     /// <summary>
     /// Ctrl+&lt;letter&gt; typed into Revit's main window. On the build PC Revit reports Undo as unavailable
     /// (CanPostCommand false, the toolbar button greyed) in every window state, yet Ctrl+Z typed into its
     /// main window undoes a RevitGeoSuite Apply (undo-probe, bbf2917), so typing is what a person does.
+    /// Types nothing unless Revit's main window is in front, so the keys cannot land in another program,
+    /// another Revit or a dialog; Typed says whether Windows took all four key events.
     /// </summary>
-    public static string Control(char letter)
+    public static Typing Control(char letter)
     {
-        string front = Win32Dialogs.ActivateMainWindow();
+        if (!RevitInFront(out string front))
+        {
+            return new Typing(false, $"{front}; typed nothing");
+        }
+
         ushort key = letter;
-        Send(Key(0x11, false), Key(key, false), Key(key, true), Key(0x11, true));
+        if (!Send(Key(0x11, false), Key(key, false), Key(key, true), Key(0x11, true)))
+        {
+            return new Typing(false, $"{front}; Windows did not take Ctrl+{letter}");
+        }
+
         Thread.Sleep(1500);
-        return $"{front}; typed Ctrl+{letter}";
+        return new Typing(true, $"{front}; typed Ctrl+{letter}");
+    }
+
+    public sealed class Typing(bool typed, string detail)
+    {
+        public bool Typed { get; } = typed;
+
+        public string Detail { get; } = detail;
+
+        public Dictionary<string, object?> Reply() => new() { ["typed"] = Typed, ["typing"] = Detail };
+    }
+
+    private static bool RevitInFront(out string front)
+    {
+        front = Win32Dialogs.ActivateMainWindow();
+        IntPtr main = Process.GetCurrentProcess().MainWindowHandle;
+        return main != IntPtr.Zero && GetForegroundWindow() == main;
     }
 
     private static IntPtr[] ShellWindows()
@@ -150,7 +187,7 @@ internal static class UndoProbe
         return text.ToString();
     }
 
-    private static void Send(params Input[] inputs) => SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input)));
+    private static bool Send(params Input[] inputs) => SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input))) == inputs.Length;
 
     private static Input Mouse(uint flags) => new() { Type = 0, Union = new InputUnion { Mouse = new MouseInput { Flags = flags } } };
 
