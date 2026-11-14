@@ -10,18 +10,22 @@
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Dialog, Table } from '$lib/kit'
   import { format } from '$lib/shell'
-  import { initiallyUnticked, modelMismatch, needsConfirm as confirmFirst } from '$lib/gisStandard/driftReview'
+  import { initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked } from '$lib/gisStandard/driftReview'
   import AppliedBanner from './AppliedBanner.svelte'
   import ProblemList from './ProblemList.svelte'
+  import ShapeEditList from './ShapeEditList.svelte'
 
   let drift = $state<GisDriftInspectResponse | null>(null)
-  let working = $state<'read' | 'apply' | null>(null)
+  let working = $state<'read' | 'apply' | 'shapes' | null>(null)
   let error = $state<string | null>(null)
   let unticked = $state<Set<number>>(new Set())
-  let applied = $state<{ log: string[]; skipped: string[] } | null>(null)
+  let shapesUnticked = $state<Set<string>>(new Set())
+  let applied = $state<{ log: string[]; skipped: string[]; shapes?: boolean } | null>(null)
   let confirmOpen = $state(false)
+  let confirmShapes = $state(false)
 
   const ticked = $derived((drift?.changes ?? []).filter((_, index) => !unticked.has(index)))
+  const tickedShapes = $derived((drift?.shapes ?? []).filter((shape) => !shapesUnticked.has(shape.uniqueId)))
   const mismatch = $derived(drift ? modelMismatch(drift) : null)
   const otherModel = $derived(mismatch !== null)
   const needsConfirm = $derived(!!drift && confirmFirst(drift))
@@ -36,6 +40,7 @@
       if (response.cancelled) return
       drift = response
       unticked = initiallyUnticked(response)
+      shapesUnticked = shapesInitiallyUnticked(response)
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
     } finally {
@@ -44,8 +49,31 @@
   }
 
   function start() {
+    confirmShapes = false
     if (needsConfirm) confirmOpen = true
     else void apply()
+  }
+
+  function startShapes() {
+    confirmShapes = true
+    if (needsConfirm) confirmOpen = true
+    else void applyShapes()
+  }
+
+  async function applyShapes() {
+    if (!drift) return
+    confirmOpen = false
+    working = 'shapes'
+    error = null
+    const path = drift.path
+    try {
+      applied = { ...(await request('gisDrift.applyShapes', { path, uniqueIds: tickedShapes.map((shape) => shape.uniqueId) })), shapes: true }
+    } catch (err: any) {
+      error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
+    } finally {
+      working = null
+    }
+    await inspect({ path, pick: false })
   }
 
   async function apply() {
@@ -87,10 +115,15 @@
   {#if error}<Banner tone="danger" onclose={() => (error = null)}>{error}</Banner>{/if}
   {#if applied}
     <AppliedBanner
-      title={format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), applied.log.length)}
+      title={applied.shapes
+        ? format($t('GisStandard.Shapes.Done', '{0} floor(s) reshaped, each one undo step. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)
+        : format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), applied.log.length)}
       log={applied.log}
       skipped={applied.skipped}
-      skippedTitle={format($t('GisStandard.Drift.Skipped', '{0} ticked change(s) were not written:'), applied.skipped.length)}
+      undoHint={applied.shapes ? $t('GisStandard.Shapes.UndoHint', 'Each floor is its own undo step in Revit.') : undefined}
+      skippedTitle={applied.shapes
+        ? format($t('GisStandard.Shapes.Skipped', '{0} ticked shape edit(s) were not applied:'), applied.skipped.length)
+        : format($t('GisStandard.Drift.Skipped', '{0} ticked change(s) were not written:'), applied.skipped.length)}
       onclose={() => (applied = null)}
     />
   {/if}
@@ -129,9 +162,9 @@
           {/if}
         </Banner>
       {/if}
-      {#if drift.changes.length === 0}
+      {#if drift.changes.length === 0 && drift.shapes.length === 0}
         <p class="mt-2 text-small text-muted-foreground">{$t('GisStandard.Drift.Nothing', 'The model already has every GDB edit it can take.')}</p>
-      {:else}
+      {:else if drift.changes.length > 0}
         <Table class="mt-2" maxHeight="45vh">
           <thead>
             <tr>
@@ -163,6 +196,12 @@
           </tbody>
         </Table>
       {/if}
+      {#if drift.shapes.length > 0}
+        <!-- A new read starts a new list, so a preview from the old one is cleared and no button says "Hide". -->
+        {#key drift}
+          <ShapeEditList shapes={drift.shapes} path={drift.path} bind:unticked={shapesUnticked} disabled={working !== null} onerror={(message) => (error = message)} />
+        {/key}
+      {/if}
       <ProblemList problems={drift.problems} />
     {/if}
     {#snippet actions()}
@@ -170,6 +209,11 @@
         {$t('GisStandard.Refresh', 'Check again')}
       </Button>
       <Button icon="folder-open" onclick={() => inspect({ path: '', pick: true })} disabled={working !== null}>{$t('GisStandard.Drift.Pick', 'Pick a drift file…')}</Button>
+      {#if drift && drift.shapes.length > 0}
+        <Button icon="square-pen" onclick={startShapes} disabled={working !== null || tickedShapes.length === 0} busy={working === 'shapes'}>
+          {format($t('GisStandard.Shapes.Apply', 'Apply {0} shape edit(s)'), tickedShapes.length)}
+        </Button>
+      {/if}
       {#if drift && drift.changes.length > 0}
         <Button variant="primary" icon="check" onclick={start} disabled={working !== null || ticked.length === 0} busy={working === 'apply'}>
           {applyLabel}
@@ -195,6 +239,10 @@
   {/if}
   {#snippet footer()}
     <Button onclick={() => (confirmOpen = false)}>{$t('Common.Cancel', 'Cancel')}</Button>
-    <Button variant="primary" icon="check" onclick={apply}>{applyLabel}</Button>
+    {#if confirmShapes}
+      <Button variant="primary" icon="square-pen" onclick={applyShapes}>{format($t('GisStandard.Shapes.Apply', 'Apply {0} shape edit(s)'), tickedShapes.length)}</Button>
+    {:else}
+      <Button variant="primary" icon="check" onclick={apply}>{applyLabel}</Button>
+    {/if}
   {/snippet}
 </Dialog>

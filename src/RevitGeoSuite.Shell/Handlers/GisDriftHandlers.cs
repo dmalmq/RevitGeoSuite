@@ -5,6 +5,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.Shell.Overlay;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.GisTools;
@@ -67,7 +70,9 @@ public sealed class GisDriftInspectHandler : IRpcHandler
             response.FileModel = file.Model;
             response.AppliedVersion = file.AppliedVersion;
             response.Changes = changes.Select(GisDriftWork.Item).ToArray();
-            response.Problems = problems.ToArray();
+            (IReadOnlyList<ShapeEdit> shapes, IReadOnlyList<string> shapeProblems) = ShapeEditWork.Plan(doc, file);
+            response.Shapes = shapes.Select(GisDriftWork.Item).ToArray();
+            response.Problems = problems.Concat(shapeProblems).ToArray();
             return response;
         });
     }
@@ -99,8 +104,144 @@ public sealed class GisDriftApplyHandler : IRpcHandler
     }
 }
 
+/// <summary>Draws one shape edit's outlines (the floor now in grey, the GDB's in orange) over the floor's plan in Revit. Changes nothing in the model.</summary>
+public sealed class GisShapeShowHandler : IRpcHandler
+{
+    public string Method => "gisDrift.showShape";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        GisShapeShowRequest request = (payload as JObject)?.ToObject<GisShapeShowRequest>() ?? new GisShapeShowRequest();
+        return RevitContext.Instance.InvokeAsync(app =>
+        {
+            UIDocument uiDocument = app.ActiveUIDocument ?? throw new InvalidOperationException("No active Revit document.");
+            Document doc = uiDocument.Document;
+            ShapeEdit edit = GisDriftWork.Find(doc, request.Path, request.UniqueId);
+            if (doc.GetElement(edit.Floor.UniqueId) is not Floor floor || ShapeEditWork.PlanViewOf(doc, floor.LevelId) is not ViewPlan view)
+            {
+                return (object?)new GisShapeShowResponse();
+            }
+
+            double z = FloorTopZ(floor) + 0.15;
+            List<OverlayLine> lines = Lines(edit.Floor.Outline, z, new Color(128, 128, 128))
+                .Concat(Lines(edit.Outline, z, new Color(234, 88, 12)))
+                .ToList();
+            OutlineOverlay.Show(view, lines);
+            if (uiDocument.ActiveView.Id != view.Id)
+            {
+                uiDocument.ActiveView = view;
+            }
+
+            uiDocument.ShowElements(floor.Id);
+            uiDocument.RefreshActiveView();
+            return new GisShapeShowResponse { View = view.Name };
+        });
+    }
+
+    private static double FloorTopZ(Floor floor) =>
+        floor.get_BoundingBox(null)?.Max.Z ?? 0;
+
+    private static IEnumerable<OverlayLine> Lines(IReadOnlyList<Polygon2D> outline, double z, Color color)
+    {
+        foreach (Polygon2D polygon in outline)
+        {
+            foreach (IReadOnlyList<Point2D> ring in new[] { polygon.ExteriorRing }.Concat(polygon.InteriorRings))
+            {
+                for (int index = 0; index + 1 < ring.Count; index++)
+                {
+                    yield return new OverlayLine(new XYZ(ring[index].X, ring[index].Y, z), new XYZ(ring[index + 1].X, ring[index + 1].Y, z), color);
+                }
+            }
+        }
+    }
+}
+
+/// <summary>Removes the outline preview.</summary>
+public sealed class GisShapeClearHandler : IRpcHandler
+{
+    public string Method => "gisDrift.clearShape";
+
+    public Task<object?> HandleAsync(object? payload) =>
+        RevitContext.Instance.InvokeAsync(app =>
+        {
+            OutlineOverlay.Clear();
+            app.ActiveUIDocument?.RefreshActiveView();
+            return (object?)null;
+        });
+}
+
+/// <summary>Review GDB edits: applies the ticked shape edits the file still plans, each as its own undo step.</summary>
+public sealed class GisShapeApplyHandler : IRpcHandler
+{
+    public string Method => "gisDrift.applyShapes";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        GisShapeApplyRequest request = (payload as JObject)?.ToObject<GisShapeApplyRequest>() ?? new GisShapeApplyRequest();
+        return RevitContext.Instance.InvokeAsync(app =>
+        {
+            Document doc = app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active Revit document.");
+            GisStandardWork.RequireEditable(doc);
+            OutlineOverlay.Clear();
+            (IReadOnlyList<ShapeEdit> planned, _) = ShapeEditWork.Plan(doc, GisDriftWork.Read(request.Path));
+            Dictionary<string, ShapeEdit> byFloor = planned.ToDictionary(edit => edit.Floor.UniqueId, StringComparer.Ordinal);
+            List<string> log = new();
+            List<string> skipped = new();
+            foreach (string uniqueId in request.UniqueIds.Distinct(StringComparer.Ordinal))
+            {
+                if (!byFloor.TryGetValue(uniqueId, out ShapeEdit? edit))
+                {
+                    skipped.Add($"{uniqueId}: the file no longer plans a shape edit for it, or the floor already has the GDB outline.");
+                    continue;
+                }
+
+                try
+                {
+                    IReadOnlyList<string> notes = ShapeEditWork.Apply(doc, edit);
+                    log.Add(edit.Label());
+                    log.AddRange(notes.Select(note => "  " + note));
+                }
+                catch (Exception error) when (error is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or ArgumentException)
+                {
+                    skipped.Add($"{edit.Label()}: {error.Message}");
+                }
+            }
+
+            app.ActiveUIDocument?.RefreshActiveView();
+            return (object?)new GisStandardApplyResponse { Log = log.ToArray(), Skipped = skipped.ToArray() };
+        });
+    }
+}
+
 internal static class GisDriftWork
 {
+    private const double MetresPerFoot = 0.3048;
+
+    /// <summary>The planned shape edit of one floor, or an error the page shows.</summary>
+    public static ShapeEdit Find(Document document, string path, string uniqueId)
+    {
+        (IReadOnlyList<ShapeEdit> edits, _) = ShapeEditWork.Plan(document, Read(path));
+        return edits.FirstOrDefault(edit => edit.Floor.UniqueId == uniqueId)
+            ?? throw new InvalidOperationException("The drift file no longer plans this shape edit. Check again.");
+    }
+
+    public static GisShapeEditItem Item(ShapeEdit edit) => new()
+    {
+        UniqueId = edit.Floor.UniqueId,
+        Kind = "reshape",
+        ElementId = edit.Floor.ElementId,
+        Feature = edit.Shape.Label.Length > 0 ? edit.Shape.Label : edit.Floor.UniqueId,
+        Label = edit.Label(),
+        Before = Rings(edit.Floor.Outline),
+        After = Rings(edit.Outline),
+    };
+
+    private static double[][][] Rings(IReadOnlyList<Polygon2D> outline) =>
+        outline
+            .SelectMany(polygon => new[] { polygon.ExteriorRing }.Concat(polygon.InteriorRings))
+            .Select(ring => ring.Select(point => new[] { Math.Round(point.X * MetresPerFoot, 3), Math.Round(point.Y * MetresPerFoot, 3) }).ToArray())
+            .ToArray();
+
     public static GisDriftFile Read(string path)
     {
         try
