@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.FloorPlanExport.Core;
+using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Extractors;
@@ -22,13 +23,15 @@ public static class ShapeEditWork
             return ShapePlan.Empty;
         }
 
+        AffineTransform2D modelToProject = new SharedCoordinateProjector(document.ActiveProjectLocation).Transform;
+        ExportedOutlines exported = new(document, modelToProject);
         HashSet<string> wanted = new(file.Shapes.Select(shape => shape.UniqueId).Where(id => id.Length > 0), StringComparer.Ordinal);
         Dictionary<string, ShapeFloor> floors = new(StringComparer.Ordinal);
         foreach (string uniqueId in wanted)
         {
             if (document.GetElement(uniqueId) is Floor floor)
             {
-                floors[uniqueId] = new ShapeFloor(uniqueId, floor.Id.Value, FloorTopFaces.Read(floor).Outline, WhyNotEditable(document, floor), floor.LevelId.Value, SketchOf(document, floor));
+                floors[uniqueId] = new ShapeFloor(uniqueId, floor.Id.Value, exported.Of(floor), WhyNotEditable(document, floor), floor.LevelId.Value, SketchOf(document, floor));
             }
         }
 
@@ -52,12 +55,13 @@ public static class ShapeEditWork
             {
                 if (!floors.ContainsKey(beside.UniqueId))
                 {
-                    floors[beside.UniqueId] = new ShapeFloor(beside.UniqueId, beside.Id.Value, FloorTopFaces.Read(beside).Outline, levelId: beside.LevelId.Value);
+                    floors[beside.UniqueId] = new ShapeFloor(beside.UniqueId, beside.Id.Value, exported.Of(beside), levelId: beside.LevelId.Value);
                 }
             }
         }
 
-        return GisShapeEdits.Plan(file, floors, new SharedCoordinateProjector(document.ActiveProjectLocation).Transform, ModelEpsg(document), GisToolStandard.LoadEmbedded());
+        ShapePlan plan = GisShapeEdits.Plan(file, floors, modelToProject, ModelEpsg(document), GisToolStandard.LoadEmbedded());
+        return new ShapePlan(plan.Edits, exported.Problems.Concat(plan.Problems).ToList(), plan.Waiting);
     }
 
     /// <summary>
@@ -156,7 +160,6 @@ public static class ShapeEditWork
         double z = sketch.SketchPlane.GetPlane().Origin.Z;
         FailOnError failures = new();
         List<ElementId> created = new();
-        List<Polygon2D> drawn = new();
         List<string> typeNotes = new();
         using (Transaction transaction = new(document, edit.Label()))
         {
@@ -194,7 +197,6 @@ public static class ShapeEditWork
                     }
 
                     created.Add(floor.Id);
-                    drawn.Add(polygon);
                 }
             }
 
@@ -213,7 +215,6 @@ public static class ShapeEditWork
 
         return failures.Warnings.Distinct().Select(text => "Revit warned: " + text)
             .Concat(typeNotes.Distinct())
-            .Concat(made.Zip(drawn, (floor, polygon) => TopFaceGap(floor, new[] { polygon })).SelectMany(note => note))
             .Concat(made.Select(floor => $"New floor {floor.Id.Value} ({floor.Name}) on the level of floor {edit.Floor.ElementId}, with the GDB's values where the drift file gives them and floor {edit.Floor.ElementId}'s otherwise."));
     }
 
@@ -321,14 +322,14 @@ public static class ShapeEditWork
         }
 
         // An error in Revit's sketch check rolls the edit back without an exception, and the rollback brings the old boundary lines back.
-        if (failures.Errors.Count > 0 || boundary.Any(id => document.GetElement(id) != null) || document.GetElement(edit.Floor.UniqueId) is not Floor after)
+        if (failures.Errors.Count > 0 || boundary.Any(id => document.GetElement(id) != null) || document.GetElement(edit.Floor.UniqueId) is null)
         {
             string why = failures.Errors.Count > 0 ? ": " + string.Join(" ", failures.Errors.Distinct()) : string.Empty;
             throw new InvalidOperationException($"Revit refused the new outline of floor {edit.Floor.ElementId} ({Loops(edit.Sketch)}); the floor is unchanged{why}");
         }
 
+        // Whether the export now writes the GDB outline shows when the page reads the file again: a floor that still differs comes back as a problem that names the gap.
         List<string> notes = failures.Warnings.Distinct().Select(text => "Revit warned: " + text).ToList();
-        notes.AddRange(TopFaceGap(after, edit.Outline));
 
         notes.AddRange(dependents
             .Where(entry => document.GetElement(entry.Id) == null)
@@ -336,21 +337,9 @@ public static class ShapeEditWork
         return notes;
     }
 
-    /// <summary>A note when Revit drew the floor's top face away from the GDB outline, most likely where another element joins or cuts it.</summary>
-    private static IEnumerable<string> TopFaceGap(Floor floor, IReadOnlyList<Polygon2D> outline)
-    {
-        double gap = GisShapeEdits.GapMetres(FloorTopFaces.Read(floor).Outline, outline);
-        if (gap > GisShapeEdits.SameOutlineMetres)
-        {
-            yield return $"Floor {floor.Id.Value}'s top face is up to {Centimetres(gap)} off the GDB outline, most likely where another element joins or cuts it; the next export keeps that difference.";
-        }
-    }
-
     // What the refused sketch was, so a report shows whether a hole or a second part made Revit refuse it.
     private static string Loops(IReadOnlyList<Polygon2D> sketch) =>
         $"sketch of {sketch.Count} part(s), {sketch.Sum(polygon => polygon.InteriorRings.Count)} hole(s), {sketch.Sum(polygon => polygon.ExteriorRing.Count + polygon.InteriorRings.Sum(ring => ring.Count))} line(s)";
-
-    private static string Centimetres(double metres) => double.IsInfinity(metres) ? "the whole outline" : $"{metres * 100:F0} cm";
 
     /// <summary>A named element that depends on the floor (an opening, a hosted family), or empty for sketch parts and internals.</summary>
     private static string Describe(Element? element) =>
