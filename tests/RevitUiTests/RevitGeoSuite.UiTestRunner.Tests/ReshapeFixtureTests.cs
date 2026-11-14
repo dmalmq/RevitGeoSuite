@@ -183,4 +183,17 @@ public class ReshapeFixtureTests
         Assert.Equal("a_b_c.gis-drift.json", GisStandardRun.DriftFileName("a.b/c"));
         Assert.Equal("___.gis-drift.json", GisStandardRun.DriftFileName("駅é_"));
     }
+
+    [Fact]
+    public void Split_skips_an_outline_that_crosses_its_middle_line_more_than_twice()
+    {
+        // A U open to the east: the middle line X = 5 cuts both arms, so the ring crosses it four times.
+        var u = new List<(double X, double Y)> { (0, 0), (10, 0), (10, 4), (4, 4), (4, 6), (10, 6), (10, 10), (0, 10), (0, 0) };
+        var unit = new FloorUnit("m|u|0", "u", "U", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)u });
+        Assert.Equal(4, ReshapeFixture.CutCrossings(u, 5));
+        Assert.Null(ReshapeFixture.Split(unit));
+
+        var square = new FloorUnit("m|s|0", "s", "S", "L1", "walkway", 6677, new[] { Square });
+        Assert.NotNull(ReshapeFixture.Split(square));
+    }
 }

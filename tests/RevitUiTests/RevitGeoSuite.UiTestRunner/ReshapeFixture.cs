@@ -100,14 +100,32 @@ internal static class ReshapeFixture
 
     /// <summary>
     /// The unit cut in two at the middle of its east-west extent, as make_reshape_fixture.py --split does;
-    /// null for a unit with holes or a piece of 1 m² or less.
+    /// null for a unit with holes, a piece of 1 m² or less, or an outline that crosses the cut more than twice
+    /// (clipping that one against a line leaves zero-width bridges, which the planner rejects as self-crossing).
     /// </summary>
     public static (List<(double X, double Y)> West, List<(double X, double Y)> East)? Split(FloorUnit unit)
     {
         IReadOnlyList<(double X, double Y)> ring = unit.Rings[0];
         double middle = (ring.Min(point => point.X) + ring.Max(point => point.X)) / 2;
         List<(double X, double Y)> west = Clip(ring, middle, keepWest: true), east = Clip(ring, middle, keepWest: false);
-        return unit.Rings.Count > 1 || west.Count < 4 || east.Count < 4 || Area(west) < 1 || Area(east) < 1 ? null : (west, east);
+        return unit.Rings.Count > 1 || CutCrossings(ring, middle) != 2 || west.Count < 4 || east.Count < 4 || Area(west) < 1 || Area(east) < 1 ? null : (west, east);
+    }
+
+    /// <summary>How many times the closed ring's edges cross the line X = <paramref name="x"/>.</summary>
+    public static int CutCrossings(IReadOnlyList<(double X, double Y)> ring, double x)
+    {
+        List<(double X, double Y)> points = ring.Count > 1 && ring[0] == ring[^1] ? ring.Take(ring.Count - 1).ToList() : ring.ToList();
+        int crossings = 0;
+        for (int index = 0; index < points.Count; index++)
+        {
+            (double X, double Y) a = points[index], b = points[(index + 1) % points.Count];
+            if ((a.X < x) != (b.X < x))
+            {
+                crossings++;
+            }
+        }
+
+        return crossings;
     }
 
     public static double Area(IReadOnlyList<(double X, double Y)> ring) =>

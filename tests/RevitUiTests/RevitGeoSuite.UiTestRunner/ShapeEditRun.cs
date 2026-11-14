@@ -60,12 +60,13 @@ internal sealed partial class GisStandardRun
         }
 
         FloorScanRow[] scan = FloorScan();
+        HashSet<string> oneUnit = OneUnitFloors();
         var candidates = exportedUnits
-            .Where(unit => unit.Category is "retail" or "walkway" && scan.FirstOrDefault(row => row.UniqueId == unit.UniqueId) is FloorScanRow row && Redrawable(row))
+            .Where(unit => unit.Category is "retail" or "walkway" && oneUnit.Contains(unit.UniqueId) && scan.FirstOrDefault(row => row.UniqueId == unit.UniqueId) is FloorScanRow row && Redrawable(row))
             .OrderBy(unit => unit.Category == "retail" ? 0 : 1)
             .Select(unit => (Unit: unit, Pieces: ReshapeFixture.Split(unit)))
             .Where(pair => pair.Pieces != null);
-        if (!step.Check(candidates.Any(), "The export has a retail (or walkway) floor without holes that splits into two pieces over 1 m² and can be redrawn."))
+        if (!step.Check(candidates.Any(), "The export has a retail (or walkway) floor that exports as one unit without holes, whose outline crosses its middle line twice, and that can be redrawn."))
         {
             return;
         }
@@ -92,7 +93,11 @@ internal sealed partial class GisStandardRun
 
         await PickDrift(split.Path);
         ILocator card = Shell.Page.GetByTestId("shape-edit");
-        step.Check(await Shell.ShowsAsync(card.GetByText($"Split floor {split.Before.Id} into 2 floors"), 60000), $"One card reads 'Split floor {split.Before.Id} into 2 floors'.");
+        if (!step.Check(await Shell.ShowsAsync(card.GetByText($"Split floor {split.Before.Id} into 2 floors"), 60000), $"One card reads 'Split floor {split.Before.Id} into 2 floors'."))
+        {
+            await NoteProblems(step, split.Path);
+        }
+
         step.Check(await card.CountAsync() == 1, $"There is one card ({await card.CountAsync()}).");
         int dashed = await card.First.Locator("svg path[stroke-dasharray]").CountAsync();
         step.Check(dashed == 2, $"Its drawing has two dashed pieces ({dashed}).");
@@ -317,7 +322,9 @@ internal sealed partial class GisStandardRun
         }
 
         FloorScanRow[] scan = FloorScan();
+        HashSet<string> oneUnit = OneUnitFloors();
         var floors = exportedUnits
+            .Where(unit => oneUnit.Contains(unit.UniqueId))
             .Select(unit => (Unit: unit, Row: scan.FirstOrDefault(row => row.UniqueId == unit.UniqueId)))
             .Where(pair => pair.Row != null && Redrawable(pair.Row))
             .ToList();
@@ -328,7 +335,7 @@ internal sealed partial class GisStandardRun
             let gap = ReshapeFixture.Gap(k.Unit.Rings, g.Unit.Rings)
             orderby (k.Unit.Category == "retail" && g.Unit.Category == "retail" ? 0 : 1), gap > 0.01 ? 1 : 0, gap
             select (K: k, G: g, Gap: gap);
-        if (!step.Check(pairs.Any(), "Two floors on one level, the second hosting nothing."))
+        if (!step.Check(pairs.Any(), "Two floors on one level that each export as one unit, the second hosting nothing."))
         {
             return;
         }
@@ -349,7 +356,11 @@ internal sealed partial class GisStandardRun
 
         await PickDrift(merge.Path);
         ILocator card = Shell.Page.GetByTestId("shape-edit");
-        step.Check(await Shell.ShowsAsync(card.GetByText($"Merge 2 floors into floor {merge.Kept.Id}"), 60000), $"One card reads 'Merge 2 floors into floor {merge.Kept.Id}'.");
+        if (!step.Check(await Shell.ShowsAsync(card.GetByText($"Merge 2 floors into floor {merge.Kept.Id}"), 60000), $"One card reads 'Merge 2 floors into floor {merge.Kept.Id}'."))
+        {
+            await NoteProblems(step, merge.Path);
+        }
+
         step.Check(await card.CountAsync() == 1, $"There is one card ({await card.CountAsync()}).");
         int grey = await card.First.Locator("svg path:not([stroke-dasharray])").CountAsync();
         step.Note($"The drawing has {grey} grey path(s); both floors should show in grey.");
@@ -505,6 +516,23 @@ internal sealed partial class GisStandardRun
         List<RevitEvent> commits = host.EventsAfter(after).Where(item => item.Kind == "commit").ToList();
         step.Note($"Commit events: {string.Join(" / ", commits)}.");
         step.Check(commits.Any(item => item.Names.Contains(name, StringComparer.Ordinal)), $"A commit is named '{name}'.");
+    }
+
+    // A floor whose export is several units cannot be split or merged away as one GDB unit.
+    private HashSet<string> OneUnitFloors() =>
+        exportedUnits.GroupBy(unit => unit.UniqueId).Where(group => group.Count() == 1).Select(group => group.Key).ToHashSet();
+
+    // The plan's reasons when a card is missing, also shown under "row(s) will not be written".
+    private async Task NoteProblems(StepResult step, string path)
+    {
+        JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
+        step.Note($"Problems: {string.Join(" | ", Problems(drift))}");
+        ILocator rows = Shell.Page.GetByText(new Regex(@"row\(s\) will not be written"));
+        if (await rows.CountAsync() > 0)
+        {
+            await rows.First.ClickAsync();
+            await Shot(step, "problems-expanded");
+        }
     }
 
     private static readonly string[] GisFields = { "name", "short_name", "category", "id", "gis_key" };
