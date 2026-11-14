@@ -58,7 +58,7 @@ internal sealed partial class GisStandardRun
             }
 
             path = WriteDrift("reshape.gis-drift.json", unit!, ReshapeFixture.Reshaped(unit!, ReshapeFixture.Grow(unit!, GrowM)));
-            step.Note($"Wrote {path}: floor unit '{unit!.Name}' ({unit.Category}), {(ReshapeFixture.EastIsOneEdge(unit) ? "east edge" : "whole outline (its east side is not one straight edge)")} {GrowM} m east, EPSG:{unit.Epsg}.");
+            step.Note($"Wrote {path}: floor unit '{unit!.Name}' ({unit.Category}), east edge (vertices within {ReshapeFixture.EastEdgeToleranceM} m of the easternmost) {GrowM} m east, EPSG:{unit.Epsg}.");
         }
         else
         {

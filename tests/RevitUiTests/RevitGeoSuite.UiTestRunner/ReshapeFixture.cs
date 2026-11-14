@@ -62,48 +62,27 @@ internal static class ReshapeFixture
     public static FloorUnit? Pick(IEnumerable<FloorUnit> units, string category, string uniqueId = "") =>
         units.FirstOrDefault(unit => uniqueId.Length > 0 ? unit.UniqueId == uniqueId : unit.Category == category);
 
+    /// <summary>Vertices this close to the largest project-east coordinate are on the east edge.</summary>
+    public const double EastEdgeToleranceM = 0.3;
+
     /// <summary>
-    /// The unit moved <paramref name="growM"/> east (negative: west). When its east side is one straight
-    /// segment (exactly two easternmost points, next to each other), only that edge moves, so the floor
-    /// grows; otherwise, as on a floor with a notch at an east corner, moving the corner points alone
-    /// would make the ring cross itself, so the whole outline, holes included, is shifted.
+    /// The unit with only its east edge moved <paramref name="growM"/> east (negative: west): the
+    /// exterior ring's vertices within <see cref="EastEdgeToleranceM"/> of its largest X. Everything
+    /// else stays, so a notch another element cuts elsewhere in the floor stays where Revit has it.
     /// </summary>
     public static List<List<(double X, double Y)>> Grow(FloorUnit unit, double growM)
     {
-        if (!EastIsOneEdge(unit))
-        {
-            return unit.Rings.Select(ring => ring.Select(point => (point.X + growM, point.Y)).ToList()).ToList();
-        }
-
         double east = unit.Rings[0].Max(point => point.X);
         var rings = new List<List<(double X, double Y)>>
         {
-            unit.Rings[0].Select(point => Math.Abs(point.X - east) < 1e-6 ? (point.X + growM, point.Y) : point).ToList(),
+            unit.Rings[0].Select(point => east - point.X <= EastEdgeToleranceM ? (point.X + growM, point.Y) : point).ToList(),
         };
         rings.AddRange(unit.Rings.Skip(1).Select(ring => ring.ToList()));
         return rings;
     }
 
-    /// <summary>True when the exterior ring's easternmost points are exactly two neighbouring vertices.</summary>
-    public static bool EastIsOneEdge(FloorUnit unit)
-    {
-        IReadOnlyList<(double X, double Y)> ring = unit.Rings[0];
-        int count = ring.Count > 1 && ring[0] == ring[^1] ? ring.Count - 1 : ring.Count;
-        double east = ring.Take(count).Max(point => point.X);
-        int[] at = Enumerable.Range(0, count).Where(index => Math.Abs(ring[index].X - east) < 1e-6).ToArray();
-        return at.Length == 2 && (at[1] - at[0] == 1 || (at[0] == 0 && at[1] == count - 1));
-    }
-
-    /// <summary>
-    /// The unit cut back to everything at least <paramref name="bandM"/> west of its easternmost point: a
-    /// band the full height of the floor, also on a floor whose edges do not run north-south. Rings left
-    /// with fewer than 3 points are dropped.
-    /// </summary>
-    public static List<List<(double X, double Y)>> ShrinkEast(FloorUnit unit, double bandM)
-    {
-        double limit = unit.Rings[0].Max(point => point.X) - bandM;
-        return unit.Rings.Select(ring => Clip(ring, limit, keepWest: true)).Where(ring => ring.Count >= 4).ToList();
-    }
+    /// <summary>The unit with its east edge moved <paramref name="bandM"/> west, as C3a.9's shrink does.</summary>
+    public static List<List<(double X, double Y)>> ShrinkEast(FloorUnit unit, double bandM) => Grow(unit, -bandM);
 
     /// <summary>
     /// The unit cut in two at the middle of its east-west extent, as make_reshape_fixture.py --split does;

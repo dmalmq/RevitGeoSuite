@@ -34,18 +34,6 @@ public class ReshapeFixtureTests
     }
 
     [Fact]
-    public void Shrink_cuts_a_band_off_the_east_side_also_when_the_east_end_is_a_single_corner()
-    {
-        var diamond = new FloorUnit("m|d|0", "d", "diamond", "L1", "retail", 6677, new[] { new (double, double)[] { (0, 0), (5, -5), (10, 0), (5, 5), (0, 0) } });
-        var square = new FloorUnit("m|s|0", "s", "square", "L1", "retail", 6677, new[] { Square });
-
-        List<List<(double X, double Y)>> cut = ReshapeFixture.ShrinkEast(diamond, 1.5);
-
-        Assert.Equal(new (double, double)[] { (0, 0), (5, -5), (8.5, -1.5), (8.5, 1.5), (5, 5), (0, 0) }, cut[0]);
-        Assert.True(ReshapeFixture.Distance(ReshapeFixture.ShrinkEast(square, 1.5), ReshapeFixture.Grow(square, -1.5)) < 1e-9);
-    }
-
-    [Fact]
     public void Split_halves_a_unit_east_to_west_and_the_east_piece_carries_its_own_values()
     {
         var square = new FloorUnit("m|s|0", "s", "Shop", "L1", "retail", 6677, new[] { Square });
@@ -161,17 +149,13 @@ public class ReshapeFixtureTests
     }
 
     [Fact]
-    public void Shifts_the_whole_outline_when_the_east_side_has_a_notch()
+    public void Moves_only_the_east_edge_and_leaves_a_notch_elsewhere_where_it_is()
     {
-        // A floor with a notch at its north-east corner whose far corner is the one easternmost point:
-        // moving that point alone 1 m east makes the ring cross itself.
-        var ring = new List<(double X, double Y)> { (0, 0), (9.5, 0), (9.5, 8), (9, 8), (9, 9), (10, 10), (0, 10), (0, 0) };
-        var notched = new FloorUnit("m|n|0", "n", "notched", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)ring });
-        var square = new FloorUnit("m|s|0", "s", "square", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)new List<(double X, double Y)> { (0, 0), (10, 0), (10, 10), (0, 10), (0, 0) } });
+        // The east edge is slightly skewed (10.0 and 10.2); the notch at x 6 to 7 stays put.
+        var ring = new List<(double X, double Y)> { (0, 0), (10, 0), (10.2, 10), (7, 10), (7, 9), (6, 9), (6, 10), (0, 10), (0, 0) };
+        var unit = new FloorUnit("m|n|0", "n", "notched", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)ring });
 
-        Assert.False(ReshapeFixture.EastIsOneEdge(notched));
-        Assert.Equal(ring.Select(point => (point.X + 1, point.Y)), ReshapeFixture.Grow(notched, 1)[0]);
-        Assert.True(ReshapeFixture.EastIsOneEdge(square));
-        Assert.Equal(new[] { (0.0, 0.0), (11.0, 0.0), (11.0, 10.0), (0.0, 10.0), (0.0, 0.0) }, ReshapeFixture.Grow(square, 1)[0]);
+        Assert.Equal(new[] { (0.0, 0.0), (11.0, 0.0), (11.2, 10.0), (7.0, 10.0), (7.0, 9.0), (6.0, 9.0), (6.0, 10.0), (0.0, 10.0), (0.0, 0.0) }, ReshapeFixture.Grow(unit, 1)[0]);
+        Assert.Equal(new[] { (0.0, 0.0), (9.0, 0.0), (9.2, 10.0), (7.0, 10.0), (7.0, 9.0), (6.0, 9.0), (6.0, 10.0), (0.0, 10.0), (0.0, 0.0) }, ReshapeFixture.ShrinkEast(unit, 1)[0]);
     }
 }
