@@ -81,7 +81,7 @@ public static class GisNetworkSource
         }
     }
 
-    /// <summary>Reads this model's network file and draws it at this model's levels. Never throws for a bad file.</summary>
+    /// <summary>Reads this model's network file and draws it at this model's levels. Never throws for a bad file: a file the reader cannot take is a problem, not an error.</summary>
     public static GisNetworkView Read(Document document)
     {
         string path = Locate(document);
@@ -91,23 +91,21 @@ public static class GisNetworkSource
             return new GisNetworkView(path, writtenAt, null, null, string.Empty);
         }
 
-        GisNetworkFile file;
         try
         {
-            file = GisNetwork.Read(path);
+            GisNetworkFile file = GisNetwork.Read(path);
+            Dictionary<string, NetworkLevel> levels = LevelsByLevelId(document)
+                .ToDictionary(pair => pair.Key, pair => new NetworkLevel(pair.Value.Id.Value, pair.Value.ProjectElevation), StringComparer.Ordinal);
+            NetworkPicture picture = GisNetwork.Draw(file, new SharedCoordinateProjector(document.ActiveProjectLocation).Transform, ShapeEditWork.ModelEpsg(document), levels);
+            return new GisNetworkView(path, writtenAt, file, picture, string.Empty);
         }
-        catch (Exception error) when (error is FormatException or IOException or UnauthorizedAccessException)
+        catch (Exception error) when (error is not OutOfMemoryException and not StackOverflowException)
         {
             return new GisNetworkView(path, writtenAt, null, null, error.Message);
         }
-
-        Dictionary<string, NetworkLevel> levels = LevelsByLevelId(document)
-            .ToDictionary(pair => pair.Key, pair => new NetworkLevel(pair.Value.Id.Value, pair.Value.ProjectElevation), StringComparer.Ordinal);
-        NetworkPicture picture = GisNetwork.Draw(file, new SharedCoordinateProjector(document.ActiveProjectLocation).Transform, ShapeEditWork.ModelEpsg(document), levels);
-        return new GisNetworkView(path, writtenAt, file, picture, string.Empty);
     }
 
-    /// <summary>The network findings for the GIS standard audit; a file that cannot be read is one warning.</summary>
+    /// <summary>The network findings for the GIS standard audit; a file that cannot be read is one warning, never an error that fails the Standard tab.</summary>
     public static IReadOnlyList<GisAuditFinding> Audit(Document document)
     {
         string path = Locate(document);
@@ -120,7 +118,7 @@ public static class GisNetworkSource
         {
             return GisNetwork.Audit(GisNetwork.Read(path), uniqueId => document.GetElement(uniqueId)?.Id.Value);
         }
-        catch (Exception error) when (error is FormatException or IOException or UnauthorizedAccessException)
+        catch (Exception error) when (error is not OutOfMemoryException and not StackOverflowException)
         {
             return new[] { new GisAuditFinding(GisAuditSeverity.Warning, GisNetwork.Topic, $"The walking network file from Kanizu could not be read: {error.Message}") };
         }

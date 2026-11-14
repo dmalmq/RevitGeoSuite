@@ -104,7 +104,7 @@ internal sealed class GisStandardNotifier
     private void OnViewActivated(object sender, ViewActivatedEventArgs e)
     {
         Refresh(e.Document, force: false);
-        GisNetworkWork.ReloadIfWritten(e.Document);
+        GisNetworkWork.ReloadIfWritten(sender as UIApplication, e.Document);
     }
 
     private void OnIdling(object sender, IdlingEventArgs e)

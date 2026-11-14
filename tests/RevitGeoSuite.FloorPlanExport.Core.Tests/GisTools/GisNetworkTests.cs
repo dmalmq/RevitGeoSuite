@@ -5,6 +5,7 @@ using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Tests.GisTools;
@@ -164,6 +165,69 @@ public sealed class GisNetworkTests
         Assert.Equal(GisAuditSeverity.Info, note.Severity);
         Assert.Equal("Kanizu did not check the walking network for: links through walls, later. Generate the network in Kanizu and save it to check them.", note.Message);
         Assert.Empty(GisNetwork.Parse(text.Replace("\"notChecked\": [\"linkThroughWall\", \"later\"],", string.Empty)).NotChecked);
+    }
+
+    [Fact]
+    public void LeavesOutAndCountsALinkOrConnectorItCannotPlaceWhole()
+    {
+        JObject root = JObject.Parse(File.ReadAllText(SamplePath()));
+        root["links"]![0]!["line"] = new JArray(new JArray(-7130.0, -34560.0));
+        root["links"]![1]!["line"]![1] = new JArray(double.NaN, -34555.0);
+        root["links"]![2]!["line"]![0]![0] = "far";
+        root["links"]![3]!["id"] = JToken.Parse("123456789012345678901234567890");
+        root["connectors"]![0]!["from"] = null;
+        root["connectors"]![1]!["to"]!["at"] = new JArray(-7115.0);
+
+        GisNetworkFile file = GisNetwork.Parse(root.ToString());
+        Assert.Equal(5, file.Unreadable);
+        Assert.Equal(new long[] { 0 }, file.Links.Select(link => link.Id));
+        Assert.Equal(new[] { "elevator", "ramp", "movingwalkway" }, file.Connectors.Select(connector => connector.Kind));
+        GisAuditFinding unreadable = Assert.Single(GisNetwork.Audit(file, _ => null), finding => finding.Message.StartsWith("5 link(s) or connector(s)", StringComparison.Ordinal));
+        Assert.Equal(GisAuditSeverity.Warning, unreadable.Severity);
+        Assert.Equal(0, Sample().Unreadable);
+    }
+
+    [Fact]
+    public void RefusesAVersionThatIsNotANumber()
+    {
+        string text = File.ReadAllText(SamplePath());
+        Assert.Contains("which is not a number", Assert.Throws<FormatException>(() => GisNetwork.Parse(text.Replace("\"version\": 1", "\"version\": \"one\""))).Message);
+        Assert.Contains("this tool reads version 1", Assert.Throws<FormatException>(() => GisNetwork.Parse(text.Replace("\"version\": 1", "\"version\": 123456789012345678901234567890"))).Message);
+    }
+
+    [Fact]
+    public void TakesTheUniqueIdFromTheRevitKeyWhenItIsMissing()
+    {
+        JObject root = JObject.Parse(File.ReadAllText(SamplePath()));
+        root["connectors"]![1]!["uniqueId"] = null;
+        root["findings"]![0]!["uniqueId"] = "";
+        GisNetworkFile file = GisNetwork.Parse(root.ToString());
+        Assert.Equal("esc-uid", file.Connectors[1].UniqueId);
+        Assert.Equal("stair2-uid", file.Findings[0].UniqueId);
+    }
+
+    [Fact]
+    public void DrawsInModelFeetUnderARotatedTransform()
+    {
+        // Project north is the model's +X: model (x, y) sits at origin + x * (0, Foot) + y * (-Foot, 0).
+        AffineTransform2D rotated = new(new Point2D(-7130, -34580), new Point2D(0, Foot), new Point2D(-Foot, 0));
+        NetworkStroke first = GisNetwork.Draw(Sample(), rotated, 6677, Levels).Strokes[0];
+        Assert.Equal(20 / Foot, first.X1, 6);
+        Assert.Equal(0, first.Y1, 6);
+        Assert.Equal(20 / Foot, first.X2, 6);
+        Assert.Equal(-10 / Foot, first.Y2, 6);
+    }
+
+    [Fact]
+    public void DrawsAConnectorWithinOneFloorInThatFloorsPlan()
+    {
+        JObject root = JObject.Parse(File.ReadAllText(SamplePath()));
+        root["connectors"]![4]!["to"]!["levelId"] = "lvl-1f";
+        NetworkPicture picture = GisNetwork.Draw(GisNetwork.Parse(root.ToString()), ModelToProject, 6677, Levels);
+        NetworkStroke walkway = picture.Strokes.First(stroke => stroke.Ink == NetworkInk.MovingWalkway);
+        Assert.Equal(102, walkway.PlanLevel);
+        Assert.Equal(walkway.Z1, walkway.Z2, 6);
+        Assert.DoesNotContain(picture.Strokes, stroke => stroke.Ink == NetworkInk.MovingWalkway && stroke.PlanLevel != 102);
     }
 
     [Fact]

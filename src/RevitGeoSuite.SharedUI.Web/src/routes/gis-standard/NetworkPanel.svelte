@@ -24,7 +24,9 @@
     { key: 'GisStandard.Network.Stairs', fallback: 'Stairs', color: 'rgb(140 90 40)' },
     { key: 'GisStandard.Network.Ramp', fallback: 'Ramp', color: 'rgb(200 160 0)' },
     { key: 'GisStandard.Network.MovingWalkway', fallback: 'Moving walkway', color: 'rgb(0 160 170)' },
-    { key: 'GisStandard.Network.Finding', fallback: 'Finding', color: 'rgb(220 30 30)' }
+    { key: 'GisStandard.Network.OtherConnector', fallback: 'Other connector', color: 'rgb(110 110 110)' },
+    { key: 'GisStandard.Network.Finding', fallback: 'Finding', color: 'rgb(220 30 30)' },
+    { key: 'GisStandard.Network.Note', fallback: 'Note', color: 'rgb(90 140 230)' }
   ]
 
   const SEVERITY: Record<string, { tone: Tone; key: string; fallback: string }> = {

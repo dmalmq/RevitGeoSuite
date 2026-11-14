@@ -40,11 +40,11 @@ public sealed class GisNetworkShowHandler : IRpcHandler
             GisNetworkView network = GisNetworkSource.Read(doc);
             if (request.Show)
             {
-                GisNetworkWork.Show(doc, network, uiDocument.ActiveView);
+                GisNetworkWork.Show(doc, network, uiDocument.ActiveView, keepOnFailure: false);
             }
             else
             {
-                GisNetworkWork.Hide();
+                GisNetworkWork.Hide(doc);
             }
 
             uiDocument.RefreshActiveView();
@@ -59,23 +59,41 @@ internal static class GisNetworkWork
     private static DateTime shownWrittenAt = DateTime.MinValue;
     private static ElementId shownExtraView = ElementId.InvalidElementId;
 
-    /// <summary>Draws the network when it can be drawn; otherwise hides it. The active view shows it too, unless it is a GIS_ view already.</summary>
-    public static void Show(Document document, GisNetworkView network, View? activeView)
+    /// <summary>
+    /// Draws the network when it can be drawn. Drawn again for the same model, it keeps the view it
+    /// was first shown in; otherwise the active view shows it too. A network that cannot be drawn
+    /// hides this model's picture, or with <paramref name="keepOnFailure"/> leaves it as it was.
+    /// Returns whether the picture changed.
+    /// </summary>
+    public static bool Show(Document document, GisNetworkView network, View? activeView, bool keepOnFailure)
     {
         if (network.Picture == null || network.Picture.Refused.Length > 0 || network.Picture.Strokes.Count == 0)
         {
-            Hide();
+            if (keepOnFailure)
+            {
+                return false;
+            }
+
+            Hide(document);
+            return true;
+        }
+
+        View? extraView = IsShown(document) && document.GetElement(shownExtraView) is View shownIn ? shownIn : activeView;
+        shownFor = OutlineOverlay.Key(document);
+        shownWrittenAt = network.WrittenAt;
+        shownExtraView = extraView?.Id ?? ElementId.InvalidElementId;
+        NetworkOverlay.Show(document, extraView, network.Picture.Strokes);
+        return true;
+    }
+
+    /// <summary>Hides the network when it is drawn for <paramref name="document"/>; another model's picture stays.</summary>
+    public static void Hide(Document document)
+    {
+        if (!IsShown(document))
+        {
             return;
         }
 
-        shownFor = OutlineOverlay.Key(document);
-        shownWrittenAt = network.WrittenAt;
-        shownExtraView = activeView?.Id ?? ElementId.InvalidElementId;
-        NetworkOverlay.Show(document, activeView, network.Picture.Strokes);
-    }
-
-    public static void Hide()
-    {
         shownFor = string.Empty;
         shownWrittenAt = DateTime.MinValue;
         shownExtraView = ElementId.InvalidElementId;
@@ -84,21 +102,28 @@ internal static class GisNetworkWork
 
     public static bool IsShown(Document document) => shownFor.Length > 0 && shownFor == OutlineOverlay.Key(document);
 
-    /// <summary>When a view opens and Kanizu has written the file again since it was drawn, draws the new file.</summary>
-    public static void ReloadIfWritten(Document? document)
+    /// <summary>
+    /// When a view opens and Kanizu has written the file again since it was drawn, draws the new file
+    /// and redraws the active view. A file that cannot be drawn leaves the picture as it was, and the
+    /// next view that opens tries again; the page's Read again reports what went wrong.
+    /// </summary>
+    public static void ReloadIfWritten(UIApplication? application, Document? document)
     {
-        if (document == null || !IsShown(document) || GisNetworkSource.WrittenAt(GisNetworkSource.Locate(document)) == shownWrittenAt)
-        {
-            return;
-        }
-
         try
         {
-            Show(document, GisNetworkSource.Read(document), document.GetElement(shownExtraView) as View);
+            if (document == null || !IsShown(document) || GisNetworkSource.WrittenAt(GisNetworkSource.Locate(document)) == shownWrittenAt)
+            {
+                return;
+            }
+
+            if (Show(document, GisNetworkSource.Read(document), null, keepOnFailure: true))
+            {
+                application?.ActiveUIDocument?.RefreshActiveView();
+            }
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // The picture stays as it was; the page's Refresh reports what went wrong.
+            System.Diagnostics.Trace.WriteLine($"Reloading the walking network failed: {ex}");
         }
     }
 

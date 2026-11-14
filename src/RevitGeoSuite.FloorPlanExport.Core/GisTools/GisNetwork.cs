@@ -142,7 +142,8 @@ public sealed class GisNetworkFile
         IReadOnlyList<GisNetworkConnector> connectors,
         IReadOnlyList<GisNetworkFinding> findings,
         int notShown,
-        IReadOnlyList<string>? notChecked = null)
+        IReadOnlyList<string>? notChecked = null,
+        int unreadable = 0)
     {
         Model = model;
         BasedOn = basedOn;
@@ -155,6 +156,7 @@ public sealed class GisNetworkFile
         Findings = findings;
         NotShown = notShown;
         NotChecked = notChecked ?? Array.Empty<string>();
+        Unreadable = unreadable;
     }
 
     public string Model { get; }
@@ -181,6 +183,9 @@ public sealed class GisNetworkFile
 
     /// <summary>Finding kinds Kanizu did not look for when it wrote the file; empty when it checked every kind.</summary>
     public IReadOnlyList<string> NotChecked { get; }
+
+    /// <summary>Links and connectors left out because a position is missing or not a finite number, or a link has fewer than 2 positions.</summary>
+    public int Unreadable { get; }
 }
 
 /// <summary>What each stroke of the network picture shows; the Revit side picks the colour.</summary>
@@ -318,12 +323,11 @@ public static class GisNetwork
         JToken? version = root["version"];
         if (version != null && version.Type != JTokenType.Null)
         {
-            if (version is not JValue { Type: JTokenType.Integer or JTokenType.Float } number)
+            if (Finite(version) is not double value)
             {
                 throw new FormatException($"The network file{file} has version {version}, which is not a number.");
             }
 
-            double value = Convert.ToDouble(number.Value, CultureInfo.InvariantCulture);
             if (value > Version)
             {
                 throw new FormatException($"The network file{file} is version {value.ToString(CultureInfo.InvariantCulture)}; this tool reads version {Version}. Update RevitGeoSuite.");
@@ -331,17 +335,22 @@ public static class GisNetwork
         }
 
         List<GisNetworkLevel> levels = Entries(root["levels"])
-            .Select(entry => new GisNetworkLevel(Text(entry["levelId"]), Text(entry["floorKey"]), (int)Number(entry["ordinal"]), Text(entry["shortName"])))
+            .Select(entry => new GisNetworkLevel(Text(entry["levelId"]), Text(entry["floorKey"]), Small(entry["ordinal"]), Text(entry["shortName"])))
             .ToList();
 
+        // A link with one bad position is left out whole: dropping the position would draw a shortcut.
+        int unreadable = 0;
         List<GisNetworkLink> links = new();
         foreach (JObject entry in Entries(root["links"]))
         {
-            List<Point2D> line = (entry["line"] as JArray)?.Select(Position).Where(point => point.HasValue).Select(point => point!.Value).ToList() ?? new List<Point2D>();
-            if (line.Count >= 2)
+            List<Point2D?> line = (entry["line"] as JArray)?.Select(Position).ToList() ?? new List<Point2D?>();
+            if (line.Count < 2 || line.Any(point => point == null))
             {
-                links.Add(new GisNetworkLink((long)Number(entry["id"]), Text(entry["levelId"]), line, Truthy(entry["oneWay"]), Truthy(entry["stepFree"]), (int)Number(entry["passageType"])));
+                unreadable++;
+                continue;
             }
+
+            links.Add(new GisNetworkLink(Whole(entry["id"]), Text(entry["levelId"]), line.Select(point => point!.Value).ToList(), Truthy(entry["oneWay"]), Truthy(entry["stepFree"]), Small(entry["passageType"])));
         }
 
         List<GisNetworkConnector> connectors = new();
@@ -349,17 +358,21 @@ public static class GisNetwork
         {
             GisNetworkEnd? from = End(entry["from"]);
             GisNetworkEnd? to = End(entry["to"]);
-            if (from != null && to != null)
+            if (from == null || to == null)
+            {
+                unreadable++;
+            }
+            else
             {
                 connectors.Add(new GisNetworkConnector(
-                    (long)Number(entry["id"]),
+                    Whole(entry["id"]),
                     Text(entry["kind"]),
                     UniqueIdOf(entry),
                     from,
                     to,
                     Truthy(entry["oneWay"]),
                     Truthy(entry["stepFree"]),
-                    (int)Number(entry["passageType"])));
+                    Small(entry["passageType"])));
             }
         }
 
@@ -367,19 +380,20 @@ public static class GisNetwork
             .Select(entry => new GisNetworkFinding(Text(entry["kind"]), Text(entry["levelId"]), Position(entry["at"]), UniqueIdOf(entry), Text(entry["detail"])))
             .ToList();
 
-        int notShown = root["notShown"] is JObject counts ? (int)(Number(counts["links"]) + Number(counts["connectors"]) + Number(counts["findings"])) : 0;
+        int notShown = root["notShown"] is JObject counts ? (int)(Whole(counts["links"]) + Whole(counts["connectors"]) + Whole(counts["findings"])) : 0;
         return new GisNetworkFile(
             Text(root["model"]),
             Text(root["basedOn"]),
             Text(root["writtenUtc"]),
             Text(root["kanizu"]),
-            (int)Number(root["epsg"]),
+            Small(root["epsg"]),
             levels,
             links,
             connectors,
             findings,
             notShown,
-            (root["notChecked"] as JArray)?.Select(code => Text(code)).Where(code => code.Length > 0).Distinct(StringComparer.Ordinal).ToList());
+            (root["notChecked"] as JArray)?.Select(code => Text(code)).Where(code => code.Length > 0).Distinct(StringComparer.Ordinal).ToList(),
+            unreadable);
     }
 
     /// <summary>Reads a network file, with or without a byte order mark.</summary>
@@ -453,7 +467,8 @@ public static class GisNetwork
             Point2D end = projectToModel.Transform(connector.To.At);
             double startZ = from.ElevationFeet + LiftFeet;
             double endZ = to.ElevationFeet + LiftFeet;
-            strokes.Add(Stroke(start, startZ, end, endZ, ink, 0));
+            // A connector within one floor (a moving walkway, a ramp on one level) is drawn in that floor's plan too.
+            strokes.Add(Stroke(start, startZ, end, endZ, ink, from.ElementId == to.ElementId ? from.ElementId : 0));
             Square(strokes, start, startZ, ink, from.ElementId);
             Square(strokes, end, endZ, ink, to.ElementId);
             if (connector.OneWay)
@@ -512,6 +527,11 @@ public static class GisNetwork
 
             long? element = finding.UniqueId.Length > 0 ? elementOf(finding.UniqueId) : null;
             audit.Add(new GisAuditFinding(SeverityOf(finding.Kind), Topic, message, element.HasValue ? new[] { element.Value } : null));
+        }
+
+        if (file.Unreadable > 0)
+        {
+            audit.Add(new GisAuditFinding(GisAuditSeverity.Warning, Topic, $"{file.Unreadable} link(s) or connector(s) in the walking network file have a position that is missing or not a number, so they are not drawn. Generate the network in Kanizu again."));
         }
 
         // A kind Kanizu did not look for is not "none found": say so once, so a clean audit does not mislead.
@@ -622,9 +642,9 @@ public static class GisNetwork
 
     private static Point2D? Position(JToken? token)
     {
-        if (token is JArray { Count: >= 2 } pair && pair[0] is JValue { Type: JTokenType.Integer or JTokenType.Float } x && pair[1] is JValue { Type: JTokenType.Integer or JTokenType.Float } y)
+        if (token is JArray { Count: >= 2 } pair && Finite(pair[0]) is double x && Finite(pair[1]) is double y)
         {
-            return new Point2D(Convert.ToDouble(x.Value, CultureInfo.InvariantCulture), Convert.ToDouble(y.Value, CultureInfo.InvariantCulture));
+            return new Point2D(x, y);
         }
 
         return null;
@@ -645,8 +665,25 @@ public static class GisNetwork
 
     private static string Text(JToken? token) => token is JValue { Value: not null } value ? Convert.ToString(value.Value, CultureInfo.InvariantCulture) ?? string.Empty : string.Empty;
 
-    private static double Number(JToken? token) =>
-        token is JValue { Type: JTokenType.Integer or JTokenType.Float } value ? Convert.ToDouble(value.Value, CultureInfo.InvariantCulture) : 0;
+    // A JSON number as a finite double: an integer too large for a long arrives as a BigInteger, and NaN or Infinity are not positions.
+    private static double? Finite(JToken? token)
+    {
+        if (token is not JValue { Type: JTokenType.Integer or JTokenType.Float } value
+            || !double.TryParse(Convert.ToString(value.Value, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double number)
+            || double.IsNaN(number)
+            || double.IsInfinity(number))
+        {
+            return null;
+        }
+
+        return number;
+    }
+
+    private static int Small(JToken? token) => Whole(token) is long number && Math.Abs(number) <= int.MaxValue ? (int)number : 0;
+
+    // An id, ordinal or count: 0 when missing or out of range.
+    private static long Whole(JToken? token) =>
+        Finite(token) is double number && Math.Abs(number) <= 9007199254740992d ? (long)number : 0;
 
     private static bool Truthy(JToken? token) => token is JValue { Type: JTokenType.Boolean, Value: true };
 }
