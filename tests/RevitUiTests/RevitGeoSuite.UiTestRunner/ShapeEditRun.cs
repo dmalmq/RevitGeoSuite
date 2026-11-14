@@ -17,6 +17,7 @@ internal sealed partial class GisStandardRun
     private SplitCase? split;
     private long? newFloor;
     private bool splitUndone;
+    private (FloorUnit Unit, List<(double X, double Y)> West, List<(double X, double Y)> East)? splitSpare;
     private MergeCase? merge;
 
     private async Task SplitSteps()
@@ -30,6 +31,7 @@ internal sealed partial class GisStandardRun
         await Step("C3b.5", "Check again offers nothing", step => NothingLeft(step, newFloor != null));
         await Step("C3b.6", "One Undo takes the whole split back", UndoSplit);
         await Step("C3b.7", "Redo, export again: both floors are the GDB pieces within 1 cm", SplitRoundTrip);
+        await Step("C3b.8", "A split that leaves the kept floor's opening outside its piece is a problem, not a card", SplitOpening);
     }
 
     private async Task MergeSteps()
@@ -64,6 +66,8 @@ internal sealed partial class GisStandardRun
             return;
         }
 
+        var spare = candidates.Skip(1).FirstOrDefault();
+        splitSpare = spare.Pieces is { } sparePieces ? (spare.Unit, sparePieces.West, sparePieces.East) : null;
         (FloorUnit unit, var pieces) = candidates.First();
         string path = WriteDrift("split.gis-drift.json", unit, ReshapeFixture.SplitShapes(unit, pieces!.Value.West, pieces.Value.East));
         FloorScanRow floor = scan.First(row => row.UniqueId == unit.UniqueId);
@@ -155,8 +159,8 @@ internal sealed partial class GisStandardRun
         step.Check(values["name"] == split.Values["name"] + " east", $"Its name is \"{split.Values["name"]} east\" ({values["name"]}).");
         step.Check(values["short_name"] == "E", $"Its short_name is E ({values["short_name"]}).");
         step.Check(values["category"] == split.Values["category"], $"Its category is F's, {split.Values["category"]} ({values["category"]}).");
-        step.Check(string.IsNullOrEmpty(values["id"]) || values["id"] != split.Values["id"], $"Its id is not F's ({values["id"]}).");
-        step.Check(string.IsNullOrEmpty(values["gis_key"]) || values["gis_key"] != split.Values["gis_key"], $"Its gis_key is not F's ({values["gis_key"]}).");
+        step.Check(string.IsNullOrEmpty(values["id"]), $"Its id is empty until the next export, never F's ({values["id"]}).");
+        step.Check(string.IsNullOrEmpty(values["gis_key"]), $"Its gis_key is empty until the next export, never F's ({values["gis_key"]}).");
         bool noStandardType = split.Log.Any(line => line.StartsWith("No floor type ", StringComparison.Ordinal));
         if (noStandardType)
         {
@@ -250,6 +254,54 @@ internal sealed partial class GisStandardRun
         double addedGap = added == null ? double.NaN : ReshapeFixture.Distance(new[] { split.East }, added.Rings);
         step.Check(keptGap <= 0.01, $"F's exported outline is the west piece within 1 cm (largest gap {keptGap * 1000:0.0} mm).");
         step.Check(addedGap <= 0.01, $"A unit keyed by the new floor ({newUniqueId}) is the east piece within 1 cm (largest gap {addedGap * 1000:0.0} mm).");
+    }
+
+    // The kept floor gets the west piece, so an opening the fixture cuts within 1 m of its east edge falls
+    // outside it. Like C3a.9's H case, the plan should name the opening as a problem and offer no card.
+    private async Task SplitOpening(StepResult step)
+    {
+        if (splitSpare is not { } spare)
+        {
+            step.NotRun("C3b.P found no second floor that splits into two pieces.");
+            return;
+        }
+
+        FloorScanRow floor = FloorScan().First(row => row.UniqueId == spare.Unit.UniqueId);
+        JsonObject fixture;
+        try
+        {
+            fixture = host.Call("fixture", new { openingInEastBand = new[] { new { floor = floor.Id, bandM = 1.0, sizeM = 0.4 } } });
+        }
+        catch (TestHostException ex)
+        {
+            step.NotRun($"The opening fixture failed on floor {floor.Id}: {ex.Message}");
+            return;
+        }
+
+        step.Note($"Floor {floor.Id} '{spare.Unit.Name}' ({spare.Unit.Category}). Fixture: {fixture["log"]?.ToJsonString()}.");
+        DependentRow[] dependents = FloorScan().First(row => row.Id == floor.Id).Dependents;
+        long[] openings = dependents.Where(IsOpening).Select(item => item.Id).ToArray();
+        if (openings.Length == 0)
+        {
+            openings = dependents.Select(item => item.Id).ToArray();
+        }
+
+        string path = WriteDrift("split-opening.gis-drift.json", spare.Unit, ReshapeFixture.SplitShapes(spare.Unit, spare.West, spare.East));
+        int pickSeq = host.LastEvent();
+        await PickDrift(path);
+        await Shell.Page.WaitForTimeoutAsync(3000);
+        JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
+        string[] problems = Problems(drift);
+        step.Note($"Problems: {string.Join(" | ", problems)}");
+        string? line = problems.FirstOrDefault(problem => problem.Contains(floor.Id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal) && problem.Contains("opening", StringComparison.OrdinalIgnoreCase));
+        step.Check(openings.Length > 0 && line != null && openings.All(id => line.Contains(id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)),
+            $"A problem line names floor {floor.Id} and opening(s) {string.Join(", ", openings)} ({line ?? "none"}).");
+        step.Check((drift?["shapes"]?.AsArray().Count ?? 0) == 0 && await Shell.Page.GetByTestId("shape-edit").CountAsync() == 0, "There is no shape edit card.");
+        RevitEvent[] changes = host.EventsAfter(pickSeq).Where(item => item.Kind != "dialog").ToArray();
+        step.Check(changes.Length == 0, $"No Revit transaction happens ({(changes.Length == 0 ? "none" : string.Join(" / ", changes.Select(item => item.ToString())))}).");
+        string[] gone = Elements(dependents.Select(item => item.Id)).Where(row => !row.Exists).Select(row => row.Key).ToArray();
+        step.Check(gone.Length == 0, $"Every dependent is still there (missing: {string.Join(", ", gone)}).");
+        await Shot(step, "C3b-8-opening-problem");
     }
 
     private async Task PrepareMerge(StepResult step)
@@ -420,7 +472,7 @@ internal sealed partial class GisStandardRun
         Commits(step, seq, MergeTransaction(merge));
         step.Check(!Element(merge.Taken.UniqueId).Exists, $"G ({merge.Taken.Id}) is deleted although it hosts opening {opening}.");
         step.Check(opening != 0 && !Element(opening).Exists, $"Opening {opening} is gone with it.");
-        step.Check(log.Any(line => line.Contains(opening.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)), $"The result names opening {opening} before the delete.");
+        step.Check(log.Any(line => line.StartsWith($"Deleted floor {merge.Taken.Id}, and with it opening {opening}", StringComparison.Ordinal)), $"The result reads 'Deleted floor {merge.Taken.Id}, and with it opening {opening}.'");
         if (UndoOrRedo(step, "undo", MergeTransaction(merge)))
         {
             step.Check(Element(merge.Taken.UniqueId).Exists && Element(opening).Exists, "One Undo brings G and the opening back.");
