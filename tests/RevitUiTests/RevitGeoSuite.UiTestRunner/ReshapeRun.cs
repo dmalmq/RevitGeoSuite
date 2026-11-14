@@ -237,9 +237,23 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        if (reshapeUndone)
+        string name = ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label);
+        if (reshapeUndone && !UndoOrRedo(step, "redo", name))
         {
-            UndoOrRedo(step, "redo", ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label));
+            // F is back to its old outline after C3a.6, so exporting now would compare the undone floor.
+            // Apply the same file again, as a person would after a refused Redo.
+            int seq = host.LastEvent();
+            await PickDrift(reshape.Path);
+            if (!await ExpectShapeEdits(step, reshape.Path))
+            {
+                return;
+            }
+
+            step.Note($"Applied the drift file again instead of Redo. Log: {string.Join(" / ", await ApplyShapes(step, 1))}");
+            if (!step.Check(host.EventsAfter(seq).Any(item => item.Is("commit", name)), $"Applying again commits '{name}'."))
+            {
+                return;
+            }
         }
 
         string output = await OpenExport(step, string.Empty, "export2", keepDefaultViews: true);
@@ -353,6 +367,15 @@ internal sealed partial class GisStandardRun
 
         await Shot(step, "C3a-9-shrink-applied");
         RevitShot(step, "C3a-9-shrink");
+        if (!host.EventsAfter(seq).Any(item => item.Is("commit", name)))
+        {
+            // Nothing committed (Revit refused the outline and the plan rolled back), so there is nothing
+            // to undo; an Undo now would take back the fixture opening instead.
+            string[] gone = Elements(dependents.Select(item => item.Id)).Where(row => !row.Exists).Select(row => row.Key).ToArray();
+            step.Check(gone.Length == 0, $"With nothing committed, every dependent is still there (missing: {string.Join(", ", gone)}).");
+            return;
+        }
+
         if (!UndoOrRedo(step, "undo", name))
         {
             return;
