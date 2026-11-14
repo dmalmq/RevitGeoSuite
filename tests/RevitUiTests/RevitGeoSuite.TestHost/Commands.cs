@@ -50,6 +50,7 @@ internal sealed class Commands
                 "views" => api.Run(app => ViewCommands.Views(app, request), Quick),
                 "levels" => api.Run(ViewCommands.Levels, Quick),
                 "views3d" => api.Run(ViewCommands.Views3D, Quick),
+                "ribbonItems" => api.Run(app => RibbonItems(app, Text(request, "tab")), Quick),
                 "bindings" => api.Run(app => ModelCommands.Bindings(app, Strings(request, "names")), Quick),
                 "elevators" => api.Run(app => ModelCommands.Elevators(app, Strings(request, "uniqueIds")), Quick),
                 "doors" => api.Run(ModelCommands.Doors, Quick),
@@ -366,6 +367,20 @@ internal sealed class Commands
             return $"not readable ({ex.Message})";
         }
     }
+
+    // Each button on a ribbon tab as Revit shows it: its panel, name, text (with the line break) and tooltip.
+    private static Dictionary<string, object?> RibbonItems(UIApplication app, string tab) => new()
+    {
+        ["items"] = app.GetRibbonPanels(tab)
+            .SelectMany(panel => panel.GetItems().Select(item => new Dictionary<string, object?>
+            {
+                ["panel"] = panel.Name,
+                ["name"] = item.Name,
+                ["text"] = item.ItemText,
+                ["toolTip"] = item.ToolTip,
+            }))
+            .ToList(),
+    };
 
     private Dictionary<string, object?> Post(string id) => api.Run(app =>
     {
