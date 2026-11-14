@@ -266,6 +266,18 @@ public sealed class GisShapeEditsTests
     }
 
     [Fact]
+    public void AnOpeningTheShrunkSketchLeavesOutsideIsNamed()
+    {
+        // As floor 6138157 in the LUMINE run: the GDB moved the east edge 1 m west, past an opening 0.71 m from it.
+        List<Polygon2D> shrunk = new() { Rect(0, 0, 9, 10) };
+
+        List<long> outside = GisShapeEdits.OpeningsOutside(shrunk, new[] { (6535246L, Rect(9.1, 4, 9.5, 4.4)), (7L, Rect(2, 2, 3, 3)), (8L, Rect(8.5, 6, 9.5, 7)) });
+
+        Assert.Equal(new[] { 6535246L, 8L }, outside);
+        Assert.Contains("Can't make cut-out", GisShapeEdits.OpeningsLeftOutside(outside));
+    }
+
+    [Fact]
     public void SketchLoopsFollowTheEvenOddRule()
     {
         List<Polygon2D> region = GisShapeEdits.FromLoops(new[] { Rect(0, 0, 10, 10).ExteriorRing, Rect(4, 4, 5, 5).ExteriorRing, Rect(20, 0, 22, 2).ExteriorRing });
