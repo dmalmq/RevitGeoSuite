@@ -168,6 +168,103 @@ public sealed class GisShapeEditsTests
         Assert.True(sketch[0].ExteriorRing.Count <= 7, string.Join(" ", sketch[0].ExteriorRing.Select(point => $"({point.X * 0.3048:F4},{point.Y * 0.3048:F4})")));
     }
 
+    // LUMINE floor 6481239 in model feet, from the c3a run on 0108caf: its sketch; its outline as the
+    // export writes it, with a 1.7 m x 1.5 m rectangle trimmed where a vertical unit overlaps it; and
+    // the GDB outline, the export's with one east corner moved 1 m.
+    private static readonly Polygon2D LumineSketch = new(new[]
+        {
+            new Point2D(-939.5462, 5373.4361),
+            new Point2D(-936.6566, 5413.0508),
+            new Point2D(-929.5232, 5412.5304),
+            new Point2D(-929.4373, 5413.7078),
+            new Point2D(-909.4915, 5412.2529),
+            new Point2D(-909.3399, 5414.3306),
+            new Point2D(-907.7038, 5414.2113),
+            new Point2D(-907.1401, 5422.2855),
+            new Point2D(-884.0631, 5420.6022),
+            new Point2D(-885.1966, 5405.0632),
+            new Point2D(-878.5419, 5404.5778),
+            new Point2D(-881.1243, 5369.1746),
+        });
+
+    private static readonly Polygon2D LumineExported = new(new[]
+        {
+            new Point2D(-939.5468, 5373.4281),
+            new Point2D(-936.6572, 5413.0428),
+            new Point2D(-929.5238, 5412.5225),
+            new Point2D(-929.4379, 5413.6998),
+            new Point2D(-909.4921, 5412.2449),
+            new Point2D(-909.3405, 5414.3226),
+            new Point2D(-907.7044, 5414.2033),
+            new Point2D(-907.1407, 5422.2775),
+            new Point2D(-884.0630, 5420.6020),
+            new Point2D(-884.1866, 5418.9092),
+            new Point2D(-889.7601, 5419.3158),
+            new Point2D(-890.1181, 5414.4075),
+            new Point2D(-884.5446, 5414.0010),
+            new Point2D(-884.6626, 5412.3833),
+            new Point2D(-885.7342, 5412.4614),
+            new Point2D(-886.2687, 5405.1333),
+            new Point2D(-887.2361, 5391.8709),
+            new Point2D(-879.5099, 5391.3073),
+            new Point2D(-879.5740, 5390.4284),
+            new Point2D(-879.9611, 5385.1211),
+            new Point2D(-881.1249, 5369.1667),
+        });
+
+    private static readonly Polygon2D LumineGdb = new(new[]
+        {
+            new Point2D(-939.5468, 5373.4281),
+            new Point2D(-936.6572, 5413.0428),
+            new Point2D(-929.5238, 5412.5225),
+            new Point2D(-929.4379, 5413.6998),
+            new Point2D(-909.4921, 5412.2449),
+            new Point2D(-909.3405, 5414.3226),
+            new Point2D(-907.7044, 5414.2033),
+            new Point2D(-907.1407, 5422.2775),
+            new Point2D(-883.4103, 5423.8093),
+            new Point2D(-884.1866, 5418.9092),
+            new Point2D(-889.7601, 5419.3158),
+            new Point2D(-890.1181, 5414.4075),
+            new Point2D(-884.5446, 5414.0010),
+            new Point2D(-884.6626, 5412.3833),
+            new Point2D(-885.7342, 5412.4614),
+            new Point2D(-886.2687, 5405.1333),
+            new Point2D(-887.2361, 5391.8709),
+            new Point2D(-879.5099, 5391.3073),
+            new Point2D(-879.5740, 5390.4284),
+            new Point2D(-879.9611, 5385.1211),
+            new Point2D(-881.1249, 5369.1667),
+        });
+
+    [Fact]
+    public void AnExportTrimIsNotAGdbEditOnlyTheMovedCornerIs()
+    {
+        ShapeFloor floor = new("f", 6481239, new[] { LumineExported }, sketch: new[] { LumineSketch });
+
+        List<Polygon2D> sketch = GisShapeEdits.SketchFor(floor, new[] { LumineGdb });
+
+        Polygon2D only = Assert.Single(sketch);
+        Assert.Empty(only.InteriorRings);
+        Assert.True(GisShapeEdits.CanSketch(sketch));
+
+        // The sketch only grows, by the wedge the moved corner adds (about 7 m x 1 m / 2): the trimmed rectangle stays in it.
+        double grown = Area(sketch) - Area(new[] { LumineSketch });
+        Assert.InRange(grown, 3, 4);
+        Assert.InRange(GisShapeEdits.GapMetres(sketch, new[] { LumineSketch }), 0.9, 1.1);
+    }
+
+    [Fact]
+    public void AFloorWhoseExportOutlineIsTheGdbOutlineIsSettled()
+    {
+        ShapeFloor floor = new("f", 6481239, new[] { LumineExported }, sketch: new[] { LumineSketch });
+
+        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(new[] { Shape(GisDrift.Reshaped, "f", LumineExported) }, new[] { floor });
+
+        Assert.Empty(edits);
+        Assert.Empty(problems);
+    }
+
     [Fact]
     public void SketchLoopsFollowTheEvenOddRule()
     {

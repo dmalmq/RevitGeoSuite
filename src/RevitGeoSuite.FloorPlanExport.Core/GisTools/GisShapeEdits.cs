@@ -332,6 +332,17 @@ public static class GisShapeEdits
         return polygons;
     }
 
+    /// <summary>Polygons in project metres, as the export writes them, in model feet.</summary>
+    public static List<Polygon2D> ToModel(IEnumerable<Polygon2D> projectPolygons, AffineTransform2D projectToModel) =>
+        ToModel(
+            projectPolygons
+                .Select(polygon => (IReadOnlyList<IReadOnlyList<(double X, double Y)>>)new[] { polygon.ExteriorRing }
+                    .Concat(polygon.InteriorRings)
+                    .Select(ring => (IReadOnlyList<(double X, double Y)>)ring.Select(point => (point.X, point.Y)).ToList())
+                    .ToList())
+                .ToList(),
+            projectToModel);
+
     /// <summary>Whether two outlines in model feet are within <see cref="SameOutlineMetres"/> of each other everywhere.</summary>
     public static bool SameOutline(IReadOnlyList<Polygon2D> a, IReadOnlyList<Polygon2D> b) => GapMetres(a, b) <= SameOutlineMetres;
 
