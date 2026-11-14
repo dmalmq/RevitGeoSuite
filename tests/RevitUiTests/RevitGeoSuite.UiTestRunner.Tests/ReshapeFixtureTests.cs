@@ -31,6 +31,14 @@ public class ReshapeFixtureTests
         Assert.Contains("\"epsg\": 6677", File.ReadAllText(path));
         Assert.Contains("\"model\": \"modela\"", File.ReadAllText(path));
         Assert.Equal("room-uid", ReshapeFixture.Pick(units, "retail", "room-uid")!.UniqueId);
+
+        // shop-uid exports as two units, so neither split nor merge may pick it, as K or as G.
+        Dictionary<string, int> parts = ReshapeFixture.FloorParts(folder);
+        Assert.Equal(1, parts["room-uid"]);
+        Assert.Equal(2, parts["shop-uid"]);
+        Assert.False(parts.ContainsKey("from-link"));
+        Assert.Equal(new[] { "room-uid" }, ShapeEditPicks.SplitCandidates(units, parts, _ => true).Select(pair => pair.Unit.UniqueId));
+        Assert.Empty(ShapeEditPicks.MergePairs(units, parts, _ => true, _ => true));
     }
 
     [Fact]
@@ -39,7 +47,7 @@ public class ReshapeFixtureTests
         var square = new FloorUnit("m|s|0", "s", "Shop", "L1", "retail", 6677, new[] { Square });
         var holed = square with { Rings = new[] { Square, new (double, double)[] { (1, 1), (2, 1), (2, 2), (1, 1) } } };
 
-        var pieces = ReshapeFixture.Split(square)!.Value;
+        var pieces = ReshapeFixture.Split(square)!;
         JsonObject[] shapes = ReshapeFixture.SplitShapes(square, pieces.West, pieces.East);
 
         Assert.Equal(25, ReshapeFixture.Area(pieces.West), 9);
@@ -182,5 +190,33 @@ public class ReshapeFixtureTests
         Assert.Equal("8d7f3c1e-0000.gis-drift.json", GisStandardRun.DriftFileName("8d7f3c1e-0000"));
         Assert.Equal("a_b_c.gis-drift.json", GisStandardRun.DriftFileName("a.b/c"));
         Assert.Equal("___.gis-drift.json", GisStandardRun.DriftFileName("駅é_"));
+    }
+
+    [Fact]
+    public void Split_takes_a_line_the_outline_crosses_only_twice()
+    {
+        // A U open to the east: the middle line X = 5 cuts both arms, so the ring crosses it four times.
+        var u = new List<(double X, double Y)> { (0, 0), (10, 0), (10, 4), (4, 4), (4, 6), (10, 6), (10, 10), (0, 10), (0, 0) };
+        var unit = new FloorUnit("m|u|0", "u", "U", "L1", "walkway", 6677, new[] { (IReadOnlyList<(double X, double Y)>)u });
+        Assert.Equal(4, ReshapeFixture.CutCrossings(u, 5));
+
+        var square = new FloorUnit("m|s|0", "s", "S", "L1", "walkway", 6677, new[] { Square });
+        Assert.NotNull(ReshapeFixture.Split(square));
+
+        // Other lines still find a clean cut: the U's solid west part is crossed twice.
+        SplitCut cut = ReshapeFixture.Split(unit)!;
+        Assert.Equal('X', cut.Axis);
+        Assert.True(cut.At < 4);
+        Assert.Equal(88, ReshapeFixture.Area(cut.West) + ReshapeFixture.Area(cut.East), 6);
+    }
+
+    [Fact]
+    public void IsSimple_finds_a_bow_tie_and_a_ring_touching_itself()
+    {
+        Assert.True(ReshapeFixture.IsSimple(Square));
+        Assert.True(ReshapeFixture.IsSimple(new (double, double)[] { (0, 0), (10, 0), (10, 0), (10, 5), (0, 5), (0, 0) }));
+        Assert.False(ReshapeFixture.IsSimple(new (double, double)[] { (0, 0), (10, 5), (10, 0), (0, 5), (0, 0) }));
+        // Two squares joined at one corner: the ring passes (5, 5) twice.
+        Assert.False(ReshapeFixture.IsSimple(new (double, double)[] { (0, 0), (5, 0), (5, 5), (10, 5), (10, 10), (5, 10), (5, 5), (0, 5), (0, 0) }));
     }
 }

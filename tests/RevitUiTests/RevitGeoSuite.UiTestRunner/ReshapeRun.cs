@@ -19,6 +19,7 @@ internal sealed partial class GisStandardRun
     private const string CurvedEdges = "has curved edges, which the GDB's straight-segment outline would replace with short lines";
 
     private List<FloorUnit> exportedUnits = new();
+    private Dictionary<string, int> exportedParts = new();
     private ReshapeShape? reshape;
     private ElementRow? reshapeBefore;
     private bool reshapeApplied;
@@ -27,6 +28,8 @@ internal sealed partial class GisStandardRun
     private async Task ReshapeSteps()
     {
         await Step("C3a.0", "The model has had Set up model once, so each level has a GIS_ plan", EnsureSetUp);
+        await Step("C3a.G", "The copy gets RevitGeoSuite's georeference record from its own coordinates, which the Cesium export needs", EnsureGeoreference);
+        await Step("C3a.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("C3a.P", "Export, make the reshape drift file, read floor F", PrepareReshape);
         await Step("C3a.1", "Pick the drift file: one shape edit card for floor F", PickReshape);
         await Step("C3a.2", "Show in Revit draws both outlines in the GIS_ plan, with no transaction", ShowShape);
@@ -450,6 +453,7 @@ internal sealed partial class GisStandardRun
         if (exported)
         {
             exportedUnits = ReshapeFixture.FloorUnits(output);
+            exportedParts = ReshapeFixture.FloorParts(output);
             step.Note($"{exportedUnits.Count} single-polygon floor unit(s) in the export: {Format(exportedUnits.GroupBy(unit => unit.Category).ToDictionary(group => group.Key, group => group.Count()))}.");
         }
 
@@ -472,7 +476,7 @@ internal sealed partial class GisStandardRun
                 ticked++;
             }
 
-            step.Note($"The shape edits started unticked (the page: the model has no id yet, so the drift file cannot be matched to it); ticked {ticked}.");
+            step.Note($"There was no '{label}' button, so the run ticked {ticked} unticked shape edit(s) (a model with no id starts them unticked).");
         }
 
         await Shell.Button(label).ClickAsync();
@@ -550,7 +554,7 @@ internal sealed partial class GisStandardRun
     private string WriteDrift(string fileName, FloorUnit unit, IEnumerable<JsonObject> shapes)
     {
         string path = Path.Combine(options.OutputFolder, fileName);
-        File.WriteAllText(path, ReshapeFixture.DriftJson(unit, shapes));
+        File.WriteAllText(path, ReshapeFixture.DriftJson(unit, shapes, stationModelKey));
         return path;
     }
 

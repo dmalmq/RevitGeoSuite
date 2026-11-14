@@ -58,6 +58,39 @@ internal static class ReshapeFixture
         return units;
     }
 
+    /// <summary>
+    /// How many parts each Revit floor has in the export, by UniqueId: one per unit row (revit_key suffix 0, 1, …)
+    /// and one per polygon of a multi-polygon row. Only a floor with exactly one part can be split or merged away.
+    /// </summary>
+    public static Dictionary<string, int> FloorParts(string exportFolder)
+    {
+        var parts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (string file in Directory.GetFiles(exportFolder, "*.gpkg", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = file, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+            connection.Open();
+            foreach ((string table, string column, int _) in UnitTables(connection))
+            {
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = $"SELECT revit_key, \"{column.Replace("\"", "\"\"")}\" FROM \"{table.Replace("\"", "\"\"")}\"";
+                using SqliteDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    string[] key = Text(reader, 0).Split('|');
+                    if (key.Length < 3 || key[0].Contains('@'))
+                    {
+                        continue;
+                    }
+
+                    int polygons = reader.IsDBNull(1) ? 1 : Math.Max(1, GeoPackageGeometry.Polygons((byte[])reader[1]).Count);
+                    parts[key[1]] = parts.GetValueOrDefault(key[1]) + polygons;
+                }
+            }
+        }
+
+        return parts;
+    }
+
     /// <summary>The unit <paramref name="uniqueId"/> names, else the first of <paramref name="category"/>; null when none fits.</summary>
     public static FloorUnit? Pick(IEnumerable<FloorUnit> units, string category, string uniqueId = "") =>
         units.FirstOrDefault(unit => uniqueId.Length > 0 ? unit.UniqueId == uniqueId : unit.Category == category);
@@ -99,15 +132,118 @@ internal static class ReshapeFixture
     }
 
     /// <summary>
-    /// The unit cut in two at the middle of its east-west extent, as make_reshape_fixture.py --split does;
-    /// null for a unit with holes or a piece of 1 m² or less.
+    /// The unit cut in two by a straight line: first lines X = x across its east-west extent (nearest the middle
+    /// first, 19 of them), then lines Y = y across its north-south extent, taking the first line the outline
+    /// crosses exactly twice, through no vertex, with both pieces over 1 m² and neither touching itself. A line crossed more than twice would join separate parts
+    /// with zero-width bridges, which the planner rejects as self-crossing. The west (or south) piece keeps the
+    /// floor. Null for a unit with holes or when no line fits.
     /// </summary>
-    public static (List<(double X, double Y)> West, List<(double X, double Y)> East)? Split(FloorUnit unit)
+    public static SplitCut? Split(FloorUnit unit)
     {
+        if (unit.Rings.Count > 1)
+        {
+            return null;
+        }
+
         IReadOnlyList<(double X, double Y)> ring = unit.Rings[0];
-        double middle = (ring.Min(point => point.X) + ring.Max(point => point.X)) / 2;
-        List<(double X, double Y)> west = Clip(ring, middle, keepWest: true), east = Clip(ring, middle, keepWest: false);
-        return unit.Rings.Count > 1 || west.Count < 4 || east.Count < 4 || Area(west) < 1 || Area(east) < 1 ? null : (west, east);
+        if (!IsSimple(ring))
+        {
+            return null;
+        }
+
+        IEnumerable<double> fractions = Enumerable.Range(1, 19).Select(step => step / 20.0).OrderBy(fraction => Math.Abs(fraction - 0.5));
+        foreach (char axis in new[] { 'X', 'Y' })
+        {
+            IReadOnlyList<(double X, double Y)> turned = axis == 'X' ? ring : Swap(ring);
+            double min = turned.Min(point => point.X), max = turned.Max(point => point.X);
+            foreach (double fraction in fractions)
+            {
+                double at = min + fraction * (max - min);
+                // A line through a vertex can run along an edge and leave a zero-width spur, so keep 5 cm clear.
+                if (turned.Any(point => Math.Abs(point.X - at) < 0.05) || CutCrossings(turned, at) != 2)
+                {
+                    continue;
+                }
+
+                List<(double X, double Y)> kept = Clip(turned, at, keepWest: true), added = Clip(turned, at, keepWest: false);
+                if (kept.Count >= 4 && added.Count >= 4 && Area(kept) > 1 && Area(added) > 1 && IsSimple(kept) && IsSimple(added))
+                {
+                    return axis == 'X' ? new SplitCut(kept, added, axis, at) : new SplitCut(Swap(kept), Swap(added), axis, at);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>True when no two non-adjacent edges of the closed ring touch or cross (repeated points ignored).</summary>
+    public static bool IsSimple(IReadOnlyList<(double X, double Y)> points)
+    {
+        var ring = new List<(double X, double Y)>();
+        foreach ((double X, double Y) point in points)
+        {
+            if (ring.Count == 0 || Math.Abs(ring[^1].X - point.X) > 1e-9 || Math.Abs(ring[^1].Y - point.Y) > 1e-9)
+            {
+                ring.Add(point);
+            }
+        }
+
+        if (ring.Count > 1 && ring[0] != ring[^1])
+        {
+            ring.Add(ring[0]);
+        }
+
+        int count = ring.Count - 1;
+        for (int i = 0; i < count; i++)
+        {
+            for (int j = i + 1; j < count; j++)
+            {
+                if (j == i + 1 || (i == 0 && j == count - 1))
+                {
+                    continue;
+                }
+
+                if (Touch(ring[i], ring[i + 1], ring[j], ring[j + 1]))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool Touch((double X, double Y) a, (double X, double Y) b, (double X, double Y) c, (double X, double Y) d)
+    {
+        static double Cross((double X, double Y) o, (double X, double Y) p, (double X, double Y) q) => (p.X - o.X) * (q.Y - o.Y) - (p.Y - o.Y) * (q.X - o.X);
+        static bool On((double X, double Y) p, (double X, double Y) q, (double X, double Y) r) =>
+            Math.Min(p.X, q.X) - 1e-9 <= r.X && r.X <= Math.Max(p.X, q.X) + 1e-9 && Math.Min(p.Y, q.Y) - 1e-9 <= r.Y && r.Y <= Math.Max(p.Y, q.Y) + 1e-9;
+        double d1 = Cross(c, d, a), d2 = Cross(c, d, b), d3 = Cross(a, b, c), d4 = Cross(a, b, d);
+        if (((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) && ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9)))
+        {
+            return true;
+        }
+
+        return (Math.Abs(d1) <= 1e-9 && On(c, d, a)) || (Math.Abs(d2) <= 1e-9 && On(c, d, b)) || (Math.Abs(d3) <= 1e-9 && On(a, b, c)) || (Math.Abs(d4) <= 1e-9 && On(a, b, d));
+    }
+
+    private static List<(double X, double Y)> Swap(IEnumerable<(double X, double Y)> ring) => ring.Select(point => (point.Y, point.X)).ToList();
+
+    /// <summary>How many times the closed ring's edges cross the line X = <paramref name="x"/>.</summary>
+    public static int CutCrossings(IReadOnlyList<(double X, double Y)> ring, double x)
+    {
+        List<(double X, double Y)> points = ring.Count > 1 && ring[0] == ring[^1] ? ring.Take(ring.Count - 1).ToList() : ring.ToList();
+        int crossings = 0;
+        for (int index = 0; index < points.Count; index++)
+        {
+            (double X, double Y) a = points[index], b = points[(index + 1) % points.Count];
+            if ((a.X < x) != (b.X < x))
+            {
+                crossings++;
+            }
+        }
+
+        return crossings;
     }
 
     public static double Area(IReadOnlyList<(double X, double Y)> ring) =>
@@ -157,11 +293,14 @@ internal static class ReshapeFixture
     {
         JsonObject kept = Shape(unit, "split", new[] { west }, group: unit.RevitKey, keeps: true);
         JsonObject piece = Shape(unit, "split", new[] { east }, group: unit.RevitKey, keeps: false);
-        piece["gdbName"] = unit.Name + " east";
+        piece["gdbName"] = SplitName(unit);
         piece["gdbAltName"] = "E";
         piece["gdbCategory"] = unit.Category;
         return new[] { kept, piece };
     }
+
+    /// <summary>The GDB name the split fixture gives the new piece: "&lt;name&gt; east", or "east" for an unnamed unit.</summary>
+    public static string SplitName(FloorUnit unit) => unit.Name.Length > 0 ? unit.Name + " east" : "east";
 
     /// <summary>A `merged` group: the unit keeps its row and outline, and the floor <paramref name="takenIn"/> is taken in (no outline).</summary>
     public static JsonObject[] Merged(FloorUnit unit, string takenIn)
@@ -306,6 +445,13 @@ internal static class ReshapeFixture
 }
 
 /// <summary>A shrunk outline (exterior ring first, then the holes kept), with what the cut did.</summary>
+/// <summary>A split of one unit: <see cref="West"/> keeps the floor, <see cref="East"/> becomes a new one; for a cut along Y they are the south and north pieces.</summary>
+internal sealed record SplitCut(List<(double X, double Y)> West, List<(double X, double Y)> East, char Axis, double At)
+{
+    /// <summary>The new piece lies wholly within 1 m of the floor's east edge's side, so an opening cut there falls outside the kept piece.</summary>
+    public bool NewPieceOnEastSide(double bandM) => Axis == 'X' && East.Max(point => point.X) - At > bandM + 0.2;
+}
+
 internal sealed record ShrunkOutline(List<List<(double X, double Y)>> Rings, int Crossings, int DroppedHoles);
 
 /// <summary>GeoPackage binary geometry (polygon or multipolygon) to polygons, each a list of rings.</summary>
@@ -376,4 +522,40 @@ internal static class GeoPackageGeometry
 
     private static double Double(byte[] data, int offset, bool little) =>
         little ? BitConverter.ToDouble(data, offset) : System.Buffers.Binary.BinaryPrimitives.ReadDoubleBigEndian(data.AsSpan(offset));
+}
+
+/// <summary>
+/// How c3b and c3c pick their floors from an export, kept apart from Revit so a unit test can run the
+/// picks against a real export: only floors with one part in the export, any category.
+/// </summary>
+internal static class ShapeEditPicks
+{
+    private static readonly string[] Preferred = { "retail", "walkway", "restroom.female", "restroom.male", "restroom.unisex", "nonpublic", "unspecified" };
+
+    private static int Rank(FloorUnit unit) => Array.IndexOf(Preferred, unit.Category) is int index and >= 0 ? index : Preferred.Length;
+
+    /// <summary>Units that can be split, best first: one part, no holes, a cut line crossed twice; <paramref name="usable"/> filters by UniqueId (Revit's own checks).</summary>
+    public static List<(FloorUnit Unit, SplitCut Cut)> SplitCandidates(IEnumerable<FloorUnit> units, IReadOnlyDictionary<string, int> parts, Func<string, bool> usable) =>
+        units.Where(unit => parts.GetValueOrDefault(unit.UniqueId) == 1 && usable(unit.UniqueId))
+            .OrderBy(Rank)
+            .Select(unit => (Unit: unit, Cut: ReshapeFixture.Split(unit)))
+            .Where(pair => pair.Cut != null)
+            .Select(pair => (pair.Unit, pair.Cut!))
+            .ToList();
+
+    /// <summary>
+    /// Pairs (K kept, G taken in) on one level, both floors with one part; <paramref name="keepable"/> and
+    /// <paramref name="takeable"/> filter by UniqueId. Pairs of one category first (the usual GDB merge), then by category preference, touching first, though touching is not needed.
+    /// </summary>
+    public static List<(FloorUnit Kept, FloorUnit Taken, double Gap)> MergePairs(IReadOnlyList<FloorUnit> units, IReadOnlyDictionary<string, int> parts, Func<string, bool> keepable, Func<string, bool> takeable)
+    {
+        List<FloorUnit> single = units.Where(unit => parts.GetValueOrDefault(unit.UniqueId) == 1).ToList();
+        return (
+            from k in single
+            from g in single
+            where k.UniqueId != g.UniqueId && k.LevelId == g.LevelId && keepable(k.UniqueId) && takeable(g.UniqueId)
+            let gap = ReshapeFixture.Gap(k.Rings, g.Rings)
+            orderby k.Category == g.Category ? 0 : 1, Rank(k), gap > 0.01 ? 1 : 0, gap
+            select (k, g, gap)).ToList();
+    }
 }
