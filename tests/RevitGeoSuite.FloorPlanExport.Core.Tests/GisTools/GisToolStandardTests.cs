@@ -1,5 +1,6 @@
 using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using Xunit;
 using static RevitGeoSuite.FloorPlanExport.Core.Tests.GisTools.GisToolsFixtures;
 
@@ -11,7 +12,7 @@ public sealed class GisToolStandardTests
     public void LoadsTheShippedStandard()
     {
         Assert.Equal(2, Standard.Version);
-        Assert.Equal(12, Standard.Parameters.Count);
+        Assert.Equal(GisSharedParameters.All.Count, Standard.Parameters.Count);
         Assert.Equal(21, Standard.FloorTypes.Count);
     }
 

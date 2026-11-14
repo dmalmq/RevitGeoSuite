@@ -88,8 +88,12 @@ internal static class SchemaAttributeMapper
             if (!TryResolveSourceValue(mapping, attributes, sourceElement, layerType, viewName, out object? sourceValue, out string? sourceFailure))
             {
                 object? fallbackValue = ResolveFallbackValue(mapping);
-                string message = BuildMissingValueMessage(layerType, fieldName, sourceFailure, sourceElement, fallbackValue);
-                AddIssue(issues, warnings, SchemaAttributeIssueCode.MissingMappedParameter, fieldName, message);
+                if (mapping.WarnWhenMissing)
+                {
+                    string message = BuildMissingValueMessage(layerType, fieldName, sourceFailure, sourceElement, fallbackValue);
+                    AddIssue(issues, warnings, SchemaAttributeIssueCode.MissingMappedParameter, fieldName, message);
+                }
+
                 if (!TryAssignCoercedValue(attributes, mapping, fieldName, fallbackValue, layerType, sourceElement, warnings, issues))
                 {
                     attributes[fieldName] = null;
@@ -215,7 +219,9 @@ internal static class SchemaAttributeMapper
             return false;
         }
 
-        Parameter? parameter = sourceElement.LookupParameter(parameterName);
+        // A type parameter (binding "type" in the field list) is not on the instance itself.
+        Parameter? parameter = sourceElement.LookupParameter(parameterName) ??
+            sourceElement.Document?.GetElement(sourceElement.GetTypeId())?.LookupParameter(parameterName);
         if (parameter == null)
         {
             failure = $"Revit parameter '{parameterName}' was not found on element {sourceElement.Id.Value}.";
