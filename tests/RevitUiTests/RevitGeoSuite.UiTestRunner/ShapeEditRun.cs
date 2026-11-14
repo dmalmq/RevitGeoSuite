@@ -71,10 +71,9 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        // The export shows the outline only. Elements that cut a floor (openings, shafts) can make the plan refuse
-        // it, so floors hosting nothing go first and each candidate is read by the plan (no Revit change) until
-        // one gives a card. C3b.8 then takes the next one that gives a card and whose new piece is east.
-        candidates = candidates.OrderBy(pair => scan.First(row => row.UniqueId == pair.Unit.UniqueId).Dependents.Length == 0 ? 0 : 1).ToList();
+        // The export shows the outline only, and elements that cut a floor can make the plan refuse it, so each
+        // candidate is read by the plan (no Revit change) until one gives a card. C3b.8 then takes the next one
+        // that gives a card and whose new piece is east.
         var offered = new List<(FloorUnit Unit, SplitCut Cut, string Path)>();
         foreach (var (candidate, cut) in candidates.Take(12))
         {
@@ -193,7 +192,10 @@ internal sealed partial class GisStandardRun
         ElementRow added = Element(id);
         step.Check(kept.Exists && kept.Id == split.Before.Id, $"Floor F keeps its UniqueId and element id ({kept.Id}).");
         step.Check(SameArea(kept.AreaM2, ReshapeFixture.Area(split.West)), $"F now has the west piece's area ({kept.AreaM2:0.0} m², piece {ReshapeFixture.Area(split.West):0.0} m², was {split.Before.AreaM2:0.0} m²).");
-        step.Check(SameArea(added.AreaM2, ReshapeFixture.Area(split.East)), $"The new floor has the east piece's area ({added.AreaM2:0.0} m², piece {ReshapeFixture.Area(split.East):0.0} m²).");
+        // A trim (a stair, a shaft) wholly on the new piece's side joins the new floor (#62 f0fed0a), so the new
+        // floor can be larger than its GDB piece by that trim; the re-export in C3b.7 trims it off again.
+        double eastArea = ReshapeFixture.Area(split.East);
+        step.Check(added.AreaM2 is double addedArea && addedArea >= eastArea * (1 - SameAreaShare), $"The new floor has at least the east piece's area ({added.AreaM2:0.0} m², piece {eastArea:0.0} m²; any extra is a trim it took in).");
         int floors = FloorScan().Count(row => row.Level == split.Floor.Level);
         step.Check(floors == split.FloorsOnLevel + 1, $"The level has one floor more ({floors}, was {split.FloorsOnLevel}).");
         step.Check(added.LevelId == split.Before.LevelId, $"The new floor is on F's level ({added.LevelId}).");
