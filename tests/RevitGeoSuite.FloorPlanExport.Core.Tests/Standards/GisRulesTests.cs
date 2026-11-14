@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using RevitGeoSuite.FloorPlanExport.Core.Assignments;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
@@ -154,6 +155,91 @@ public sealed class GisRulesTests : IDisposable
         Assert.Equal("retail", GisRulesFile.TryLoad(RulesPath)!.ToMappingRules().FloorCategoryOverrides["A"]);
     }
 
+    private string LockPath => Path.Combine(Station, GisRulesStore.LockFileName);
+
+    [Fact]
+    public void Apply_KeepsBothKeysWhenAnotherPcSavesBetweenOurReadAndOurWrite()
+    {
+        GisRulesStore pcA = NewStore();
+        pcA.Apply(new[] { GisRulesOperation.UpsertRule(Floor("Shared", "walkway")) });
+        ManualResetEventSlim pcBWaited = new();
+        GisRulesStoreOptions pcBOptions = FastOptions();
+        pcBOptions.WriteAttempts = 400;
+        pcBOptions.BackoffMilliseconds = _ => 5;
+        pcBOptions.Sleep = milliseconds =>
+        {
+            pcBWaited.Set();
+            Thread.Sleep(milliseconds);
+        };
+        GisRulesStore pcB = new(RulesPath, pcBOptions);
+        Thread? pcBSave = null;
+        Exception? pcBError = null;
+        GisRulesStoreOptions pcAOptions = FastOptions();
+        pcAOptions.AfterRead = () =>
+        {
+            if (pcBSave != null)
+            {
+                return;
+            }
+
+            pcBSave = new Thread(() =>
+            {
+                try
+                {
+                    pcB.Apply(new[] { GisRulesOperation.UpsertRule(Floor("OnlyB", "retail")) });
+                }
+                catch (Exception ex)
+                {
+                    pcBError = ex;
+                }
+            });
+            pcBSave.Start();
+            Assert.True(SpinWait.SpinUntil(() => pcBWaited.IsSet || !pcBSave.IsAlive, TimeSpan.FromSeconds(10)));
+        };
+
+        new GisRulesStore(RulesPath, pcAOptions).Apply(new[] { GisRulesOperation.UpsertRule(Floor("OnlyA", "ticketing")) });
+        Assert.True(pcBSave!.Join(TimeSpan.FromSeconds(10)));
+
+        Assert.Null(pcBError);
+        IReadOnlyDictionary<string, string> floors = GisRulesFile.TryLoad(RulesPath)!.ToMappingRules().FloorCategoryOverrides;
+        Assert.Equal("ticketing", floors["OnlyA"]);
+        Assert.Equal("retail", floors["OnlyB"]);
+        Assert.False(File.Exists(LockPath));
+    }
+
+    [Fact]
+    public void Apply_WaitsForAnotherPcsLockThenFailsNamingItAndKeepsTheFile()
+    {
+        NewStore().Apply(new[] { GisRulesOperation.UpsertRule(Floor("Old", "walkway")) });
+        string before = File.ReadAllText(RulesPath);
+        File.WriteAllText(LockPath, "{\"machine\":\"PC-SHINJUKU-07\",\"user\":\"hanako\",\"utc\":\"2026-11-14T09:00:00Z\"}");
+        List<int> waits = new();
+        GisRulesStoreOptions options = FastOptions();
+        options.Sleep = waits.Add;
+
+        IOException error = Assert.Throws<IOException>(() =>
+            new GisRulesStore(RulesPath, options).Apply(new[] { GisRulesOperation.UpsertRule(Floor("New", "retail")) }));
+
+        Assert.Equal(new[] { 100, 200, 400, 800 }, waits);
+        Assert.Contains("hanako", error.Message);
+        Assert.Contains("PC-SHINJUKU-07", error.Message);
+        Assert.Equal(before, File.ReadAllText(RulesPath));
+        Assert.True(File.Exists(LockPath));
+    }
+
+    [Fact]
+    public void Apply_TakesOverALockOlderThanThirtySeconds()
+    {
+        Directory.CreateDirectory(Station);
+        File.WriteAllText(LockPath, "{\"machine\":\"PC-CRASHED\",\"user\":\"taro\",\"utc\":\"2026-11-14T09:00:00Z\"}");
+        File.SetLastWriteTimeUtc(LockPath, DateTime.UtcNow.AddSeconds(-31));
+
+        NewStore().Apply(new[] { GisRulesOperation.UpsertRule(Floor("A", "walkway")) });
+
+        Assert.Equal("walkway", GisRulesFile.TryLoad(RulesPath)!.ToMappingRules().FloorCategoryOverrides["A"]);
+        Assert.False(File.Exists(LockPath));
+    }
+
     [Fact]
     public void Apply_WritesNothingWhenTheFileAlreadyHoldsTheOperations()
     {
@@ -204,6 +290,7 @@ public sealed class GisRulesTests : IDisposable
         Assert.Equal(new[] { 100, 200, 400, 800 }, waits);
         Assert.Equal(before, File.ReadAllText(RulesPath));
         Assert.Empty(Directory.GetFiles(Station, ".gis-rules.*.tmp"));
+        Assert.False(File.Exists(LockPath));
     }
 
     [Fact]
