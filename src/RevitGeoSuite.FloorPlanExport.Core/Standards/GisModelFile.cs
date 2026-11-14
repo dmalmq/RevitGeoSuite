@@ -26,6 +26,7 @@ public sealed class GisModelFile
     public const int CurrentVersion = 1;
     public const string FolderName = "gis-models";
     public const string Suffix = ".gis-model.json";
+    public const string DefaultProfileName = "Station";
     public const string TemplateFileName = "gis-model.template.json";
 
     /// <summary>The name prefix of the plan views the standard exports.</summary>
@@ -60,11 +61,22 @@ public sealed class GisModelFile
     [JsonProperty("fields")]
     public string Fields { get; set; } = StandardFields;
 
+    /// <summary>
+    /// The profile of the station's <c>gis-rules.json</c> this model exports with. Absent means
+    /// <see cref="DefaultProfileName"/>, which is created from the standard's defaults when the
+    /// station has none.
+    /// </summary>
+    [JsonProperty("profile", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Profile { get; set; }
+
     [JsonProperty("versions")]
     public GisModelVersions Versions { get; set; } = new();
 
     [JsonExtensionData]
     private IDictionary<string, JToken>? UnknownFields { get; set; }
+
+    /// <summary>The name of the station profile this model exports with.</summary>
+    public string ProfileName => string.IsNullOrWhiteSpace(Profile) ? DefaultProfileName : Profile!.Trim();
 
     /// <summary>The file for a model in a station folder.</summary>
     public static string PathFor(string stationFolder, string modelId)
