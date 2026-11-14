@@ -115,7 +115,8 @@ internal sealed class FloorPlanExportSessionManager
             workflow.DeleteProfile,
             (request, progress) => workflow.RunExportCore(request, coordinateInfo, progress),
             coordinateInfo,
-            () => workflow.RulesSavedStatus);
+            () => workflow.RulesSavedStatus,
+            workflow.DescribeStationOverrides);
         sessionDocument = document;
         sessionProjectKey = projectKey;
         sessionStationFolder = rules.StationFolder;

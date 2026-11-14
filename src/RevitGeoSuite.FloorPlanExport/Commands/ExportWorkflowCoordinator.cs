@@ -49,9 +49,53 @@ public sealed class ExportWorkflowCoordinator
     /// <summary>"Saved for station ..." once a profile went to the station's rules file; null while profiles are this PC's.</summary>
     public string? RulesSavedStatus => _profileStore.SavedStatus;
 
-    public void SaveProfile(ExportProfileScope scope, string name, ExportDialogSettings profileSettings)
+    /// <summary>
+    /// Saves a profile and returns the scope it was saved in. For a model with a station rules file,
+    /// a profile named as the station profile the model exports with is saved to the station whatever
+    /// scope was asked for, so saving the settings under that name changes the station's on purpose.
+    /// </summary>
+    public ExportProfileScope SaveProfile(ExportProfileScope scope, string name, ExportDialogSettings profileSettings)
     {
+        GisRulesSource rules = GisRulesSourceFactory.For(_document);
+        if (rules.IsStation && string.Equals(name.Trim(), StationProfileName(), StringComparison.OrdinalIgnoreCase))
+        {
+            scope = ExportProfileScope.Project;
+        }
+
         _profileStore.SaveProfile(_projectKey, ExportProfile.FromSettings(name, scope, profileSettings));
+        return scope;
+    }
+
+    /// <summary>
+    /// The settings of <paramref name="request"/> that the station profile will replace when it is
+    /// exported, with how to change the station's value instead, for the dialog to show before the
+    /// export; null when the model has no station rules file or nothing differs.
+    /// </summary>
+    public string? DescribeStationOverrides(ExportDialogResult request)
+    {
+        GisRulesSource rules = GisRulesSourceFactory.For(_document);
+        if (!rules.IsStation)
+        {
+            return null;
+        }
+
+        string profile = StationProfileName();
+        IReadOnlyList<string> overrides = rules.StationOverrides(profile, GisRulesProfileMapper.FromResult(profile, request));
+        if (overrides.Count == 0)
+        {
+            return null;
+        }
+
+        string list = string.Join("; ", overrides);
+        return UiLanguageText.Select(
+            request.UiLanguage,
+            $"Station {rules.StationName} exports with its profile '{profile}', which replaces these settings (yours -> station): {list}. To change the station's value on purpose, save these settings as the profile '{profile}'.",
+            $"ステーション「{rules.StationName}」はプロファイル「{profile}」で出力するため、次の設定はステーションの値に置き換わります (自分 -> ステーション): {list}。ステーションの値を意図して変えるには、この設定をプロファイル「{profile}」として保存してください。");
+    }
+
+    private string StationProfileName()
+    {
+        return GisModelSettings.Load(_document, null).File?.ProfileName ?? GisModelFile.DefaultProfileName;
     }
 
     public void DeleteProfile(ExportProfile profile)

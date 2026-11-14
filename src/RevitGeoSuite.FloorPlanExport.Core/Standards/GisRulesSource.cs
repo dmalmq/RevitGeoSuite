@@ -229,6 +229,25 @@ public sealed class GisRulesSource
         return profile;
     }
 
+    /// <summary>
+    /// What <see cref="ResolveStationProfile"/> would warn about, read only, for a dialog to show before
+    /// the export: each setting of <paramref name="yours"/> that the station profile
+    /// <paramref name="profileName"/> replaces, as <c>setting: yours -&gt; station</c>. Empty when the
+    /// model has no station file, the station has no such profile yet, or its file cannot be read.
+    /// </summary>
+    public IReadOnlyList<string> StationOverrides(string profileName, GisRulesProfile yours)
+    {
+        try
+        {
+            GisRulesProfile? station = _station?.TryLoad()?.FindProfile(profileName);
+            return station == null ? Array.Empty<string>() : GisRulesProfile.Differences(yours, station);
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
     public void ApplyToStation(IReadOnlyList<GisRulesOperation> operations)
     {
         (_station ?? throw new InvalidOperationException("This model has no station rules file.")).Apply(operations);

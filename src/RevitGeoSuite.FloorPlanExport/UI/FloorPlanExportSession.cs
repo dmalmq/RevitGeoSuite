@@ -26,7 +26,7 @@ public sealed class FloorPlanExportSession : IDisposable
     private readonly IReadOnlyList<ViewPlan> _views;
     private readonly IReadOnlyList<LinkSelectionItem> _availableLinks;
     private readonly Func<ExportDialogResult, Action<ExportProgressUpdate>?, FloorGeoPackageExportResult>? _runExportRequested;
-    private readonly Action<ExportProfileScope, string, ExportDialogSettings>? _saveProfileRequested;
+    private readonly Func<ExportProfileScope, string, ExportDialogSettings, ExportProfileScope>? _saveProfileRequested;
     private readonly Action<ExportProfile>? _deleteProfileRequested;
     private readonly Action<ExportDialogSettings>? _saveSettingsRequested;
     private readonly ModelCoordinateInfo? _coordinateInfo;
@@ -43,7 +43,9 @@ public sealed class FloorPlanExportSession : IDisposable
     private ExportResultInitialStateResponse? _lastResultPayload;
     private string _lastOutputDirectory = string.Empty;
     private readonly Func<string?>? _rulesSavedStatus;
+    private readonly Func<ExportDialogResult, string?>? _stationOverrides;
     private bool _rulesSaved;
+    private string? _previewStationOverrides;
     private ExecutionProgressPayload _latestProgress;
 
     public FloorPlanExportSession(
@@ -53,13 +55,15 @@ public sealed class FloorPlanExportSession : IDisposable
         IReadOnlyList<LinkSelectionItem>? availableLinks = null,
         IReadOnlyList<ExportProfile>? profiles = null,
         Action<ExportDialogSettings>? saveSettingsRequested = null,
-        Action<ExportProfileScope, string, ExportDialogSettings>? saveProfileRequested = null,
+        Func<ExportProfileScope, string, ExportDialogSettings, ExportProfileScope>? saveProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Func<ExportDialogResult, Action<ExportProgressUpdate>?, FloorGeoPackageExportResult>? runExportRequested = null,
         ModelCoordinateInfo? coordinateInfo = null,
-        Func<string?>? rulesSavedStatus = null)
+        Func<string?>? rulesSavedStatus = null,
+        Func<ExportDialogResult, string?>? stationOverrides = null)
     {
         _rulesSavedStatus = rulesSavedStatus;
+        _stationOverrides = stationOverrides;
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
         _views = views ?? throw new ArgumentNullException(nameof(views));
         _baseSettings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -432,6 +436,7 @@ public sealed class FloorPlanExportSession : IDisposable
         }
 
         _currentPayload = ClonePayload(payload);
+        _previewStationOverrides = _stationOverrides?.Invoke(ToResult(_currentPayload));
         ExportPreviewRequest request = ToPreviewRequest(_currentPayload);
         _previewViews = request.SelectedViews.ToList();
         if (_previewViews.Count == 0)
@@ -470,7 +475,7 @@ public sealed class FloorPlanExportSession : IDisposable
         }
 
         _currentPreviewView = _previewViews[0];
-        PreviewViewPayload currentView = WebPreviewPayloadMapper.ToPayload(
+        PreviewViewPayload currentView = ToViewPayload(
             _previewController,
             _previewController.LoadView(_currentPreviewView));
         _previewState = WebPreviewPayloadMapper.BuildInitialState(
@@ -495,7 +500,7 @@ public sealed class FloorPlanExportSession : IDisposable
                         _previewViews.FirstOrDefault() ??
                         throw new InvalidOperationException("No preview views are available.");
         _currentPreviewView = view;
-        return WebPreviewPayloadMapper.ToPayload(controller, controller.LoadView(view));
+        return ToViewPayload(controller, controller.LoadView(view));
     }
 
     public PreviewViewPayload AssignPreviewCategory(PreviewAssignmentRequest request)
@@ -545,7 +550,7 @@ public sealed class FloorPlanExportSession : IDisposable
         ExportPreviewController controller = EnsurePreviewController();
         if (controller.CurrentDisplayState != null)
         {
-            return WebPreviewPayloadMapper.ToPayload(controller, controller.CurrentDisplayState);
+            return ToViewPayload(controller, controller.CurrentDisplayState);
         }
 
         if (_currentPreviewView != null)
@@ -590,6 +595,18 @@ public sealed class FloorPlanExportSession : IDisposable
             warningCount,
             unassignedFloorTypeCount,
             WebPreviewPayloadMapper.BuildAssignmentSummary(controller, assignmentViews));
+    }
+
+    /// <summary>The view's payload, with the station's overrides of the previewed settings as its last warning, so they show before the export.</summary>
+    private PreviewViewPayload ToViewPayload(ExportPreviewController controller, PreviewDisplayViewState displayState)
+    {
+        PreviewViewPayload payload = WebPreviewPayloadMapper.ToPayload(controller, displayState);
+        if (!string.IsNullOrEmpty(_previewStationOverrides))
+        {
+            payload.Warnings.Add(_previewStationOverrides!);
+        }
+
+        return payload;
     }
 
     private ExportPreviewController EnsurePreviewController()
@@ -770,7 +787,7 @@ public sealed class FloorPlanExportSession : IDisposable
 
         ExportProfileScope scope = FromScopeString(request.Scope);
         ExportDialogSettings settings = ToSettings(request.Settings);
-        _saveProfileRequested?.Invoke(scope, name, settings);
+        scope = _saveProfileRequested?.Invoke(scope, name, settings) ?? scope;
         _rulesSaved = scope == ExportProfileScope.Project;
 
         ExportProfile profile = ExportProfile.FromSettings(name, scope, settings);
@@ -876,7 +893,8 @@ public sealed class FloorPlanExportSession : IDisposable
     private string WithRulesSavedStatus(string status)
     {
         string? saved = _rulesSaved ? _rulesSavedStatus?.Invoke() : null;
-        return string.IsNullOrEmpty(saved) ? status : $"{status} · {saved}";
+        string? overrides = _stationOverrides?.Invoke(ToResult(_currentPayload));
+        return string.Join(" · ", new[] { status, saved, overrides }.Where(part => !string.IsNullOrEmpty(part)));
     }
 
     private string BuildCoordinateDetail()

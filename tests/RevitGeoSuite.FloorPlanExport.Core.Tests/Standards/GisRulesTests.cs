@@ -10,6 +10,7 @@ using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
 using RevitGeoSuite.FloorPlanExport.Core.Validation;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
+using RevitGeoSuite.FloorPlanExport.UI;
 using Xunit;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Tests.Standards;
@@ -522,6 +523,46 @@ public sealed class GisRulesTests : IDisposable
         Assert.Contains("featureTypes: unit -> unit, detail, opening, level, fixture", warning);
         Assert.DoesNotContain("name:", warning);
         Assert.DoesNotContain("coordinateMode", warning);
+    }
+
+    [Fact]
+    public void StationOverrides_ListsBeforeTheExportWhatTheExportWouldWarnAboutAndWritesNothing()
+    {
+        GisRulesSource source = StationSource();
+        source.ApplyToStation(new[] { GisRulesOperation.UpsertProfile(Profile(GisModelFile.DefaultProfileName, 6677)) });
+        string before = File.ReadAllText(RulesPath);
+        List<string> warnings = new();
+        source.ResolveStationProfile(GisModelFile.DefaultProfileName, Profile("Dialog", 6676), warnings);
+
+        IReadOnlyList<string> overrides = source.StationOverrides(GisModelFile.DefaultProfileName, Profile("Dialog", 6676));
+
+        Assert.Equal(new[] { "targetEpsg: 6676 -> 6677" }, overrides);
+        Assert.Contains(string.Join("; ", overrides), Assert.Single(warnings));
+        Assert.Empty(source.StationOverrides(GisModelFile.DefaultProfileName, Profile("Dialog", 6677)));
+        Assert.Empty(source.StationOverrides("Night", Profile("Dialog", 6676)));
+        Assert.Equal(before, File.ReadAllText(RulesPath));
+    }
+
+    [Fact]
+    public void SavingAProjectProfileNamedStationReplacesTheStationsProfile()
+    {
+        GisRulesSource source = StationSource();
+        source.ApplyToStation(new[] { GisRulesOperation.UpsertProfile(Profile(GisModelFile.DefaultProfileName, 6677)) });
+        ExportProfileStore profiles = new(Path.Combine(_folder, "pc", "profiles.json"), rules: source);
+
+        profiles.SaveProfile("project-a", new ExportProfile { Name = "station", Scope = ExportProfileScope.Project, TargetEpsg = 6676 });
+
+        Assert.Equal(6676, source.LoadStationFile()!.FindProfile(GisModelFile.DefaultProfileName)!.TargetEpsg);
+        Assert.Single(source.LoadStationFile()!.Profiles);
+        Assert.False(File.Exists(Path.Combine(_folder, "pc", "profiles.json")));
+    }
+
+    [Fact]
+    public void StationOverrides_IsEmptyForAModelWithoutAStationFile()
+    {
+        GisRulesSource source = GisRulesSource.Resolve(null, "project-a", new MappingRuleStore(Path.Combine(_folder, "pc"), Path.Combine(_folder, "legacy")));
+
+        Assert.Empty(source.StationOverrides(GisModelFile.DefaultProfileName, Profile("Dialog", 6676)));
     }
 
     [Fact]
