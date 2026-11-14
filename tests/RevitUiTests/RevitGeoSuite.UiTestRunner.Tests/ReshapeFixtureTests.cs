@@ -209,4 +209,14 @@ public class ReshapeFixtureTests
         Assert.True(cut.At < 4);
         Assert.Equal(88, ReshapeFixture.Area(cut.West) + ReshapeFixture.Area(cut.East), 6);
     }
+
+    [Fact]
+    public void IsSimple_finds_a_bow_tie_and_a_ring_touching_itself()
+    {
+        Assert.True(ReshapeFixture.IsSimple(Square));
+        Assert.True(ReshapeFixture.IsSimple(new (double, double)[] { (0, 0), (10, 0), (10, 0), (10, 5), (0, 5), (0, 0) }));
+        Assert.False(ReshapeFixture.IsSimple(new (double, double)[] { (0, 0), (10, 5), (10, 0), (0, 5), (0, 0) }));
+        // Two squares joined at one corner: the ring passes (5, 5) twice.
+        Assert.False(ReshapeFixture.IsSimple(new (double, double)[] { (0, 0), (5, 0), (5, 5), (10, 5), (10, 10), (5, 10), (5, 5), (0, 5), (0, 0) }));
+    }
 }

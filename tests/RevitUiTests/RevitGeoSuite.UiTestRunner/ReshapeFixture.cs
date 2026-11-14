@@ -134,7 +134,7 @@ internal static class ReshapeFixture
     /// <summary>
     /// The unit cut in two by a straight line: first lines X = x across its east-west extent (nearest the middle
     /// first, 19 of them), then lines Y = y across its north-south extent, taking the first line the outline
-    /// crosses exactly twice, through no vertex, with both pieces over 1 m². A line crossed more than twice would join separate parts
+    /// crosses exactly twice, through no vertex, with both pieces over 1 m² and neither touching itself. A line crossed more than twice would join separate parts
     /// with zero-width bridges, which the planner rejects as self-crossing. The west (or south) piece keeps the
     /// floor. Null for a unit with holes or when no line fits.
     /// </summary>
@@ -146,6 +146,11 @@ internal static class ReshapeFixture
         }
 
         IReadOnlyList<(double X, double Y)> ring = unit.Rings[0];
+        if (!IsSimple(ring))
+        {
+            return null;
+        }
+
         IEnumerable<double> fractions = Enumerable.Range(1, 19).Select(step => step / 20.0).OrderBy(fraction => Math.Abs(fraction - 0.5));
         foreach (char axis in new[] { 'X', 'Y' })
         {
@@ -161,7 +166,7 @@ internal static class ReshapeFixture
                 }
 
                 List<(double X, double Y)> kept = Clip(turned, at, keepWest: true), added = Clip(turned, at, keepWest: false);
-                if (kept.Count >= 4 && added.Count >= 4 && Area(kept) > 1 && Area(added) > 1)
+                if (kept.Count >= 4 && added.Count >= 4 && Area(kept) > 1 && Area(added) > 1 && IsSimple(kept) && IsSimple(added))
                 {
                     return axis == 'X' ? new SplitCut(kept, added, axis, at) : new SplitCut(Swap(kept), Swap(added), axis, at);
                 }
@@ -169,6 +174,57 @@ internal static class ReshapeFixture
         }
 
         return null;
+    }
+
+    /// <summary>True when no two non-adjacent edges of the closed ring touch or cross (repeated points ignored).</summary>
+    public static bool IsSimple(IReadOnlyList<(double X, double Y)> points)
+    {
+        var ring = new List<(double X, double Y)>();
+        foreach ((double X, double Y) point in points)
+        {
+            if (ring.Count == 0 || Math.Abs(ring[^1].X - point.X) > 1e-9 || Math.Abs(ring[^1].Y - point.Y) > 1e-9)
+            {
+                ring.Add(point);
+            }
+        }
+
+        if (ring.Count > 1 && ring[0] != ring[^1])
+        {
+            ring.Add(ring[0]);
+        }
+
+        int count = ring.Count - 1;
+        for (int i = 0; i < count; i++)
+        {
+            for (int j = i + 1; j < count; j++)
+            {
+                if (j == i + 1 || (i == 0 && j == count - 1))
+                {
+                    continue;
+                }
+
+                if (Touch(ring[i], ring[i + 1], ring[j], ring[j + 1]))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool Touch((double X, double Y) a, (double X, double Y) b, (double X, double Y) c, (double X, double Y) d)
+    {
+        static double Cross((double X, double Y) o, (double X, double Y) p, (double X, double Y) q) => (p.X - o.X) * (q.Y - o.Y) - (p.Y - o.Y) * (q.X - o.X);
+        static bool On((double X, double Y) p, (double X, double Y) q, (double X, double Y) r) =>
+            Math.Min(p.X, q.X) - 1e-9 <= r.X && r.X <= Math.Max(p.X, q.X) + 1e-9 && Math.Min(p.Y, q.Y) - 1e-9 <= r.Y && r.Y <= Math.Max(p.Y, q.Y) + 1e-9;
+        double d1 = Cross(c, d, a), d2 = Cross(c, d, b), d3 = Cross(a, b, c), d4 = Cross(a, b, d);
+        if (((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) && ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9)))
+        {
+            return true;
+        }
+
+        return (Math.Abs(d1) <= 1e-9 && On(c, d, a)) || (Math.Abs(d2) <= 1e-9 && On(c, d, b)) || (Math.Abs(d3) <= 1e-9 && On(a, b, c)) || (Math.Abs(d4) <= 1e-9 && On(a, b, d));
     }
 
     private static List<(double X, double Y)> Swap(IEnumerable<(double X, double Y)> ring) => ring.Select(point => (point.Y, point.X)).ToList();
@@ -486,7 +542,7 @@ internal static class ShapeEditPicks
 
     /// <summary>
     /// Pairs (K kept, G taken in) on one level, both floors with one part; <paramref name="keepable"/> and
-    /// <paramref name="takeable"/> filter by UniqueId. Retail pairs and touching pairs first, though neither is needed.
+    /// <paramref name="takeable"/> filter by UniqueId. Pairs of one category first (the usual GDB merge), then by category preference, touching first, though touching is not needed.
     /// </summary>
     public static List<(FloorUnit Kept, FloorUnit Taken, double Gap)> MergePairs(IReadOnlyList<FloorUnit> units, IReadOnlyDictionary<string, int> parts, Func<string, bool> keepable, Func<string, bool> takeable)
     {
@@ -496,7 +552,7 @@ internal static class ShapeEditPicks
             from g in single
             where k.UniqueId != g.UniqueId && k.LevelId == g.LevelId && keepable(k.UniqueId) && takeable(g.UniqueId)
             let gap = ReshapeFixture.Gap(k.Rings, g.Rings)
-            orderby (k.Category == "retail" && g.Category == "retail" ? 0 : 1), gap > 0.01 ? 1 : 0, gap
+            orderby k.Category == g.Category ? 0 : 1, Rank(k), gap > 0.01 ? 1 : 0, gap
             select (k, g, gap)).ToList();
     }
 }

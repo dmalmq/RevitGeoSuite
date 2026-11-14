@@ -50,7 +50,7 @@ public sealed class ShapeEditPicksExportTests
         Assert.All(splits, pair =>
         {
             Assert.Equal(1, parts[pair.Unit.UniqueId]);
-            Assert.True(Simple(pair.Cut.West) && Simple(pair.Cut.East), $"{pair.Unit.UniqueId} has a self-crossing piece.");
+            Assert.True(ReshapeFixture.IsSimple(pair.Cut.West) && ReshapeFixture.IsSimple(pair.Cut.East), $"{pair.Unit.UniqueId} has a self-crossing piece.");
         });
         Assert.NotEmpty(merges);
         Assert.All(merges, pair => Assert.True(parts[pair.Kept.UniqueId] == 1 && parts[pair.Taken.UniqueId] == 1));
@@ -59,41 +59,4 @@ public sealed class ShapeEditPicksExportTests
 
     private static string Describe(FloorUnit unit, IReadOnlyDictionary<string, int> parts) =>
         $"{unit.UniqueId} {unit.Category} '{unit.Name}' level {unit.LevelId}, {parts.GetValueOrDefault(unit.UniqueId)} part(s)";
-
-    // No two non-adjacent edges of the closed ring touch or cross.
-    private static bool Simple(List<(double X, double Y)> ring)
-    {
-        int count = ring.Count - 1;
-        for (int i = 0; i < count; i++)
-        {
-            for (int j = i + 1; j < count; j++)
-            {
-                if (j == i + 1 || (i == 0 && j == count - 1))
-                {
-                    continue;
-                }
-
-                if (Touch(ring[i], ring[i + 1], ring[j], ring[j + 1]))
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    private static bool Touch((double X, double Y) a, (double X, double Y) b, (double X, double Y) c, (double X, double Y) d)
-    {
-        static double Cross((double X, double Y) o, (double X, double Y) p, (double X, double Y) q) => (p.X - o.X) * (q.Y - o.Y) - (p.Y - o.Y) * (q.X - o.X);
-        static bool On((double X, double Y) p, (double X, double Y) q, (double X, double Y) r) =>
-            Math.Min(p.X, q.X) - 1e-9 <= r.X && r.X <= Math.Max(p.X, q.X) + 1e-9 && Math.Min(p.Y, q.Y) - 1e-9 <= r.Y && r.Y <= Math.Max(p.Y, q.Y) + 1e-9;
-        double d1 = Cross(c, d, a), d2 = Cross(c, d, b), d3 = Cross(a, b, c), d4 = Cross(a, b, d);
-        if (((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) && ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9)))
-        {
-            return true;
-        }
-
-        return (Math.Abs(d1) <= 1e-9 && On(c, d, a)) || (Math.Abs(d2) <= 1e-9 && On(c, d, b)) || (Math.Abs(d3) <= 1e-9 && On(a, b, c)) || (Math.Abs(d4) <= 1e-9 && On(a, b, d));
-    }
 }
