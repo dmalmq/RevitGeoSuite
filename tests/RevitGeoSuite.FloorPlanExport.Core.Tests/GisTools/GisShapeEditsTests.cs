@@ -84,6 +84,69 @@ public sealed class GisShapeEditsTests
         Assert.Equal("Reshape floor 101 (ショップ) to the GDB outline", edit.Label());
     }
 
+    private static Polygon2D Holed(Polygon2D outline, Polygon2D hole) => new(outline.ExteriorRing, new[] { hole.ExteriorRing });
+
+    private static double Area(IReadOnlyList<Polygon2D> outline) =>
+        outline.Sum(polygon => Math.Abs(RingArea(polygon.ExteriorRing)) - polygon.InteriorRings.Sum(ring => Math.Abs(RingArea(ring)))) * 0.3048 * 0.3048;
+
+    private static double RingArea(IReadOnlyList<Point2D> ring) =>
+        Enumerable.Range(0, ring.Count).Sum(index => (ring[index].X * ring[(index + 1) % ring.Count].Y) - (ring[(index + 1) % ring.Count].X * ring[index].Y)) / 2;
+
+    [Fact]
+    public void APlainFloorIsSketchedAsTheGdbOutline()
+    {
+        ShapeFloor floor = new("a", 101, new[] { Rect(0, 0, 10, 10) });
+
+        List<Polygon2D> sketch = GisShapeEdits.SketchFor(floor, new[] { Rect(0, 0, 11, 10) });
+
+        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(0, 0, 11, 10) }, sketch));
+    }
+
+    [Fact]
+    public void AnOpeningThatCutsTheFloorStaysOutOfItsSketch()
+    {
+        // The top face has the opening's hole, the sketch does not; the GDB grows the floor 1 m east around the same hole.
+        ShapeFloor floor = new("a", 101, new[] { Holed(Rect(0, 0, 10, 10), Rect(4, 4, 5, 5)) }, sketch: new[] { Rect(0, 0, 10, 10) });
+
+        List<Polygon2D> sketch = GisShapeEdits.SketchFor(floor, new[] { Holed(Rect(0, 0, 11, 10), Rect(4, 4, 5, 5)) });
+
+        Polygon2D only = Assert.Single(sketch);
+        Assert.Empty(only.InteriorRings);
+        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(0, 0, 11, 10) }, sketch));
+    }
+
+    [Fact]
+    public void AFloorWhoseSketchAlreadyGivesTheGdbOutlineIsAProblemNotACard()
+    {
+        // Reshaped once: the sketch has the GDB outline, an opening still cuts the top face where the GDB has none.
+        ShapeFloor floor = new("a", 101, new[] { Holed(Rect(0, 0, 11, 10), Rect(4, 4, 5, 5)) }, sketch: new[] { Rect(0, 0, 11, 10) });
+
+        (IReadOnlyList<ShapeEdit> edits, IReadOnlyList<string> problems) = Plan(new[] { Shape(GisDrift.Reshaped, "a", Rect(0, 0, 11, 10)) }, new[] { floor });
+
+        Assert.Empty(edits);
+        Assert.Contains("already has the GDB outline in its sketch", Assert.Single(problems));
+    }
+
+    [Fact]
+    public void ARoundingDifferenceAlongAnEdgeIsNotAnEdit()
+    {
+        ShapeFloor floor = new("a", 101, new[] { Rect(0, 0, 10, 10) });
+
+        List<Polygon2D> sketch = GisShapeEdits.SketchFor(floor, new[] { Rect(0, 0.002, 11, 10) });
+
+        Assert.True(GisShapeEdits.SameOutline(new[] { Rect(0, 0, 11, 10) }, sketch));
+        Assert.Equal(110, Area(sketch), 1);
+    }
+
+    [Fact]
+    public void SketchLoopsFollowTheEvenOddRule()
+    {
+        List<Polygon2D> region = GisShapeEdits.FromLoops(new[] { Rect(0, 0, 10, 10).ExteriorRing, Rect(4, 4, 5, 5).ExteriorRing, Rect(20, 0, 22, 2).ExteriorRing });
+
+        Assert.Equal(2, region.Count);
+        Assert.Equal(99 + 4, Area(region), 3);
+    }
+
     [Fact]
     public void TheGapBetweenTwoOutlinesIsInMetres()
     {
