@@ -51,7 +51,8 @@ internal sealed class ShellPage : IAsyncDisposable
     /// <summary>Sends one bridge request from inside the page and returns the C# handler's reply.</summary>
     public async Task<JsonNode?> RpcAsync(string method, object? payload = null)
     {
-        const string script = @"([method, payload]) => new Promise((resolve, reject) => {
+        const string script = @"([method, payloadJson]) => new Promise((resolve, reject) => {
+            const payload = JSON.parse(payloadJson);
             const id = 'uitest_' + Math.random().toString(36).slice(2);
             const onMessage = (event) => {
                 const envelope = event.data;
@@ -63,7 +64,7 @@ internal sealed class ShellPage : IAsyncDisposable
             window.chrome.webview.addEventListener('message', onMessage);
             window.chrome.webview.postMessage({ kind: 'req', id, method, payload });
         })";
-        string json = await Page.EvaluateAsync<string>(script, new object?[] { method, payload ?? new { } });
+        string json = await Page.EvaluateAsync<string>(script, new object?[] { method, PayloadJson(payload) });
         return JsonNode.Parse(json);
     }
 
@@ -73,7 +74,8 @@ internal sealed class ShellPage : IAsyncDisposable
     /// </summary>
     public async Task<JsonNode?> JobAsync(string method, object payload, TimeSpan timeout)
     {
-        const string script = @"([method, payload, timeoutMs]) => new Promise((resolve, reject) => {
+        const string script = @"([method, payloadJson, timeoutMs]) => new Promise((resolve, reject) => {
+            const payload = JSON.parse(payloadJson);
             const id = 'uitest_' + Math.random().toString(36).slice(2);
             let jobId = null;
             const early = [];
@@ -99,9 +101,13 @@ internal sealed class ShellPage : IAsyncDisposable
             window.chrome.webview.addEventListener('message', onMessage);
             window.chrome.webview.postMessage({ kind: 'req', id, method, payload });
         })";
-        string json = await Page.EvaluateAsync<string>(script, new object?[] { method, payload, (long)timeout.TotalMilliseconds });
+        string json = await Page.EvaluateAsync<string>(script, new object?[] { method, PayloadJson(payload), (long)timeout.TotalMilliseconds });
         return JsonNode.Parse(json);
     }
+
+    // Playwright copies a .NET argument by walking its properties, so a JsonNode arrives with its Parent
+    // links and WebView2's postMessage rejects it as circular. Send the payload as JSON text instead.
+    private static string PayloadJson(object? payload) => JsonSerializer.Serialize(payload ?? new { });
 
     public async Task<T> RpcAsync<T>(string method, object? payload = null)
     {
