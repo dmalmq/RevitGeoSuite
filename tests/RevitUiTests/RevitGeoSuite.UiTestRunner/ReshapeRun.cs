@@ -19,6 +19,7 @@ internal sealed partial class GisStandardRun
     private const string CurvedEdges = "has curved edges, which the GDB's straight-segment outline would replace with short lines";
 
     private List<FloorUnit> exportedUnits = new();
+    private Dictionary<string, int> exportedParts = new();
     private ReshapeShape? reshape;
     private ElementRow? reshapeBefore;
     private bool reshapeApplied;
@@ -452,6 +453,7 @@ internal sealed partial class GisStandardRun
         if (exported)
         {
             exportedUnits = ReshapeFixture.FloorUnits(output);
+            exportedParts = ReshapeFixture.FloorParts(output);
             step.Note($"{exportedUnits.Count} single-polygon floor unit(s) in the export: {Format(exportedUnits.GroupBy(unit => unit.Category).ToDictionary(group => group.Key, group => group.Count()))}.");
         }
 
@@ -474,7 +476,7 @@ internal sealed partial class GisStandardRun
                 ticked++;
             }
 
-            step.Note($"The shape edits started unticked (the page: the model has no id yet, so the drift file cannot be matched to it); ticked {ticked}.");
+            step.Note($"There was no '{label}' button, so the run ticked {ticked} unticked shape edit(s) (a model with no id starts them unticked).");
         }
 
         await Shell.Button(label).ClickAsync();

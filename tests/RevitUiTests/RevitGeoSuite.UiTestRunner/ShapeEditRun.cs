@@ -19,6 +19,8 @@ internal sealed partial class GisStandardRun
     private bool splitUndone;
     private (FloorUnit Unit, List<(double X, double Y)> West, List<(double X, double Y)> East)? splitSpare;
     private MergeCase? merge;
+    private bool splitCard;
+    private bool mergeCard;
 
     private async Task SplitSteps()
     {
@@ -27,7 +29,7 @@ internal sealed partial class GisStandardRun
         await Step("C3b.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("C3b.P", "Export, make the split drift file, read floor F", PrepareSplit);
         await Step("C3b.1", "Pick the drift file: one split card with two dashed pieces", PickSplit);
-        await Step("C3b.2", "Show in Revit draws both pieces in the GIS_ plan, with no transaction", step => ShowShapes(step, split?.Floor.Level));
+        await Step("C3b.2", "Show in Revit draws both pieces in the GIS_ plan, with no transaction", step => ShowShapes(step, splitCard ? split?.Floor.Level : null));
         await Step("C3b.3", "Apply 1 shape edit: SketchEditScope inside a TransactionGroup", ApplySplit);
         await Step("C3b.4", "The new floor: level, offset, values, type, and F halved", SplitResult);
         await Step("C3b.5", "Check again offers nothing", step => NothingLeft(step, newFloor != null));
@@ -43,13 +45,14 @@ internal sealed partial class GisStandardRun
         await Step("C3c.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("C3c.P", "Export, pick floors K and G on one level, make the merge drift file", PrepareMerge);
         await Step("C3c.1", "Pick the drift file: one merge card", PickMerge);
-        await Step("C3c.2", "Show in Revit draws both floors, with no transaction", step => ShowShapes(step, merge?.Kept.Level));
+        await Step("C3c.2", "Show in Revit draws both floors, with no transaction", step => ShowShapes(step, mergeCard ? merge?.Kept.Level : null));
         await Step("C3c.3", "Apply 1 shape edit: G deleted inside a TransactionGroup", ApplyMerge);
         await Step("C3c.4", "G is gone, K keeps its UniqueId and outline, one floor fewer", MergeResult);
         await Step("C3c.5", "Check again offers nothing", step => NothingLeft(step, merge?.Applied == true));
         await Step("C3c.6", "One Undo brings G back", UndoMerge);
         await Step("C3c.7", "A room taken in is a problem, not a card", MergeRoom);
         await Step("C3c.8", "Merging a floor that hosts an opening deletes it, and nothing blocks", MergeHosted);
+        await Step("C3c.9", "Taking in a floor that is in several parts in the export is a problem, not a card", MergeMultiPart);
     }
 
     private async Task PrepareSplit(StepResult step)
@@ -60,26 +63,21 @@ internal sealed partial class GisStandardRun
         }
 
         FloorScanRow[] scan = FloorScan();
-        HashSet<string> oneUnit = OneUnitFloors();
-        var candidates = exportedUnits
-            .Where(unit => unit.Category is "retail" or "walkway" && oneUnit.Contains(unit.UniqueId) && scan.FirstOrDefault(row => row.UniqueId == unit.UniqueId) is FloorScanRow row && Redrawable(row))
-            .OrderBy(unit => unit.Category == "retail" ? 0 : 1)
-            .Select(unit => (Unit: unit, Pieces: ReshapeFixture.Split(unit)))
-            .Where(pair => pair.Pieces != null);
-        if (!step.Check(candidates.Any(), "The export has a retail (or walkway) floor that exports as one unit without holes, whose outline crosses its middle line twice, and that can be redrawn."))
+        var candidates = ShapeEditPicks.SplitCandidates(exportedUnits, exportedParts, uniqueId => scan.FirstOrDefault(row => row.UniqueId == uniqueId) is FloorScanRow row && Redrawable(row));
+        step.Note($"{exportedParts.Count(pair => pair.Value == 1)} floor(s) export as one part; {candidates.Count} of them split along a line crossed twice: {Format(candidates.GroupBy(pair => pair.Unit.Category).ToDictionary(group => group.Key, group => group.Count()))}.");
+        if (!step.Check(candidates.Count > 0, "The export has a floor that exports as one part without holes, that a straight line cuts in two pieces over 1 m², and that can be redrawn."))
         {
             return;
         }
 
-        var spare = candidates.Skip(1).FirstOrDefault();
-        splitSpare = spare.Pieces is { } sparePieces ? (spare.Unit, sparePieces.West, sparePieces.East) : null;
-        (FloorUnit unit, var pieces) = candidates.First();
-        string path = WriteDrift("split.gis-drift.json", unit, ReshapeFixture.SplitShapes(unit, pieces!.Value.West, pieces.Value.East));
+        (FloorUnit unit, SplitCut pieces) = candidates[0];
+        splitSpare = candidates.Skip(1).Where(pair => pair.Cut.NewPieceOnEastSide(1.0)).Select(pair => ((FloorUnit Unit, List<(double X, double Y)> West, List<(double X, double Y)> East)?)(pair.Unit, pair.Cut.West, pair.Cut.East)).FirstOrDefault();
+        string path = WriteDrift("split.gis-drift.json", unit, ReshapeFixture.SplitShapes(unit, pieces.West, pieces.East));
         FloorScanRow floor = scan.First(row => row.UniqueId == unit.UniqueId);
         ElementRow before = Element(unit.UniqueId);
         Dictionary<string, string?> values = Values(before.Id!.Value, GisFields);
-        split = new SplitCase(path, unit, floor, before, values, pieces.Value.West, pieces.Value.East, scan.Count(row => row.Level == floor.Level));
-        step.Note($"Wrote {path}: '{unit.Name}' ({unit.Category}) cut at the middle of its east-west extent, pieces {ReshapeFixture.Area(pieces.Value.West):0.0} m² and {ReshapeFixture.Area(pieces.Value.East):0.0} m².");
+        split = new SplitCase(path, unit, floor, before, values, pieces.West, pieces.East, scan.Count(row => row.Level == floor.Level));
+        step.Note($"Wrote {path}: '{unit.Name}' ({unit.Category}) cut along {pieces.Axis} = {pieces.At:0.00}, kept piece {ReshapeFixture.Area(pieces.West):0.0} m², new piece {ReshapeFixture.Area(pieces.East):0.0} m².");
         step.Note($"F = {unit.UniqueId}, element {before.Id}, type {before.TypeName} ({before.TypeId}), level {floor.Level} ({before.LevelId}), offset {Feet(before.HeightOffsetFt ?? 0)} ft, area {before.AreaM2:0.0} m², {split.FloorsOnLevel} floor(s) on the level. Values: {Describe(values)}.");
     }
 
@@ -93,7 +91,8 @@ internal sealed partial class GisStandardRun
 
         await PickDrift(split.Path);
         ILocator card = Shell.Page.GetByTestId("shape-edit");
-        if (!step.Check(await Shell.ShowsAsync(card.GetByText($"Split floor {split.Before.Id} into 2 floors"), 60000), $"One card reads 'Split floor {split.Before.Id} into 2 floors'."))
+        splitCard = step.Check(await Shell.ShowsAsync(card.GetByText($"Split floor {split.Before.Id} into 2 floors"), 60000), $"One card reads 'Split floor {split.Before.Id} into 2 floors'.");
+        if (!splitCard)
         {
             await NoteProblems(step, split.Path);
         }
@@ -108,7 +107,7 @@ internal sealed partial class GisStandardRun
     {
         if (level == null)
         {
-            step.NotRun("No drift file was picked.");
+            step.NotRun("No shape edit card was shown.");
             return;
         }
 
@@ -126,9 +125,9 @@ internal sealed partial class GisStandardRun
 
     private async Task ApplySplit(StepResult step)
     {
-        if (split == null)
+        if (split == null || !splitCard)
         {
-            step.NotRun("C3b.P made no split file.");
+            step.NotRun(split == null ? "C3b.P made no split file." : "C3b.1 showed no split card.");
             return;
         }
 
@@ -271,7 +270,7 @@ internal sealed partial class GisStandardRun
     {
         if (splitSpare is not { } spare)
         {
-            step.NotRun("C3b.P found no second floor that splits into two pieces.");
+            step.NotRun("C3b.P found no second floor whose cut leaves a new piece east of the kept one, wider than the fixture's 1 m band.");
             return;
         }
 
@@ -322,28 +321,22 @@ internal sealed partial class GisStandardRun
         }
 
         FloorScanRow[] scan = FloorScan();
-        HashSet<string> oneUnit = OneUnitFloors();
-        var floors = exportedUnits
-            .Where(unit => oneUnit.Contains(unit.UniqueId))
-            .Select(unit => (Unit: unit, Row: scan.FirstOrDefault(row => row.UniqueId == unit.UniqueId)))
-            .Where(pair => pair.Row != null && Redrawable(pair.Row))
-            .ToList();
-        var pairs =
-            from k in floors
-            from g in floors
-            where k.Unit.UniqueId != g.Unit.UniqueId && k.Row!.Level == g.Row!.Level && g.Row.Dependents.Length == 0
-            let gap = ReshapeFixture.Gap(k.Unit.Rings, g.Unit.Rings)
-            orderby (k.Unit.Category == "retail" && g.Unit.Category == "retail" ? 0 : 1), gap > 0.01 ? 1 : 0, gap
-            select (K: k, G: g, Gap: gap);
-        if (!step.Check(pairs.Any(), "Two floors on one level that each export as one unit, the second hosting nothing."))
+        FloorScanRow? Row(string uniqueId) => scan.FirstOrDefault(row => row.UniqueId == uniqueId);
+        var pairs = ShapeEditPicks.MergePairs(
+            exportedUnits,
+            exportedParts,
+            uniqueId => Row(uniqueId) is FloorScanRow row && Redrawable(row),
+            uniqueId => Row(uniqueId) is FloorScanRow row && Redrawable(row) && row.Dependents.Length == 0);
+        if (!step.Check(pairs.Count > 0, "Two floors on one level that each export as one part, the second hosting nothing."))
         {
             return;
         }
 
-        var (kept, taken, distance) = pairs.First();
-        string path = WriteDrift("merge.gis-drift.json", kept.Unit, ReshapeFixture.Merged(kept.Unit, taken.Unit.UniqueId));
-        merge = new MergeCase(path, kept.Unit, kept.Row!, taken.Unit, taken.Row!, Element(kept.Unit.UniqueId), scan.Count(row => row.Level == kept.Row!.Level));
-        step.Note($"K = {kept.Row!.Id} '{kept.Unit.Name}' ({kept.Unit.Category}), G = {taken.Row!.Id} '{taken.Unit.Name}' ({taken.Unit.Category}) on level {kept.Row.Level}, {(distance <= 0.01 ? "touching" : $"{distance:0.00} m apart")}; {merge.FloorsOnLevel} floor(s) on the level. Wrote {path}.");
+        (FloorUnit keptUnit, FloorUnit takenUnit, double distance) = pairs[0];
+        FloorScanRow keptRow = Row(keptUnit.UniqueId)!, takenRow = Row(takenUnit.UniqueId)!;
+        string path = WriteDrift("merge.gis-drift.json", keptUnit, ReshapeFixture.Merged(keptUnit, takenUnit.UniqueId));
+        merge = new MergeCase(path, keptUnit, keptRow, takenUnit, takenRow, Element(keptUnit.UniqueId), scan.Count(row => row.Level == keptRow.Level));
+        step.Note($"K = {keptRow.Id} '{keptUnit.Name}' ({keptUnit.Category}, {exportedParts.GetValueOrDefault(keptUnit.UniqueId)} part), G = {takenRow.Id} '{takenUnit.Name}' ({takenUnit.Category}, {exportedParts.GetValueOrDefault(takenUnit.UniqueId)} part) on level {keptRow.Level}, {(distance <= 0.01 ? "touching" : $"{distance:0.00} m apart")}; {merge.FloorsOnLevel} floor(s) on the level. Wrote {path}.");
     }
 
     private async Task PickMerge(StepResult step)
@@ -356,7 +349,8 @@ internal sealed partial class GisStandardRun
 
         await PickDrift(merge.Path);
         ILocator card = Shell.Page.GetByTestId("shape-edit");
-        if (!step.Check(await Shell.ShowsAsync(card.GetByText($"Merge 2 floors into floor {merge.Kept.Id}"), 60000), $"One card reads 'Merge 2 floors into floor {merge.Kept.Id}'."))
+        mergeCard = step.Check(await Shell.ShowsAsync(card.GetByText($"Merge 2 floors into floor {merge.Kept.Id}"), 60000), $"One card reads 'Merge 2 floors into floor {merge.Kept.Id}'.");
+        if (!mergeCard)
         {
             await NoteProblems(step, merge.Path);
         }
@@ -369,9 +363,9 @@ internal sealed partial class GisStandardRun
 
     private async Task ApplyMerge(StepResult step)
     {
-        if (merge == null)
+        if (merge == null || !mergeCard)
         {
-            step.NotRun("C3c.P made no merge file.");
+            step.NotRun(merge == null ? "C3c.P made no merge file." : "C3c.1 showed no merge card.");
             return;
         }
 
@@ -386,9 +380,9 @@ internal sealed partial class GisStandardRun
 
     private Task MergeResult(StepResult step)
     {
-        if (merge == null)
+        if (merge is not { Applied: true })
         {
-            step.NotRun("C3c.P made no merge file.");
+            step.NotRun("C3c.3 did not apply.");
             return Task.CompletedTask;
         }
 
@@ -448,6 +442,39 @@ internal sealed partial class GisStandardRun
         await Shot(step, "C3c-7-room-problem");
     }
 
+    // The GDB merged one of G's units; deleting the whole floor would drop its other parts, so the plan refuses.
+    private async Task MergeMultiPart(StepResult step)
+    {
+        if (merge == null)
+        {
+            step.NotRun("C3c.P made no merge file.");
+            return;
+        }
+
+        FloorScanRow[] scan = FloorScan();
+        FloorScanRow? taken = scan.FirstOrDefault(row => row.Level == merge.Kept.Level && exportedParts.GetValueOrDefault(row.UniqueId) > 1);
+        if (taken == null)
+        {
+            step.NotRun($"No floor on level {merge.Kept.Level} is in several parts in the export.");
+            return;
+        }
+
+        int parts = exportedParts[taken.UniqueId];
+        int floors = scan.Length;
+        string path = WriteDrift("merge-multipart.gis-drift.json", merge.KeptUnit, ReshapeFixture.Merged(merge.KeptUnit, taken.UniqueId));
+        int pickSeq = host.LastEvent();
+        await PickDrift(path);
+        await Shell.Page.WaitForTimeoutAsync(3000);
+        JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
+        string[] problems = Problems(drift);
+        string? line = problems.FirstOrDefault(problem => problem.Contains($"floor {taken.Id} is in ", StringComparison.Ordinal) && problem.Contains(" separate parts", StringComparison.Ordinal));
+        step.Check(line != null, $"A problem line says floor {taken.Id} is in separate parts; the export has {parts} ({string.Join(" | ", problems)}).");
+        step.Check((drift?["shapes"]?.AsArray().Count ?? 0) == 0 && await Shell.Page.GetByTestId("shape-edit").CountAsync() == 0, "There is no card.");
+        RevitEvent[] changes = host.EventsAfter(pickSeq).Where(item => item.Kind != "dialog").ToArray();
+        step.Check(changes.Length == 0 && FloorScan().Length == floors, $"Nothing changes in Revit ({(changes.Length == 0 ? "no transaction" : string.Join(" / ", changes.Select(item => item.ToString())))}).");
+        await Shot(step, "C3c-9-multipart-problem");
+    }
+
     // The evidence table's last assumption: deleting a merged floor deletes what it hosts, and Revit blocks nothing.
     private async Task MergeHosted(StepResult step)
     {
@@ -460,6 +487,12 @@ internal sealed partial class GisStandardRun
         if (merge.Applied)
         {
             step.NotRun($"G ({merge.Taken.Id}) is still merged away: Revit refused the Undo in C3c.6.");
+            return;
+        }
+
+        if (!mergeCard)
+        {
+            step.NotRun("C3c.1 showed no merge card.");
             return;
         }
 
@@ -517,10 +550,6 @@ internal sealed partial class GisStandardRun
         step.Note($"Commit events: {string.Join(" / ", commits)}.");
         step.Check(commits.Any(item => item.Names.Contains(name, StringComparer.Ordinal)), $"A commit is named '{name}'.");
     }
-
-    // A floor whose export is several units cannot be split or merged away as one GDB unit.
-    private HashSet<string> OneUnitFloors() =>
-        exportedUnits.GroupBy(unit => unit.UniqueId).Where(group => group.Count() == 1).Select(group => group.Key).ToHashSet();
 
     // The plan's reasons when a card is missing, also shown under "row(s) will not be written".
     private async Task NoteProblems(StepResult step, string path)
