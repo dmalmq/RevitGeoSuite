@@ -482,9 +482,14 @@ internal sealed class ExportPreviewController
         _previewService.ApplyPendingFloorCategoryOverrides();
         ReprojectCachedViews();
         PreviewDisplayViewState? displayState = ReloadCurrentView();
-        SetStatusMessage(T(
-            "Saved preview floor assignments.",
-            "プレビューの床割り当てを保存しました。"));
+        string? savedFor = _previewService.RulesSavedStatus;
+        SetStatusMessage(savedFor == null
+            ? T(
+                "Saved preview floor assignments.",
+                "プレビューの床割り当てを保存しました。")
+            : T(
+                $"Saved preview floor assignments. {savedFor}.",
+                $"プレビューの床割り当てを保存しました。ステーション「{_previewService.RulesStationName}」に保存しました。"));
         return displayState;
     }
 

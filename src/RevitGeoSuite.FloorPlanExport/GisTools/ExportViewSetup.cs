@@ -240,8 +240,7 @@ public static class ExportViewSetup
     /// <summary>
     /// The category of every family the export maps, such as an escalator modelled as Mechanical
     /// Equipment: a type tagged with gis_kind or gis_category, and a placed instance the export
-    /// takes by its gis_kind or category, the family catalog, this PC's family overrides for the
-    /// project, or as an accepted opening.
+    /// takes by its gis_kind or category, the family catalog, the family overrides of the station's rules or this PC's, or as an accepted opening.
     /// </summary>
     private static IEnumerable<long> MappedFamilyCategories(Document document)
     {
@@ -253,9 +252,9 @@ public static class ExportViewSetup
                  !string.IsNullOrWhiteSpace(symbol.LookupParameter(GisSharedParameters.GisCategory)?.AsString())))
             .Select(symbol => symbol.Category.Id.Value));
 
-        string projectKey = DocumentProjectKeyBuilder.Create(document);
-        IReadOnlyDictionary<string, string> overrides = new FamilyCategoryOverrideStore().LoadWithDiagnostics(projectKey).Value;
-        IReadOnlyList<string> acceptedOpenings = new AcceptedOpeningFamilyStore().LoadWithDiagnostics(projectKey).Value;
+        ProjectMappingRules rules = GisRulesSourceFactory.For(document).Load().Value;
+        IReadOnlyDictionary<string, string> overrides = rules.FamilyCategoryOverrides;
+        IReadOnlyList<string> acceptedOpenings = rules.AcceptedOpeningFamilies;
         ZoneCatalog catalog = ZoneCatalog.CreateDefault();
         foreach (FamilyInstance instance in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>())
         {

@@ -42,6 +42,8 @@ public sealed class FloorPlanExportSession : IDisposable
     private PreviewInitialStateResponse? _previewState;
     private ExportResultInitialStateResponse? _lastResultPayload;
     private string _lastOutputDirectory = string.Empty;
+    private readonly Func<string?>? _rulesSavedStatus;
+    private bool _rulesSaved;
     private ExecutionProgressPayload _latestProgress;
 
     public FloorPlanExportSession(
@@ -54,8 +56,10 @@ public sealed class FloorPlanExportSession : IDisposable
         Action<ExportProfileScope, string, ExportDialogSettings>? saveProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Func<ExportDialogResult, Action<ExportProgressUpdate>?, FloorGeoPackageExportResult>? runExportRequested = null,
-        ModelCoordinateInfo? coordinateInfo = null)
+        ModelCoordinateInfo? coordinateInfo = null,
+        Func<string?>? rulesSavedStatus = null)
     {
+        _rulesSavedStatus = rulesSavedStatus;
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
         _views = views ?? throw new ArgumentNullException(nameof(views));
         _baseSettings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -767,6 +771,7 @@ public sealed class FloorPlanExportSession : IDisposable
         ExportProfileScope scope = FromScopeString(request.Scope);
         ExportDialogSettings settings = ToSettings(request.Settings);
         _saveProfileRequested?.Invoke(scope, name, settings);
+        _rulesSaved = scope == ExportProfileScope.Project;
 
         ExportProfile profile = ExportProfile.FromSettings(name, scope, settings);
         int existingIndex = _profiles.FindIndex(candidate =>
@@ -796,6 +801,7 @@ public sealed class FloorPlanExportSession : IDisposable
         if (profile != null)
         {
             _deleteProfileRequested?.Invoke(profile);
+            _rulesSaved = profile.Scope == ExportProfileScope.Project;
             _profiles.Remove(profile);
         }
 
@@ -853,7 +859,7 @@ public sealed class FloorPlanExportSession : IDisposable
     {
         if (_coordinateInfo == null)
         {
-            return "No coordinate information";
+            return WithRulesSavedStatus("No coordinate information");
         }
 
         string status = _coordinateInfo.CanConvert
@@ -862,9 +868,15 @@ public sealed class FloorPlanExportSession : IDisposable
 
         // Fold the friendly coordinate-system name into the one-line status; the verbose
         // WKT/XML definition is surfaced separately via BuildCoordinateDetail().
-        return string.IsNullOrWhiteSpace(_coordinateInfo.SiteCoordinateSystemId)
+        return WithRulesSavedStatus(string.IsNullOrWhiteSpace(_coordinateInfo.SiteCoordinateSystemId)
             ? status
-            : $"{status} · {_coordinateInfo.SiteCoordinateSystemId}";
+            : $"{status} · {_coordinateInfo.SiteCoordinateSystemId}");
+    }
+
+    private string WithRulesSavedStatus(string status)
+    {
+        string? saved = _rulesSaved ? _rulesSavedStatus?.Invoke() : null;
+        return string.IsNullOrEmpty(saved) ? status : $"{status} · {saved}";
     }
 
     private string BuildCoordinateDetail()

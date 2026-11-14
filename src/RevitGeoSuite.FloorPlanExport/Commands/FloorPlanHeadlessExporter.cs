@@ -130,7 +130,7 @@ public sealed class FloorPlanHeadlessExporter
             _uiDocument,
             projectKey,
             GetAvailableFloorTypeNames(),
-            new ExportProfileStore());
+            new ExportProfileStore(rules: GisRulesSourceFactory.For(_document)));
 
         FloorGeoPackageExportResult result = workflow.RunExportCore(
             request,

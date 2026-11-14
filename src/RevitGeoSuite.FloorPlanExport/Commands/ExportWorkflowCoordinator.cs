@@ -13,6 +13,7 @@ using RevitGeoSuite.FloorPlanExport.Core.Assignments;
 using RevitGeoSuite.FloorPlanExport.Core.Diagnostics;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.Validation;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.FloorPlanExport.Resources;
@@ -44,6 +45,9 @@ public sealed class ExportWorkflowCoordinator
         _availableFloorTypeNames = availableFloorTypeNames ?? throw new ArgumentNullException(nameof(availableFloorTypeNames));
         _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
     }
+
+    /// <summary>"Saved for station ..." once a profile went to the station's rules file; null while profiles are this PC's.</summary>
+    public string? RulesSavedStatus => _profileStore.SavedStatus;
 
     public void SaveProfile(ExportProfileScope scope, string name, ExportDialogSettings profileSettings)
     {
@@ -128,6 +132,11 @@ public sealed class ExportWorkflowCoordinator
         bool persistBaseline = true,
         bool recordViewsInGisModel = false)
     {
+        List<string> rulesWarnings = new();
+        GisRulesSource rules = ResolveRulesForExport(rulesWarnings);
+        GisRulesStamp rulesStamp;
+        (request, rulesStamp) = ApplyStationProfile(request, rules, rulesWarnings);
+
         FloorGeoPackageExporter exporter = new(_document);
         ExportValidationSnapshotBuilder snapshotBuilder = new();
         ExportValidationService validationService = new();
@@ -169,7 +178,8 @@ public sealed class ExportWorkflowCoordinator
             request.SectionBoxAboveFloorMeters,
             request.SectionBoxBelowFloorMeters,
             request.Keep3DTempViewsForDebug,
-            request.UnitCategories);
+            request.UnitCategories,
+            rules);
         session.OutputFormat = request.OutputFormat;
 
         // Validation feeds diagnostics only. The wizard surfaces readiness inline at Preview,
@@ -187,7 +197,66 @@ public sealed class ExportWorkflowCoordinator
             request.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs ? request.TargetEpsg : coordinateInfo.ResolvedSourceEpsg,
             gisModelWarnings);
         result.AddWarnings(gisModelWarnings);
+        result.AddWarnings(rulesWarnings);
+        result.GisRules = rulesStamp;
         return result;
+    }
+
+    /// <summary>
+    /// The rules this export runs on. A model with a station rules file first has this PC's rules and
+    /// project profiles added to it. If the station cannot be written, the export runs on this PC's
+    /// rules and says so; nothing is set aside then.
+    /// </summary>
+    private GisRulesSource ResolveRulesForExport(ICollection<string> warnings)
+    {
+        GisRulesSource rules = GisRulesSourceFactory.For(_document).ForExport(warnings);
+        if (!rules.IsStation)
+        {
+            return rules;
+        }
+
+        try
+        {
+            _profileStore.MoveLocalToStation(_projectKey, rules, warnings);
+            return rules;
+        }
+        catch (IOException ex)
+        {
+            warnings.Add($"This PC's rules could not be added to the station's rules file ({ex.Message}). This export uses this PC's rules, not the station's, and its package says so.");
+            return rules.WithoutStation();
+        }
+    }
+
+    private (ExportDialogResult Request, GisRulesStamp Stamp) ApplyStationProfile(
+        ExportDialogResult request,
+        GisRulesSource rules,
+        ICollection<string> warnings)
+    {
+        IEnumerable<MappingRule> categoryRules = rules.Load().Value.Rules;
+        if (!rules.IsStation)
+        {
+            GisRulesProfile local = GisRulesProfileMapper.FromResult(request.SelectedProfileName ?? "Local", request);
+            return (request, new GisRulesStamp(GisRulesStamp.LocalKind, local.Name, GisRulesHash.Compute(categoryRules, local)));
+        }
+
+        string profileName = GisModelSettings.Load(_document, warnings).File?.ProfileName ?? GisModelFile.DefaultProfileName;
+        GisRulesProfile? profile = rules.LoadStationFile()?.FindProfile(profileName);
+        if (profile == null)
+        {
+            if (!string.Equals(profileName, GisModelFile.DefaultProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                List<string> existing = (rules.LoadStationFile()?.Profiles ?? new List<GisRulesProfile>()).Select(candidate => candidate.Name).ToList();
+                throw new InvalidOperationException(
+                    $"The model's gis-model.json names the profile '{profileName}', but the rules file of station '{rules.StationName}' " +
+                    (existing.Count == 0 ? "has no profiles." : $"has only: {string.Join(", ", existing)}.") +
+                    " Save that profile for the station in the export dialog, or change \"profile\" in gis-model.json.");
+            }
+
+            profile = GisRulesProfileMapper.FromSettings(GisModelFile.DefaultProfileName, new ExportDialogSettings());
+            rules.ApplyToStation(new[] { GisRulesOperation.UpsertProfile(profile) });
+        }
+
+        return (GisRulesProfileMapper.Overlay(request, profile), new GisRulesStamp(GisRulesStamp.StationKind, profile.Name, GisRulesHash.Compute(categoryRules, profile)));
     }
 
     private FloorGeoPackageExportResult CompleteExport(

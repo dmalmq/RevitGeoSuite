@@ -108,10 +108,16 @@ public sealed class GisRulesSource
         if (!readable || !_station.CanWrite())
         {
             warnings.Add($"The station folder {StationFolder} is read-only or cannot be reached. This export uses this PC's rules, not the station's, and its package says so.");
-            return new GisRulesSource(_projectKey, _perPcRules, null, StationFolder);
+            return WithoutStation();
         }
 
         return this;
+    }
+
+    /// <summary>The same model read from this PC's rules only.</summary>
+    public GisRulesSource WithoutStation()
+    {
+        return new GisRulesSource(_projectKey, _perPcRules, null, StationFolder);
     }
 
     public LoadResult<ProjectMappingRules> Load()

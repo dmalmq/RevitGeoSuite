@@ -126,12 +126,12 @@ public sealed class GisModelSettings
         }
     }
 
-    private static (string? Path, string StationFolder, string ModelId) ResolvePath(Document document)
+    /// <summary>The station folder and model id kept in the model, or empty strings when it has either not yet.</summary>
+    internal static (string StationFolder, string ModelId) ReadStation(Document document)
     {
-        (string?, string, string) none = (null, string.Empty, string.Empty);
         if (document is null || document.IsFamilyDocument)
         {
-            return none;
+            return (string.Empty, string.Empty);
         }
 
         GeoProjectInfo? info;
@@ -141,16 +141,26 @@ public sealed class GisModelSettings
         }
         catch (Exception)
         {
-            return none;
+            return (string.Empty, string.Empty);
         }
 
         if (info == null || string.IsNullOrWhiteSpace(info.GisStationFolder) || string.IsNullOrWhiteSpace(info.ModelId))
         {
+            return (string.Empty, string.Empty);
+        }
+
+        return (info.GisStationFolder!.Trim(), info.ModelId!.Trim());
+    }
+
+    private static (string? Path, string StationFolder, string ModelId) ResolvePath(Document document)
+    {
+        (string?, string, string) none = (null, string.Empty, string.Empty);
+        (string stationFolder, string modelId) = ReadStation(document);
+        if (stationFolder.Length == 0)
+        {
             return none;
         }
 
-        string stationFolder = info.GisStationFolder!.Trim();
-        string modelId = info.ModelId!.Trim();
         try
         {
             return (GisModelFile.PathFor(stationFolder, modelId), stationFolder, modelId);
