@@ -293,11 +293,14 @@ internal static class ReshapeFixture
     {
         JsonObject kept = Shape(unit, "split", new[] { west }, group: unit.RevitKey, keeps: true);
         JsonObject piece = Shape(unit, "split", new[] { east }, group: unit.RevitKey, keeps: false);
-        piece["gdbName"] = unit.Name + " east";
+        piece["gdbName"] = SplitName(unit);
         piece["gdbAltName"] = "E";
         piece["gdbCategory"] = unit.Category;
         return new[] { kept, piece };
     }
+
+    /// <summary>The GDB name the split fixture gives the new piece: "&lt;name&gt; east", or "east" for an unnamed unit.</summary>
+    public static string SplitName(FloorUnit unit) => unit.Name.Length > 0 ? unit.Name + " east" : "east";
 
     /// <summary>A `merged` group: the unit keeps its row and outline, and the floor <paramref name="takenIn"/> is taken in (no outline).</summary>
     public static JsonObject[] Merged(FloorUnit unit, string takenIn)

@@ -29,7 +29,7 @@ internal sealed partial class GisStandardRun
         await Step("C3b.G", "The copy gets RevitGeoSuite's georeference record from its own coordinates, which the Cesium export needs", EnsureGeoreference);
         await Step("C3b.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("C3b.P", "Export, make the split drift file, read floor F", PrepareSplit);
-        await Step("C3b.1", "Pick the drift file: one split card with two dashed pieces", PickSplit);
+        await Step("C3b.1", "Pick the drift file: one split card with the GDB's two pieces", PickSplit);
         await Step("C3b.2", "Show in Revit draws both pieces in the GIS_ plan, with no transaction", step => ShowShapes(step, splitCard ? split?.Floor.Level : null));
         await Step("C3b.3", "Apply 1 shape edit: SketchEditScope inside a TransactionGroup", ApplySplit);
         await Step("C3b.4", "The new floor: level, offset, values, type, and F halved", SplitResult);
@@ -133,8 +133,10 @@ internal sealed partial class GisStandardRun
         }
 
         step.Check(await card.CountAsync() == 1, $"There is one card ({await card.CountAsync()}).");
-        int dashed = await card.First.Locator("svg path[stroke-dasharray]").CountAsync();
-        step.Check(dashed == 2, $"Its drawing has two dashed pieces ({dashed}).");
+        // The card draws the GDB pieces as one dashed path, one subpath (one "M") per piece.
+        IReadOnlyList<string> dashed = await card.First.Locator("svg path[stroke-dasharray]").EvaluateAllAsync<string[]>("paths => paths.map(path => path.getAttribute('d') || '')");
+        int pieces = dashed.Sum(d => d.Count(letter => letter is 'M' or 'm'));
+        step.Check(pieces == 2, $"Its drawing has the two GDB pieces as dashed outlines ({pieces} subpath(s) in {dashed.Count} dashed path(s)).");
         await Shot(step, "C3b-1-split-card");
     }
 
@@ -191,7 +193,11 @@ internal sealed partial class GisStandardRun
         ElementRow kept = Element(split.Unit.UniqueId);
         ElementRow added = Element(id);
         step.Check(kept.Exists && kept.Id == split.Before.Id, $"Floor F keeps its UniqueId and element id ({kept.Id}).");
-        step.Check(SameArea(kept.AreaM2, ReshapeFixture.Area(split.West)), $"F now has the west piece's area ({kept.AreaM2:0.0} m², piece {ReshapeFixture.Area(split.West):0.0} m², was {split.Before.AreaM2:0.0} m²).");
+        // Revit's floor area leaves out what cuts the floor (openings, shafts), which the export outline includes.
+        // F keeps those on its side, so its area can fall short of the west piece by at most what it fell short before.
+        double westArea = ReshapeFixture.Area(split.West), shortBefore = Math.Max(0, ReshapeFixture.Area(split.Unit.Rings[0]) - (split.Before.AreaM2 ?? 0));
+        step.Check(kept.AreaM2 is double keptArea && keptArea <= westArea * (1 + SameAreaShare) && keptArea >= westArea - shortBefore - westArea * SameAreaShare,
+            $"F now has the west piece's area less what cuts it ({kept.AreaM2:0.0} m², piece {westArea:0.0} m², was {split.Before.AreaM2:0.0} m², {shortBefore:0.0} m² short of its export outline before).");
         // A trim (a stair, a shaft) wholly on the new piece's side joins the new floor (#62 f0fed0a), so the new
         // floor can be larger than its GDB piece by that trim; the re-export in C3b.7 trims it off again.
         double eastArea = ReshapeFixture.Area(split.East);
@@ -202,9 +208,10 @@ internal sealed partial class GisStandardRun
         step.Check(Math.Abs((added.HeightOffsetFt ?? 0) - (split.Before.HeightOffsetFt ?? 0)) < 1e-6, $"It has F's height offset ({Feet(added.HeightOffsetFt ?? 0)} ft).");
         Dictionary<string, string?> values = Values(id, GisFields);
         step.Note($"New floor values: {Describe(values)}; type {added.TypeName} ({added.TypeId}).");
-        step.Check(values["name"] == split.Values["name"] + " east", $"Its name is \"{split.Values["name"]} east\" ({values["name"]}).");
+        string name = ReshapeFixture.SplitName(split.Unit);
+        step.Check(values["name"] == name, $"Its name is the GDB piece's \"{name}\" ({values["name"]}).");
         step.Check(values["short_name"] == "E", $"Its short_name is E ({values["short_name"]}).");
-        step.Check(values["category"] == split.Values["category"], $"Its category is F's, {split.Values["category"]} ({values["category"]}).");
+        step.Check(values["category"] == split.Unit.Category, $"Its category is the GDB piece's, {split.Unit.Category} ({values["category"]}; F's own is '{split.Values["category"]}').");
         step.Check(string.IsNullOrEmpty(values["id"]), $"Its id is empty until the next export, never F's ({values["id"]}).");
         step.Check(string.IsNullOrEmpty(values["gis_key"]), $"Its gis_key is empty until the next export, never F's ({values["gis_key"]}).");
         bool noStandardType = split.Log.Any(line => line.StartsWith("No floor type ", StringComparison.Ordinal));
@@ -573,7 +580,8 @@ internal sealed partial class GisStandardRun
         Commits(step, seq, MergeTransaction(merge));
         step.Check(!Element(merge.Taken.UniqueId).Exists, $"G ({merge.Taken.Id}) is deleted although it hosts opening {opening}.");
         step.Check(opening != 0 && !Element(opening).Exists, $"Opening {opening} is gone with it.");
-        step.Check(log.Any(line => line.StartsWith($"Deleted floor {merge.Taken.Id}, and with it opening {opening}", StringComparison.Ordinal)), $"The result reads 'Deleted floor {merge.Taken.Id}, and with it opening {opening}.'");
+        string expected = $"Deleted floor {merge.Taken.Id}, and with it opening {opening}.";
+        step.Check(log.Contains(expected), $"The result reads '{expected}' ({log.FirstOrDefault(line => line.StartsWith($"Deleted floor {merge.Taken.Id}", StringComparison.Ordinal)) ?? "none"}).");
         if (UndoOrRedo(step, "undo", MergeTransaction(merge)))
         {
             step.Check(Element(merge.Taken.UniqueId).Exists && Element(opening).Exists, "One Undo brings G and the opening back.");
