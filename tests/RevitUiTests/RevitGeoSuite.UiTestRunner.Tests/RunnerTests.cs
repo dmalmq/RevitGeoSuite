@@ -70,7 +70,7 @@ public class RunOptionsTests
             "--export-view", "1F", "--excel", "--real-drift", "--revit-year", "2027",
         });
 
-        Assert.Equal("/tmp/revit-test/pristine.rvt", options.Model);
+        Assert.Equal(Path.GetFullPath("/tmp/revit-test/pristine.rvt"), options.Model);
         Assert.True(options.Runs("10"));
         Assert.False(options.Runs("3"));
         Assert.Equal("1F", options.ExportView);
