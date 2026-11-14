@@ -37,6 +37,12 @@ public sealed class CustomAttributeMapping
 
     public string DefaultValue { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether a blank or absent source value is reported in the export warnings. False for field
+    /// list rows, where most elements leave the parameter empty and Kanizu reads a blank as no value.
+    /// </summary>
+    public bool WarnWhenMissing { get; set; } = true;
+
     public CustomAttributeMapping Clone()
     {
         return new CustomAttributeMapping
@@ -49,6 +55,7 @@ public sealed class CustomAttributeMapping
             TargetType = TargetType,
             NullBehavior = NullBehavior,
             DefaultValue = Normalize(DefaultValue),
+            WarnWhenMissing = WarnWhenMissing,
         };
     }
 

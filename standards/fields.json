@@ -203,6 +203,19 @@
     },
     {
       "layer": "unit",
+      "name": "levels_served",
+      "aliasJa": "停止レベル",
+      "type": "text",
+      "length": 2000,
+      "values": [],
+      "source": {
+        "kind": "core"
+      },
+      "owner": "revit",
+      "description": "The levels an elevator stops at: level ids, lowest first, separated by commas. From gis_levels_served, else the levels of the elevator objects in the same plan spot."
+    },
+    {
+      "layer": "unit",
       "name": "source",
       "aliasJa": "ソース",
       "type": "text",
@@ -373,6 +386,48 @@
       "description": "Revit element id."
     },
     {
+      "layer": "opening",
+      "name": "door",
+      "aliasJa": "ドア種別",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "parameter",
+        "parameter": "gis_door",
+        "binding": "type"
+      },
+      "owner": "revit",
+      "description": "Door type, from the door type's gis_door."
+    },
+    {
+      "layer": "opening",
+      "name": "access_con",
+      "aliasJa": "入場管理",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "parameter",
+        "parameter": "gis_access_con",
+        "binding": "type"
+      },
+      "owner": "revit",
+      "description": "Access control, from the door type's gis_access_con."
+    },
+    {
+      "layer": "opening",
+      "name": "name",
+      "aliasJa": "名称",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "parameter",
+        "parameter": "name",
+        "binding": "instance"
+      },
+      "owner": "revit",
+      "description": "Name of the door."
+    },
+    {
       "layer": "fixture",
       "name": "id",
       "aliasJa": "ID",
@@ -469,6 +524,18 @@
       "description": "Label point."
     },
     {
+      "layer": "fixture",
+      "name": "anchor_id",
+      "aliasJa": "アンカーID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "none"
+      },
+      "owner": "gdb",
+      "description": "Anchor of the fixture. Kept in the GDB."
+    },
+    {
       "layer": "level",
       "name": "id",
       "aliasJa": "ID",
@@ -539,6 +606,30 @@
       },
       "owner": "revit",
       "description": "Elevation in metres."
+    },
+    {
+      "layer": "level",
+      "name": "address_id",
+      "aliasJa": "住所ID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "none"
+      },
+      "owner": "gdb",
+      "description": "Address of the level. Kept in the GDB."
+    },
+    {
+      "layer": "level",
+      "name": "build_id",
+      "aliasJa": "建物ID",
+      "type": "text",
+      "values": [],
+      "source": {
+        "kind": "none"
+      },
+      "owner": "gdb",
+      "description": "Building of the level. Kept in the GDB."
     }
   ]
 }

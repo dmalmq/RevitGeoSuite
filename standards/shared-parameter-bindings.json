@@ -42,7 +42,8 @@
         "OST_Rooms",
         "OST_Stairs",
         "OST_GenericModel",
-        "OST_SpecialityEquipment"
+        "OST_SpecialityEquipment",
+        "OST_Doors"
       ],
       "user_modifiable": true
     },
@@ -131,6 +132,38 @@
         "OST_Stairs",
         "OST_GenericModel",
         "OST_SpecialityEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_levels_served",
+      "guid": "26b16279-ebcb-4baa-9a7e-b07addf4e5b4",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_door",
+      "guid": "e413bbb1-dab0-4acd-9b16-eeac608dca9b",
+      "data_type": "text",
+      "binding": "type",
+      "categories": [
+        "OST_Doors"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_access_con",
+      "guid": "0156f4b3-7806-4033-baa0-09838c299ddb",
+      "data_type": "text",
+      "binding": "type",
+      "categories": [
+        "OST_Doors"
       ],
       "user_modifiable": true
     },
