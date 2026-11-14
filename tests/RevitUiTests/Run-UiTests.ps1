@@ -99,7 +99,7 @@ if ($FloorPlanDataSandbox) {
     }
     New-Item -ItemType Directory -Force -Path $runFolder | Out-Null
     $realBefore = @(Write-FolderSnapshot $realStore (Join-Path $runFolder 'real-folder-before.txt'))
-    Write-Host "Real floor plan folder $realStore: $($realBefore.Count) file(s) on record in $runFolder\real-folder-before.txt."
+    Write-Host "Real floor plan folder ${realStore}: $($realBefore.Count) file(s) on record in $runFolder\real-folder-before.txt."
     $sandboxRoot = Join-Path $runFolder 'appdata'
     $exportStore = Join-Path $sandboxRoot 'RevitGeoSuite\FloorPlanExport'
     if (Test-Path $realStore) { New-Item -ItemType Directory -Force -Path (Split-Path $exportStore) | Out-Null; Copy-Item $realStore $exportStore -Recurse -Force }
