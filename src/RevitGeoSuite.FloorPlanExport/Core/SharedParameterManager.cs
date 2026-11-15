@@ -142,8 +142,11 @@ public sealed class SharedParameterManager
             }
 
             string line = GisSharedParameters.AlignedPerGroupLine(definition.Name, refused);
-            _alignedPerGroup.Add(line);
-            warnings.Add(line);
+            if (!_alignedPerGroup.Contains(line))
+            {
+                _alignedPerGroup.Add(line);
+                warnings.Add(line);
+            }
         }
     }
 
@@ -201,22 +204,59 @@ public sealed class SharedParameterManager
     /// <summary>
     /// Gives each copy that kept its original's id a new one. Revit numbers elements in the order it
     /// makes them, so the lowest element id among those sharing an id is the original: it keeps the
-    /// id Kanizu knows, and every later copy, such as a placed group's member, gets its own.
+    /// id Kanizu knows, and every later copy, such as a placed group's member, gets its own. A grouped
+    /// copy whose id holds one value per group type is left alone: a new value would reach every
+    /// instance of the group, the original's too. Each note says what the model holds afterwards.
     /// </summary>
     public void ReissueCopiedIds(IReadOnlyCollection<Element> elements, ICollection<string> warnings)
     {
         Dictionary<long, Element> byId = elements.ToDictionary(element => element.Id.Value);
-        IEnumerable<AuditIdValue> values = elements.Select(element => new AuditIdValue(element.Id.Value, GetOptionalStringParameter(element, ImdfIdParameterName) ?? string.Empty));
+        List<AuditIdValue> values = elements.Select(element => new AuditIdValue(element.Id.Value, GetOptionalStringParameter(element, ImdfIdParameterName) ?? string.Empty)).ToList();
         foreach (CopiedId copied in CopiedIds.Find(values))
         {
-            foreach (long copy in copied.Copies)
+            (IReadOnlyList<long> reissue, IReadOnlyList<long> kept) = CopiedIds.Split(copied, copy => HoldsOneValuePerGroupType(byId[copy]));
+            if (kept.Count > 0)
+            {
+                string why = _alignedPerGroup.Count > 0
+                    ? string.Join(" ", _alignedPerGroup)
+                    : "their id holds one value per group type, so a new id would reach every copy of the group";
+                warnings.Add(CopiedIds.StillSharedLine(copied, kept, why));
+            }
+
+            foreach (long copy in reissue)
             {
                 RegenerateElementId(byId[copy], warnings);
             }
 
-            warnings.Add(CopiedIds.ReissuedLine(copied));
+            List<long> failed = reissue.Where(copy => !HoldsOtherId(byId[copy], copied.Id)).ToList();
+            if (!HoldsId(byId[copied.Original], copied.Id))
+            {
+                warnings.Add($"Element {copied.Original}, the oldest with id {copied.Id}, no longer holds it after its copies got new ids. Check its id before Kanizu reads this export.");
+            }
+
+            List<long> reissued = reissue.Except(failed).ToList();
+            if (reissued.Count > 0)
+            {
+                warnings.Add(CopiedIds.ReissuedLine(copied, reissued));
+            }
+
+            if (failed.Count > 0)
+            {
+                warnings.Add(CopiedIds.StillSharedLine(copied, failed, "Revit did not take a new id on them"));
+            }
         }
     }
+
+    // The id parameter this element carries, not the first definition by that name.
+    private static bool HoldsOneValuePerGroupType(Element element) =>
+        element.GroupId != ElementId.InvalidElementId &&
+        !(element.LookupParameter(ImdfIdParameterName)?.Definition is InternalDefinition { VariesAcrossGroups: true });
+
+    private bool HoldsId(Element element, string id) =>
+        string.Equals(GetOptionalStringParameter(element, ImdfIdParameterName), id, StringComparison.OrdinalIgnoreCase);
+
+    private bool HoldsOtherId(Element element, string id) =>
+        GetOptionalStringParameter(element, ImdfIdParameterName) is string held && !string.Equals(held, id, StringComparison.OrdinalIgnoreCase);
 
     public string GetOrCreateElementId(Element element, ICollection<string> warnings)
     {
