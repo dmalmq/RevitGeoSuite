@@ -127,7 +127,7 @@ internal sealed partial class GisStandardRun
         step.Check(await Shell.ShowsAsync(Visible(Shell.Button("Hide in Revit")), 30000), "The button turns into 'Hide in Revit'.");
         await Shell.Page.WaitForTimeoutAsync(2000);
         NoCommit(step, seq);
-        RevitShot(step, "C8-2-lower");
+        RevitShot(step, "C8-2-lower", exportView: true);
         step.Note($"Eyes in {network.Lower}: green links, one with an arrowhead; a stairs square, an escalator square with an arrow and a moving walkway square.");
     }
 
@@ -142,7 +142,7 @@ internal sealed partial class GisStandardRun
         host.Call("activateView", new { name = view });
         await Shell.Page.WaitForTimeoutAsync(2000);
         NoCommit(step, seq);
-        RevitShot(step, shot);
+        RevitShot(step, shot, exportView: true);
         step.Note($"Eyes in {view}: {eyes}.");
     }
 
@@ -164,7 +164,7 @@ internal sealed partial class GisStandardRun
         host.Call("activateView", new { name = view ?? views[0] });
         await Shell.Page.WaitForTimeoutAsync(3000);
         NoCommit(step, seq);
-        RevitShot(step, "C8-4-3d");
+        RevitShot(step, "C8-4-3d", exportView: true);
         step.Note(view != null
             ? $"Eyes in {view}: connector lines rise from A to B, every stroke about 100 mm above its level's floor."
             : $"No GIS_ 3D view, so {views[0]} (not active at Show, not named GIS_*) should draw nothing.");
@@ -230,7 +230,7 @@ internal sealed partial class GisStandardRun
         await Shot(step, "C8-7-epsg");
         host.Call("activateView", new { name = network.Upper });
         await Shell.Page.WaitForTimeoutAsync(2000);
-        RevitShot(step, "C8-7-upper-nothing-drawn");
+        RevitShot(step, "C8-7-upper-nothing-drawn", exportView: true);
         step.Note($"Eyes in {network.Upper}: nothing of the network is drawn.");
     }
 
@@ -249,6 +249,16 @@ internal sealed partial class GisStandardRun
         NetworkFixture.Write(network.Path, network.Written);
         await ReadAgain();
         step.Check(await Shell.ShowsAsync(Shell.Text(network.Expected.CountsLine), 15000), $"With the file put back, Read again reads '{network.Expected.CountsLine}' ({await CountsLine()}).");
+
+        // C8.7's Read again while shown could not draw another EPSG, so Show hid the network; show it again for C8.10.
+        ILocator show = Visible(Shell.Button("Show in Revit"));
+        if (await show.CountAsync() > 0)
+        {
+            step.Note("The network was hidden by C8.7 or this step, so the step clicks Show in Revit again.");
+            await show.ClickAsync();
+        }
+
+        step.Check(await Shell.ShowsAsync(Visible(Shell.Button("Hide in Revit")), 30000), "The network is shown again ('Hide in Revit').");
     }
 
     private async Task NetworkAudit(StepResult step)
@@ -288,7 +298,7 @@ internal sealed partial class GisStandardRun
         {
             host.Call("activateView", new { name = view });
             await Shell.Page.WaitForTimeoutAsync(2000);
-            RevitShot(step, shot);
+            RevitShot(step, shot, exportView: true);
         }
 
         NoCommit(step, seq);

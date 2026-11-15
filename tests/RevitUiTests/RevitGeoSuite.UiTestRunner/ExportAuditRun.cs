@@ -28,7 +28,7 @@ internal sealed partial class GisStandardRun
         await Step("B2.5", "Nothing left to repair", TemplateRepaired);
         await Step("B2.6", "One Undo puts the change back; Redo", UndoRepair);
         await Step("B2.7", "A GIS_ plan without the template is a views finding only", PlanWithoutTemplate);
-        await Step("B2.8", "A floor pasted in place gives a duplicate id error", DuplicateId);
+        await Step("B2.8", "A floor pasted in place: a duplicate id warning, then the export keeps the id on the original and gives the copy a new one", DuplicateId);
         await Step("B2.9", "Stair findings (note the messages)", StairFindings);
     }
 
@@ -224,43 +224,62 @@ internal sealed partial class GisStandardRun
         await CheckAgain();
         InspectReply model = await Inspect();
         FindingItem[] shared = model.Findings.Where(item => item.Topic == "ids" && item.Message.StartsWith("2 elements share id ", StringComparison.Ordinal) && item.ElementIds.Contains(id)).ToArray();
-        if (step.Check(shared.Length == 1, $"One ids error '2 elements share id …' for floor {id} (found {shared.Length})."))
+        if (step.Check(shared.Length == 1, $"One ids finding '2 elements share id …' for floor {id} (found {shared.Length})."))
         {
-            step.Check(shared[0].Severity == "error", $"It is an error ({shared[0].Severity}).");
+            // B9: the export resolves a shared id itself (the oldest element keeps it), so this is a warning.
+            step.Check(shared[0].Severity == "warning", $"It is a warning ({shared[0].Severity}).");
             step.Check(shared[0].ElementIds.Length == 2, $"It lists both element ids ({string.Join(", ", shared[0].ElementIds)}).");
+            long oldest = shared[0].ElementIds.Min();
+            step.Check(shared[0].Message.Contains($"The next export keeps it on {oldest}, the oldest, and gives each copy it exports a new id.", StringComparison.Ordinal), $"It says the export keeps the id on {oldest}, the oldest.");
             step.Note(shared[0].Message);
         }
 
-        int errors = model.Count("error");
+        // The warning no longer gates the export; only the model's other audit errors would.
+        // The export resolves the shared id itself: the original (the lower element id) keeps it and the
+        // pasted copy gets a new one. Only the model's other audit errors would make it ask first.
+        string idBefore = existing.Length > 0 ? existing : "uitest-duplicate-id";
+        long? copy = CopiesOf(fixture).Cast<long?>().FirstOrDefault();
+        step.Note($"{model.Count("error")} other audit error(s); the export asks only for those.");
         await OpenExport(step, options.ExportView, "export-duplicate-id", keepDefaultViews: options.ExportView.Length == 0);
-        ILocator export = Shell.Button(new Regex(@"^Export (1 view|\d+ views)$"));
-        if (step.Check(await Shell.ShowsAsync(export, 600000), "The preview loads and offers to export."))
-        {
-            await export.ClickAsync();
-            ILocator dialog = Shell.Page.GetByRole(AriaRole.Dialog);
-            step.Check(await Shell.ShowsAsync(dialog.GetByText(new Regex($@"The GIS audit found {errors} error\(s\)"))), $"The export asks about the {errors} audit error(s).");
-            await Shot(step, "B2-8-audit-dialog");
-            await dialog.GetByRole(AriaRole.Button, new() { Name = "Close", Exact = true }).First.ClickAsync();
-        }
-
+        bool exported = await ExportNow(step);
+        string[] warnings = exported ? await PageLines() : Array.Empty<string>();
         await Shell.GoToAsync("/gis-standard");
-        if (!UndoOrRedo(step, "undo", FixtureTransaction))
+        if (exported && step.Check(copy != null, "The fixture log names the pasted copy."))
         {
-            step.Note($"Put back: {PutBackDuplicate(id, existing, fixture)}");
+            string original = ParamText(id, "id");
+            string copied = ParamText(copy!.Value, "id");
+            step.Check(original == idBefore, $"The original {id} keeps '{idBefore}' (now '{original}').");
+            step.Check(copied.Length > 0 && copied != idBefore, $"The pasted copy {copy} gets a new id ('{copied}').");
+            string expected = $"Element {id} keeps id {idBefore} as the oldest; element copied from it got a new id: {copy}.";
+            string? kept = warnings.FirstOrDefault(line => line.Contains(expected, StringComparison.Ordinal));
+            step.Check(kept != null, $"The export warnings have '{expected}'.");
+            if (kept != null)
+            {
+                step.Note($"Export warning: {kept}");
+            }
+
+            string[] wrong = warnings.Where(line => line.Contains(" still share", StringComparison.Ordinal) || line.Contains("no longer holds it", StringComparison.Ordinal)).ToArray();
+            step.Check(wrong.Length == 0, $"No 'still share(s) id' or 'no longer holds it' warning ({string.Join(" | ", wrong)}).");
         }
 
+        // The export's own transactions follow the fixture, so one Undo would not reach it: put back through the test host.
+        step.Note($"Put back: {PutBackDuplicate(id, existing, fixture)}");
         await CheckAgain();
-        step.Check(!(await Inspect()).Findings.Any(item => item.Topic == "ids" && item.ElementIds.Contains(id)), "After Undo the ids error is gone.");
+        step.Check(!(await Inspect()).Findings.Any(item => item.Topic == "ids" && item.ElementIds.Contains(id)), "With the copy deleted the ids finding is gone.");
+        step.Check(ParamText(id, "id") == existing, $"The original's id is back to '{existing}' ({ParamText(id, "id")}).");
     }
 
-    // What Undo of B2.8's fixture would do: delete the copy and give the floor back the id it had.
-    private string PutBackDuplicate(long floor, string existing, JsonObject fixture)
-    {
-        long[] copies = fixture["log"]?.AsArray()
+    private static long[] CopiesOf(JsonObject fixture) =>
+        fixture["log"]?.AsArray()
             .Select(line => Regex.Match(line?.GetValue<string>() ?? string.Empty, @"^copied \d+ in place as (\d+)$"))
             .Where(match => match.Success)
             .Select(match => long.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture))
             .ToArray() ?? Array.Empty<long>();
+
+    // What Undo of B2.8's fixture would do: delete the copy and give the floor back the id it had.
+    private string PutBackDuplicate(long floor, string existing, JsonObject fixture)
+    {
+        long[] copies = CopiesOf(fixture);
         object request = existing.Length > 0
             ? new { delete = copies }
             : new { delete = copies, values = new[] { new { id = floor, name = "id", value = string.Empty } } };

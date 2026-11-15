@@ -17,6 +17,15 @@ internal static class JournalScan
             ? Directory.GetFiles(folder, "journal.*.txt").Where(file => File.GetLastWriteTimeUtc(file) >= sinceUtc).OrderBy(file => file).ToList()
             : Array.Empty<string>();
 
+    /// <summary>Every line of the journals written since <paramref name="sinceUtc"/>, read shared (Revit keeps the journal open).</summary>
+    public static List<string> LinesSince(string folder, DateTime sinceUtc) =>
+        JournalsSince(folder, sinceUtc).SelectMany(file =>
+        {
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd().Split('\n').Select(line => line.TrimEnd('\r')).ToList();
+        }).ToList();
+
     public static JournalResult Scan(IEnumerable<string> lines, IEnumerable<string> requiredNames)
     {
         List<string> all = lines.ToList();

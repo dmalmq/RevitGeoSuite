@@ -269,6 +269,11 @@ internal sealed partial class GisStandardRun
         }
 
         string name = SplitTransaction(split);
+        if (!splitUndone)
+        {
+            step.Note($"No Redo: C3b.6 did not undo '{name}', so the edit is still in the model and this step checks it as it is.");
+        }
+
         if (splitUndone && !UndoOrRedo(step, "redo", name))
         {
             // The split is undone after C3b.6, so exporting now would compare the old floor. Apply the

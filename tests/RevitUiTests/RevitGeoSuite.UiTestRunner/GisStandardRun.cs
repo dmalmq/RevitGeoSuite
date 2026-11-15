@@ -98,7 +98,10 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         new("c3b-split", "Review GDB edits splits a floor by the GDB's pieces (C3b).", run => run.SplitSteps()),
         new("c3c-merge", "Review GDB edits merges floors the GDB merged (C3c).", run => run.MergeSteps()),
         new("c3d-hand-drawn", "Review GDB edits creates a floor for a unit drawn by hand in the GDB (C3d).", run => run.HandDrawnSteps()),
+        new("undo-probe", "where Revit offers Undo after a fixture and after an Apply, and whether Ctrl+Z works (diagnosis).", run => run.UndoProbeSteps()),
         new("a3-fields", "the export writes elevator levels_served, door fields and GDB-owned field rows (RevitGeoSuite #45).", run => run.A3Steps()),
+        new("b9-groups", "a floor grouped twice exports, sets up and takes a GDB edit with no Revit dialog and no group violation (B9).", run => run.GroupSteps()),
+        new("model-facts", "reads every level (level_id, elevations in metres) and every group type (instances, member floors, rooms, doors) from a copy of the model; changes nothing; writes model-facts.md and .json.", run => run.ModelFactsSteps()),
         new("georef-read", "reads RevitGeoSuite's georeference record and Revit's coordinates from a copy of the model; changes nothing.", run => run.Step("G.R", "Read the georeference record and coordinates", run.ReadGeoreference)),
         new("c4-waiting", "GDB edits waiting in the station's drift file show on the GIS standard button and the export page, and go once applied (C4).", run => run.WaitingSteps()),
         new("c8-network", "the Network tab shows Kanizu's walking network in Revit without a transaction (C8).", run => run.NetworkSteps()),
@@ -805,7 +808,41 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     {
         ILocator done = Shell.Button("Open folder");
         ILocator failed = Shell.Text("Export failed");
-        if (!step.Check(await Shell.ShowsAsync(done.Or(failed), 1800000), "The export finishes within 30 minutes."))
+        // A Revit dialog during the export (such as "A group has been changed outside group edit mode")
+        // holds it until someone answers. Every 10 s the test host lists the modal dialogs that hold Revit
+        // (no window message, so it answers while the export runs); one still there 10 s later fails the
+        // step with its text and is cancelled, as a person would, and the run keeps waiting for the export.
+        DateTime end = DateTime.UtcNow + TimeSpan.FromMinutes(30);
+        bool finished = false;
+        HashSet<long> seen = new();
+        int cancelled = 0;
+        while (!finished && DateTime.UtcNow < end)
+        {
+            finished = await Shell.ShowsAsync(done.Or(failed), 10000);
+            if (finished)
+            {
+                break;
+            }
+
+            long[] now = host.Call("blockingDialogs")["dialogs"]?.AsArray().Select(dialog => dialog!["handle"]!.GetValue<long>()).ToArray() ?? Array.Empty<long>();
+            long[] stuck = now.Where(seen.Contains).ToArray();
+            seen = now.ToHashSet();
+            if (stuck.Length > 0)
+            {
+                JsonObject closed = host.Call("closeDialogs", new { timeoutMs = 20000, handles = stuck });
+                if (++cancelled <= 3)
+                {
+                    step.Check(false, $"Revit held the export with {stuck.Length} dialog(s); cancelled: {closed["closed"]?.ToJsonString()}");
+                }
+            }
+        }
+
+        if (cancelled > 3)
+        {
+            step.Check(false, $"… and {cancelled - 3} more dialog(s) cancelled during the export.");
+        }
+
+        if (!step.Check(finished, "The export finishes within 30 minutes."))
         {
             return false;
         }
@@ -921,30 +958,58 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     }
 
     /// <summary>
-    /// Posts Undo or Redo and waits for Revit to report it on <paramref name="transaction"/>. Revit
-    /// refuses Undo in some runs (b1, b2a) for a reason outside the model; the test host's error then
-    /// names Revit's state. A refusal is noted, not failed: the step checks that
-    /// <paramref name="transaction"/> committed as one transaction, which is what one Undo takes back,
-    /// and gets false so it can check the model as it is and put back what Undo would have.
+    /// Undo or Redo, and waits for Revit to report it on <paramref name="transaction"/>. When Revit does not
+    /// offer the command (the build PC, always), the test host types Ctrl+Z or Ctrl+Y into Revit's main
+    /// window, which works there for RevitGeoSuite's Apply (undo-probe). Once the command was posted or
+    /// typed, the step fails unless Revit reports an undo or redo of <paramref name="transaction"/>.
+    /// Only when Revit refused and nothing was typed (Revit's window not in front, or an older test
+    /// host) does the step note it and check by state: <paramref name="transaction"/> committed as one
+    /// transaction, which is what one Undo takes back. Returns true only when the event came.
     /// </summary>
     private bool UndoOrRedo(StepResult step, string command, string transaction)
     {
         int seq = host.LastEvent();
+        JsonObject reply;
         try
         {
-            host.PostCommand(command);
+            reply = host.PostCommand(command);
         }
         catch (TestHostException ex) when (ex.Message.Contains("cannot run", StringComparison.Ordinal))
         {
-            step.Note($"Revit refused {command}, so this step checks the model by state instead. {ex.Message}");
+            return ByState($"Revit refused {command}. {ex.Message}");
+        }
+
+        if (reply["refused"] is JsonNode refused)
+        {
+            if (reply["typed"]?.GetValue<bool>() != true)
+            {
+                return ByState($"Revit refused {command} ({refused}) and the test host typed nothing: {reply["typing"]}. State at the refusal: {reply["state"]}");
+            }
+
+            step.Note($"Revit did not offer {command} ({refused}), so the test host typed it: {reply["typing"]}.");
+        }
+
+        RevitEvent found;
+        try
+        {
+            found = host.WaitForEvent(seq, item => item.Kind == command, EventWait, $"{command} of '{transaction}'");
+        }
+        catch (TimeoutException ex)
+        {
+            step.Check(false, $"{(reply["refused"] == null ? "Revit took the posted" : "The test host typed")} {command}, but nothing was {command}ne. {ex.Message}");
+            return false;
+        }
+
+        return step.Check(found.Is(command, transaction), $"Revit's {command} is of '{transaction}' ({found}).");
+
+        bool ByState(string why)
+        {
+            step.Note($"No {command} of '{transaction}' happened, so this step checks the model by state instead. {why}");
             RevitEvent[] commits = host.EventsAfter(0).Where(item => item.Is("commit", transaction)).ToArray();
             step.Check(commits.Length > 0 && commits[^1].Names.Count == 1,
                 $"'{transaction}' committed as one transaction, so one Undo takes it back ({(commits.Length == 0 ? "no commit seen" : commits[^1].ToString())}).");
             return false;
         }
-
-        ExpectEvent(step, seq, command, transaction);
-        return true;
     }
 
     private void ExpectEvent(StepResult step, int after, string kind, string name)
@@ -998,7 +1063,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         step.Screenshots.Add(relative.Replace('\\', '/'));
     }
 
-    private void RevitShot(StepResult step, string name)
+    private void RevitShot(StepResult step, string name, bool exportView = false)
     {
         string relative = Path.Combine("screenshots", name + "-revit.png");
         try
@@ -1009,6 +1074,23 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         catch (TestHostException ex)
         {
             step.Note($"No Revit screenshot: {ex.Message}");
+        }
+
+        if (exportView)
+        {
+            // Revit's own image export of the active view needs no desktop, so it works with the session locked.
+            // It may leave out overlays drawn with DirectContext3D; compare with a view where nothing is shown.
+            string exported = Path.Combine("screenshots", name + "-export.png");
+            try
+            {
+                JsonObject reply = host.Call("exportViewImage", new { path = Path.Combine(options.OutputFolder, exported) });
+                step.Screenshots.Add(exported.Replace('\\', '/'));
+                step.Note($"Revit image export of '{reply["view"]}': {exported}.");
+            }
+            catch (TestHostException ex)
+            {
+                step.Note($"No Revit image export: {ex.Message}");
+            }
         }
     }
 

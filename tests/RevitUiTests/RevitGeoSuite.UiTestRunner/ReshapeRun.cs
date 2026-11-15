@@ -241,6 +241,11 @@ internal sealed partial class GisStandardRun
         }
 
         string name = ReshapeTransaction(reshapeBefore!.Id!.Value, reshape!.Label);
+        if (!reshapeUndone)
+        {
+            step.Note($"No Redo: C3a.6 did not undo '{name}', so the edit is still in the model and this step checks it as it is.");
+        }
+
         if (reshapeUndone && !UndoOrRedo(step, "redo", name))
         {
             // F is back to its old outline after C3a.6, so exporting now would compare the undone floor.

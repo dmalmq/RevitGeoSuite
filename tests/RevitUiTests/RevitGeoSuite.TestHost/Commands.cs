@@ -43,7 +43,7 @@ internal sealed class Commands
                 "state" => api.Run(State, Quick),
                 "post" => Post(Text(request, "id")),
                 "ribbon" => Post($"CustomCtrl_%CustomCtrl_%{Text(request, "tab")}%{Text(request, "panel")}%{Text(request, "button")}"),
-                "undo" => PostOrPress("ID_EDIT_UNDO", "Undo", "元に戻す", "UNDO"),
+                "undo" => PostOrType("ID_EDIT_UNDO", 'Z'),
                 "params" => Params(request),
                 "uniqueIds" => UniqueIds(request),
                 "floorTypes" => api.Run(FloorTypes, Quick),
@@ -54,8 +54,14 @@ internal sealed class Commands
                 "bindings" => api.Run(app => ModelCommands.Bindings(app, Strings(request, "names")), Quick),
                 "elevators" => api.Run(app => ModelCommands.Elevators(app, Strings(request, "uniqueIds")), Quick),
                 "doors" => api.Run(ModelCommands.Doors, Quick),
+                "groups" => api.Run(ModelCommands.Groups, TimeSpan.FromMinutes(5)),
+                "parameterDefinitions" => api.Run(app => ModelCommands.ParameterDefinitions(app, Strings(request, "names")), Quick),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
-                "redo" => PostOrPress("ID_EDIT_REDO", "Redo", "やり直し"),
+                "redo" => PostOrType("ID_EDIT_REDO", 'Y'),
+                "undoProbe" => UndoState(),
+                "shellWindow" => new Dictionary<string, object?> { ["did"] = UndoProbe.Shell(Text(request, "action")), ["last"] = recorder.LastSequence },
+                "clickView" => new Dictionary<string, object?> { ["did"] = api.Run(UndoProbe.ViewRectangle, Quick) is { } rectangle ? UndoProbe.ClickView(rectangle) : "no open view" },
+                "ctrlZ" => CtrlZ(),
                 "elements" => api.Run(app => FloorCommands.Elements(app, Strings(request, "uniqueIds"), Longs(request, "ids")), Quick),
                 "firstOf" => api.Run(app => FloorCommands.FirstOf(app, Text(request, "category")), Quick),
                 "floorGeometry" => api.Run(app => FloorCommands.FloorGeometry(app, Text(request, "uniqueId")), Quick),
@@ -64,9 +70,11 @@ internal sealed class Commands
                 "newFamily" => NewFamily(request),
                 "fileDialog" => Win32Dialogs.FillFileDialog(TestRoot.Require(root, Text(request, "path")), Milliseconds(request)),
                 "windows" => Win32Dialogs.List(),
-                "closeDialogs" => Win32Dialogs.CloseAll(Milliseconds(request)),
+                "closeDialogs" => Win32Dialogs.CloseAll(Milliseconds(request), Longs(request, "handles")),
+                "blockingDialogs" => Win32Dialogs.Blocking(),
                 "pressButton" => Win32Dialogs.Press(Text(request, "button"), Milliseconds(request)),
                 "screenshot" => Screenshot(Text(request, "path")),
+                "exportViewImage" => ExportViewImage(request),
                 _ => throw new ArgumentException($"Unknown command '{command}'."),
             };
 
@@ -290,13 +298,14 @@ internal sealed class Commands
     }
 
     /// <summary>
-    /// Undo and Redo: posts the command. Revit refuses it in b1 and b2a (CanPostCommand false) and
-    /// accepts it in c3a, from the same code and the same view, so the cause is outside the document.
-    /// A refusal is retried once with Revit's main window in front, then by pressing the Quick Access
-    /// Toolbar button through UI Automation (on this pipe thread, so Revit's UI thread is free to
-    /// answer). When both fail, the error carries Revit's state at that moment.
+    /// Undo and Redo: posts the command when Revit offers it. On the build PC Revit reports both as
+    /// unavailable in every window state, yet Ctrl+Z typed into its main window undoes a RevitGeoSuite
+    /// Apply (undo-probe), so a refusal types the shortcut instead (on this pipe thread, so Revit's UI
+    /// thread is free to act). The reply carries Revit's state at the refusal.
     /// </summary>
-    private Dictionary<string, object?> PostOrPress(string id, params string[] buttonNames)
+    // Posts the command when Revit offers it; otherwise types its shortcut into Revit's main window, as a
+    // person would. The runner judges by the undo or redo event that follows, not by this reply.
+    private Dictionary<string, object?> PostOrType(string id, char letter)
     {
         try
         {
@@ -304,23 +313,32 @@ internal sealed class Commands
         }
         catch (InvalidOperationException refused) when (refused.Message.Contains("cannot run"))
         {
-            string front = Win32Dialogs.ActivateMainWindow();
-            System.Threading.Thread.Sleep(1000);
-            try
-            {
-                Dictionary<string, object?> posted = Post(id);
-                posted["after"] = front;
-                return posted;
-            }
-            catch (InvalidOperationException again) when (again.Message.Contains("cannot run"))
-            {
-                string state = api.Run(app => CommandState(app, id), Quick);
-                Dictionary<string, object?> pressed = Win32Dialogs.PressMainWindowButton(
-                    buttonNames.Concat(new[] { id }).ToArray(), $"{refused.Message} {front}; still refused. State: {state}");
-                pressed["last"] = recorder.LastSequence;
-                return pressed;
-            }
+            string state = api.Run(app => CommandState(app, id), Quick);
+            Dictionary<string, object?> reply = UndoProbe.Control(letter).Reply();
+            reply["refused"] = refused.Message;
+            reply["state"] = state;
+            reply["last"] = recorder.LastSequence;
+            return reply;
         }
+    }
+
+    private Dictionary<string, object?> CtrlZ()
+    {
+        Dictionary<string, object?> reply = UndoProbe.CtrlZ().Reply();
+        reply["last"] = recorder.LastSequence;
+        return reply;
+    }
+
+    // Revit's command state (API thread) and the windows (this thread), together.
+    private Dictionary<string, object?> UndoState()
+    {
+        Dictionary<string, object?> state = api.Run(UndoProbe.Commands, Quick);
+        foreach (KeyValuePair<string, object?> pair in UndoProbe.Windows())
+        {
+            state[pair.Key] = pair.Value;
+        }
+
+        return state;
     }
 
     // What decides whether Revit enables a command: the active document and whether a transaction is
@@ -484,6 +502,7 @@ internal sealed class Commands
         long[] copies = Longs(request, "copyInPlace");
         List<Dictionary<string, object?>> openings = Objects(request, "openingInEastBand");
         long[] deletions = Longs(request, "delete");
+        Dictionary<string, object?>? groupCopy = request.TryGetValue("groupCopy", out object? copy) ? copy as Dictionary<string, object?> : null;
         return api.Run(app =>
         {
             Document document = app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");
@@ -546,13 +565,25 @@ internal sealed class Commands
                     Convert.ToDouble(opening["sizeM"], CultureInfo.InvariantCulture)));
             }
 
+            Dictionary<string, object?>? grouped = groupCopy == null ? null : ModelCommands.GroupAndCopy(
+                document,
+                Convert.ToInt64(groupCopy["floor"], CultureInfo.InvariantCulture),
+                Convert.ToDouble(groupCopy["offsetM"], CultureInfo.InvariantCulture),
+                log);
+
             if (transaction.Commit() != TransactionStatus.Committed)
             {
                 throw new InvalidOperationException($"Revit did not commit the fixture. {string.Join(" ", warnings.Errors)}");
             }
 
             log.AddRange(warnings.Removed.Select(text => $"removed Revit warning: {text}"));
-            return new Dictionary<string, object?> { ["log"] = log };
+            var reply = new Dictionary<string, object?> { ["log"] = log };
+            if (grouped != null)
+            {
+                reply["group"] = grouped;
+            }
+
+            return reply;
         }, Quick);
     }
 
@@ -576,6 +607,52 @@ internal sealed class Commands
         path = TestRoot.Require(root, path);
         Win32Dialogs.CaptureMainWindow(path);
         return new Dictionary<string, object?> { ["path"] = path };
+    }
+
+    // Revit renders the view to a PNG itself (Document.ExportImage), so it needs no desktop: a locked or
+    // minimised session still gets an image. {view} names the view (default: the active one); {path} is the
+    // PNG to write. Revit adds the view's name to the file name, so the reply names the file it wrote.
+    private Dictionary<string, object?> ExportViewImage(Dictionary<string, object?> request)
+    {
+        string path = TestRoot.Require(root, Text(request, "path"));
+        string viewName = request.TryGetValue("view", out object? name) ? Convert.ToString(name, CultureInfo.InvariantCulture) ?? string.Empty : string.Empty;
+        return api.Run(app =>
+        {
+            UIDocument ui = app.ActiveUIDocument ?? throw new InvalidOperationException("No active document.");
+            View view = viewName.Length == 0 ? ui.ActiveView : new FilteredElementCollector(ui.Document).OfClass(typeof(View)).Cast<View>()
+                .FirstOrDefault(candidate => !candidate.IsTemplate && candidate.Name == viewName) ?? throw new ArgumentException($"No view named '{viewName}'.");
+            if (ui.ActiveView.Id != view.Id)
+            {
+                ui.ActiveView = view;
+            }
+
+            string folder = Path.GetDirectoryName(path)!;
+            Directory.CreateDirectory(folder);
+            DateTime before = DateTime.UtcNow.AddSeconds(-1);
+            var options = new ImageExportOptions
+            {
+                ExportRange = ExportRange.SetOfViews,
+                FitDirection = FitDirectionType.Horizontal,
+                PixelSize = 2000,
+                HLRandWFViewsFileType = ImageFileType.PNG,
+                ShadowViewsFileType = ImageFileType.PNG,
+                ImageResolution = ImageResolution.DPI_150,
+                FilePath = Path.Combine(folder, Path.GetFileNameWithoutExtension(path)),
+            };
+            options.SetViewsAndSheets(new List<ElementId> { view.Id });
+            ui.Document.ExportImage(options);
+            string? written = Directory.GetFiles(folder, Path.GetFileNameWithoutExtension(path) + "*.png")
+                .Where(file => File.GetLastWriteTimeUtc(file) >= before)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault() ?? throw new InvalidOperationException($"Revit wrote no PNG for view '{view.Name}' in {folder}.");
+            if (!string.Equals(written, path, StringComparison.OrdinalIgnoreCase))
+            {
+                File.Copy(written, path, overwrite: true);
+                File.Delete(written);
+            }
+
+            return new Dictionary<string, object?> { ["path"] = path, ["view"] = view.Name };
+        }, TimeSpan.FromMinutes(2));
     }
 
     private bool IsUnderRoot(string path)

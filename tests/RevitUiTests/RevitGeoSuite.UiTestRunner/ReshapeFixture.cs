@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -89,6 +90,34 @@ internal static class ReshapeFixture
         }
 
         return parts;
+    }
+
+    /// <summary>Every unit row of this model: its floor's UniqueId and its <c>id</c> value (empty when the table has no id column).</summary>
+    public static List<(string UniqueId, string Id)> UnitIds(string exportFolder)
+    {
+        var rows = new List<(string, string)>();
+        foreach (string file in Directory.GetFiles(exportFolder, "*.gpkg", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = file, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+            connection.Open();
+            foreach ((string table, string _, int _) in UnitTables(connection))
+            {
+                using SqliteCommand command = connection.CreateCommand();
+                string id = HasColumn(connection, table, "id") ? "\"id\"" : "''";
+                command.CommandText = $"SELECT revit_key, {id} FROM \"{table.Replace("\"", "\"\"")}\"";
+                using SqliteDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    string[] key = Text(reader, 0).Split('|');
+                    if (key.Length >= 3 && !key[0].Contains('@'))
+                    {
+                        rows.Add((key[1], reader.IsDBNull(1) ? string.Empty : Convert.ToString(reader.GetValue(1), CultureInfo.InvariantCulture) ?? string.Empty));
+                    }
+                }
+            }
+        }
+
+        return rows;
     }
 
     /// <summary>The unit <paramref name="uniqueId"/> names, else the first of <paramref name="category"/>; null when none fits.</summary>
@@ -299,6 +328,22 @@ internal static class ReshapeFixture
         return new[] { kept, piece };
     }
 
+    /// <summary>The name the hand-drawn fixture gives F's unit: "&lt;name&gt; (drawn)", or "drawn" for an unnamed unit.</summary>
+    public static string DrawnName(FloorUnit unit) => unit.Name.Length > 0 ? unit.Name + " (drawn)" : "drawn";
+
+    /// <summary>A `handDrawn` unit whose outline crosses itself: a bow-tie across the corners of F's bounding box.</summary>
+    public static JsonObject[] HandDrawnCrossing(FloorUnit unit)
+    {
+        IReadOnlyList<(double X, double Y)> outline = unit.Rings[0];
+        double minX = outline.Min(point => point.X), maxX = outline.Max(point => point.X), minY = outline.Min(point => point.Y), maxY = outline.Max(point => point.Y);
+        var ring = new List<(double X, double Y)> { (minX, minY), (maxX, maxY), (maxX, minY), (minX, maxY), (minX, minY) };
+        JsonObject[] shapes = HandDrawn(unit with { Rings = new[] { (IReadOnlyList<(double X, double Y)>)ring } });
+        string name = DrawnName(unit) + " crossing";
+        shapes[0]["label"] = name;
+        shapes[0]["gdbName"] = name;
+        return shapes;
+    }
+
     /// <summary>The GDB name the split fixture gives the new piece: "&lt;name&gt; east", or "east" for an unnamed unit.</summary>
     public static string SplitName(FloorUnit unit) => unit.Name.Length > 0 ? unit.Name + " east" : "east";
 
@@ -325,9 +370,9 @@ internal static class ReshapeFixture
     /// A `handDrawn` unit with the unit's outline and level_id, named "&lt;name&gt; (drawn)", with its category and
     /// restriction unless <paramref name="withType"/> is false, as make_reshape_fixture.py --hand-drawn [--no-type] writes it.
     /// </summary>
-    public static JsonObject[] HandDrawn(FloorUnit unit, bool withType = true, string? levelId = null)
+    public static JsonObject[] HandDrawn(FloorUnit unit, bool withType = true, string? levelId = null, string? restriction = null)
     {
-        string name = unit.Name + " (drawn)";
+        string name = DrawnName(unit);
         var coordinates = new JsonArray(unit.Rings.Select(ring => (JsonNode)new JsonArray(ring.Select(point => (JsonNode)new JsonArray(point.X, point.Y)).ToArray())).ToArray());
         var drawn = new JsonObject
         {
@@ -343,9 +388,10 @@ internal static class ReshapeFixture
         if (withType)
         {
             drawn["gdbCategory"] = unit.Category;
-            if (unit.Restriction.Length > 0)
+            string restrict = restriction ?? unit.Restriction;
+            if (restrict.Length > 0)
             {
-                drawn["gdbRestriction"] = unit.Restriction;
+                drawn["gdbRestriction"] = restrict;
             }
         }
 

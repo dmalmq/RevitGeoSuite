@@ -16,6 +16,8 @@ internal sealed partial class GisStandardRun
 
     private HandDrawnCase? drawn;
     private long? drawnFloor;
+    private bool drawnCard;
+    private bool drawnUndone;
 
     private async Task HandDrawnSteps()
     {
@@ -24,7 +26,7 @@ internal sealed partial class GisStandardRun
         await Step("C3d.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("C3d.P", "Export, delete floor F, make the hand-drawn drift files from F's unit", PrepareHandDrawn);
         await Step("C3d.1", "Pick the typed file: one 'New floor drawn in the GDB' card with its type chosen", PickHandDrawn);
-        await Step("C3d.2", "Show in Revit draws the outline in the GIS_ plan, with no transaction", step => ShowShapes(step, drawn?.Floor.Level));
+        await Step("C3d.2", "Show in Revit draws the outline in the GIS_ plan, with no transaction", step => ShowShapes(step, drawnCard ? drawn?.Floor.Level : null));
         await Step("C3d.3", "Apply 1 shape edit: one new floor", ApplyHandDrawn);
         await Step("C3d.4", "The new floor: F's level, the unit's area, the type the log names", HandDrawnResult);
         await Step("C3d.5", "Check again offers nothing", step => NothingLeft(step, drawnFloor != null));
@@ -32,6 +34,7 @@ internal sealed partial class GisStandardRun
         await Step("C3d.7", "Redo, export again: the new floor's unit is the drawn outline within 1 cm", HandDrawnRoundTrip);
         await Step("C3d.8", "Without a category the card asks for a type, and Apply waits for it", UntypedHandDrawn);
         await Step("C3d.9", "A unit on a level_id no level has is a problem, not a card", HandDrawnNoLevel);
+        await Step("C3d.10", "An outline that crosses itself is listed as a problem, not drawn", HandDrawnCrossing);
     }
 
     private async Task PrepareHandDrawn(StepResult step)
@@ -41,12 +44,16 @@ internal sealed partial class GisStandardRun
             return;
         }
 
+        // F must be one part in the export (its unit is then the whole floor) and host nothing, so deleting it
+        // takes nothing else with it. Retail and walkway first, any category after.
         FloorScanRow[] scan = FloorScan();
+        string[] preferred = { "retail", "walkway" };
         var candidates = exportedUnits
-            .Where(unit => unit.Category is "retail" or "walkway" && scan.FirstOrDefault(row => row.UniqueId == unit.UniqueId) is { Dependents.Length: 0 })
-            .OrderBy(unit => unit.Category == "retail" ? 0 : 1)
+            .Where(unit => exportedParts.GetValueOrDefault(unit.UniqueId) == 1 && unit.Rings.Count == 1 && ReshapeFixture.IsSimple(unit.Rings[0]) && unit.Category.Length > 0
+                && scan.FirstOrDefault(row => row.UniqueId == unit.UniqueId) is { Dependents.Length: 0 })
+            .OrderBy(unit => Array.IndexOf(preferred, unit.Category) is int index and >= 0 ? index : preferred.Length)
             .ToList();
-        if (!step.Check(candidates.Count > 0, "The export has a retail (or walkway) floor that hosts nothing."))
+        if (!step.Check(candidates.Count > 0, "The export has a floor that is one part without holes, has a category and hosts nothing."))
         {
             return;
         }
@@ -61,14 +68,20 @@ internal sealed partial class GisStandardRun
             return;
         }
 
+        // The card preselects a type only when category and restriction name exactly one standard type. A
+        // LUMINE walkway has no restriction in the export (three walkway types), so the typed file says rachi_gai.
+        (string restriction, string expectedType) = unit.Restriction.Length == 0 && unit.Category == "walkway"
+            ? ("rachi_gai", "j ラチ外コンコース_床")
+            : (unit.Restriction, string.Empty);
         drawn = new HandDrawnCase(
-            WriteDrift("hand-drawn.gis-drift.json", unit, ReshapeFixture.HandDrawn(unit)),
+            WriteDrift("hand-drawn.gis-drift.json", unit, ReshapeFixture.HandDrawn(unit, restriction: restriction)),
             WriteDrift("hand-drawn-untyped.gis-drift.json", unit, ReshapeFixture.HandDrawn(unit, withType: false)),
             unit,
             floor,
             before,
-            scan.Count(row => row.Level == floor.Level) - 1);
-        step.Note($"Wrote {drawn.Path} and {drawn.UntypedPath}: '{drawn.Name}' on level_id {unit.LevelId}.");
+            scan.Count(row => row.Level == floor.Level) - 1)
+        { ExpectedType = expectedType };
+        step.Note($"Wrote {drawn.Path} (category {unit.Category}, restriction '{restriction}') and {drawn.UntypedPath}: '{drawn.Name}' on level_id {unit.LevelId}.");
     }
 
     private async Task PickHandDrawn(StepResult step)
@@ -81,10 +94,22 @@ internal sealed partial class GisStandardRun
 
         await PickDrift(drawn.Path);
         ILocator card = Shell.Page.GetByTestId("shape-edit");
-        step.Check(await Shell.ShowsAsync(card.GetByText("New floor drawn in the GDB"), 60000), "One card reads 'New floor drawn in the GDB'.");
+        drawnCard = step.Check(await Shell.ShowsAsync(card.GetByText("New floor drawn in the GDB"), 60000), "One card reads 'New floor drawn in the GDB'.");
+        if (!drawnCard)
+        {
+            await NoteProblems(step, drawn.Path);
+            await Shot(step, "C3d-1-hand-drawn-card");
+            return;
+        }
+
         step.Check(await card.CountAsync() == 1, $"There is one card ({await card.CountAsync()}).");
         string type = await ChosenType(card.First);
         step.Check(type.Length > 0 && !type.StartsWith("Pick a floor type", StringComparison.Ordinal), $"Its floor type is chosen from the file's category and restriction ({type}).");
+        if (drawn.ExpectedType.Length > 0)
+        {
+            step.Check(type == drawn.ExpectedType, $"The chosen type is {drawn.ExpectedType} ({type}).");
+        }
+
         step.Check(!await Shell.Button("Apply 1 shape edit(s)").IsDisabledAsync(), "'Apply 1 shape edit(s)' is enabled.");
         drawn = drawn with { ChosenType = type };
         await Shot(step, "C3d-1-hand-drawn-card");
@@ -92,9 +117,9 @@ internal sealed partial class GisStandardRun
 
     private async Task ApplyHandDrawn(StepResult step)
     {
-        if (drawn == null)
+        if (drawn == null || !drawnCard)
         {
-            step.NotRun("C3d.P made no hand-drawn file.");
+            step.NotRun(drawn == null ? "C3d.P made no hand-drawn file." : "C3d.1 showed no card.");
             return;
         }
 
@@ -140,10 +165,12 @@ internal sealed partial class GisStandardRun
             return Task.CompletedTask;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("undo");
-        ExpectEvent(step, seq, "undo", HandDrawnTransaction(drawn));
-        step.Check(!Element(id).Exists, $"One Undo removes the new floor {id}.");
+        if (UndoOrRedo(step, "undo", HandDrawnTransaction(drawn)))
+        {
+            drawnUndone = true;
+            step.Check(!Element(id).Exists, $"One Undo removes the new floor {id}.");
+        }
+
         return Task.CompletedTask;
     }
 
@@ -155,9 +182,34 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        int seq = host.LastEvent();
-        host.PostCommand("redo");
-        ExpectEvent(step, seq, "redo", HandDrawnTransaction(drawn));
+        string name = HandDrawnTransaction(drawn);
+        if (!drawnUndone)
+        {
+            step.Note($"No Redo: C3d.6 did not undo '{name}', so the edit is still in the model and this step checks it as it is.");
+        }
+
+        if (drawnUndone && !UndoOrRedo(step, "redo", name))
+        {
+            // The floor is undone after C3d.6; apply the typed file again, as a person would after a refused Redo.
+            int seq = host.LastEvent();
+            await PickDrift(drawn.Path);
+            if (!await ExpectShapeEdits(step, drawn.Path))
+            {
+                return;
+            }
+
+            string[] again = await ApplyShapes(step, 1);
+            step.Note($"Applied the drift file again instead of Redo. Log: {string.Join(" / ", again)}");
+            Match created = again.Select(line => Regex.Match(line, @"^New floor (\d+) ")).FirstOrDefault(match => match.Success) ?? Match.Empty;
+            if (!step.Check(host.EventsAfter(seq).Any(item => item.Is("commit", name)) && created.Success, $"Applying again commits '{name}' and lists a new floor."))
+            {
+                return;
+            }
+
+            id = long.Parse(created.Groups[1].Value, CultureInfo.InvariantCulture);
+            drawnFloor = id;
+        }
+
         string? uniqueId = Element(id).UniqueId;
         string output = await OpenExport(step, string.Empty, "export2", keepDefaultViews: true);
         bool exported = await ExportNow(step);
@@ -180,12 +232,9 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        if (drawnFloor is long id && Element(id).Exists)
-        {
-            int undoSeq = host.LastEvent();
-            host.PostCommand("undo");
-            ExpectEvent(step, undoSeq, "undo", HandDrawnTransaction(drawn));
-        }
+        // The new floor from C3d.3/C3d.7 goes first, so the unit counts as not in the model again. The test
+        // host deletes it rather than Undo, which Revit can refuse on the build PC.
+        RemoveDrawnFloor(step, drawnFloor);
 
         await PickDrift(drawn.UntypedPath);
         ILocator card = Shell.Page.GetByTestId("shape-edit");
@@ -207,11 +256,16 @@ internal sealed partial class GisStandardRun
         string[] log = await ApplyShapesOrRecord(step);
         Match created = log.Select(line => Regex.Match(line, @"^New floor (\d+) \((.+)\)\.")).FirstOrDefault(match => match.Success) ?? Match.Empty;
         step.Check(created.Success && created.Groups[2].Value == picked, $"The new floor has the picked type ({(created.Success ? created.Groups[2].Value : "no new floor")}).");
-        if (created.Success)
+        step.Check(host.EventsAfter(seq).Any(item => item.Is("commit", HandDrawnTransaction(drawn))), $"Apply commits '{HandDrawnTransaction(drawn)}'.");
+        RemoveDrawnFloor(step, created.Success ? long.Parse(created.Groups[1].Value, CultureInfo.InvariantCulture) : null);
+    }
+
+    private void RemoveDrawnFloor(StepResult step, long? id)
+    {
+        if (id is long floor && Element(floor).Exists)
         {
-            seq = host.LastEvent();
-            host.PostCommand("undo");
-            ExpectEvent(step, seq, "undo", HandDrawnTransaction(drawn));
+            JsonObject fixture = host.Call("fixture", new { delete = new[] { floor } });
+            step.Note($"Removed new floor {floor} through the test host: {fixture["log"]?.ToJsonString()}.");
         }
     }
 
@@ -228,11 +282,41 @@ internal sealed partial class GisStandardRun
         await PickDrift(path);
         JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
         string[] problems = Problems(drift);
-        string expected = $"unit {drawn.Name} handDrawn: no level of this model has level_id {NoSuchLevel}, so there is no level to draw it on. Draw it in Revit by hand.";
+        string expected = $"no level of this model has level_id {NoSuchLevel}, so there is no level to draw it on. Draw it in Revit by hand.";
         step.Check(problems.Any(problem => problem.Contains(expected, StringComparison.Ordinal)), $"Problems list \"{expected}\" ({string.Join(" | ", problems)}).");
         step.Check((drift?["shapes"]?.AsArray().Count ?? 0) == 0 && await Shell.Page.GetByTestId("shape-edit").CountAsync() == 0, "There is no card.");
         step.Check(FloorScan().Length == floors, "Nothing changes.");
         await Shot(step, "C3d-9-no-level");
+    }
+
+    private async Task HandDrawnCrossing(StepResult step)
+    {
+        if (drawn == null)
+        {
+            step.NotRun("C3d.P made no hand-drawn file.");
+            return;
+        }
+
+        JsonObject[] crossing = ReshapeFixture.HandDrawnCrossing(drawn.Unit);
+        var ring = crossing[0]["outline"]!["coordinates"]![0]!.AsArray().Select(point => (point![0]!.GetValue<double>(), point[1]!.GetValue<double>())).ToList();
+        if (ReshapeFixture.IsSimple(ring))
+        {
+            step.NotRun("Swapping two corners of F's outline did not make it cross itself.");
+            return;
+        }
+
+        string path = WriteDrift("hand-drawn-crossing.gis-drift.json", drawn.Unit, crossing);
+        int floors = FloorScan().Length;
+        int seq = host.LastEvent();
+        await PickDrift(path);
+        await Shell.Page.WaitForTimeoutAsync(3000);
+        JsonNode? drift = await Shell.RpcAsync("gisDrift.inspect", new { path, pick = false });
+        string[] problems = Problems(drift);
+        step.Note($"Problems: {string.Join(" | ", problems)}");
+        step.Check(problems.Any(problem => problem.Contains("crosses itself", StringComparison.Ordinal)), "A problem line says the outline crosses itself.");
+        step.Check((drift?["shapes"]?.AsArray().Count ?? 0) == 0 && await Shell.Page.GetByTestId("shape-edit").CountAsync() == 0, "There is no card.");
+        step.Check(FloorScan().Length == floors && !host.EventsAfter(seq).Any(item => item.Kind != "dialog"), "Nothing changes in Revit.");
+        await Shot(step, "C3d-10-crossing");
     }
 
     private static ILocator TypeSelect(ILocator card) => card.GetByLabel("Floor type");
@@ -251,9 +335,11 @@ internal sealed partial class GisStandardRun
 
 internal sealed record HandDrawnCase(string Path, string UntypedPath, FloorUnit Unit, FloorScanRow Floor, ElementRow Before, int FloorsOnLevel)
 {
-    public string Name => Unit.Name + " (drawn)";
+    public string Name => ReshapeFixture.DrawnName(Unit);
 
     public string ChosenType { get; init; } = string.Empty;
+
+    public string ExpectedType { get; init; } = string.Empty;
 
     public string LoggedType { get; init; } = string.Empty;
 }

@@ -20,6 +20,7 @@ namespace RevitGeoSuite.TestHost;
 internal static class Win32Dialogs
 {
     private const string DialogClass = "#32770";
+    private const uint GwOwner = 4;
     private const int FileNameComboId = 1148; // Open and folder dialogs: ComboBoxEx32 > ComboBox > Edit
     private const int SaveFileNameId = 1001;  // Save dialog: ComboBox > Edit
     private const int FolderNameId = 1152;    // Folder picker ("Select Folder"): the Folder: Edit itself
@@ -66,7 +67,7 @@ internal static class Win32Dialogs
     /// Closes every dialog of this process, with its Cancel button when it has one and WM_CLOSE
     /// otherwise, so that a step that failed with a dialog open does not block the next step.
     /// </summary>
-    public static Dictionary<string, object?> CloseAll(int timeoutMs)
+    public static Dictionary<string, object?> CloseAll(int timeoutMs, long[]? only = null)
     {
         var closed = new List<Dictionary<string, object?>>();
         Stopwatch clock = Stopwatch.StartNew();
@@ -75,7 +76,8 @@ internal static class Win32Dialogs
             Thread.Sleep(200); // a dialog a step just answered may still be on its way out
         }
 
-        for (List<IntPtr> open = Dialogs(); open.Count > 0 && clock.ElapsedMilliseconds < timeoutMs; open = Dialogs())
+        List<IntPtr> Open() => Dialogs().Where(dialog => only == null || only.Length == 0 || only.Contains(dialog.ToInt64())).ToList();
+        for (List<IntPtr> open = Open(); open.Count > 0 && clock.ElapsedMilliseconds < timeoutMs; open = Open())
         {
             IntPtr dialog = open[0];
             string title = TitleOf(dialog);
@@ -100,6 +102,25 @@ internal static class Win32Dialogs
 
         return new Dictionary<string, object?> { ["closed"] = closed, ["stillOpen"] = Dialogs().Select(TitleOf).ToList() };
     }
+
+    /// <summary>
+    /// The dialogs that hold Revit until someone answers them: visible #32770 windows of this process whose
+    /// owner is disabled (modal), with at least one button and no progress bar. Read without sending any
+    /// window message (InternalGetWindowText, GetClassName, IsWindowEnabled), so it answers at once even
+    /// while Revit's UI thread is busy in an export.
+    /// </summary>
+    public static Dictionary<string, object?> Blocking() => new()
+    {
+        ["dialogs"] = Dialogs()
+            .Where(dialog =>
+            {
+                IntPtr owner = GetWindow(dialog, GwOwner);
+                List<string> classes = Descendants(dialog).Select(ClassOf).ToList();
+                return owner != IntPtr.Zero && !IsWindowEnabled(owner) && classes.Contains("Button") && !classes.Contains("msctls_progress32");
+            })
+            .Select(dialog => new Dictionary<string, object?> { ["handle"] = dialog.ToInt64(), ["title"] = QuietTitleOf(dialog) })
+            .ToList(),
+    };
 
     /// <summary>The visible dialogs of this process, with their title and the text a person would read.</summary>
     public static Dictionary<string, object?> List() => new()
@@ -186,52 +207,6 @@ internal static class Win32Dialogs
         }
 
         return $"{was}; Revit's main window {(front && GetForegroundWindow() == window ? $"brought to the front ({how})" : $"could not be brought to the front ({how})")}";
-    }
-
-    /// <summary>
-    /// Invokes the first enabled control of Revit's main window whose name, automation id or help text
-    /// contains one of <paramref name="names"/> (the Quick Access Toolbar's Undo, whose name can be empty
-    /// with the id ID_EDIT_UNDO). Throws, naming every match it saw, when none is enabled.
-    /// </summary>
-    public static Dictionary<string, object?> PressMainWindowButton(string[] names, string why)
-    {
-        IntPtr window = Process.GetCurrentProcess().MainWindowHandle;
-        if (window == IntPtr.Zero)
-        {
-            throw new InvalidOperationException($"{why} Revit's main window is not available to press {names[0]} instead.");
-        }
-
-        Condition clickable = new OrCondition(
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.SplitButton),
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.MenuItem));
-        var seen = new List<string>();
-        foreach (AutomationElement element in AutomationElement.FromHandle(window).FindAll(TreeScope.Descendants, clickable))
-        {
-            string text;
-            try
-            {
-                text = $"{element.Current.Name}|{element.Current.AutomationId}|{element.Current.HelpText}";
-            }
-            catch (ElementNotAvailableException)
-            {
-                continue;
-            }
-
-            if (!names.Any(name => text.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0))
-            {
-                continue;
-            }
-
-            seen.Add($"{element.Current.ControlType.ProgrammaticName} '{text}' enabled={element.Current.IsEnabled}");
-            if (element.Current.IsEnabled && element.TryGetCurrentPattern(InvokePattern.Pattern, out object pattern))
-            {
-                ((InvokePattern)pattern).Invoke();
-                return new Dictionary<string, object?> { ["pressed"] = text, ["why"] = why, ["seen"] = seen };
-            }
-        }
-
-        throw new InvalidOperationException($"{why} No enabled control named like '{string.Join("' or '", names)}' to press instead (found: {(seen.Count == 0 ? "none" : string.Join("; ", seen))}).");
     }
 
     /// <summary>Saves a PNG of Revit's main window as it is on screen.</summary>
@@ -368,6 +343,13 @@ internal static class Win32Dialogs
         return string.Join("\n", parts);
     }
 
+    private static string QuietTitleOf(IntPtr window)
+    {
+        var text = new StringBuilder(512);
+        InternalGetWindowText(window, text, text.Capacity);
+        return text.ToString();
+    }
+
     private static string TitleOf(IntPtr window)
     {
         var text = new StringBuilder(512);
@@ -398,6 +380,9 @@ internal static class Win32Dialogs
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int InternalGetWindowText(IntPtr window, StringBuilder text, int capacity);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool on);
     [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr window);
