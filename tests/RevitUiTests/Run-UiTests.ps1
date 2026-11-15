@@ -24,7 +24,11 @@
   because two copies would build the same ribbon.
 
   The export page's remembered settings (%APPDATA%\RevitGeoSuite\FloorPlanExport\settings.json) are
-  empty for the run and go back as they were on exit, so every run sees the page's defaults.
+  empty for the run and go back as they were on exit, so every run sees the page's defaults. The script
+  checks Revit, the test host and -RgsBuild before it touches them, puts them back in a finally, and keeps
+  a <name>.uitest-backup beside each until then, so the next run repairs a run that was killed. The
+  profiles.json.<hash>.moved-to-station files the run's Cesium exports leave are removed on exit; older
+  ones stay. Pass the script's own options by name; everything else (such as --scenario) goes to the runner.
 
   -PyRevitExtension <folder> adds a pyRevit extension folder to userextensions in
   %APPDATA%\pyRevit\pyRevit_config.ini for the same window and takes it out again. pyRevit reads the
@@ -42,6 +46,9 @@
   one is never written. It installs the test host first (Install-TestHost.ps1), so that the host reports
   the variable in Revit; the scenario h4-shared-rules refuses to run without it.
 #>
+# Named parameters only: called with & from another script, PowerShell would otherwise bind the runner's
+# arguments by position ("--scenario" became -RevitYear). Everything not named goes to the runner.
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$StartRevit,
     [string]$RevitYear = '2024',
@@ -55,6 +62,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($RevitYear -notmatch '^\d{4}$') { throw "-RevitYear must be a year such as 2024 (got '$RevitYear'). Pass runner options such as --scenario after the script's own -Options." }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $addins = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear"
 $hostManifest = Join-Path $addins 'RevitGeoSuite.TestHost.addin'
@@ -166,48 +174,97 @@ function Set-PyRevitExtensions([scriptblock]$Change) {
     Write-Host "pyRevit userextensions: $(ConvertTo-Json -InputObject $new -Compress)"
 }
 
-# The GeoPackage export remembers its last output folder (and profiles) in the roaming %APPDATA%. A test
-# export would leave a C:\dev\revit-test folder there for every PC; the files go back as they were on exit.
-$exportSettings = @{}
-foreach ($name in 'settings.json', 'profiles.json') {
-    $file = Join-Path $exportStore $name
-    $exportSettings[$file] = $null
-    if (Test-Path $file) { $exportSettings[$file] = [IO.File]::ReadAllBytes($file) }
-}
-# A run starts the export page as a first-time user sees it: no remembered views, folder or options, so
-# the default view choice (gis-model.json, else every GIS_ plan) is what the scenarios test. An empty
-# object, not a missing file: without the file RevitGeoSuite would read the legacy RevitGeoExporter one.
-# Profiles stay: the Cesium export uses the PC's first floor plan profile.
-$runSettings = Join-Path $exportStore 'settings.json'
-if ($StartRevit) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $runSettings) | Out-Null
-    [IO.File]::WriteAllText($runSettings, '{}')
-    Write-Host "Export settings for this run: empty ($runSettings); the old file goes back on exit."
-}
-
 # Test folders (C:\dev\rgs-uitests, C:\dev\revit-test) exist only on the build PC; never leave one in the roaming list.
 Set-PyRevitExtensions { param($list) $list | Where-Object { "$_" -notmatch '^C:\\dev\\(rgs-uitests|revit-test)(\\|$)' } }
 
 if ($PyRevitExtension -and -not $StartRevit) { throw '-PyRevitExtension needs -StartRevit: the folder is handed to the Revit this script starts.' }
 if ($RgsBuild -and -not $StartRevit) { throw '-RgsBuild needs -StartRevit: the build is handed to the Revit this script starts.' }
 
+# Everything that can refuse the run is checked before the export's remembered settings are touched.
+$revit = Join-Path $env:ProgramFiles "Autodesk\Revit $RevitYear\Revit.exe"
+$staged = Join-Path $TestHost 'RevitGeoSuite.TestHost.addin'
+if ($StartRevit) {
+    if (-not (Test-Path $revit)) { throw "Revit is not at $revit." }
+    if (-not (Test-Path $staged)) { throw "No test host at $TestHost. Run Install-TestHost.ps1 first." }
+    if ($RgsBuild) {
+        if (-not (Test-Path (Join-Path $RgsBuild 'RevitGeoSuite.Shell.dll'))) { throw "No RevitGeoSuite.Shell.dll in $RgsBuild." }
+        $installed = @((Join-Path $env:ProgramData "Autodesk\Revit\Addins\$RevitYear\RevitGeoSuite.addin"), (Join-Path $addins 'RevitGeoSuite.addin')) | Where-Object { Test-Path $_ }
+        if ($installed) { throw "RevitGeoSuite is installed ($($installed -join ', ')). Remove it before running a build with -RgsBuild: Revit cannot load two RevitGeoSuite add-ins." }
+    }
+    if ($PyRevitExtension -and -not (Test-Path $PyRevitExtension)) { throw "No pyRevit extension folder at $PyRevitExtension." }
+    # -StartRevit swaps the export settings and hands Revit the test host, so it needs a PC with no Revit open.
+    # A Revit already running is either someone's own, which would read the emptied settings and must not be
+    # touched, or a test Revit still closing; the runner could reach neither as its own. Give a closing one a
+    # minute, then refuse.
+    $deadline = (Get-Date).AddSeconds(60)
+    while (($running = @(Get-Process -Name Revit -ErrorAction SilentlyContinue)) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+    if ($running) { throw "Revit is already running (process $($running.Id -join ', ')) and did not exit within 60 s. Close it and run again: -StartRevit needs a PC with no Revit open." }
+}
+
+
+# The GeoPackage export remembers its last output folder (and profiles) in the roaming %APPDATA%. A test
+# export would leave a C:\dev\revit-test folder there for every PC; the files go back as they were on exit.
+# Each original is also kept beside it as <name>.uitest-backup (or a <name>.uitest-absent marker) until it is
+# back, so a run that dies before its finally is undone by the next run instead of being taken as the original.
+$exportSettings = @{}
+foreach ($name in 'settings.json', 'profiles.json') {
+    $file = Join-Path $exportStore $name
+    $backup = "$file.uitest-backup"
+    $absent = "$file.uitest-absent"
+    if (Test-Path $backup) { Move-Item $backup $file -Force; Write-Host "Put back $file from a run that stopped before restoring it." }
+    elseif (Test-Path $absent) { Remove-Item $file -Force -ErrorAction SilentlyContinue; Remove-Item $absent -Force; Write-Host "Removed $file, which a run that stopped had left (there was none before it)." }
+    $exportSettings[$file] = $null
+    if (Test-Path $file) { $exportSettings[$file] = [IO.File]::ReadAllBytes($file) }
+}
+# Cesium exports into a station folder leave profiles.json.<hash>.moved-to-station files; the run takes away the ones it made.
+$movedBefore = @(Get-ChildItem $exportStore -Filter 'profiles.json.*.moved-to-station' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+
+function Restore-ExportSettings {
+    foreach ($file in @($exportSettings.Keys)) {
+        if ($null -eq $exportSettings[$file]) { Remove-Item $file -Force -ErrorAction SilentlyContinue }
+        else { [IO.File]::WriteAllBytes($file, $exportSettings[$file]) }
+        Remove-Item "$file.uitest-backup", "$file.uitest-absent" -Force -ErrorAction SilentlyContinue
+    }
+    $made = @(Get-ChildItem $exportStore -Filter 'profiles.json.*.moved-to-station' -File -ErrorAction SilentlyContinue | Where-Object { $movedBefore -notcontains $_.Name })
+    $made | Remove-Item -Force
+    Write-Host "Put the export's remembered settings back as they were: $($exportSettings.Keys -join ', '); removed $($made.Count) profiles.json.*.moved-to-station file(s) this run made."
+}
+
+# The Revit this script started is the tests' own: close it on every way out, without saving. Stopping the
+# process is the only close that cannot meet a "save changes?" prompt. The script returns only once that Revit
+# is gone, so a call straight after this one finds no Revit running.
+function Stop-TestRevit {
+    if (-not $process) { return }
+    if (-not $process.HasExited) {
+        Stop-Process -Id $process.Id -Force
+        Write-Host "Closed the test Revit (process $($process.Id)) without saving."
+    }
+    if (-not $process.WaitForExit(60000)) { Write-Warning "The test Revit (process $($process.Id)) had not exited 60 s after it was stopped." }
+}
+
+$runSettings = Join-Path $exportStore 'settings.json'
 $process = $null
 $startFailure = $null
-if ($StartRevit) {
-    if (Get-Process -Name Revit -ErrorAction SilentlyContinue) {
-        Write-Warning 'Revit is already running. The tests only reach a Revit that this script started; close it and run again if the runner cannot connect.'
+$exitCode = 1
+try {
+    # A run starts the export page as a first-time user sees it: no remembered views, folder or options, so
+    # the default view choice (gis-model.json, else every GIS_ plan) is what the scenarios test. An empty
+    # object, not a missing file: without the file RevitGeoSuite would read the legacy RevitGeoExporter one.
+    # Profiles stay: the Cesium export uses the PC's first floor plan profile.
+    if ($StartRevit) {
+        New-Item -ItemType Directory -Force -Path (Split-Path $runSettings) | Out-Null
+        foreach ($file in @($exportSettings.Keys)) {
+            if ($null -eq $exportSettings[$file]) { [IO.File]::WriteAllText("$file.uitest-absent", '') }
+            else { [IO.File]::WriteAllBytes("$file.uitest-backup", $exportSettings[$file]) }
+        }
+        [IO.File]::WriteAllText($runSettings, '{}')
+        Write-Host "Export settings for this run: empty ($runSettings); the old file goes back on exit."
     }
-    else {
-        $revit = Join-Path $env:ProgramFiles "Autodesk\Revit $RevitYear\Revit.exe"
-        if (-not (Test-Path $revit)) { throw "Revit is not at $revit." }
-        $staged = Join-Path $TestHost 'RevitGeoSuite.TestHost.addin'
-        if (-not (Test-Path $staged)) { throw "No test host at $TestHost. Run Install-TestHost.ps1 first." }
+
+    if ($StartRevit) {
         $handed = @($hostManifest)
         New-Item -ItemType Directory -Force -Path $addins | Out-Null
         if ($RgsBuild) {
-            if (-not (Test-Path (Join-Path $RgsBuild 'RevitGeoSuite.Shell.dll'))) { throw "No RevitGeoSuite.Shell.dll in $RgsBuild." }
-            $installed = @((Join-Path $env:ProgramData "Autodesk\Revit\Addins\$RevitYear\RevitGeoSuite.addin"), (Join-Path $addins 'RevitGeoSuite.addin')) | Where-Object { Test-Path $_ }
-            if ($installed) { throw "RevitGeoSuite is installed ($($installed -join ', ')). Remove it before running a build with -RgsBuild: Revit cannot load two RevitGeoSuite add-ins." }
             $rgs = $RgsTarget
             if (Test-Path $rgs) { Remove-Item $rgs -Recurse -Force }
             New-Item -ItemType Directory -Force -Path $rgs | Out-Null
@@ -245,52 +302,45 @@ if ($StartRevit) {
             Write-Host "Removed $($handed -join ', '): Revit has read it, and nothing is left for a roaming profile or a Revit started by hand."
         }
     }
-}
 
-. (Join-Path $PSScriptRoot 'Find-DotnetSdk.ps1')
-$exitCode = 1
-try {
-    if (-not $startFailure) {
-        $dotnet = Find-DotnetSdk
-        Write-Host "Using $dotnet"
-        & $dotnet build (Join-Path $PSScriptRoot 'RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.csproj') -c Release
-        if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
+    . (Join-Path $PSScriptRoot 'Find-DotnetSdk.ps1')
+    try {
+        if (-not $startFailure) {
+            $dotnet = Find-DotnetSdk
+            Write-Host "Using $dotnet"
+            & $dotnet build (Join-Path $PSScriptRoot 'RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.csproj') -c Release
+            if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
 
-        & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @RunnerArgs
-        $exitCode = $LASTEXITCODE
+            & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @RunnerArgs
+            $exitCode = $LASTEXITCODE
+        }
+    }
+    finally {
+        Stop-TestRevit
+        if ($FloorPlanDataSandbox) {
+            # Revit has closed, so nothing of the real folder can change any more: compare it with the record from before.
+            $realAfter = @(Write-FolderSnapshot $realStore (Join-Path $runFolder 'real-folder-after.txt'))
+            $changes = @($realAfter | Where-Object { $realBefore -notcontains $_ } | ForEach-Object { "after: $_" }) +
+                @($realBefore | Where-Object { $realAfter -notcontains $_ } | ForEach-Object { "before: $_" })
+            if ($changes.Count -gt 0) {
+                $reportPath = if ($startFailure) { $startFailure } else { Join-Path $runFolder 'report.md' }
+                $text = if (Test-Path $reportPath) { [IO.File]::ReadAllText($reportPath) } else { "# RevitGeoSuite UI test run`n" }
+                $text = $text -replace '(?m)^\*\*PASS\*\*', '**FAIL**'
+                $text += "`n## REAL. The real floor plan folder is unchanged: **FAIL**`n`n- FAILED: $realStore differs from the record in real-folder-before.txt.`n" + (($changes | ForEach-Object { "  - ``$_``" }) -join "`n") + "`n"
+                [IO.File]::WriteAllText($reportPath, $text, [Text.UTF8Encoding]::new($false))
+                Write-Host "THE REAL FLOOR PLAN FOLDER CHANGED during the run ($($changes.Count) line(s)); see $reportPath."
+                $exitCode = 1
+            }
+            else { Write-Host "The real floor plan folder $realStore is unchanged ($($realAfter.Count) file(s))." }
+        }
     }
 }
 finally {
-    # The Revit this script started is the tests' own: close it on every way out, without saving.
-    # Stopping the process is the only close that cannot meet a "save changes?" prompt.
-    if ($process -and -not $process.HasExited) {
-        Stop-Process -Id $process.Id -Force
-        Write-Host "Closed the test Revit (process $($process.Id)) without saving."
-    }
-    if ($FloorPlanDataSandbox) {
-        # Revit has closed, so nothing of the real folder can change any more: compare it with the record from before.
-        if ($process) { $null = $process.WaitForExit(15000) }
-        $realAfter = @(Write-FolderSnapshot $realStore (Join-Path $runFolder 'real-folder-after.txt'))
-        $changes = @($realAfter | Where-Object { $realBefore -notcontains $_ } | ForEach-Object { "after: $_" }) +
-            @($realBefore | Where-Object { $realAfter -notcontains $_ } | ForEach-Object { "before: $_" })
-        if ($changes.Count -gt 0) {
-            $reportPath = if ($startFailure) { $startFailure } else { Join-Path $runFolder 'report.md' }
-            $text = if (Test-Path $reportPath) { [IO.File]::ReadAllText($reportPath) } else { "# RevitGeoSuite UI test run`n" }
-            $text = $text -replace '(?m)^\*\*PASS\*\*', '**FAIL**'
-            $text += "`n## REAL. The real floor plan folder is unchanged: **FAIL**`n`n- FAILED: $realStore differs from the record in real-folder-before.txt.`n" + (($changes | ForEach-Object { "  - ``$_``" }) -join "`n") + "`n"
-            [IO.File]::WriteAllText($reportPath, $text, [Text.UTF8Encoding]::new($false))
-            Write-Host "THE REAL FLOOR PLAN FOLDER CHANGED during the run ($($changes.Count) line(s)); see $reportPath."
-            $exitCode = 1
-        }
-        else { Write-Host "The real floor plan folder $realStore is unchanged ($($realAfter.Count) file(s))." }
-    }
-    else {
-        foreach ($file in @($exportSettings.Keys)) {
-            if ($null -eq $exportSettings[$file]) { Remove-Item $file -Force -ErrorAction SilentlyContinue }
-            else { [IO.File]::WriteAllBytes($file, $exportSettings[$file]) }
-        }
-        Write-Host "Put the export's remembered settings back as they were: $($exportSettings.Keys -join ', ')."
-    }
+    # On every way out, a refusal or error in the start block included: the real files go back.
+    # With -FloorPlanDataSandbox these are the sandbox's own copies. An error between Revit's start and the
+    # runner's try above would skip that close, so the test Revit is closed here too.
+    Stop-TestRevit
+    Restore-ExportSettings
 }
 
 exit $exitCode
