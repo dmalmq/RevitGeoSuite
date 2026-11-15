@@ -17,9 +17,12 @@ internal static class StairDrawingPieces
     private const double ElevationGridFeet = 0.01d;
 
     /// <summary>
-    /// <see cref="StairFloorSide.Lower"/> when the view is on the stair's base level,
-    /// <see cref="StairFloorSide.Upper"/> on its top level, and null on any other level, where the
-    /// export keeps drawing what the view shows.
+    /// <see cref="StairFloorSide.Lower"/> when the view is on the level the stair starts on,
+    /// <see cref="StairFloorSide.Upper"/> on the level it arrives at, and null on any other level,
+    /// where the export keeps drawing what the view shows. A stair starts on its base level, and
+    /// also on the level its base offset puts its bottom on; it arrives at its top level, and also
+    /// at the level its height puts its top on. So a stair hosted on a level without a plan, or
+    /// with no top level, still finds its floors.
     /// </summary>
     public static StairFloorSide? ResolveSide(Stairs stairs, ViewPlan? view, Func<XYZ, XYZ> toHost)
     {
@@ -30,19 +33,65 @@ internal static class StairDrawingPieces
         }
 
         double viewElevation = viewLevel.ProjectElevation;
-        if (TryGetHostLevelElevation(stairs, BuiltInParameter.STAIRS_BASE_LEVEL_PARAM, toHost, out double baseElevation) &&
-            Math.Abs(baseElevation - viewElevation) <= LevelToleranceFeet)
+        bool baseLevelFound = TryGetHostLevelElevation(stairs, BuiltInParameter.STAIRS_BASE_LEVEL_PARAM, toHost, out double baseLevelElevation);
+        if (baseLevelFound && IsOnLevel(baseLevelElevation, viewElevation))
         {
             return StairFloorSide.Lower;
         }
 
-        if (TryGetHostLevelElevation(stairs, BuiltInParameter.STAIRS_TOP_LEVEL_PARAM, toHost, out double topElevation) &&
-            Math.Abs(topElevation - viewElevation) <= LevelToleranceFeet)
+        if (TryGetHostLevelElevation(stairs, BuiltInParameter.STAIRS_TOP_LEVEL_PARAM, toHost, out double topLevelElevation) &&
+            IsOnLevel(topLevelElevation, viewElevation))
         {
             return StairFloorSide.Upper;
         }
 
-        return null;
+        if (!baseLevelFound)
+        {
+            return null;
+        }
+
+        double bottom = baseLevelElevation + (stairs.get_Parameter(BuiltInParameter.STAIRS_BASE_OFFSET)?.AsDouble() ?? 0d);
+        if (IsOnLevel(bottom, viewElevation))
+        {
+            return StairFloorSide.Lower;
+        }
+
+        double height = stairs.Height;
+        return height > LevelToleranceFeet && IsOnLevel(bottom + height, viewElevation)
+            ? StairFloorSide.Upper
+            : null;
+    }
+
+    /// <summary>
+    /// A run on its own, for the runs of a stair that <see cref="TryRead"/> cannot read as one
+    /// walking path, so their step lines still follow the rule's grid.
+    /// </summary>
+    public static bool TryReadRun(StairsRun run, Func<XYZ, Point2D> project, out StairPathPiece piece)
+    {
+        piece = null!;
+        Polygon2D? footprint = TryFootprint(() => run.GetFootprintBoundary(), project);
+        if (footprint == null)
+        {
+            return false;
+        }
+
+        List<Point2D> path;
+        try
+        {
+            path = ProjectLoop(run.GetStairsPath(), project);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        if (path.Count < 2)
+        {
+            return false;
+        }
+
+        piece = new StairPathPiece(StairPieceKind.Run, path, footprint, run.UniqueId);
+        return true;
     }
 
     /// <summary>The stair's runs and landings from bottom to top, projected to export coordinates.</summary>
@@ -220,6 +269,11 @@ internal static class StairDrawingPieces
         }
 
         return points;
+    }
+
+    private static bool IsOnLevel(double elevation, double levelElevation)
+    {
+        return Math.Abs(elevation - levelElevation) <= LevelToleranceFeet;
     }
 
     private static bool TryGetHostLevelElevation(

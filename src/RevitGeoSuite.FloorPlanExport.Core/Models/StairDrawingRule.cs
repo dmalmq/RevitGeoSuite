@@ -148,29 +148,21 @@ public sealed class StairDrawingRule
     public IReadOnlyList<double> GetStepStations(StairFloorSide side, StairDrawingSettings settings)
     {
         StairDrawingSettings effective = (settings ?? StairDrawingSettings.Default).GetEffective();
-        double spacing = effective.StepSpacingMeters;
         double from = side == StairFloorSide.Lower ? 0d : MiddleMeters + effective.LineGapBeforeMiddleMeters;
         double to = side == StairFloorSide.Lower
             ? MiddleMeters - effective.LineGapBeforeMiddleMeters
-            : TotalLengthMeters - (spacing * 0.5d);
-        to = Math.Min(to, TotalLengthMeters - (spacing * 0.5d));
+            : TotalLengthMeters;
+        return GridStations(from, to, effective.StepSpacingMeters);
+    }
 
-        List<double> stations = new();
-        for (int k = 1; ; k++)
-        {
-            double station = k * spacing;
-            if (station > to + 1e-9d)
-            {
-                break;
-            }
-
-            if (station >= from - 1e-9d && TryFindRun(station, out _))
-            {
-                stations.Add(station);
-            }
-        }
-
-        return stations;
+    /// <summary>
+    /// Every station of the grid from the bottom end to the top end, with no gap at the middle.
+    /// For a view the rule does not split by floor: it shows what the view shows, on the grid.
+    /// </summary>
+    public IReadOnlyList<double> GetAllStepStations(StairDrawingSettings settings)
+    {
+        StairDrawingSettings effective = (settings ?? StairDrawingSettings.Default).GetEffective();
+        return GridStations(0d, TotalLengthMeters, effective.StepSpacingMeters);
     }
 
     /// <summary>The floor's polygons: every piece cut to the floor's range, then joined.</summary>
@@ -199,8 +191,44 @@ public sealed class StairDrawingRule
     /// <summary>The floor's step lines, each across its run from wall to wall.</summary>
     public IReadOnlyList<StairStepLine> BuildStepLines(StairFloorSide side, StairDrawingSettings settings)
     {
+        return BuildStepLinesAt(GetStepStations(side, settings));
+    }
+
+    /// <summary>The step lines at <see cref="GetAllStepStations"/>, each across its run from wall to wall.</summary>
+    public IReadOnlyList<StairStepLine> BuildAllStepLines(StairDrawingSettings settings)
+    {
+        return BuildStepLinesAt(GetAllStepStations(settings));
+    }
+
+    /// <summary>
+    /// The grid starts one spacing above the bottom end and stops half a spacing short of the top
+    /// end. Stations on a landing or on a run's end are left out.
+    /// </summary>
+    private List<double> GridStations(double from, double to, double spacing)
+    {
+        to = Math.Min(to, TotalLengthMeters - (spacing * 0.5d));
+        List<double> stations = new();
+        for (int k = 1; ; k++)
+        {
+            double station = k * spacing;
+            if (station > to + 1e-9d)
+            {
+                break;
+            }
+
+            if (station >= from - 1e-9d && TryFindRun(station, out _))
+            {
+                stations.Add(station);
+            }
+        }
+
+        return stations;
+    }
+
+    private List<StairStepLine> BuildStepLinesAt(IReadOnlyList<double> stations)
+    {
         List<StairStepLine> lines = new();
-        foreach (double station in GetStepStations(side, settings))
+        foreach (double station in stations)
         {
             if (!TryFindRun(station, out (StairPathPiece Piece, double Start, double End) run))
             {

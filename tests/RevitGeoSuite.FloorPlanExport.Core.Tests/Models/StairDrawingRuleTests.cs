@@ -135,6 +135,35 @@ public sealed class StairDrawingRuleTests
     }
 
     [Fact]
+    public void AllStepLines_KeepTheGridThroughTheMiddleAndSkipTheLanding()
+    {
+        StairPathPiece first = new(StairPieceKind.Run, new[] { new Point2D(0, 0), new Point2D(3, 0) }, Rect(0, -1, 3, 1));
+        StairPathPiece landing = new(StairPieceKind.Landing, new[] { new Point2D(3, 0), new Point2D(5, 0) }, Rect(3, -1, 5, 1));
+        StairPathPiece second = new(StairPieceKind.Run, new[] { new Point2D(5, 0), new Point2D(8, 0) }, Rect(5, -1, 8, 1));
+        StairDrawingRule rule = new(new[] { first, landing, second });
+
+        IReadOnlyList<StairStepLine> lines = rule.BuildAllStepLines(StairDrawingSettings.Default);
+
+        Assert.Equal(
+            new[] { 0.6, 1.2, 1.8, 2.4, 5.4, 6.0, 6.6, 7.2 },
+            lines.Select(line => Math.Round(line.StationMeters, 6)));
+        Assert.All(lines, line => Assert.Equal(line.StationMeters, line.Line.Points[0].X, 6));
+        Assert.All(lines, line => Assert.Equal(2d, Math.Abs(line.Line.Points[1].Y - line.Line.Points[0].Y), 6));
+    }
+
+    [Fact]
+    public void AllStepLines_FollowTheModelsSpacingNotTheTreads()
+    {
+        // A 4.2 m run Revit would draw with 14 treads of 0.30 m.
+        StairDrawingRule rule = new(new[] { StraightRun(length: 4.2d) });
+
+        Assert.Equal(
+            new[] { 0.6, 1.2, 1.8, 2.4, 3.0, 3.6 },
+            rule.GetAllStepStations(StairDrawingSettings.Default).Select(value => Math.Round(value, 6)));
+        Assert.Equal(13, rule.GetAllStepStations(new StairDrawingSettings { StepSpacingMeters = 0.30d }).Count);
+    }
+
+    [Fact]
     public void CanCutAcross_AllowsQuarterTurnsButNotSpirals()
     {
         Assert.True(StairDrawingRule.CanCutAcross(new[] { new Point2D(0, 0), new Point2D(5, 0) }));
