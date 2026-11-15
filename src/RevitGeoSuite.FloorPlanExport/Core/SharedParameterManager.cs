@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.Core;
@@ -108,22 +109,30 @@ public sealed class SharedParameterManager
     /// </summary>
     private void AllowVaryBetweenGroups(IEnumerable<GisParameterDefinition> definitions, ICollection<string> warnings)
     {
-        Dictionary<string, BoundParameter> bound = ReadBoundParameters();
-        foreach (string name in GisSharedParameters.VaryByGroupInstance(definitions))
+        // Every bound definition of each name: a model can bind two definitions named id (an old
+        // project parameter beside a shared one), and an element may carry either.
+        HashSet<string> names = new(GisSharedParameters.VaryByGroupInstance(definitions), StringComparer.Ordinal);
+        DefinitionBindingMapIterator iterator = _document.ParameterBindings.ForwardIterator();
+        List<InternalDefinition> aligned = new();
+        while (iterator.MoveNext())
         {
-            if (!bound.TryGetValue(name, out BoundParameter existing) ||
-                existing.Binding is not InstanceBinding ||
-                existing.Definition.VariesAcrossGroups)
+            if (iterator.Key is InternalDefinition definition &&
+                iterator.Current is InstanceBinding &&
+                names.Contains(definition.Name) &&
+                !definition.VariesAcrossGroups)
             {
-                continue;
+                aligned.Add(definition);
             }
+        }
 
-            string? refused = OwnedElsewhere(existing.Definition.Id);
+        foreach (InternalDefinition definition in aligned)
+        {
+            string? refused = OwnedElsewhere(definition.Id);
             if (refused == null)
             {
                 try
                 {
-                    existing.Definition.SetAllowVaryBetweenGroups(_document, true);
+                    definition.SetAllowVaryBetweenGroups(_document, true);
                     continue;
                 }
                 catch (Autodesk.Revit.Exceptions.ApplicationException ex)
@@ -132,7 +141,7 @@ public sealed class SharedParameterManager
                 }
             }
 
-            string line = GisSharedParameters.AlignedPerGroupLine(name, refused);
+            string line = GisSharedParameters.AlignedPerGroupLine(definition.Name, refused);
             _alignedPerGroup.Add(line);
             warnings.Add(line);
         }
@@ -186,6 +195,26 @@ public sealed class SharedParameterManager
         foreach (Element element in elements)
         {
             _ = GetOrCreateStringParameter(element, ImdfIdParameterName, warnings);
+        }
+    }
+
+    /// <summary>
+    /// Gives each copy that kept its original's id a new one. Revit numbers elements in the order it
+    /// makes them, so the lowest element id among those sharing an id is the original: it keeps the
+    /// id Kanizu knows, and every later copy, such as a placed group's member, gets its own.
+    /// </summary>
+    public void ReissueCopiedIds(IReadOnlyCollection<Element> elements, ICollection<string> warnings)
+    {
+        Dictionary<long, Element> byId = elements.ToDictionary(element => element.Id.Value);
+        IEnumerable<AuditIdValue> values = elements.Select(element => new AuditIdValue(element.Id.Value, GetOptionalStringParameter(element, ImdfIdParameterName) ?? string.Empty));
+        foreach (CopiedId copied in CopiedIds.Find(values))
+        {
+            foreach (long copy in copied.Copies)
+            {
+                RegenerateElementId(byId[copy], warnings);
+            }
+
+            warnings.Add(CopiedIds.ReissuedLine(copied));
         }
     }
 

@@ -1010,6 +1010,7 @@ public sealed class FloorGeoPackageExporter
         }
 
         manager.EnsureElementIds(uniqueElements.Values.ToList(), warnings);
+        manager.ReissueCopiedIds(uniqueElements.Values, warnings);
         failures.Commit(transaction, manager.AlignedPerGroup);
         AddWarnings(warnings, failures);
     }
