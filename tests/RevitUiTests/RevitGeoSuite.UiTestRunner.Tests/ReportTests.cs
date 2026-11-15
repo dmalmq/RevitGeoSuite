@@ -51,3 +51,51 @@ public class ReportTests
         Assert.Contains("2 scenario(s) in one Revit, 3.5 min in all.", text);
     }
 }
+
+public class ExportStoreTests
+{
+    [Fact]
+    public void Refuses_a_settings_file_that_Run_UiTests_did_not_back_up()
+    {
+        string settings = Path.Combine(Directory.CreateTempSubdirectory().FullName, "settings.json");
+        File.WriteAllText(settings, "{\"outputDirectory\":\"D:\\\\work\"}");
+
+        Assert.Throws<ArgumentException>(() => new ExportStore(settings));
+        Assert.Equal("{\"outputDirectory\":\"D:\\\\work\"}", File.ReadAllText(settings));
+    }
+
+    [Fact]
+    public void Reset_empties_settings_and_puts_profiles_back_as_the_run_found_them()
+    {
+        string folder = Directory.CreateTempSubdirectory().FullName;
+        string settings = Path.Combine(folder, "settings.json");
+        string profiles = Path.Combine(folder, "profiles.json");
+        File.WriteAllText(settings + ".uitest-backup", "{\"real\":1}");
+        File.WriteAllText(settings, "{}");
+        File.WriteAllText(profiles, "{\"pc\":[]}");
+        var store = new ExportStore(settings);
+
+        File.WriteAllText(settings, "{\"outputDirectory\":\"C:\\\\dev\\\\revit-test\\\\auto\\\\1\\\\b1\"}");
+        File.WriteAllText(profiles, "{\"project\":[\"UI test\"]}");
+        store.Reset();
+
+        Assert.Equal("{}", File.ReadAllText(settings));
+        Assert.Equal("{\"pc\":[]}", File.ReadAllText(profiles));
+        Assert.Equal("{\"real\":1}", File.ReadAllText(settings + ".uitest-backup"));
+    }
+
+    [Fact]
+    public void Reset_removes_a_profiles_file_an_earlier_scenario_made()
+    {
+        string folder = Directory.CreateTempSubdirectory().FullName;
+        string settings = Path.Combine(folder, "settings.json");
+        File.WriteAllText(settings + ".uitest-absent", string.Empty);
+        File.WriteAllText(settings, "{}");
+        var store = new ExportStore(settings);
+
+        File.WriteAllText(Path.Combine(folder, "profiles.json"), "{}");
+        store.Reset();
+
+        Assert.False(File.Exists(Path.Combine(folder, "profiles.json")));
+    }
+}

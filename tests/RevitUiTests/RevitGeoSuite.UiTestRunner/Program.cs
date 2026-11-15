@@ -3,9 +3,12 @@ using System.Text.Json.Nodes;
 using RevitGeoSuite.UiTestRunner;
 
 RunOptions options;
+ExportStore? exportStore;
 try
 {
     options = RunOptions.Parse(args);
+    // Taken before any scenario runs: the files as Run-UiTests.ps1 left them for the run.
+    exportStore = options.ExportSettings.Length > 0 ? new ExportStore(options.ExportSettings) : null;
 }
 catch (ArgumentException ex)
 {
@@ -43,6 +46,9 @@ foreach (string name in options.ScenarioNames)
     Directory.CreateDirectory(scenario.OutputFolder);
     var report = new Report(scenario.OutputFolder);
     DateTime startedUtc = DateTime.UtcNow;
+    // The first scenario also answers for Revit's start-up, so it reads the whole journal; each later one only its own lines.
+    string journals = JournalScan.DefaultFolder(options.RevitYear);
+    JournalMark journal = reports.Count == 0 ? new JournalMark(journals, startedUtc, new Dictionary<string, int>()) : JournalScan.Mark(journals);
     report.Header.Add($"Scenario {name}. Started {startedUtc:yyyy-MM-dd HH:mm:ss} UTC on {Environment.MachineName}.");
     report.Header.AddRange(ping);
     GisStandardRun? run = null;
@@ -58,10 +64,9 @@ foreach (string name in options.ScenarioNames)
     {
         try
         {
-            if (reports.Count > 0 && options.ExportSettings.Length > 0)
+            if (reports.Count > 0 && exportStore != null)
             {
-                File.WriteAllText(options.ExportSettings, "{}");
-                report.Header.Add($"Emptied {options.ExportSettings} again, so this scenario starts from the export page's defaults.");
+                report.Header.Add(exportStore.Reset());
             }
 
             host!.Call("arm", new { on = true });
@@ -85,7 +90,7 @@ foreach (string name in options.ScenarioNames)
             Console.Error.WriteLine($"Run stopped: {ex.Message}");
         }
 
-        CheckJournals(scenario, report, startedUtc, run?.TransactionsSeen ?? Array.Empty<string>());
+        CheckJournals(report, journal, run?.TransactionsSeen ?? Array.Empty<string>());
     }
 
     TimeSpan took = DateTime.UtcNow - startedUtc;
@@ -102,27 +107,19 @@ if (options.ScenarioNames.Count > 1)
 
 return reports.Any(item => item.Report.Steps.Any(step => step.Outcome == Outcome.Fail)) || connect.Outcome == Outcome.Fail ? 1 : 0;
 
-static void CheckJournals(RunOptions options, Report report, DateTime sinceUtc, IReadOnlyList<string> transactions)
+static void CheckJournals(Report report, JournalMark mark, IReadOnlyList<string> transactions)
 {
     var step = new StepResult("J", "Revit journal: the transactions are there, with no handler errors");
     report.Steps.Add(step);
-    string folder = JournalScan.DefaultFolder(options.RevitYear);
-    IReadOnlyList<string> journals = JournalScan.JournalsSince(folder, sinceUtc.AddMinutes(-1));
+    (IReadOnlyList<string> journals, List<string> lines) = mark.LinesAfter();
     if (journals.Count == 0)
     {
-        step.Check(false, $"No journal written since the run started in {folder}.");
+        step.Check(false, $"No journal written since the scenario started in {mark.Folder}.");
         return;
     }
 
-    // Revit keeps the journal open; read it shared.
-    IEnumerable<string> lines = journals.SelectMany(file =>
-    {
-        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd().Split('\n');
-    }).ToList();
     JournalResult result = JournalScan.Scan(lines, transactions.Distinct());
-    step.Note($"Journals: {string.Join(", ", journals.Select(Path.GetFileName))}.");
+    step.Note($"Journals: {string.Join(", ", journals.Select(Path.GetFileName))}; {lines.Count} line(s) written during this scenario.");
     step.Check(result.MissingNames.Count == 0, $"Every transaction name is in the journal (missing: {string.Join(", ", result.MissingNames)}).");
     step.Check(result.BadLines.Count == 0, $"No handler error, unhandled exception or failed commit (found: {string.Join(" / ", result.BadLines.Take(5))}).");
     foreach (string line in result.KanizuLines.Take(20))

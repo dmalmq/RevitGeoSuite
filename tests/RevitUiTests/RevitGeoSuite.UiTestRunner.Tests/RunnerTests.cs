@@ -59,6 +59,25 @@ public class JournalScanTests
     }
 }
 
+public class JournalMarkTests
+{
+    [Fact]
+    public void A_scenario_reads_only_the_journal_lines_written_after_its_mark()
+    {
+        string folder = Directory.CreateTempSubdirectory().FullName;
+        string journal = Path.Combine(folder, "journal.0042.txt");
+        File.WriteAllText(journal, "'C earlier scenario\r\nHANDLER_ERROR from the earlier scenario\r\n'C half a li");
+
+        JournalMark mark = JournalScan.Mark(folder);
+        File.AppendAllText(journal, "ne\r\n'C Kanizu GIS: Set up model\r\n");
+        (IReadOnlyList<string> journals, List<string> lines) = mark.LinesAfter();
+
+        Assert.Equal(new[] { journal }, journals);
+        Assert.Equal(new[] { "'C half a line", "'C Kanizu GIS: Set up model", "" }, lines);
+        Assert.True(JournalScan.Scan(lines, new[] { "Kanizu GIS: Set up model" }).Passed);
+    }
+}
+
 public class RunOptionsTests
 {
     [Fact]
