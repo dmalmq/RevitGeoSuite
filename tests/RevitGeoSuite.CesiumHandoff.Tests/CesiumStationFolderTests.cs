@@ -142,8 +142,37 @@ public sealed class CesiumStationFolderTests : IDisposable
         string stray = Path.Combine(Path.GetDirectoryName(first.RootDirectory)!, "20990101T000000Z-copy");
         Directory.CreateDirectory(Path.Combine(stray, "gis"));
         File.WriteAllText(Path.Combine(stray, "cesium-package.json"), "not json");
+        string empty = Path.Combine(Path.GetDirectoryName(first.RootDirectory)!, "20990101T000000Z-null");
+        Directory.CreateDirectory(Path.Combine(empty, "gis"));
+        File.WriteAllText(Path.Combine(empty, "cesium-package.json"), "null");
 
         Assert.Equal(first.RootDirectory, CesiumStationFolder.PreviousVersion(second.RootDirectory));
+    }
+
+    [Fact]
+    public void A_folder_is_missing_new_or_a_station_folder()
+    {
+        Assert.Equal(CesiumStationFolder.FolderKind.Missing, CesiumStationFolder.Classify(Path.Combine(_station, "nowhere")));
+        Assert.Equal(CesiumStationFolder.FolderKind.Missing, CesiumStationFolder.Classify(" "));
+        Directory.CreateDirectory(_station);
+        Assert.Equal(CesiumStationFolder.FolderKind.New, CesiumStationFolder.Classify(_station));
+        PublishGis("model-a", new DateTime(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc));
+        Assert.Equal(CesiumStationFolder.FolderKind.Station, CesiumStationFolder.Classify(_station));
+    }
+
+    [Fact]
+    public void Latest_source_is_the_newest_version_of_that_model()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        Assert.Null(CesiumStationFolder.LatestSource(_station, "model-a"));
+        PublishGis("model-a", start);
+        PublishGis("model-a", start.AddHours(2));
+        PublishGis("model-b", start.AddHours(3));
+
+        CesiumPackageSource? latest = CesiumStationFolder.LatestSource(_station, "model-a");
+        Assert.NotNull(latest);
+        Assert.Equal("model-a", latest!.ModelId);
+        Assert.Null(CesiumStationFolder.LatestSource(_station, "model-c"));
     }
 
     [Fact]

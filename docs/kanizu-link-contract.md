@@ -56,7 +56,7 @@ Send to Kanizu writes the GIS package without 3D Tiles, so a model's weekly send
 
 - `levels.json` lists the host model's levels that carry a GIS `level_id`, under `linkLevels[""]` and `levels`. `elementCount` is the number of GIS features on the level, and `minZMeters` and `maxZMeters` equal `levelElevationMeters`.
 - `anchor` is the georeference origin, not moved to the building's centroid as a precise-CRS tiles export moves it. A level's height above the anchor's orthometric height is therefore a different number from a Cesium export's, but the sum is the same height.
-- A reader orders a send among the model's versions like any other and pairs and compares its levels and GIS as usual. It takes the 3D tiles and the element change list from the newest version that has them.
+- A reader orders a send among the model's versions like any other and pairs and compares its levels and GIS as usual. Kanizu's Revit element change list compares `elements.json` files, so when either version is a send it says there is nothing to list and the GIS compares as usual. Kanizu has no 3D view of Revit tiles today, so nothing else reads `tileset.json`.
 
 ### `export`
 

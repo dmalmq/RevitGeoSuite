@@ -1151,26 +1151,33 @@ export interface StationSendLayerChange {
 }
 
 export interface StationSendRunRequest {
+  confirmNewFolder: boolean
+  documentKey: string
   stationFolder: string
 }
 
 export interface StationSendRunResponse {
+  changesCounted: boolean
   elementsAdded: number
   elementsChanged: number
   elementsEdited: number
   elementsRemoved: number
   hasPrevious: boolean
   layers: StationSendLayerChange[]
+  rulesDiffer: boolean
   seconds: number
   versionFolder: string
   warnings: string[]
 }
 
 export interface StationSendStateRequest {
+  stationFolder?: string
 }
 
 export interface StationSendStateResponse {
-  modelName: string
+  documentKey: string
+  folderKind: string
+  lastSentFromAnotherFile: boolean
   profileName: string
   stationFolder: string
 }

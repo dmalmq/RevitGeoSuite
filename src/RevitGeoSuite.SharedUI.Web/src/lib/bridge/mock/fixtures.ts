@@ -588,7 +588,7 @@ export function responses(scenario: MockScenario): Record<string, unknown | ((pa
     'tiles3d.exportOptions': tiles3dOptions,
     'gis.exportOptions': gisOptions,
     'cesium.export.getState': cesiumState,
-    'station.send.getState': { stationFolder: '\\\\share\\JRTokyoSta', profileName: 'station', modelName: 'Tokyo_Station.rvt' },
+    'station.send.getState': { stationFolder: '\\\\share\\JRTokyoSta', profileName: 'station', documentKey: 'tokyo-station-1a2b3c4d', folderKind: 'station', lastSentFromAnotherFile: false },
     'cesium.settings.save': (payload: any) => ({ hasToken: false, viewerUrl: payload?.viewerUrl ?? '' }),
     'tiles3d.export.prepare': { crs: 'JGD2011 / Japan Plane Rectangular CS IX (EPSG:6677)', elementCount: 4_812, triangleCount: 1_284_330, geoidOffsetMeters: 36.71, warnings: ['3 elements have no geometry in the 3D view and are skipped.'] },
     'citygml.export.prepare': { crs: 'JGD2011 / Japan Plane Rectangular CS IX (EPSG:6677)', featureCount: 1_206, warnings: [] },
@@ -643,6 +643,8 @@ export const jobResults: Record<string, unknown> = {
   'station.send.run': {
     versionFolder: '\\\\share\\JRTokyoSta\\revit\\tokyo-station-8d7f3c1e\\20261116T013000Z-0dd17673',
     hasPrevious: true,
+    changesCounted: true,
+    rulesDiffer: false,
     elementsAdded: 3,
     elementsRemoved: 1,
     elementsEdited: 8,

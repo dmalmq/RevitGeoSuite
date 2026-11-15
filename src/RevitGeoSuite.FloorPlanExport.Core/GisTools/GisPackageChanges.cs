@@ -79,7 +79,8 @@ public sealed class GisPackageChanges
 
     /// <summary>
     /// Compares the GeoPackages of two <c>gis/</c> folders. <paramref name="previousGisFolder"/> is
-    /// null or missing on a first send. Files are paired by name and layers by table name.
+    /// null or missing on a first send. Every GeoPackage in a folder is read, and layers are paired by
+    /// table name across the files.
     /// </summary>
     public static GisPackageChanges Compare(string? previousGisFolder, string currentGisFolder)
     {
@@ -138,7 +139,7 @@ public sealed class GisPackageChanges
     public static IReadOnlyDictionary<string, int> FeaturesPerLevel(string gisFolder)
     {
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (Dictionary<string, Row> layer in ReadFolder(gisFolder).Values)
+        foreach (Dictionary<string, Row> layer in ReadFolder(gisFolder, hash: false).Values)
         {
             foreach (Row row in layer.Values.Where(row => row.LevelId.Length > 0))
             {
@@ -161,7 +162,7 @@ public sealed class GisPackageChanges
     }
 
     /// <summary>Every feature of every GeoPackage in the folder, by layer and then by match key.</summary>
-    private static Dictionary<string, Dictionary<string, Row>> ReadFolder(string gisFolder)
+    private static Dictionary<string, Dictionary<string, Row>> ReadFolder(string gisFolder, bool hash = true)
     {
         var layers = new Dictionary<string, Dictionary<string, Row>>(StringComparer.Ordinal);
         if (!Directory.Exists(gisFolder))
@@ -171,7 +172,6 @@ public sealed class GisPackageChanges
 
         foreach (string path in Directory.GetFiles(gisFolder, "*.gpkg").OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
         {
-            string file = Path.GetFileName(path);
             using SqliteConnection connection = Open(path);
             foreach ((string table, string geometryColumn, _) in GeoPackageGeometryReader.ReadFeatureTables(connection).ToList())
             {
@@ -181,10 +181,14 @@ public sealed class GisPackageChanges
                     layers[table] = rows;
                 }
 
-                foreach (Row row in ReadRows(connection, file, table, geometryColumn))
+                // Rows sorted by key and then content, so repeated keys get the same suffixes whatever
+                // order SQLite returns them in.
+                foreach (Row row in ReadRows(connection, table, geometryColumn, hash)
+                    .OrderBy(row => row.Key, StringComparer.Ordinal)
+                    .ThenBy(row => row.Hash, StringComparer.Ordinal))
                 {
                     // Keys are unique within a layer of one floor; a repeat would be an export bug, and
-                    // the later row is then compared as its own feature rather than lost.
+                    // each repeat is then compared as its own feature rather than lost.
                     string key = row.Key;
                     for (int repeat = 2; rows.ContainsKey(key); repeat++)
                     {
@@ -199,7 +203,7 @@ public sealed class GisPackageChanges
         return layers;
     }
 
-    private static IEnumerable<Row> ReadRows(SqliteConnection connection, string file, string table, string geometryColumn)
+    private static IEnumerable<Row> ReadRows(SqliteConnection connection, string table, string geometryColumn, bool hash)
     {
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = $"SELECT * FROM {GeoPackageGeometryReader.QuoteIdentifier(table)};";
@@ -231,7 +235,7 @@ public sealed class GisPackageChanges
         compared.Sort((a, b) => string.CompareOrdinal(reader.GetName(a), reader.GetName(b)));
         while (reader.Read())
         {
-            string hash = Hash(reader, compared);
+            string content = hash ? Hash(reader, compared) : string.Empty;
             string revitKey = Text(reader, keyColumn);
             string levelId = Text(reader, levelColumn);
             string id = Text(reader, idColumn);
@@ -250,15 +254,15 @@ public sealed class GisPackageChanges
             }
             else
             {
-                key = "h|" + file + "|" + hash;
+                key = "h|" + content;
                 element = table + "|" + key;
             }
 
-            yield return new Row(key, element, levelId, hash);
+            yield return new Row(key, element, levelId, content);
         }
     }
 
-    /// <summary>The integer primary key, which SQLite numbers per file and so says nothing about the feature.</summary>
+    /// <summary>The row number column (<c>fid</c> or <c>ogc_fid</c>), which the writer numbers per file and so says nothing about the feature.</summary>
     private static bool IsRowNumber(SqliteDataReader reader, int ordinal, string geometryColumn)
     {
         string name = reader.GetName(ordinal);

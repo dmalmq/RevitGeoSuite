@@ -2,6 +2,7 @@ using System;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using RevitGeoSuite.SharedUI.Localization;
 using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Shell.Handlers;
 
@@ -24,18 +25,21 @@ public sealed class SendToKanizuCommand : IExternalCommand
             Document? document = commandData.Application.ActiveUIDocument?.Document;
             if (document == null || document.IsFamilyDocument)
             {
-                TaskDialog.Show("Send to Kanizu", "Open a project model to send it to Kanizu.");
+                TaskDialog.Show(UiLocalizer.Instance.Get("Nav.Send"), UiLocalizer.Instance.Get("Send.Error.NoProject"));
                 return Result.Cancelled;
             }
 
             var window = WebShellWindowManager.Instance.GetOrCreateWindow(new WebShellOptions
             {
                 InitialRoute = Route,
-                TitleKey = "Send",
+                TitleKey = "Nav.Send",
                 OwnerHandle = commandData.Application.MainWindowHandle,
                 Handlers = Array.Empty<IRpcHandler>(),
                 RegisterHandlers = WebShellHandlerRegistry.RegisterAll,
             });
+            // A new window opens on InitialRoute and ignores NavigateTo until it has loaded; an open
+            // window reloads on the route. Either way the page starts one send, and the run handler
+            // refuses a second while one is running.
             window.NavigateTo(Route);
             window.Show();
             window.Activate();

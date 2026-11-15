@@ -86,19 +86,24 @@ public sealed class Tiles3DGeometryExtractor
 
         var wanted = new HashSet<string>(levelUniqueIds ?? Array.Empty<string>(), StringComparer.Ordinal);
         GeometryExtractionFrame frame = GeometryExtractionFrame.Create(document.ActiveProjectLocation, referenceContext);
+        // Two levels whose names make one key share a group, as Tiles3DLevelGrouper groups meshes:
+        // levels.json then has one entry per key, carrying both UniqueIds, at the lower elevation.
         return new FilteredElementCollector(document)
             .OfClass(typeof(Level))
             .Cast<Level>()
             .Where(level => wanted.Contains(level.UniqueId ?? string.Empty))
-            .Select(level =>
+            .Select(level => (Level: level, Key: Tiles3DLevelMetadata.BuildLevelKey(level.Name), Elevation: frame.ToLocalMeters(new XYZ(0, 0, level.ProjectElevation)).Z))
+            .GroupBy(level => level.Key, StringComparer.Ordinal)
+            .Select(group =>
             {
-                double elevation = frame.ToLocalMeters(new XYZ(0, 0, level.ProjectElevation)).Z;
+                var ordered = group.OrderBy(level => level.Elevation).ThenBy(level => level.Level.UniqueId, StringComparer.Ordinal).ToList();
+                double elevation = ordered[0].Elevation;
                 return new Tiles3DLevelGroup
                 {
-                    LevelKey = Tiles3DLevelMetadata.BuildLevelKey(level.Name),
-                    LevelName = level.Name ?? string.Empty,
+                    LevelKey = group.Key,
+                    LevelName = ordered[0].Level.Name ?? string.Empty,
                     LevelElevationMeters = elevation,
-                    LevelUniqueIds = new List<string> { level.UniqueId ?? string.Empty },
+                    LevelUniqueIds = ordered.Select(level => level.Level.UniqueId ?? string.Empty).ToList(),
                     MinZMeters = elevation,
                     MaxZMeters = elevation,
                 };
