@@ -84,7 +84,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `georef-read`, `h4-shared-rules` or `undo-probe`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `georef-read`, `h4-shared-rules`, `model-facts` or `undo-probe`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -323,6 +323,15 @@ The station folder is `<run>\h4-station`, so every file stays under the run fold
 | H4.9 | The real folder has the same files and hashes as before. The report's footer lists the three `gis.rules` blocks. |
 
 What a person still does: the screenshots of the warning (H4.3) and the message (H4.8) do not exist, because the runner starts the Cesium export through the bridge and no page shows the text. The report carries the text. The Japanese wording of H4.4's "Saved for station h4-station" line is in the step's notes, for a person to read.
+
+## The model-facts scenario
+
+`--scenario model-facts --model <file>` opens a detached copy of the model in the run folder and reads, without changing anything:
+
+- every level: name, `level_id`, `Level.ProjectElevation` and `Level.Elevation` in metres, and whether it hosts floors;
+- every group type: model or detail, instance count, and the floors, rooms, doors and other elements one instance holds (nested groups counted in). The step names the types with two or more instances that hold floors, rooms or doors, where an edit can raise "A group has been changed outside group edit mode".
+
+It writes `model-facts.md` and `model-facts.json` into the run folder as well as the report. It needs `Install-TestHost.ps1` for the test host's `groups` command and the new level field.
 
 ## The georef-read scenario
 

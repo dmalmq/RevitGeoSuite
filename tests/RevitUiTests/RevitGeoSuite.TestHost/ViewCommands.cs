@@ -76,6 +76,7 @@ internal static class ViewCommands
                     ["levelId"] = level.LookupParameter("level_id")?.AsString(),
                     ["hasFloors"] = floorLevels.Contains(level.Id.Value),
                     ["elevationFt"] = level.ProjectElevation,
+                    ["levelElevationFt"] = level.Elevation,
                 })
                 .ToList(),
         };

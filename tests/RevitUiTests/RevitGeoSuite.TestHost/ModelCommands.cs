@@ -135,5 +135,70 @@ internal static class ModelCommands
     private static bool IsElevator(Element type, string parameter) =>
         string.Equals(type.LookupParameter(parameter)?.AsString()?.Trim(), "elevator", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Every group type: model or detail, how many instances, and the floors, rooms and doors one instance
+    /// holds (nested groups counted in). Reads only. A type with two or more instances that holds any of
+    /// these is where an export edit can raise "A group has been changed outside group edit mode".
+    /// </summary>
+    public static Dictionary<string, object?> Groups(UIApplication app)
+    {
+        Document document = Active(app);
+        ILookup<long, Group> instances = new FilteredElementCollector(document).OfClass(typeof(Group)).Cast<Group>()
+            .ToLookup(group => group.GroupType.Id.Value);
+        return new Dictionary<string, object?>
+        {
+            ["groups"] = new FilteredElementCollector(document).OfClass(typeof(GroupType)).Cast<GroupType>()
+                .Select(type =>
+                {
+                    Group[] placed = instances[type.Id.Value].ToArray();
+                    var members = new Dictionary<string, int> { ["floors"] = 0, ["rooms"] = 0, ["doors"] = 0, ["other"] = 0 };
+                    if (placed.Length > 0)
+                    {
+                        CountMembers(document, placed[0], members);
+                    }
+
+                    return new Dictionary<string, object?>
+                    {
+                        ["id"] = type.Id.Value,
+                        ["name"] = type.Name,
+                        ["kind"] = type.Category is Category category ? BuiltInName(category) : null,
+                        ["instances"] = placed.Length,
+                        ["floors"] = members["floors"],
+                        ["rooms"] = members["rooms"],
+                        ["doors"] = members["doors"],
+                        ["other"] = members["other"],
+                    };
+                })
+                .OrderByDescending(row => (int)row["instances"]!)
+                .ToList(),
+        };
+    }
+
+    private static void CountMembers(Document document, Group group, Dictionary<string, int> members)
+    {
+        foreach (ElementId id in group.GetMemberIds())
+        {
+            Element? element = document.GetElement(id);
+            switch (element)
+            {
+                case Group nested:
+                    CountMembers(document, nested, members);
+                    break;
+                case Floor:
+                    members["floors"]++;
+                    break;
+                case not null when element.Category?.Id.Value == (long)BuiltInCategory.OST_Rooms:
+                    members["rooms"]++;
+                    break;
+                case not null when element.Category?.Id.Value == (long)BuiltInCategory.OST_Doors:
+                    members["doors"]++;
+                    break;
+                default:
+                    members["other"]++;
+                    break;
+            }
+        }
+    }
+
     private static Document Active(UIApplication app) => app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");
 }

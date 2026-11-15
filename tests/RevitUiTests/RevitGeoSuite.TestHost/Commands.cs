@@ -54,6 +54,7 @@ internal sealed class Commands
                 "bindings" => api.Run(app => ModelCommands.Bindings(app, Strings(request, "names")), Quick),
                 "elevators" => api.Run(app => ModelCommands.Elevators(app, Strings(request, "uniqueIds")), Quick),
                 "doors" => api.Run(ModelCommands.Doors, Quick),
+                "groups" => api.Run(ModelCommands.Groups, TimeSpan.FromMinutes(5)),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
                 "redo" => PostOrType("ID_EDIT_REDO", 'Y'),
                 "undoProbe" => UndoState(),
