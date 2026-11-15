@@ -74,6 +74,7 @@ internal sealed class Commands
                 "blockingDialogs" => Win32Dialogs.Blocking(),
                 "pressButton" => Win32Dialogs.Press(Text(request, "button"), Milliseconds(request)),
                 "screenshot" => Screenshot(Text(request, "path")),
+                "exportViewImage" => ExportViewImage(request),
                 _ => throw new ArgumentException($"Unknown command '{command}'."),
             };
 
@@ -606,6 +607,52 @@ internal sealed class Commands
         path = TestRoot.Require(root, path);
         Win32Dialogs.CaptureMainWindow(path);
         return new Dictionary<string, object?> { ["path"] = path };
+    }
+
+    // Revit renders the view to a PNG itself (Document.ExportImage), so it needs no desktop: a locked or
+    // minimised session still gets an image. {view} names the view (default: the active one); {path} is the
+    // PNG to write. Revit adds the view's name to the file name, so the reply names the file it wrote.
+    private Dictionary<string, object?> ExportViewImage(Dictionary<string, object?> request)
+    {
+        string path = TestRoot.Require(root, Text(request, "path"));
+        string viewName = request.TryGetValue("view", out object? name) ? Convert.ToString(name, CultureInfo.InvariantCulture) ?? string.Empty : string.Empty;
+        return api.Run(app =>
+        {
+            UIDocument ui = app.ActiveUIDocument ?? throw new InvalidOperationException("No active document.");
+            View view = viewName.Length == 0 ? ui.ActiveView : new FilteredElementCollector(ui.Document).OfClass(typeof(View)).Cast<View>()
+                .FirstOrDefault(candidate => !candidate.IsTemplate && candidate.Name == viewName) ?? throw new ArgumentException($"No view named '{viewName}'.");
+            if (ui.ActiveView.Id != view.Id)
+            {
+                ui.ActiveView = view;
+            }
+
+            string folder = Path.GetDirectoryName(path)!;
+            Directory.CreateDirectory(folder);
+            DateTime before = DateTime.UtcNow.AddSeconds(-1);
+            var options = new ImageExportOptions
+            {
+                ExportRange = ExportRange.SetOfViews,
+                FitDirection = FitDirectionType.Horizontal,
+                PixelSize = 2000,
+                HLRandWFViewsFileType = ImageFileType.PNG,
+                ShadowViewsFileType = ImageFileType.PNG,
+                ImageResolution = ImageResolution.DPI_150,
+                FilePath = Path.Combine(folder, Path.GetFileNameWithoutExtension(path)),
+            };
+            options.SetViewsAndSheets(new List<ElementId> { view.Id });
+            ui.Document.ExportImage(options);
+            string? written = Directory.GetFiles(folder, Path.GetFileNameWithoutExtension(path) + "*.png")
+                .Where(file => File.GetLastWriteTimeUtc(file) >= before)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault() ?? throw new InvalidOperationException($"Revit wrote no PNG for view '{view.Name}' in {folder}.");
+            if (!string.Equals(written, path, StringComparison.OrdinalIgnoreCase))
+            {
+                File.Copy(written, path, overwrite: true);
+                File.Delete(written);
+            }
+
+            return new Dictionary<string, object?> { ["path"] = path, ["view"] = view.Name };
+        }, TimeSpan.FromMinutes(2));
     }
 
     private bool IsUnderRoot(string path)

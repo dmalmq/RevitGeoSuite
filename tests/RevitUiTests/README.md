@@ -324,6 +324,10 @@ The station folder is `<run>\h4-station`, so every file stays under the run fold
 
 What a person still does: the screenshots of the warning (H4.3) and the message (H4.8) do not exist, because the runner starts the Cesium export through the bridge and no page shows the text. The report carries the text. The Japanese wording of H4.4's "Saved for station h4-station" line is in the step's notes, for a person to read.
 
+## Revit image export
+
+The test host command `exportViewImage {view?, path}` has Revit render a view to a 2000-pixel PNG with `Document.ExportImage`. It uses the active view when `view` is empty. Revit renders the image itself, so it works with the build PC session locked or minimised, when window screenshots fail with "handle is invalid". c8-network saves `<shot>-export.png` beside each Revit screenshot. It is not yet known whether the export includes overlays drawn with DirectContext3D: compare C8-2 (network shown) with C8-10 (hidden).
+
 ## The b9-groups scenario
 
 `--scenario b9-groups --model <file>` needs RevitGeoSuite B9. After Set up, the georeference and a station export, it picks a floor that is one unit and hosts nothing. A fixture groups that floor and places a second instance of the group type along the model X axis, at the first offset of 5, 10, 20, 40 or 80 m whose box clears the other floors on that level. Then it checks:

@@ -1063,7 +1063,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         step.Screenshots.Add(relative.Replace('\\', '/'));
     }
 
-    private void RevitShot(StepResult step, string name)
+    private void RevitShot(StepResult step, string name, bool exportView = false)
     {
         string relative = Path.Combine("screenshots", name + "-revit.png");
         try
@@ -1074,6 +1074,23 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         catch (TestHostException ex)
         {
             step.Note($"No Revit screenshot: {ex.Message}");
+        }
+
+        if (exportView)
+        {
+            // Revit's own image export of the active view needs no desktop, so it works with the session locked.
+            // It may leave out overlays drawn with DirectContext3D; compare with a view where nothing is shown.
+            string exported = Path.Combine("screenshots", name + "-export.png");
+            try
+            {
+                JsonObject reply = host.Call("exportViewImage", new { path = Path.Combine(options.OutputFolder, exported) });
+                step.Screenshots.Add(exported.Replace('\\', '/'));
+                step.Note($"Revit image export of '{reply["view"]}': {exported}.");
+            }
+            catch (TestHostException ex)
+            {
+                step.Note($"No Revit image export: {ex.Message}");
+            }
         }
     }
 
