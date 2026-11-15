@@ -181,10 +181,9 @@ if ($PyRevitExtension -and -not $StartRevit) { throw '-PyRevitExtension needs -S
 if ($RgsBuild -and -not $StartRevit) { throw '-RgsBuild needs -StartRevit: the build is handed to the Revit this script starts.' }
 
 # Everything that can refuse the run is checked before the export's remembered settings are touched.
-$revitRunning = [bool](Get-Process -Name Revit -ErrorAction SilentlyContinue)
 $revit = Join-Path $env:ProgramFiles "Autodesk\Revit $RevitYear\Revit.exe"
 $staged = Join-Path $TestHost 'RevitGeoSuite.TestHost.addin'
-if ($StartRevit -and -not $revitRunning) {
+if ($StartRevit) {
     if (-not (Test-Path $revit)) { throw "Revit is not at $revit." }
     if (-not (Test-Path $staged)) { throw "No test host at $TestHost. Run Install-TestHost.ps1 first." }
     if ($RgsBuild) {
@@ -193,6 +192,13 @@ if ($StartRevit -and -not $revitRunning) {
         if ($installed) { throw "RevitGeoSuite is installed ($($installed -join ', ')). Remove it before running a build with -RgsBuild: Revit cannot load two RevitGeoSuite add-ins." }
     }
     if ($PyRevitExtension -and -not (Test-Path $PyRevitExtension)) { throw "No pyRevit extension folder at $PyRevitExtension." }
+    # -StartRevit swaps the export settings and hands Revit the test host, so it needs a PC with no Revit open.
+    # A Revit already running is either someone's own, which would read the emptied settings and must not be
+    # touched, or a test Revit still closing; the runner could reach neither as its own. Give a closing one a
+    # minute, then refuse.
+    $deadline = (Get-Date).AddSeconds(60)
+    while (($running = @(Get-Process -Name Revit -ErrorAction SilentlyContinue)) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+    if ($running) { throw "Revit is already running (process $($running.Id -join ', ')) and did not exit within 60 s. Close it and run again: -StartRevit needs a PC with no Revit open." }
 }
 
 
@@ -224,6 +230,18 @@ function Restore-ExportSettings {
     Write-Host "Put the export's remembered settings back as they were: $($exportSettings.Keys -join ', '); removed $($made.Count) profiles.json.*.moved-to-station file(s) this run made."
 }
 
+# The Revit this script started is the tests' own: close it on every way out, without saving. Stopping the
+# process is the only close that cannot meet a "save changes?" prompt. The script returns only once that Revit
+# is gone, so a call straight after this one finds no Revit running.
+function Stop-TestRevit {
+    if (-not $process) { return }
+    if (-not $process.HasExited) {
+        Stop-Process -Id $process.Id -Force
+        Write-Host "Closed the test Revit (process $($process.Id)) without saving."
+    }
+    if (-not $process.WaitForExit(60000)) { Write-Warning "The test Revit (process $($process.Id)) had not exited 60 s after it was stopped." }
+}
+
 $runSettings = Join-Path $exportStore 'settings.json'
 $process = $null
 $startFailure = $null
@@ -244,49 +262,44 @@ try {
     }
 
     if ($StartRevit) {
-        if ($revitRunning) {
-            Write-Warning 'Revit is already running. The tests only reach a Revit that this script started; close it and run again if the runner cannot connect.'
+        $handed = @($hostManifest)
+        New-Item -ItemType Directory -Force -Path $addins | Out-Null
+        if ($RgsBuild) {
+            $rgs = $RgsTarget
+            if (Test-Path $rgs) { Remove-Item $rgs -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $rgs | Out-Null
+            Copy-Item (Join-Path $RgsBuild '*') $rgs -Recurse -Force
+            Write-Host "RevitGeoSuite for this run: $RgsBuild, copied to $rgs; the test host starts it inside Revit."
         }
-        else {
-            $handed = @($hostManifest)
-            New-Item -ItemType Directory -Force -Path $addins | Out-Null
-            if ($RgsBuild) {
-                $rgs = $RgsTarget
-                if (Test-Path $rgs) { Remove-Item $rgs -Recurse -Force }
-                New-Item -ItemType Directory -Force -Path $rgs | Out-Null
-                Copy-Item (Join-Path $RgsBuild '*') $rgs -Recurse -Force
-                Write-Host "RevitGeoSuite for this run: $RgsBuild, copied to $rgs; the test host starts it inside Revit."
-            }
 
-            if ($PyRevitExtension) {
-                $extension = (Resolve-Path $PyRevitExtension).Path
-                Set-PyRevitExtensions { param($list) @($list) + $extension }
-            }
+        if ($PyRevitExtension) {
+            $extension = (Resolve-Path $PyRevitExtension).Path
+            Set-PyRevitExtensions { param($list) @($list) + $extension }
+        }
 
-            Copy-Item $staged $hostManifest -Force
-            $startedAt = Get-Date
-            try {
-                $env:REVITGEOSUITE_UITEST = '1'   # inherited by this Revit only; removed again below
-                if ($FloorPlanDataSandbox) { $env:REVITGEOSUITE_FLOORPLAN_DATA = $sandboxRoot }
-                if ($RgsBuild) { $env:REVITGEOSUITE_UITEST_RGS = $rgs }
-                # Revit resolves bare file names (such as a detached model's default name) against its working directory: keep that in the test folder.
-                New-Item -ItemType Directory -Force -Path 'C:\dev\revit-test' | Out-Null
-                try { $process = Start-Process -FilePath $revit -WorkingDirectory 'C:\dev\revit-test' -PassThru } finally { Remove-Item Env:REVITGEOSUITE_UITEST; Remove-Item Env:REVITGEOSUITE_UITEST_RGS -ErrorAction SilentlyContinue; Remove-Item Env:REVITGEOSUITE_FLOORPLAN_DATA -ErrorAction SilentlyContinue }
-                Write-Host "Started $revit for UI tests. Waiting for the test host before taking the manifest away again..."
-                $deadline = (Get-Date).AddMinutes($StartMinutes)
-                while (-not (Test-HostPipe) -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
-                    Start-Sleep -Seconds 2
-                }
-                if (-not (Test-HostPipe)) {
-                    $why = if ($process.HasExited) { "Revit exited (code $($process.ExitCode)) before the test host was up" } else { "the test host was not up $StartMinutes minutes after Revit started" }
-                    $startFailure = Write-StartFailure $why $startedAt
-                }
+        Copy-Item $staged $hostManifest -Force
+        $startedAt = Get-Date
+        try {
+            $env:REVITGEOSUITE_UITEST = '1'   # inherited by this Revit only; removed again below
+            if ($FloorPlanDataSandbox) { $env:REVITGEOSUITE_FLOORPLAN_DATA = $sandboxRoot }
+            if ($RgsBuild) { $env:REVITGEOSUITE_UITEST_RGS = $rgs }
+            # Revit resolves bare file names (such as a detached model's default name) against its working directory: keep that in the test folder.
+            New-Item -ItemType Directory -Force -Path 'C:\dev\revit-test' | Out-Null
+            try { $process = Start-Process -FilePath $revit -WorkingDirectory 'C:\dev\revit-test' -PassThru } finally { Remove-Item Env:REVITGEOSUITE_UITEST; Remove-Item Env:REVITGEOSUITE_UITEST_RGS -ErrorAction SilentlyContinue; Remove-Item Env:REVITGEOSUITE_FLOORPLAN_DATA -ErrorAction SilentlyContinue }
+            Write-Host "Started $revit for UI tests. Waiting for the test host before taking the manifest away again..."
+            $deadline = (Get-Date).AddMinutes($StartMinutes)
+            while (-not (Test-HostPipe) -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
+                Start-Sleep -Seconds 2
             }
-            finally {
-                Remove-Item $handed -Force -ErrorAction SilentlyContinue
-                if ($PyRevitExtension) { Set-PyRevitExtensions { param($list) $list | Where-Object { $_ -ne $extension } } }
-                Write-Host "Removed $($handed -join ', '): Revit has read it, and nothing is left for a roaming profile or a Revit started by hand."
+            if (-not (Test-HostPipe)) {
+                $why = if ($process.HasExited) { "Revit exited (code $($process.ExitCode)) before the test host was up" } else { "the test host was not up $StartMinutes minutes after Revit started" }
+                $startFailure = Write-StartFailure $why $startedAt
             }
+        }
+        finally {
+            Remove-Item $handed -Force -ErrorAction SilentlyContinue
+            if ($PyRevitExtension) { Set-PyRevitExtensions { param($list) $list | Where-Object { $_ -ne $extension } } }
+            Write-Host "Removed $($handed -join ', '): Revit has read it, and nothing is left for a roaming profile or a Revit started by hand."
         }
     }
 
@@ -303,15 +316,9 @@ try {
         }
     }
     finally {
-        # The Revit this script started is the tests' own: close it on every way out, without saving.
-        # Stopping the process is the only close that cannot meet a "save changes?" prompt.
-        if ($process -and -not $process.HasExited) {
-            Stop-Process -Id $process.Id -Force
-            Write-Host "Closed the test Revit (process $($process.Id)) without saving."
-        }
+        Stop-TestRevit
         if ($FloorPlanDataSandbox) {
             # Revit has closed, so nothing of the real folder can change any more: compare it with the record from before.
-            if ($process) { $null = $process.WaitForExit(15000) }
             $realAfter = @(Write-FolderSnapshot $realStore (Join-Path $runFolder 'real-folder-after.txt'))
             $changes = @($realAfter | Where-Object { $realBefore -notcontains $_ } | ForEach-Object { "after: $_" }) +
                 @($realBefore | Where-Object { $realAfter -notcontains $_ } | ForEach-Object { "before: $_" })
@@ -330,7 +337,9 @@ try {
 }
 finally {
     # On every way out, a refusal or error in the start block included: the real files go back.
-    # With -FloorPlanDataSandbox these are the sandbox's own copies.
+    # With -FloorPlanDataSandbox these are the sandbox's own copies. An error between Revit's start and the
+    # runner's try above would skip that close, so the test Revit is closed here too.
+    Stop-TestRevit
     Restore-ExportSettings
 }
 

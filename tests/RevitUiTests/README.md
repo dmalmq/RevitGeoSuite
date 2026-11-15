@@ -62,7 +62,7 @@ To remove the test host, close Revit and run `Install-TestHost.ps1 -Uninstall`. 
 
 ## Run
 
-Close Revit first. The runner only reaches a Revit that `-StartRevit` started.
+Close Revit first. The runner only reaches a Revit that `-StartRevit` started. When a Revit is running, `-StartRevit` waits up to a minute for it to exit (a test Revit that is still closing), then refuses before it changes anything.
 
 ```powershell
 cd C:\dev\RevitGeoSuite
@@ -74,7 +74,7 @@ The script's own options (`-StartRevit`, `-RevitYear`, `-RgsBuild`, `-PyRevitExt
 The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder also holds the screenshots, the CSVs, and the model copy. The exit code is 0 when no step failed.
 
 - **A stopped run fails.** When the run stops early, for example because the active model is not the run's copy, the report gets a failed `STOP` step, says FAIL, and the exit code is 1.
-- **Revit closes on every exit.** `-StartRevit` closes the Revit it started when the runner ends, however it ends. It stops the process, which closes without saving and cannot meet a "save changes?" prompt.
+- **Revit closes on every exit.** `-StartRevit` closes the Revit it started when the runner ends, however it ends, and returns only once that process is gone, so a run straight after it does not find it still closing. It stops the process, which closes without saving and cannot meet a "save changes?" prompt.
 - **Revit starts in `C:\dev\revit-test`.** Revit names a detached model `<name>_detached.rvt` without a folder. The test host therefore saves the detached copy once, by full path, as `<copy>-detached.rvt` in the run folder.
 - **Missing links are unloaded first.** Before the model is opened, every link whose file is not on the PC is marked not to load in the run's copy, so Revit has no "could not find or read" question to ask. The report header lists those links, and any dialog Revit showed while opening.
 - **Exports write only to the run folder.** The GeoPackage export page starts on the folder it remembers from the last export, which can be someone's own data. Every export types its own folder under the run folder into the output field (Browse... and the folder picker are the fallback) and reads the field back. When the field shows anything else, the step fails before Preview, so nothing is exported. The page keeps that folder in the roaming `%APPDATA%\RevitGeoSuite\FloorPlanExport\settings.json`; With `-StartRevit`, `Run-UiTests.ps1` empties `settings.json` (`{}`) before Revit starts, so the page shows a first-time user's defaults: no remembered views, folder or options, and the default view choice (the model's `gis-model.json`, else every `GIS_` plan). It checks Revit, the test host and `-RgsBuild` first, so a failed check never touches the files. It keeps a copy of each file as `<file>.uitest-backup` (or an `.uitest-absent` marker) and puts both files back as they were in a `finally`, however the script ends; a run after a crashed one restores the leftover backup before it takes its own snapshot. It also removes the `profiles.json.<hash>.moved-to-station` files that appeared during the run and leaves older ones alone. Profiles are kept for the run, because the Cesium export uses the PC's first floor plan profile.
