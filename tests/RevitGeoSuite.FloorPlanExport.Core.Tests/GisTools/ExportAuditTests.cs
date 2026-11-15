@@ -58,19 +58,19 @@ public sealed class ExportAuditTests
     }
 
     [Fact]
-    public void ElementsSharingAnIdAreAnErrorThatListsEveryOne()
+    public void ElementsSharingAnIdAreAWarningTheExportFixesAndLevelsAnError()
     {
         IReadOnlyList<GisAuditFinding> findings = Audit(
-            ids: new[] { new AuditIdValue(201, "abc"), new AuditIdValue(202, "ABC "), new AuditIdValue(203, "abc"), new AuditIdValue(204, "other") },
+            ids: new[] { new AuditIdValue(203, "abc"), new AuditIdValue(202, "ABC "), new AuditIdValue(201, "abc"), new AuditIdValue(204, "other") },
             levelIds: new[] { new AuditIdValue(1, "l1"), new AuditIdValue(2, "l1") });
 
         Assert.Equal(2, findings.Count);
-        Assert.All(findings, finding => Assert.Equal(GisAuditSeverity.Error, finding.Severity));
-        Assert.Equal(new long[] { 201, 202, 203 }, findings[0].ElementIds);
-        Assert.StartsWith("3 elements share id abc", findings[0].Message);
-        Assert.Contains("201, 202, 203", findings[0].Message);
-        Assert.Equal(new long[] { 1, 2 }, findings[1].ElementIds);
-        Assert.StartsWith("Levels B1FL, 1FL share level_id l1", findings[1].Message);
+        GisAuditFinding levels = findings.Single(finding => finding.Severity == GisAuditSeverity.Error);
+        Assert.Equal(new long[] { 1, 2 }, levels.ElementIds);
+        Assert.StartsWith("Levels B1FL, 1FL share level_id l1", levels.Message);
+        GisAuditFinding copies = findings.Single(finding => finding.Severity == GisAuditSeverity.Warning);
+        Assert.Equal(new long[] { 201, 202, 203 }, copies.ElementIds);
+        Assert.Equal("3 elements share id abc (a copy keeps its original's id): 201, 202, 203. The next export keeps it on 201, the oldest, and gives each copy it exports a new id.", copies.Message);
     }
 
     [Fact]

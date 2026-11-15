@@ -957,9 +957,11 @@ public sealed class FloorGeoPackageExporter
         IReadOnlyList<GisParameterDefinition> extraParameters)
     {
         using Transaction transaction = new(manager.Document, "IMDF Export - Ensure Shared Parameters");
+        TransactionFailures failures = TransactionFailures.Attach(transaction);
         transaction.Start();
         manager.EnsureParameters(warnings, extraParameters);
-        transaction.Commit();
+        failures.Commit(transaction);
+        AddWarnings(warnings, failures);
     }
 
     /// <summary>
@@ -987,6 +989,7 @@ public sealed class FloorGeoPackageExporter
         ICollection<string> warnings)
     {
         using Transaction transaction = new(manager.Document, "IMDF Export - Assign IDs");
+        TransactionFailures failures = TransactionFailures.Attach(transaction);
         transaction.Start();
 
         IReadOnlyList<Level> levels = contexts
@@ -1007,7 +1010,17 @@ public sealed class FloorGeoPackageExporter
         }
 
         manager.EnsureElementIds(uniqueElements.Values.ToList(), warnings);
-        transaction.Commit();
+        manager.ReissueCopiedIds(uniqueElements.Values, warnings);
+        failures.Commit(transaction, manager.AlignedPerGroup);
+        AddWarnings(warnings, failures);
+    }
+
+    private static void AddWarnings(ICollection<string> warnings, TransactionFailures failures)
+    {
+        foreach (string line in failures.WarningLines())
+        {
+            warnings.Add(line);
+        }
     }
 
     private static void WriteUnitMetadataBackToModel(
@@ -1080,6 +1093,7 @@ public sealed class FloorGeoPackageExporter
         }
 
         using Transaction transaction = new(manager.Document, "IMDF Export - Write Unit Metadata");
+        TransactionFailures failures = TransactionFailures.Attach(transaction);
         transaction.Start();
 
         foreach (KeyValuePair<long, (string? Category, int Ordinal, string LevelId)> entry in pending)
@@ -1108,7 +1122,8 @@ public sealed class FloorGeoPackageExporter
             }
         }
 
-        transaction.Commit();
+        failures.Commit(transaction, manager.AlignedPerGroup);
+        AddWarnings(warnings, failures);
     }
 
     /// <summary>gis_key holds the element's first revit_key (part 0), for every unit or fixture the model makes.</summary>

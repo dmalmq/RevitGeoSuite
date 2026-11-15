@@ -125,7 +125,7 @@
     <AppliedBanner
       title={applied.shapes
         ? format($t('GisStandard.Shapes.Done', '{0} shape edit(s) applied, each one undo step. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)
-        : format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), applied.log.length)}
+        : format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)}
       log={applied.log}
       skipped={applied.skipped}
       undoHint={applied.shapes ? $t('GisStandard.Shapes.UndoHint', 'Each edit is its own undo step in Revit.') : undefined}

@@ -42,6 +42,8 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new GisShapeShowHandler());
         bridge.RegisterHandler(new GisShapeClearHandler());
         bridge.RegisterHandler(new GisShapeApplyHandler());
+        bridge.RegisterHandler(new GisNetworkInspectHandler());
+        bridge.RegisterHandler(new GisNetworkShowHandler());
 
         // Import route
         bridge.RegisterHandler(new DialogOpenFolderHandler());

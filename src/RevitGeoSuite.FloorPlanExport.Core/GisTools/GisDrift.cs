@@ -302,7 +302,10 @@ public static class GisDrift
         };
 
     /// <summary>The drift file's name for a model id, as Kanizu writes it.</summary>
-    public static string FileName(string model)
+    public static string FileName(string model) => SafeName(model) + ".gis-drift.json";
+
+    /// <summary>A model id as Kanizu names its files: ASCII letters, digits and '-' kept, anything else '_'.</summary>
+    public static string SafeName(string model)
     {
         StringBuilder safe = new();
         foreach (char character in model ?? string.Empty)
@@ -311,7 +314,7 @@ public static class GisDrift
             safe.Append(asciiLetterOrDigit || character == '-' ? character : '_');
         }
 
-        return safe + ".gis-drift.json";
+        return safe.ToString();
     }
 
     /// <summary>The model key Kanizu files the drift under: the model id in lower case.</summary>

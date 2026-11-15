@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Geometry;
 
 namespace RevitGeoSuite.FloorPlanExport.Export;
@@ -156,6 +157,7 @@ public sealed class Temp3DViewScope : IDisposable
         BoundingBoxXYZ? modelBounds = bounds.ModelBounds;
 
         using Transaction transaction = new(_document, "RevitGeoSuite FloorPlanExport - create temp 3D export views");
+        TransactionFailures failures = TransactionFailures.Attach(transaction);
         transaction.Start();
         try
         {
@@ -179,7 +181,7 @@ public sealed class Temp3DViewScope : IDisposable
                 }
             }
 
-            transaction.Commit();
+            failures.Commit(transaction);
         }
         catch
         {
@@ -229,6 +231,7 @@ public sealed class Temp3DViewScope : IDisposable
         try
         {
             using Transaction transaction = new(_document, "RevitGeoSuite FloorPlanExport - delete temp 3D export views");
+            TransactionFailures.Attach(transaction);
             transaction.Start();
             foreach (View3D view in _viewsByPlanId.Values)
             {

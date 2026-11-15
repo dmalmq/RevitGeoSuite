@@ -362,7 +362,8 @@ function gisStandard(scenario: MockScenario) {
     },
     'gisStandard.select': (payload: { elementIds?: number[] }) => ({ selected: payload?.elementIds?.length ?? 0 }),
     ...gisParameters(),
-    ...gisDrift()
+    ...gisDrift(),
+    ...gisNetwork()
   }
 }
 
@@ -472,6 +473,48 @@ function gisDrift() {
         .filter((shape) => payload?.uniqueIds?.includes(shape.uniqueId))
         .flatMap((shape) => (shape.uniqueId === 'f-walk' ? [shape.label, '  Revit deleted opening 412301, which hung on the floor outside its new outline.'] : [shape.label]))
       return { log, skipped: [] }
+    }
+  }
+}
+
+// Kanizu's walking network for this model: tests/Fixtures/Conformance/gis-network, drawn at this model's levels.
+function gisNetwork() {
+  let shown = false
+  const response = () => ({
+    documentTitle: 'TokyoStation_Concourse.rvt',
+    source: 'station',
+    path: 'D:\\Stations\\Tokyo\\gis-network\\8d7f3c1e-0000.gis-network.json',
+    problem: '',
+    refused: '',
+    basedOn: 'revit/tokyo-8d7f3c1e/20261113T050000Z-ab12cd34',
+    writtenUtc: '2026-11-13T05:30:00Z',
+    kanizu: '0.1.12',
+    links: 4,
+    connectors: 5,
+    findings: 1,
+    unknownLevel: 0,
+    notShown: 0,
+    shown,
+    items: [
+      {
+        severity: 'warning',
+        topic: 'network',
+        message: 'A stair, escalator or elevator on 2F reaches no unit on the next floor, so the walking network has no link through it. Check its run and levels, or its unit on the other floor. (Kanizu: stairs on 2F match no unit on the next floor)',
+        elementIds: [601]
+      },
+      {
+        severity: 'warning',
+        topic: 'network',
+        message: 'A floor has walking links, but no stair, escalator, elevator or ramp reaches it. (Kanizu: floor 3F has links but no level connector reaches it)',
+        elementIds: []
+      }
+    ]
+  })
+  return {
+    'gisNetwork.inspect': response,
+    'gisNetwork.show': (payload: { show?: boolean }) => {
+      shown = !!payload?.show
+      return response()
     }
   }
 }

@@ -73,6 +73,8 @@ using RevitGeoSuite.SharedUI.Web.Contracts;
 [assembly: RpcMethod("gisDrift.showShape", typeof(GisShapeShowRequest), typeof(GisShapeShowResponse))]
 [assembly: RpcMethod("gisDrift.clearShape", typeof(ExporterEmptyRequest), typeof(void))]
 [assembly: RpcMethod("gisDrift.applyShapes", typeof(GisShapeApplyRequest), typeof(GisStandardApplyResponse))]
+[assembly: RpcMethod("gisNetwork.inspect", typeof(GisStandardEmptyRequest), typeof(GisNetworkResponse))]
+[assembly: RpcMethod("gisNetwork.show", typeof(GisNetworkShowRequest), typeof(GisNetworkResponse))]
 
 [assembly: RpcEvent("navigate", typeof(NavigateEvent))]
 [assembly: RpcEvent("job.progress", typeof(JobProgress))]

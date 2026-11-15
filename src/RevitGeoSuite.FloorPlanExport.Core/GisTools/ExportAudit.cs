@@ -238,18 +238,20 @@ public static class ExportAudit
 
     private static IEnumerable<GisAuditFinding> DuplicateIds(ExportAuditSnapshot snapshot, Func<long, string> levelName)
     {
-        foreach (IGrouping<string, AuditIdValue> shared in Shared(snapshot.ElementIds))
+        foreach (CopiedId copied in CopiedIds.Find(snapshot.ElementIds))
         {
+            int count = copied.Copies.Count + 1;
             yield return new GisAuditFinding(
-                GisAuditSeverity.Error,
+                GisAuditSeverity.Warning,
                 "ids",
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "{0} elements share id {1} (a copy keeps its original's id), so the GDB gets {0} rows with one id: {2}. Clear id on all but one; the export gives a cleared element a new id.",
-                    shared.Count(),
-                    shared.Key,
-                    string.Join(", ", shared.Select(entry => entry.ElementId))),
-                shared.Select(entry => entry.ElementId));
+                    "{0} elements share id {1} (a copy keeps its original's id): {2}. The next export keeps it on {3}, the oldest, and gives each copy it exports a new id.",
+                    count,
+                    copied.Id,
+                    string.Join(", ", new[] { copied.Original }.Concat(copied.Copies)),
+                    copied.Original),
+                new[] { copied.Original }.Concat(copied.Copies));
         }
 
         foreach (IGrouping<string, AuditIdValue> shared in Shared(snapshot.LevelIds))

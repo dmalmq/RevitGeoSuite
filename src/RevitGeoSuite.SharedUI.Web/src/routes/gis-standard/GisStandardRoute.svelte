@@ -14,9 +14,10 @@
   import { allFloorsHint, initiallyTicked, proposalKey, toggled } from '$lib/gisStandard/fixSelection'
   import AppliedBanner from './AppliedBanner.svelte'
   import DriftPanel from './DriftPanel.svelte'
+  import NetworkPanel from './NetworkPanel.svelte'
   import ParametersPanel from './ParametersPanel.svelte'
 
-  type Tab = 'standard' | 'parameters' | 'drift'
+  type Tab = 'standard' | 'parameters' | 'drift' | 'network'
   // #/gis-standard/drift opens on the GDB edits tab: the export page links there.
   let tab = $state<Tab>(window.location.hash.endsWith('/gis-standard/drift') ? 'drift' : 'standard')
 
@@ -133,7 +134,8 @@
       options={[
         { value: 'standard', label: $t('GisStandard.Tab.Standard', 'Standard'), icon: 'list-checks' },
         { value: 'parameters', label: $t('GisStandard.Tab.Parameters', 'Parameters'), icon: 'download' },
-        { value: 'drift', label: $t('GisStandard.Tab.Drift', 'GDB edits'), icon: 'refresh-cw' }
+        { value: 'drift', label: $t('GisStandard.Tab.Drift', 'GDB edits'), icon: 'refresh-cw' },
+        { value: 'network', label: $t('GisStandard.Tab.Network', 'Network'), icon: 'route' }
       ]}
     />
 
@@ -141,6 +143,8 @@
       <ParametersPanel />
     {:else if tab === 'drift'}
       <DriftPanel />
+    {:else if tab === 'network'}
+      <NetworkPanel />
     {:else}
       {#if error}<Banner tone="danger" onclose={() => (error = null)}>{error}</Banner>{/if}
 

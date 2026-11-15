@@ -128,19 +128,8 @@ public static class ShapeEditWork
         return new Polygon2D(Loop(curves));
     }
 
-    /// <summary>Revit levels by their level_id value; a level_id two levels share names neither.</summary>
-    private static Dictionary<string, long> PairedLevels(Document document)
-    {
-        List<(string Key, long Id)> pairs = new FilteredElementCollector(document)
-            .OfClass(typeof(Level))
-            .Cast<Level>()
-            .Select(level => (Key: level.LookupParameter("level_id")?.AsString() ?? string.Empty, Id: level.Id.Value))
-            .Where(pair => pair.Key.Length > 0)
-            .ToList();
-        return pairs.GroupBy(pair => pair.Key, StringComparer.Ordinal)
-            .Where(group => group.Count() == 1)
-            .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
-    }
+    private static Dictionary<string, long> PairedLevels(Document document) =>
+        GisNetworkSource.LevelsByLevelId(document).ToDictionary(pair => pair.Key, pair => pair.Value.Id.Value, StringComparer.Ordinal);
 
     /// <summary>The standard floor types this model has, by name, in the standard's order.</summary>
     public static IEnumerable<string> StandardFloorTypesIn(Document document)
@@ -217,7 +206,7 @@ public static class ShapeEditWork
 
         ElementId levelId = new(edit.Floor.LevelId);
         double z = (document.GetElement(levelId) as Level)?.ProjectElevation ?? 0;
-        FailOnError failures = new();
+        TransactionFailures failures = new();
         List<(Floor Floor, Polygon2D Polygon)> made = new();
         using (Transaction transaction = new(document, edit.Label()))
         {
@@ -262,7 +251,7 @@ public static class ShapeEditWork
     {
         List<string> notes = new();
         using Transaction transaction = new(document, edit.Label());
-        FailOnError failures = new();
+        TransactionFailures failures = new();
         transaction.SetFailureHandlingOptions(transaction.GetFailureHandlingOptions().SetFailuresPreprocessor(failures));
         transaction.Start();
         foreach (ShapeFloor gone in edit.Absorbed)
@@ -308,7 +297,7 @@ public static class ShapeEditWork
         }
 
         double z = sketch.SketchPlane.GetPlane().Origin.Z;
-        FailOnError failures = new();
+        TransactionFailures failures = new();
         List<ElementId> created = new();
         List<string> typeNotes = new();
         using (Transaction transaction = new(document, edit.Label()))
@@ -431,7 +420,7 @@ public static class ShapeEditWork
             .Select(id => (id, Describe(document.GetElement(id))))
             .Where(entry => entry.Item2.Length > 0)
             .ToList();
-        FailOnError failures = new();
+        TransactionFailures failures = new();
         SketchEditScope scope = new(document, edit.Label());
         scope.Start(sketch.Id);
         try
@@ -584,7 +573,8 @@ public static class ShapeEditWork
         }
     }
 
-    private static int ModelEpsg(Document document)
+    /// <summary>The EPSG code of the model's project CRS, or 0 when it has none.</summary>
+    internal static int ModelEpsg(Document document)
     {
         try
         {
@@ -593,46 +583,6 @@ public static class ShapeEditWork
         catch (Exception)
         {
             return 0;
-        }
-    }
-
-    /// <summary>
-    /// Records every warning's text and lets it through; rolls the edit back on an error, so a
-    /// sketch Revit cannot close changes nothing. The texts go into the apply result.
-    /// </summary>
-    private sealed class FailOnError : IFailuresPreprocessor
-    {
-        public List<string> Warnings { get; } = new();
-
-        public List<string> Errors { get; } = new();
-
-        public FailureProcessingResult PreprocessFailures(FailuresAccessor failuresAccessor)
-        {
-            bool error = false;
-            foreach (FailureMessageAccessor failure in failuresAccessor.GetFailureMessages())
-            {
-                string text = failure.GetDescriptionText();
-                if (failure.GetSeverity() == FailureSeverity.Warning)
-                {
-                    Warnings.Add(text);
-                    failuresAccessor.DeleteWarning(failure);
-                }
-                else
-                {
-                    Errors.Add(text);
-                    error = true;
-                }
-            }
-
-            if (error)
-            {
-                // Without this Revit still shows the rolled-back errors in its own dialog, which waits for a click.
-                FailureHandlingOptions options = failuresAccessor.GetFailureHandlingOptions();
-                options.SetClearAfterRollback(true);
-                failuresAccessor.SetFailureHandlingOptions(options);
-            }
-
-            return error ? FailureProcessingResult.ProceedWithRollBack : FailureProcessingResult.Continue;
         }
     }
 }

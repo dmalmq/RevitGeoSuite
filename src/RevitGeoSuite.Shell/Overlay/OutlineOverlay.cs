@@ -83,7 +83,7 @@ internal sealed class OutlineOverlay : IDirectContext3DServer
 
     public string GetName() => "RevitGeoSuite outline preview";
 
-    public string GetDescription() => "Draws GDB outlines and the walking network over review views, read-only.";
+    public string GetDescription() => "Draws GDB outlines over review views, read-only.";
 
     public string GetApplicationId() => string.Empty;
 
@@ -117,11 +117,17 @@ internal sealed class OutlineOverlay : IDirectContext3DServer
             snapshot = lines;
         }
 
+        DrawAll(snapshot);
+    }
+
+    /// <summary>Draws lines in the current DirectContext3D pass; call from RenderScene.</summary>
+    internal static void DrawAll(IReadOnlyList<OverlayLine> all)
+    {
         // An index buffer holds 16-bit indices, so draw in chunks of at most 30,000 lines.
         const int Chunk = 30000;
-        for (int start = 0; start < snapshot.Count; start += Chunk)
+        for (int start = 0; start < all.Count; start += Chunk)
         {
-            Draw(snapshot.Skip(start).Take(Chunk).ToList());
+            Draw(all.Skip(start).Take(Chunk).ToList());
         }
     }
 
@@ -159,30 +165,34 @@ internal sealed class OutlineOverlay : IDirectContext3DServer
 
     private static OutlineOverlay Register()
     {
-        if (instance != null)
+        if (instance == null)
         {
-            return instance;
-        }
-
-        instance = new OutlineOverlay();
-        if (ExternalServiceRegistry.GetService(ExternalServices.BuiltInExternalServices.DirectContext3DService) is MultiServerService service)
-        {
-            service.AddServer(instance);
-            List<Guid> active = service.GetActiveServerIds().ToList();
-            if (!active.Contains(ServerId))
-            {
-                active.Add(ServerId);
-            }
-
-            service.SetActiveServers(active);
+            instance = new OutlineOverlay();
+            AddServer(instance);
         }
 
         return instance;
     }
 
-    private static string Key(Document document) => document.PathName + "|" + document.Title;
+    /// <summary>Registers a DirectContext3D server and turns it on.</summary>
+    internal static void AddServer(IDirectContext3DServer server)
+    {
+        if (ExternalServiceRegistry.GetService(ExternalServices.BuiltInExternalServices.DirectContext3DService) is MultiServerService service)
+        {
+            service.AddServer(server);
+            List<Guid> active = service.GetActiveServerIds().ToList();
+            if (!active.Contains(server.GetServerId()))
+            {
+                active.Add(server.GetServerId());
+            }
 
-    private static Outline? BoundsOf(IReadOnlyList<OverlayLine> list)
+            service.SetActiveServers(active);
+        }
+    }
+
+    internal static string Key(Document document) => document.PathName + "|" + document.Title;
+
+    internal static Outline? BoundsOf(IReadOnlyList<OverlayLine> list)
     {
         if (list.Count == 0)
         {
