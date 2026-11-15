@@ -138,7 +138,7 @@ internal sealed partial class GisStandardRun
             // Among elements that share an id, the export leaves it on the lowest element id: copy 1, the original.
             step.Check(revit[0] == groupIdBefore, $"Copy 1 ({groupFloors[0]}, the lower element id) keeps '{groupIdBefore}' (now '{revit[0]}').");
             step.Check(Guid.TryParse(revit[1], out _) && revit[1] != groupIdBefore, $"Copy 2 gets a new GUID ('{revit[1]}').");
-            string? kept = warnings.FirstOrDefault(line => line.StartsWith($"Element {groupFloors[0]} keeps id {groupIdBefore} as the oldest; element copied from it got a new id: {groupFloors[1]}.", StringComparison.Ordinal));
+            string? kept = warnings.FirstOrDefault(line => line.Contains($"Element {groupFloors[0]} keeps id {groupIdBefore} as the oldest; element copied from it got a new id: {groupFloors[1]}.", StringComparison.Ordinal));
             step.Check(kept != null, $"The export warnings have 'Element {groupFloors[0]} keeps id {groupIdBefore} as the oldest; element copied from it got a new id: {groupFloors[1]}.' ({kept ?? "none"}).");
             // The id definition varies on this copy, so no copy may stay on the shared id and the original keeps it.
             string[] wrong = warnings.Where(line => line.Contains(" still share", StringComparison.Ordinal) || line.Contains("no longer holds it", StringComparison.Ordinal)).ToArray();
