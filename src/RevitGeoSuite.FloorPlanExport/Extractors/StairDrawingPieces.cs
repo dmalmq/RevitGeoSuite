@@ -19,10 +19,10 @@ internal static class StairDrawingPieces
     /// <summary>
     /// <see cref="StairFloorSide.Lower"/> when the view is on the level the stair starts on,
     /// <see cref="StairFloorSide.Upper"/> on the level it arrives at, and null on any other level,
-    /// where the export keeps drawing what the view shows. A stair starts on its base level, and
-    /// also on the level its base offset puts its bottom on; it arrives at its top level, and also
-    /// at the level its height puts its top on. So a stair hosted on a level without a plan, or
-    /// with no top level, still finds its floors.
+    /// where the export keeps drawing what the view shows. The levels its bottom (base level plus
+    /// base offset) and top (bottom plus height) sit on decide first; its base and top level
+    /// settings decide where neither end sits on the view's level. So a stair hosted on a level
+    /// without a plan, or with no top level, still finds its floors.
     /// </summary>
     public static StairFloorSide? ResolveSide(Stairs stairs, ViewPlan? view, Func<XYZ, XYZ> toHost)
     {
@@ -34,30 +34,30 @@ internal static class StairDrawingPieces
 
         double viewElevation = viewLevel.ProjectElevation;
         bool baseLevelFound = TryGetHostLevelElevation(stairs, BuiltInParameter.STAIRS_BASE_LEVEL_PARAM, toHost, out double baseLevelElevation);
-        if (baseLevelFound && IsOnLevel(baseLevelElevation, viewElevation))
+        if (baseLevelFound)
         {
-            return StairFloorSide.Lower;
+            // Where the stair really is wins over the levels it names, so a base offset that moves
+            // it to another floor never leaves both ends drawing the same half.
+            double bottom = baseLevelElevation + (stairs.get_Parameter(BuiltInParameter.STAIRS_BASE_OFFSET)?.AsDouble() ?? 0d);
+            if (IsOnLevel(bottom, viewElevation))
+            {
+                return StairFloorSide.Lower;
+            }
+
+            double height = stairs.Height;
+            if (height > LevelToleranceFeet && IsOnLevel(bottom + height, viewElevation))
+            {
+                return StairFloorSide.Upper;
+            }
+
+            if (IsOnLevel(baseLevelElevation, viewElevation))
+            {
+                return StairFloorSide.Lower;
+            }
         }
 
-        if (TryGetHostLevelElevation(stairs, BuiltInParameter.STAIRS_TOP_LEVEL_PARAM, toHost, out double topLevelElevation) &&
-            IsOnLevel(topLevelElevation, viewElevation))
-        {
-            return StairFloorSide.Upper;
-        }
-
-        if (!baseLevelFound)
-        {
-            return null;
-        }
-
-        double bottom = baseLevelElevation + (stairs.get_Parameter(BuiltInParameter.STAIRS_BASE_OFFSET)?.AsDouble() ?? 0d);
-        if (IsOnLevel(bottom, viewElevation))
-        {
-            return StairFloorSide.Lower;
-        }
-
-        double height = stairs.Height;
-        return height > LevelToleranceFeet && IsOnLevel(bottom + height, viewElevation)
+        return TryGetHostLevelElevation(stairs, BuiltInParameter.STAIRS_TOP_LEVEL_PARAM, toHost, out double topLevelElevation) &&
+               IsOnLevel(topLevelElevation, viewElevation)
             ? StairFloorSide.Upper
             : null;
     }
