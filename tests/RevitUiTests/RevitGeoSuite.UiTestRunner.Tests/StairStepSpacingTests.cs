@@ -77,6 +77,41 @@ public sealed class StairStepSpacingTests
         Assert.True(onSpacing >= gaps.Count * 0.95d, $"{gaps.Count - onSpacing} of {gaps.Count} step gaps are off the {spacing:0.00} m spacing.");
     }
 
+    /// <summary>
+    /// Compares two real exports of one model, REVITGEOSUITE_TEST_EXPORT_OLD and
+    /// REVITGEOSUITE_TEST_EXPORT, per floor file: stair units, their area and the step lines.
+    /// Prints the table only; whether a difference is right is judged from the list.
+    /// </summary>
+    [Fact]
+    public void Two_real_exports_compare_stair_units_and_step_lines_per_floor()
+    {
+        string? before = Environment.GetEnvironmentVariable("REVITGEOSUITE_TEST_EXPORT_OLD");
+        string? after = Environment.GetEnvironmentVariable("REVITGEOSUITE_TEST_EXPORT");
+        if (string.IsNullOrEmpty(before) || string.IsNullOrEmpty(after))
+        {
+            return;
+        }
+
+        var old = StairStepSpacing.StairTotals(before);
+        var now = StairStepSpacing.StairTotals(after);
+        output.WriteLine("STAIR COMPARE: floor file | stair units old -> new | stair area m2 old -> new | step lines old -> new");
+        foreach (string floor in old.Keys.Union(now.Keys).OrderBy(key => key, StringComparer.Ordinal))
+        {
+            var o = old.GetValueOrDefault(floor);
+            var n = now.GetValueOrDefault(floor);
+            if (o.StairUnits + n.StairUnits + o.StepLines + n.StepLines == 0)
+            {
+                continue;
+            }
+
+            string mark = o.StairUnits != n.StairUnits || Math.Abs(o.StairArea - n.StairArea) > 0.5d ? " *" : string.Empty;
+            output.WriteLine($"  {floor} | {o.StairUnits} -> {n.StairUnits} | {o.StairArea:0.0} -> {n.StairArea:0.0} | {o.StepLines} -> {n.StepLines}{mark}");
+        }
+
+        output.WriteLine($"  total | {old.Values.Sum(v => v.StairUnits)} -> {now.Values.Sum(v => v.StairUnits)} | {old.Values.Sum(v => v.StairArea):0.0} -> {now.Values.Sum(v => v.StairArea):0.0} | {old.Values.Sum(v => v.StepLines)} -> {now.Values.Sum(v => v.StepLines)}");
+        Assert.NotEmpty(now);
+    }
+
     private static void WriteDetails(string path, IEnumerable<(string Key, string Category, ((double X, double Y) A, (double X, double Y) B) Line)> rows)
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());

@@ -354,7 +354,8 @@ public sealed class DetailExtractor
     /// for the whole stair, wall to wall, none on landings. On a floor the rule draws, they stop
     /// short of the middle; anywhere else the stair gets every line of the grid and the view's
     /// visible part of the stair clips them. A stair the rule cannot read as one walking path,
-    /// such as one with runs side by side, gets the grid on each run. Revit's own treads are never
+    /// such as one with runs side by side, gets a grid on each run, starting at that run's own
+    /// start, so its runs do not share one grid. Revit's own treads are never
     /// drawn: the reference GDBs draw steps at the standard spacing, not tread by tread.
     /// </summary>
     private IReadOnlyList<StairStepLine> BuildStepLines(Stairs stair, ViewPlan? view, bool ruleDrawsFloor)

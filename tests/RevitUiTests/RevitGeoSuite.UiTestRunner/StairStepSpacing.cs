@@ -82,6 +82,66 @@ internal static class StairStepSpacing
         return gaps;
     }
 
+    /// <summary>
+    /// Per floor file (the name after "_GIS_", so two exports of one model line up): the stair
+    /// units, their total area in square metres, and the step lines.
+    /// </summary>
+    public static SortedDictionary<string, (int StairUnits, double StairArea, int StepLines)> StairTotals(string exportFolder)
+    {
+        var totals = new SortedDictionary<string, (int, double, int)>(StringComparer.Ordinal);
+        foreach (string file in Directory.GetFiles(exportFolder, "*.gpkg", SearchOption.AllDirectories))
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+            int gis = name.IndexOf("_GIS_", StringComparison.Ordinal);
+            string floor = gis < 0 ? name : name[(gis + 5)..];
+            (int units, double area, int steps) = totals.TryGetValue(floor, out var known) ? known : (0, 0d, 0);
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = file, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+            connection.Open();
+            foreach ((string table, string geometryColumn) in FeatureTables(connection))
+            {
+                if (!Columns(connection, table).Contains("category"))
+                {
+                    continue;
+                }
+
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = $"SELECT category, \"{geometryColumn.Replace("\"", "\"\"")}\" FROM \"{table.Replace("\"", "\"\"")}\" WHERE category IN ('stairs', 'steps')";
+                using SqliteDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    if (reader.GetString(0) == "steps")
+                    {
+                        steps++;
+                        continue;
+                    }
+
+                    units++;
+                    if (!reader.IsDBNull(1))
+                    {
+                        area += GeoPackageGeometry.Polygons((byte[])reader.GetValue(1)).Sum(rings => Ring(rings[0]) - rings.Skip(1).Sum(Ring));
+                    }
+                }
+            }
+
+            totals[floor] = (units, area, steps);
+        }
+
+        return totals;
+    }
+
+    private static double Ring(List<(double X, double Y)> ring)
+    {
+        double twice = 0d;
+        for (int i = 0; i < ring.Count; i++)
+        {
+            (double x1, double y1) = ring[i];
+            (double x2, double y2) = ring[(i + 1) % ring.Count];
+            twice += (x1 * y2) - (x2 * y1);
+        }
+
+        return Math.Abs(twice) / 2d;
+    }
+
     /// <summary>How far the middle of the second line lies from the first line, extended both ways.</summary>
     private static double DistanceBetweenLines((double X, double Y) a, (double X, double Y) b, (double X, double Y) c, (double X, double Y) d)
     {

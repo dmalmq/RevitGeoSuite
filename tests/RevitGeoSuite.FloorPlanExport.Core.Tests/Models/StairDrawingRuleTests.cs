@@ -163,6 +163,32 @@ public sealed class StairDrawingRuleTests
         Assert.Equal(13, rule.GetAllStepStations(new StairDrawingSettings { StepSpacingMeters = 0.30d }).Count);
     }
 
+    [Theory]
+    // Base level 0, top level 4: the plain case.
+    [InlineData(0d, 4d, 0d, 4d, 0d, "Lower")]
+    [InlineData(0d, 4d, 0d, 4d, 4d, "Upper")]
+    [InlineData(0d, 4d, 0d, 4d, 8d, null)]
+    // Hosted on level -4 with a +4 offset, no top level: it starts on 0 and arrives at 4; -4 shows nothing.
+    [InlineData(0d, 4d, -4d, null, 0d, "Lower")]
+    [InlineData(0d, 4d, -4d, null, 4d, "Upper")]
+    [InlineData(0d, 4d, -4d, null, -4d, null)]
+    // Named top level 8, but its height ends it on 4: only 4 shows the upper half.
+    [InlineData(0d, 4d, 0d, 8d, 4d, "Upper")]
+    [InlineData(0d, 4d, 0d, 8d, 8d, null)]
+    // Starts 0.3 above level 0, on no level: the named base level stands in for it.
+    [InlineData(0.3d, 4d, 0d, 4d, 0d, "Lower")]
+    // Tops out 0.2 below level 4, on no level: the named top level stands in for it.
+    [InlineData(0d, 3.8d, 0d, 4d, 4d, "Upper")]
+    public void StairEnds_EachEndBelongsToOneFloor(double bottom, double top, double namedBase, double? namedTop, double level, string? expected)
+    {
+        double[] levels = { -4d, 0d, 4d, 8d };
+        StairEnds ends = new(bottom, top, namedBase, namedTop);
+
+        StairFloorSide? side = ends.SideOn(level, elevation => levels.Any(l => Math.Abs(l - elevation) <= 0.01d), 0.01d);
+
+        Assert.Equal(expected, side?.ToString());
+    }
+
     [Fact]
     public void CanCutAcross_AllowsQuarterTurnsButNotSpirals()
     {

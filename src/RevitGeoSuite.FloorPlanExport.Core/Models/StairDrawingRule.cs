@@ -41,6 +41,66 @@ public enum StairFloorSide
     Upper,
 }
 
+/// <summary>
+/// Where a stair starts and ends, as elevations: <see cref="Bottom"/> is its base level plus its
+/// base offset, <see cref="Top"/> the bottom plus its height, and the named levels are its base
+/// and top level settings. Null where the model gives none.
+/// </summary>
+public readonly struct StairEnds
+{
+    public StairEnds(double? bottom, double? top, double? namedBase, double? namedTop)
+    {
+        Bottom = bottom;
+        Top = top;
+        NamedBase = namedBase;
+        NamedTop = namedTop;
+    }
+
+    public double? Bottom { get; }
+
+    public double? Top { get; }
+
+    public double? NamedBase { get; }
+
+    public double? NamedTop { get; }
+
+    /// <summary>
+    /// The part of the stair a floor at <paramref name="levelElevation"/> shows, or null when the
+    /// stair neither starts nor ends there. Where the stair is decides. A named level stands in for
+    /// an end only when that end sits on no level of the model (<paramref name="sitsOnAnyLevel"/>),
+    /// as for a stair that starts a little above its floor. So each end belongs to one floor, and
+    /// two floors never draw the same half.
+    /// </summary>
+    public StairFloorSide? SideOn(double levelElevation, Func<double, bool> sitsOnAnyLevel, double tolerance)
+    {
+        double? bottom = Bottom;
+        double? top = Top;
+        bool On(double? elevation) => elevation.HasValue && Math.Abs(elevation.Value - levelElevation) <= tolerance;
+        bool hasTop = top.HasValue && bottom.HasValue && top.Value - bottom.Value > tolerance;
+        if (On(bottom))
+        {
+            return StairFloorSide.Lower;
+        }
+
+        if (hasTop && On(top))
+        {
+            return StairFloorSide.Upper;
+        }
+
+        if (On(NamedBase) && (!bottom.HasValue || !sitsOnAnyLevel(bottom.Value)))
+        {
+            return StairFloorSide.Lower;
+        }
+
+        if (On(NamedTop) && (!hasTop || !sitsOnAnyLevel(top!.Value)))
+        {
+            return StairFloorSide.Upper;
+        }
+
+        return null;
+    }
+}
+
 public enum StairPieceKind
 {
     Run,
