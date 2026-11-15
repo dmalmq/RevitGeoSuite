@@ -209,29 +209,33 @@ internal static class ModelCommands
         };
     }
 
-    /// <summary>Each named parameter bound in the model: instance or type, and whether its value varies by group instance.</summary>
+    /// <summary>
+    /// Every bound parameter definition with one of the names (a model can bind two of one name, such as an
+    /// older RevitGeoSuite's `id` and the current one): its GUID ("project" when not shared), instance or
+    /// type, and whether its value varies by group instance. A name with no binding gets one row with binding null.
+    /// </summary>
     public static Dictionary<string, object?> ParameterDefinitions(UIApplication app, string[] names)
     {
         Document document = Active(app);
-        var found = new Dictionary<string, Dictionary<string, object?>>(StringComparer.Ordinal);
+        var found = new List<Dictionary<string, object?>>();
         DefinitionBindingMapIterator iterator = document.ParameterBindings.ForwardIterator();
         while (iterator.MoveNext())
         {
             if (iterator.Key is InternalDefinition definition && names.Contains(definition.Name))
             {
-                found[definition.Name] = new Dictionary<string, object?>
+                found.Add(new Dictionary<string, object?>
                 {
                     ["name"] = definition.Name,
+                    ["guid"] = document.GetElement(definition.Id) is SharedParameterElement shared ? shared.GuidValue.ToString() : "project",
                     ["binding"] = iterator.Current is TypeBinding ? "type" : "instance",
                     ["variesAcrossGroups"] = definition.VariesAcrossGroups,
-                };
+                });
             }
         }
 
-        return new Dictionary<string, object?>
-        {
-            ["definitions"] = names.Select(name => found.TryGetValue(name, out var entry) ? entry : new Dictionary<string, object?> { ["name"] = name, ["binding"] = null }).ToList(),
-        };
+        found.AddRange(names.Where(name => !found.Any(row => (string?)row["name"] == name))
+            .Select(name => new Dictionary<string, object?> { ["name"] = name, ["binding"] = null }));
+        return new Dictionary<string, object?> { ["definitions"] = found };
     }
 
     private static readonly string[] GroupMemberKinds = { "floors", "rooms", "doors", "stairs", "columns", "openings", "familyInstances", "other" };

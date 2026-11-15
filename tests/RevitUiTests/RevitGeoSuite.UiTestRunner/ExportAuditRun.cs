@@ -28,7 +28,7 @@ internal sealed partial class GisStandardRun
         await Step("B2.5", "Nothing left to repair", TemplateRepaired);
         await Step("B2.6", "One Undo puts the change back; Redo", UndoRepair);
         await Step("B2.7", "A GIS_ plan without the template is a views finding only", PlanWithoutTemplate);
-        await Step("B2.8", "A floor pasted in place gives a duplicate id error", DuplicateId);
+        await Step("B2.8", "A floor pasted in place gives a duplicate id warning that names the floor keeping the id", DuplicateId);
         await Step("B2.9", "Stair findings (note the messages)", StairFindings);
     }
 
@@ -224,17 +224,26 @@ internal sealed partial class GisStandardRun
         await CheckAgain();
         InspectReply model = await Inspect();
         FindingItem[] shared = model.Findings.Where(item => item.Topic == "ids" && item.Message.StartsWith("2 elements share id ", StringComparison.Ordinal) && item.ElementIds.Contains(id)).ToArray();
-        if (step.Check(shared.Length == 1, $"One ids error '2 elements share id …' for floor {id} (found {shared.Length})."))
+        if (step.Check(shared.Length == 1, $"One ids finding '2 elements share id …' for floor {id} (found {shared.Length})."))
         {
-            step.Check(shared[0].Severity == "error", $"It is an error ({shared[0].Severity}).");
+            // B9: the export resolves a shared id itself (the oldest element keeps it), so this is a warning.
+            step.Check(shared[0].Severity == "warning", $"It is a warning ({shared[0].Severity}).");
             step.Check(shared[0].ElementIds.Length == 2, $"It lists both element ids ({string.Join(", ", shared[0].ElementIds)}).");
+            long oldest = shared[0].ElementIds.Min();
+            step.Check(shared[0].Message.Contains($"The next export keeps it on {oldest}, the oldest, and gives each copy it exports a new id.", StringComparison.Ordinal), $"It says the export keeps the id on {oldest}, the oldest.");
             step.Note(shared[0].Message);
         }
 
+        // The warning no longer gates the export; only the model's other audit errors would.
         int errors = model.Count("error");
+        if (errors == 0)
+        {
+            step.Note("No audit errors besides the shared id warning, so the export would not ask; the export dialog is not opened.");
+        }
+
         await OpenExport(step, options.ExportView, "export-duplicate-id", keepDefaultViews: options.ExportView.Length == 0);
         ILocator export = Shell.Button(new Regex(@"^Export (1 view|\d+ views)$"));
-        if (step.Check(await Shell.ShowsAsync(export, 600000), "The preview loads and offers to export."))
+        if (errors > 0 && step.Check(await Shell.ShowsAsync(export, 600000), "The preview loads and offers to export."))
         {
             await export.ClickAsync();
             ILocator dialog = Shell.Page.GetByRole(AriaRole.Dialog);
@@ -250,7 +259,7 @@ internal sealed partial class GisStandardRun
         }
 
         await CheckAgain();
-        step.Check(!(await Inspect()).Findings.Any(item => item.Topic == "ids" && item.ElementIds.Contains(id)), "After Undo the ids error is gone.");
+        step.Check(!(await Inspect()).Findings.Any(item => item.Topic == "ids" && item.ElementIds.Contains(id)), "After Undo the ids finding is gone.");
     }
 
     // What Undo of B2.8's fixture would do: delete the copy and give the floor back the id it had.

@@ -19,6 +19,7 @@ internal sealed partial class GisStandardRun
     private long[] groupFloors = Array.Empty<long>();
     private string[] groupUniqueIds = Array.Empty<string>();
     private string[] groupIds = Array.Empty<string>();
+    private string groupIdBefore = string.Empty;
 
     private async Task GroupSteps()
     {
@@ -93,6 +94,7 @@ internal sealed partial class GisStandardRun
 
         groupFloors = floors;
         groupUniqueIds = floors.Select(id => Element(id).UniqueId!).ToArray();
+        groupIdBefore = ParamText(floors[0], "id");
         step.Note($"Copy 1 = {floors[0]} ({groupUniqueIds[0]}), copy 2 = {floors[1]} ({groupUniqueIds[1]}); id '{ParamText(floors[0], "id")}' and '{ParamText(floors[1], "id")}' before the export.");
         return Task.CompletedTask;
     }
@@ -107,6 +109,7 @@ internal sealed partial class GisStandardRun
 
         string output = await OpenExport(step, string.Empty, folder, keepDefaultViews: true);
         bool exported = await ExportNow(step);
+        string[] warnings = exported ? await PageLines() : Array.Empty<string>();
         await Shell.GoToAsync("/gis-standard");
         if (!exported)
         {
@@ -124,12 +127,19 @@ internal sealed partial class GisStandardRun
             step.Check(perCopy[0][0] == revit[0] && perCopy[1][0] == revit[1], "The unit rows carry the ids Revit holds.");
         }
 
-        JsonNode? definition = host.Call("parameterDefinitions", new { names = new[] { "id" } })["definitions"]?[0];
-        step.Check(definition?["variesAcrossGroups"]?.GetValue<bool>() == true, $"The id definition varies by group instance ({definition?.ToJsonString()}).");
+        IdDefinitionsVary(step);
         if (keepFirst)
         {
             step.Check(revit[0] == groupIds[0], $"Copy 1 keeps its id '{groupIds[0]}' (now '{revit[0]}').");
             step.Check(revit[1].Length > 0 && revit[1] != groupIds[0], $"Copy 2 gets a new id ('{revit[1]}').");
+        }
+        else if (groupIdBefore.Length > 0)
+        {
+            // Among elements that share an id, the export leaves it on the lowest element id: copy 1, the original.
+            step.Check(revit[0] == groupIdBefore, $"Copy 1 ({groupFloors[0]}, the lower element id) keeps '{groupIdBefore}' (now '{revit[0]}').");
+            step.Check(Guid.TryParse(revit[1], out _) && revit[1] != groupIdBefore, $"Copy 2 gets a new GUID ('{revit[1]}').");
+            string? kept = warnings.FirstOrDefault(line => line.TrimStart().StartsWith($"Element {groupFloors[0]} keeps id", StringComparison.Ordinal));
+            step.Check(kept != null, $"The export warnings have 'Element {groupFloors[0]} keeps id …' ({kept ?? "none"}).");
         }
 
         groupIds = revit;
@@ -213,6 +223,14 @@ internal sealed partial class GisStandardRun
         step.Check(open.Count == 0, $"No Revit dialog is on screen ({open.ToJsonString()}).");
         List<string> found = AtomLines().Skip(atoms).ToList();
         step.Check(found.Count == 0, $"The journal has no group violation ({string.Join(" | ", found.Take(5))}).");
+    }
+
+    // Every bound definition named id must vary by group instance; a model can bind an older one beside the current one.
+    private void IdDefinitionsVary(StepResult step)
+    {
+        JsonArray definitions = host.Call("parameterDefinitions", new { names = new[] { "id" } })["definitions"]?.AsArray() ?? new JsonArray();
+        JsonNode?[] bound = definitions.Where(row => row?["binding"] != null).ToArray();
+        step.Check(bound.Length > 0 && bound.All(row => row?["variesAcrossGroups"]?.GetValue<bool>() == true), $"Every bound 'id' definition varies by group instance ({definitions.ToJsonString()}).");
     }
 
     private static bool Overlaps(ElementRow moved, ElementRow other, double dxFt) =>
