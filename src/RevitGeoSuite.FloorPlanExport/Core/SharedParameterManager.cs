@@ -83,6 +83,8 @@ public sealed class SharedParameterManager
                 EnsureBinding(definition, standard, existing, warnings);
             }
 
+            AllowVaryBetweenGroups(definitions, warnings);
+
             if (keptLegacy.Count > 0)
             {
                 warnings.Add(
@@ -93,6 +95,36 @@ public sealed class SharedParameterManager
         finally
         {
             _application.SharedParametersFilename = originalPath;
+        }
+    }
+
+    /// <summary>
+    /// Lets each instance parameter of the standard hold its own value in every group instance. An
+    /// element's id, level and category are its own, not its group type's: aligned per group type,
+    /// writing one on a group member edits the group, which Revit stops with a dialog when the type
+    /// has one instance and refuses or copies to every instance when it has more. Turning it on keeps
+    /// every value the model holds.
+    /// </summary>
+    private void AllowVaryBetweenGroups(IEnumerable<GisParameterDefinition> definitions, ICollection<string> warnings)
+    {
+        Dictionary<string, BoundParameter> bound = ReadBoundParameters();
+        foreach (GisParameterDefinition standard in definitions.Where(definition => definition.Binding == GisParameterBinding.Instance))
+        {
+            if (!bound.TryGetValue(standard.Name, out BoundParameter existing) ||
+                existing.Binding is not InstanceBinding ||
+                existing.Definition.VariesAcrossGroups)
+            {
+                continue;
+            }
+
+            try
+            {
+                existing.Definition.SetAllowVaryBetweenGroups(_document, true);
+            }
+            catch (Autodesk.Revit.Exceptions.ArgumentException ex)
+            {
+                warnings.Add($"Revit does not let '{standard.Name}' vary by group instance ({ex.Message}), so writing it on a grouped element edits the whole group.");
+            }
         }
     }
 

@@ -31,7 +31,7 @@ public static class GisStandardWriter
             .Concat(plan.Materials.Select(step => MaterialId(document, step.Name)).Where(id => id.HasValue).Select(id => id!.Value))
             .Concat(plan.SetsVersion ? new[] { document.ProjectInformation.Id.Value } : Array.Empty<long>()));
         List<string> log = new();
-        InTransaction(document, SetupTransactionName, () =>
+        InTransaction(document, SetupTransactionName, log, () =>
         {
             BindParameters(document, plan, log);
             document.Regenerate();
@@ -64,7 +64,7 @@ public static class GisStandardWriter
         RequireOwnable(document, proposals.Select(proposal => proposal.FloorType.ElementId).Concat(echoFloorIds));
         Dictionary<string, ElementId> materials = MaterialIdsByName(document);
         List<string> log = new();
-        InTransaction(document, FixTransactionName, () =>
+        InTransaction(document, FixTransactionName, log, () =>
         {
             foreach (FloorTypeProposal proposal in proposals)
             {
@@ -95,7 +95,7 @@ public static class GisStandardWriter
         RequireOwnable(document, changes.Select(change => long.Parse(change.ElementId, System.Globalization.CultureInfo.InvariantCulture)));
         List<string> log = new();
         List<string> skipped = new();
-        InTransaction(document, ParametersTransactionName, () =>
+        InTransaction(document, ParametersTransactionName, log, () =>
         {
             foreach (ParameterTableChange change in changes)
             {
@@ -146,7 +146,7 @@ public static class GisStandardWriter
         }
 
         RequireOwnable(document, targets.Select(target => target.Parameter.Element.Id.Value));
-        InTransaction(document, DriftTransactionName, () =>
+        InTransaction(document, DriftTransactionName, log, () =>
         {
             Dictionary<(long, string), string> written = new();
             foreach ((GisDriftChange change, Parameter parameter) in targets)
@@ -367,17 +367,17 @@ public static class GisStandardWriter
     private static long? MaterialId(Document document, string name) =>
         new FilteredElementCollector(document).OfClass(typeof(Material)).FirstOrDefault(material => material.Name == name)?.Id.Value;
 
-    private static void InTransaction(Document document, string name, Action work)
+    /// <summary>Runs <paramref name="work"/> in one transaction. Revit's warnings join <paramref name="log"/> instead of a dialog; an error rolls it back and throws.</summary>
+    private static void InTransaction(Document document, string name, List<string> log, Action work)
     {
         using Transaction transaction = new(document, name);
+        TransactionFailures failures = TransactionFailures.Attach(transaction);
         transaction.Start();
         try
         {
             work();
-            if (transaction.Commit() != TransactionStatus.Committed)
-            {
-                throw new InvalidOperationException($"Revit did not commit '{name}'.");
-            }
+            failures.Commit(transaction);
+            log.AddRange(failures.WarningLines());
         }
         catch
         {
