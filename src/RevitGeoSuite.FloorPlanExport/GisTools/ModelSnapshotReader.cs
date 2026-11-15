@@ -12,9 +12,13 @@ namespace RevitGeoSuite.FloorPlanExport.GisTools;
 /// <summary>Reads the <see cref="ModelSnapshot"/> the GIS standard tools plan from. Reads only.</summary>
 public static class ModelSnapshotReader
 {
-    /// <summary>The categories whose family instances can be escalators, elevators or ticket gates.</summary>
+    /// <summary>The categories whose family instances are units: escalators, ticket gates and fixtures.</summary>
     public static IReadOnlyList<BuiltInCategory> FamilyCategories { get; } =
         new[] { BuiltInCategory.OST_GenericModel, BuiltInCategory.OST_SpecialityEquipment };
+
+    /// <summary>The categories the audit checks families in: the unit ones, and mechanical equipment for elevators.</summary>
+    private static readonly BuiltInCategory[] AuditedFamilyCategories =
+        FamilyCategories.Concat(new[] { BuiltInCategory.OST_MechanicalEquipment }).ToArray();
 
     public static ModelSnapshot Read(Document document)
     {
@@ -228,7 +232,7 @@ public static class ModelSnapshotReader
     private static List<FamilyTypeInfo> ReadFamilyTypes(Document document)
     {
         Dictionary<long, (FamilySymbol Symbol, string Kind, string Category, List<long> Instances)> types = new();
-        foreach (BuiltInCategory category in FamilyCategories)
+        foreach (BuiltInCategory category in AuditedFamilyCategories)
         {
             foreach (FamilyInstance instance in new FilteredElementCollector(document).OfCategory(category).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>())
             {
@@ -246,8 +250,32 @@ public static class ModelSnapshotReader
         }
 
         return types
-            .Select(pair => new FamilyTypeInfo(pair.Key, pair.Value.Symbol.FamilyName, pair.Value.Symbol.Name, pair.Value.Kind, pair.Value.Instances, pair.Value.Category))
+            .Select(pair => new FamilyTypeInfo(
+                pair.Key,
+                pair.Value.Symbol.FamilyName,
+                pair.Value.Symbol.Name,
+                pair.Value.Kind,
+                pair.Value.Instances,
+                pair.Value.Category,
+                RequiredTypeParameters(pair.Value.Symbol)))
             .ToList();
+    }
+
+    // The values of the type parameters the family list requires; a parameter the type lacks stays out.
+    private static Dictionary<string, string> RequiredTypeParameters(FamilySymbol symbol)
+    {
+        Dictionary<string, string> values = new(StringComparer.Ordinal);
+        foreach (string name in FamilyStandard.Embedded.Kinds.SelectMany(kind => kind.RequiredTypeParameters).Distinct())
+        {
+            if (name != GisSharedParameters.GisKind && symbol.LookupParameter(name) is { } parameter)
+            {
+                values[name] = parameter.StorageType == StorageType.String
+                    ? GisToolStandard.Normalize(parameter.AsString())
+                    : parameter.HasValue ? GisToolStandard.Normalize(parameter.AsValueString()) : string.Empty;
+            }
+        }
+
+        return values;
     }
 
     private static string TopLayerMaterial(Document document, FloorType floorType)

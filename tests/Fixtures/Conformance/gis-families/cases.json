@@ -1,0 +1,56 @@
+{
+  "note": "Audit cases for the closed family list (standards/families.json, G2), in the format of gis-tools/cases.json: a model of family types, and the findings as [severity, topic, element ids]. Read by GisFamiliesConformanceTests. The pyRevit tools do not know the list, so these cases are not in gis-tools/cases.json.",
+  "audit": [
+    {
+      "name": "an allowed family: j EV with its gis_kind, in its own type and in a duplicated one",
+      "model": {
+        "base": "standard",
+        "family_types": [
+          { "id": 1, "family": "j EV", "type": "j EV", "gis_kind": "elevator", "instance_ids": [11, 12] },
+          { "id": 2, "family": "j EV", "type": "j EV 15人乗り", "gis_kind": "elevator", "instance_ids": [13] }
+        ]
+      },
+      "expected": []
+    },
+    {
+      "name": "an allowed family whose type misses gis_kind",
+      "model": {
+        "base": "standard",
+        "family_types": [
+          { "id": 1, "family": "j EV", "type": "j EV", "gis_kind": "", "instance_ids": [11, 12] }
+        ]
+      },
+      "expected": [["warning", "families", [11, 12]]]
+    },
+    {
+      "name": "a family that is not allowed: another elevator family",
+      "model": {
+        "base": "standard",
+        "family_types": [
+          { "id": 1, "family": "Elevator - Hydraulic", "type": "2500 kg", "gis_kind": "elevator", "instance_ids": [21] }
+        ]
+      },
+      "expected": [["warning", "families", [21]]]
+    },
+    {
+      "name": "an allowed family marked as another kind",
+      "model": {
+        "base": "standard",
+        "family_types": [
+          { "id": 1, "family": "j 自動改札", "type": "通常", "gis_kind": "escalator", "instance_ids": [31] }
+        ]
+      },
+      "expected": [["error", "families", [31]]]
+    },
+    {
+      "name": "a family off the list with a unit category is mapped by the category, not the list",
+      "model": {
+        "base": "standard",
+        "family_types": [
+          { "id": 1, "family": "Bench", "type": "1800", "gis_kind": "", "gis_category": "fixture", "instance_ids": [41] }
+        ]
+      },
+      "expected": []
+    }
+  ]
+}

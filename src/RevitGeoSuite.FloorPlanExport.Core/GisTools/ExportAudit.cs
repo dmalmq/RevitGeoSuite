@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
@@ -209,7 +210,7 @@ public static class ExportAudit
 
     private static string Metres(double value) => value.ToString("+0.00 m;-0.00 m;0.00 m", CultureInfo.InvariantCulture);
 
-    /// <summary>Whether the export takes the family for an escalator: by gis_kind, else by category, else by its name.</summary>
+    /// <summary>Whether the export takes the family for an escalator: by gis_kind, else by category, else by the standard family list, else by its name.</summary>
     public static bool IsEscalator(string? gisKind, string? gisCategory, string familyName, string typeName)
     {
         string kind = GisToolStandard.Normalize(gisKind);
@@ -222,6 +223,14 @@ public static class ExportAudit
         if (category.Length > 0)
         {
             return string.Equals(category, VerticalCirculation.EscalatorCategory, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // The shipped list, as the export catalog reads it. A station-level family list would have to
+        // reach this check, the audit (GisToolStandard.Families) and ZoneCatalog together.
+        StandardFamilyKind? listed = FamilyStandard.Embedded.KindOf(familyName);
+        if (listed != null)
+        {
+            return VerticalCirculation.TryMapGisKind(listed.Kind, out string mapped) && mapped == VerticalCirculation.EscalatorCategory;
         }
 
         return GisAudit.SuggestKind(familyName + " " + typeName) == "escalator";
