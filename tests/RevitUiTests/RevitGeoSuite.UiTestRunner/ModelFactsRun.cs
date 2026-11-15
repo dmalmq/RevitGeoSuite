@@ -30,20 +30,22 @@ internal sealed partial class GisStandardRun
 
             return Task.CompletedTask;
         });
-        await Step("MF.2", "Every group type: instances, and the floors, rooms and doors one instance holds", step =>
+        await Step("MF.2", "Every group type: instances, and what one instance holds by the categories the export writes to", step =>
         {
             groups = host.Call("groups");
             GroupRow[] rows = groups["groups"].Deserialize<GroupRow[]>(Web) ?? Array.Empty<GroupRow>();
             foreach (GroupRow group in rows)
             {
-                step.Note($"{group.Name} ({group.Kind}) | instances {group.Instances} | floors {group.Floors}, rooms {group.Rooms}, doors {group.Doors}, other {group.Other}");
+                step.Note($"{group.Name} (id {group.Id}, {group.Kind}) | instances {group.Instances} | {group.Members}");
             }
 
-            GroupRow[] risky = rows.Where(group => group.Instances >= 2 && group.Floors + group.Rooms + group.Doors > 0).ToArray();
-            step.Note(risky.Length == 0
-                ? $"{rows.Length} group type(s); none with 2+ instances holds floors, rooms or doors."
-                : $"{rows.Length} group type(s); {risky.Length} with 2+ instances hold floors, rooms or doors: {string.Join(", ", risky.Select(group => $"'{group.Name}' ×{group.Instances}"))}.");
+            GroupRow[] warn = rows.Where(group => group.Instances == 1 && group.Exported > 0).ToArray();
+            GroupRow[] error = rows.Where(group => group.Instances >= 2 && group.Exported > 0).ToArray();
+            step.Note($"{rows.Length} group type(s). With one instance holding exported categories (an export write warns 'A group has been changed outside group edit mode'): {List(warn)}.");
+            step.Note($"With two or more instances holding exported categories (an export write is an error, or the value goes to every copy, so ids repeat): {List(error)}.");
             return Task.CompletedTask;
+
+            static string List(GroupRow[] found) => found.Length == 0 ? "none" : string.Join(", ", found.Select(group => $"'{group.Name}' (id {group.Id}) ×{group.Instances}: {group.Members}"));
         });
 
         WriteModelFacts(levels, groups);
@@ -65,14 +67,20 @@ internal sealed partial class GisStandardRun
             text.Append(CultureInfo.InvariantCulture, $"| {level.Name} | {level.LevelId} | {level.ElevationFt * FeetToMetres:0.000} | {level.LevelElevationFt * FeetToMetres:0.000} | {(level.HasFloors ? "yes" : "no")} |\n");
         }
 
-        text.Append("\n## Group types\n\n| Name | Kind | Instances | Floors | Rooms | Doors | Other |\n| --- | --- | --- | --- | --- | --- | --- |\n");
+        text.Append("\n## Group types\n\nOne instance holding exported categories: an export write warns. Two or more: an error, or the value goes to every copy. Member ids are in model-facts.json.\n\n| Name | Id | Kind | Instances | Floors | Rooms | Doors | Stairs | Columns | Openings | Family instances | Other |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
         foreach (GroupRow group in groups?["groups"].Deserialize<GroupRow[]>(Web) ?? Array.Empty<GroupRow>())
         {
-            text.Append(CultureInfo.InvariantCulture, $"| {group.Name} | {group.Kind} | {group.Instances} | {group.Floors} | {group.Rooms} | {group.Doors} | {group.Other} |\n");
+            text.Append(CultureInfo.InvariantCulture, $"| {group.Name} | {group.Id} | {group.Kind} | {group.Instances} | {group.Floors} | {group.Rooms} | {group.Doors} | {group.Stairs} | {group.Columns} | {group.Openings} | {group.FamilyInstances} | {group.Other} |\n");
         }
 
         File.WriteAllText(Path.Combine(options.OutputFolder, "model-facts.md"), text.ToString());
     }
 }
 
-internal sealed record GroupRow(long Id, string Name, string? Kind, int Instances, int Floors, int Rooms, int Doors, int Other);
+internal sealed record GroupRow(long Id, string Name, string? Kind, int Instances, int Floors, int Rooms, int Doors, int Stairs, int Columns, int Openings, int FamilyInstances, int Other)
+{
+    /// <summary>Members in the categories the export writes to (every one but other).</summary>
+    public int Exported => Floors + Rooms + Doors + Stairs + Columns + Openings + FamilyInstances;
+
+    public string Members => $"floors {Floors}, rooms {Rooms}, doors {Doors}, stairs {Stairs}, columns {Columns}, openings {Openings}, family instances {FamilyInstances}, other {Other}";
+}

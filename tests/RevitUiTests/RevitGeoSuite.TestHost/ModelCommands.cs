@@ -136,9 +136,11 @@ internal static class ModelCommands
         string.Equals(type.LookupParameter(parameter)?.AsString()?.Trim(), "elevator", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Every group type: model or detail, how many instances, and the floors, rooms and doors one instance
-    /// holds (nested groups counted in). Reads only. A type with two or more instances that holds any of
-    /// these is where an export edit can raise "A group has been changed outside group edit mode".
+    /// Every group type: model or detail, how many instances, and what one instance holds (nested groups
+    /// counted in), by the categories the IMDF export writes to: floors, rooms, doors, stairs, columns,
+    /// openings and other family instances, then everything else. Each category carries up to 20 member
+    /// ids. Reads only. Writing to a grouped element raises "A group has been changed outside group edit
+    /// mode" (a warning with one instance; with two or more, an error, or the value goes to every copy).
     /// </summary>
     public static Dictionary<string, object?> Groups(UIApplication app)
     {
@@ -151,53 +153,68 @@ internal static class ModelCommands
                 .Select(type =>
                 {
                     Group[] placed = instances[type.Id.Value].ToArray();
-                    var members = new Dictionary<string, int> { ["floors"] = 0, ["rooms"] = 0, ["doors"] = 0, ["other"] = 0 };
+                    var members = GroupMemberKinds.ToDictionary(kind => kind, _ => new List<long>());
                     if (placed.Length > 0)
                     {
-                        CountMembers(document, placed[0], members);
+                        CollectMembers(document, placed[0], members);
                     }
 
-                    return new Dictionary<string, object?>
+                    var row = new Dictionary<string, object?>
                     {
                         ["id"] = type.Id.Value,
                         ["name"] = type.Name,
                         ["kind"] = type.Category is Category category ? BuiltInName(category) : null,
                         ["instances"] = placed.Length,
-                        ["floors"] = members["floors"],
-                        ["rooms"] = members["rooms"],
-                        ["doors"] = members["doors"],
-                        ["other"] = members["other"],
+                        ["instanceIds"] = placed.Take(20).Select(group => group.Id.Value).ToList(),
                     };
+                    foreach (KeyValuePair<string, List<long>> pair in members)
+                    {
+                        row[pair.Key] = pair.Value.Count;
+                    }
+
+                    row["memberIds"] = members.Where(pair => pair.Key != "other" && pair.Value.Count > 0)
+                        .ToDictionary(pair => pair.Key, pair => pair.Value.Take(20).ToList());
+                    return row;
                 })
                 .OrderByDescending(row => (int)row["instances"]!)
                 .ToList(),
         };
     }
 
-    private static void CountMembers(Document document, Group group, Dictionary<string, int> members)
+    private static readonly string[] GroupMemberKinds = { "floors", "rooms", "doors", "stairs", "columns", "openings", "familyInstances", "other" };
+
+    private static void CollectMembers(Document document, Group group, Dictionary<string, List<long>> members)
     {
         foreach (ElementId id in group.GetMemberIds())
         {
             Element? element = document.GetElement(id);
-            switch (element)
+            if (element is Group nested)
             {
-                case Group nested:
-                    CountMembers(document, nested, members);
-                    break;
-                case Floor:
-                    members["floors"]++;
-                    break;
-                case not null when element.Category?.Id.Value == (long)BuiltInCategory.OST_Rooms:
-                    members["rooms"]++;
-                    break;
-                case not null when element.Category?.Id.Value == (long)BuiltInCategory.OST_Doors:
-                    members["doors"]++;
-                    break;
-                default:
-                    members["other"]++;
-                    break;
+                CollectMembers(document, nested, members);
+            }
+            else if (element != null)
+            {
+                members[MemberKind(element)].Add(element.Id.Value);
             }
         }
+    }
+
+    private static string MemberKind(Element element)
+    {
+        long category = element.Category?.Id.Value ?? 0;
+        bool Is(BuiltInCategory builtIn) => category == (long)builtIn;
+        return element switch
+        {
+            Floor => "floors",
+            _ when Is(BuiltInCategory.OST_Rooms) => "rooms",
+            _ when Is(BuiltInCategory.OST_Doors) => "doors",
+            _ when Is(BuiltInCategory.OST_Stairs) || Is(BuiltInCategory.OST_StairsRuns) || Is(BuiltInCategory.OST_StairsLandings) => "stairs",
+            _ when Is(BuiltInCategory.OST_Columns) || Is(BuiltInCategory.OST_StructuralColumns) => "columns",
+            Opening => "openings",
+            _ when Is(BuiltInCategory.OST_ShaftOpening) || Is(BuiltInCategory.OST_FloorOpening) => "openings",
+            FamilyInstance => "familyInstances",
+            _ => "other",
+        };
     }
 
     private static Document Active(UIApplication app) => app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");

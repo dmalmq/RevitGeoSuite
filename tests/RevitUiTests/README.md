@@ -329,9 +329,11 @@ What a person still does: the screenshots of the warning (H4.3) and the message 
 `--scenario model-facts --model <file>` opens a detached copy of the model in the run folder and reads, without changing anything:
 
 - every level: name, `level_id`, `Level.ProjectElevation` and `Level.Elevation` in metres, and whether it hosts floors;
-- every group type: model or detail, instance count, and the floors, rooms, doors and other elements one instance holds (nested groups counted in). The step names the types with two or more instances that hold floors, rooms or doors, where an edit can raise "A group has been changed outside group edit mode".
+- every group type with its id: model or detail, instance count, and what one instance holds (nested groups counted in) by the categories the export writes to: floors, rooms, doors, stairs, columns, openings and other family instances, then everything else. The JSON adds up to 20 member ids per category and up to 20 instance ids.
 
-It writes `model-facts.md` and `model-facts.json` into the run folder as well as the report. It needs `Install-TestHost.ps1` for the test host's `groups` command and the new level field.
+The step lists two kinds of group types that hold exported categories. With one instance, an export write raises the warning "A group has been changed outside group edit mode". With two or more, the write is an error, or the value goes to every copy, so `id` values repeat.
+
+It writes `model-facts.md` and `model-facts.json` into the run folder as well as the report. It needs `Install-TestHost.ps1` for the test host's `groups` command and the new level field. Like every scenario it opens RevitGeoSuite's page first, so pass `-RgsBuild` as for any run.
 
 ## The georef-read scenario
 
