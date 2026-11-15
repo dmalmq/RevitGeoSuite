@@ -233,15 +233,8 @@ public sealed class ZoneCatalog
             "Commercial support",
             "Retail (external commercial facilities)");
 
-        Dictionary<string, ZoneInfo> families = new(StringComparer.Ordinal)
-        {
-            ["j EV"] = new ZoneInfo("elevator", "E0E0E0", null),
-            ["j エスカレータ-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
-            ["j エスカレーター-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
-            ["j 自動改札"] = new ZoneInfo("fixture", "D4C5A9", null),
-        };
-
-        return new ZoneCatalog(zones, families);
+        // The standard families (standards/families.json), each with its kind's unit category.
+        return new ZoneCatalog(zones, Standards.FamilyStandard.Embedded.ZoneLookup());
     }
 
     public static ZoneCatalog FromJsonFile(string path)

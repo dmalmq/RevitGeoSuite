@@ -1,0 +1,26 @@
+{
+  "note": "The closed list of families per gis_kind (G2). A family is a standard escalator, moving walkway, elevator or ticket gate only when its family name is listed under that kind; any type inside it is fine, so a duplicated type stays standard. Every type of a listed family carries the type parameters in required_type_parameters; gis_kind must equal the kind. Edited by hand; see standards/README.md.",
+  "version": 1,
+  "kinds": [
+    {
+      "kind": "escalator",
+      "families": ["j エスカレータ-lightweight", "j エスカレーター-lightweight"],
+      "required_type_parameters": ["gis_kind"]
+    },
+    {
+      "kind": "moving_walkway",
+      "families": [],
+      "required_type_parameters": ["gis_kind"]
+    },
+    {
+      "kind": "elevator",
+      "families": ["j EV"],
+      "required_type_parameters": ["gis_kind"]
+    },
+    {
+      "kind": "ticket_gate",
+      "families": ["j 自動改札"],
+      "required_type_parameters": ["gis_kind"]
+    }
+  ]
+}

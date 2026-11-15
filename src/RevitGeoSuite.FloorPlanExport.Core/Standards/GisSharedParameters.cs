@@ -101,8 +101,6 @@ public static class GisSharedParameters
     /// <summary>The categories that make unit features: floors, rooms, stairs and the escalator and fixture families.</summary>
     private static readonly string[] UnitCategories = { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment };
 
-    private static readonly string[] FamilyCategories = { GenericModel, SpecialtyEquipment };
-
     /// <summary>Every category the export makes units of, columns included, so each can hold its gis_key.</summary>
     private static readonly string[] KeyedCategories =
         { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, "OST_Columns", "OST_StructuralColumns" };
@@ -170,7 +168,7 @@ public static class GisSharedParameters
             new Guid("ff63e172-c407-4265-b075-4e1d5e9822b8"),
             GisParameterDataType.Text,
             GisParameterBinding.Type,
-            FamilyCategories,
+            new[] { GenericModel, SpecialtyEquipment, MechanicalEquipment },
             "What a family is in the GIS: escalator, moving_walkway, elevator or ticket_gate."),
         new GisParameterDefinition(
             GisDirection,

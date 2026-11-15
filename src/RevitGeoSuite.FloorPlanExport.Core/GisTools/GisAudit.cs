@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
@@ -293,17 +295,34 @@ public static class GisAudit
         {
             string kind = GisToolStandard.Normalize(familyType.GisKind).ToLowerInvariant();
             string name = familyType.FamilyName + " : " + familyType.TypeName;
-            if (kind.Length > 0)
+            if (kind.Length > 0 && !GisKinds.Contains(kind))
             {
-                if (!GisKinds.Contains(kind))
+                yield return new GisAuditFinding(
+                    GisAuditSeverity.Error,
+                    "families",
+                    $"{name} has gis_kind '{familyType.GisKind}'. Use one of {string.Join(", ", GisKinds)}.",
+                    familyType.InstanceIds);
+                continue;
+            }
+
+            StandardFamilyKind? listed = standard.Families.KindOf(familyType.FamilyName);
+            if (listed != null)
+            {
+                foreach (GisAuditFinding finding in AuditStandardFamily(familyType, name, kind, listed))
                 {
-                    yield return new GisAuditFinding(
-                        GisAuditSeverity.Error,
-                        "families",
-                        $"{name} has gis_kind '{familyType.GisKind}'. Use one of {string.Join(", ", GisKinds)}.",
-                        familyType.InstanceIds);
+                    yield return finding;
                 }
 
+                continue;
+            }
+
+            if (kind.Length > 0)
+            {
+                yield return new GisAuditFinding(
+                    GisAuditSeverity.Warning,
+                    "families",
+                    $"{name} has gis_kind {kind}, but {familyType.FamilyName} is not a standard {kind} family ({StandardNames(standard.Families.Kind(kind))}). Use a standard family, or add this one to standards/families.json.",
+                    familyType.InstanceIds);
                 continue;
             }
 
@@ -319,11 +338,46 @@ public static class GisAudit
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "families",
-                    $"{name} looks like {("aeiou".IndexOf(suggested[0]) >= 0 ? "an" : "a")} {suggested} but has no gis_kind, so it is found only by its family name, if at all.",
+                    $"{name} looks like {("aeiou".IndexOf(suggested[0]) >= 0 ? "an" : "a")} {suggested} but has no gis_kind and is not a standard family ({StandardNames(standard.Families.Kind(suggested))}), so the export skips it unless the export dialog maps the family by hand.",
                     familyType.InstanceIds);
             }
         }
     }
+
+    // A family on the list: its type must say the listed kind and fill the other required parameters.
+    private static IEnumerable<GisAuditFinding> AuditStandardFamily(FamilyTypeInfo familyType, string name, string kind, StandardFamilyKind listed)
+    {
+        if (kind.Length > 0 && !SameKind(kind, listed.Kind))
+        {
+            yield return new GisAuditFinding(
+                GisAuditSeverity.Error,
+                "families",
+                $"{name} is a standard {listed.Kind} family, but its gis_kind says {kind}. The export follows gis_kind. Set gis_kind to {listed.Kind} on the type.",
+                familyType.InstanceIds);
+            yield break;
+        }
+
+        List<string> missing = listed.RequiredTypeParameters
+            .Where(parameter => parameter == GisSharedParameters.GisKind
+                ? kind.Length == 0
+                : !familyType.TypeParameters.TryGetValue(parameter, out string? value) || value.Length == 0)
+            .ToList();
+        if (missing.Count > 0)
+        {
+            string fill = string.Join(", ", missing.Select(parameter => parameter == GisSharedParameters.GisKind ? $"gis_kind = {listed.Kind}" : parameter));
+            yield return new GisAuditFinding(
+                GisAuditSeverity.Warning,
+                "families",
+                $"{name} is a standard {listed.Kind} family, but its type has no {string.Join(" or ", missing)}. The export finds it by its family name; fill {fill} on the type.",
+                familyType.InstanceIds);
+        }
+    }
+
+    private static bool SameKind(string a, string b) =>
+        VerticalCirculation.TryMapGisKind(a, out string first) && VerticalCirculation.TryMapGisKind(b, out string second) && first == second;
+
+    private static string StandardNames(StandardFamilyKind? kind) =>
+        kind == null || kind.Families.Count == 0 ? "the standard lists none yet" : "standard: " + string.Join(", ", kind.Families);
 
     internal static string GuidText(Guid? guid) => guid.HasValue ? guid.Value.ToString("D") : "(project parameter)";
 

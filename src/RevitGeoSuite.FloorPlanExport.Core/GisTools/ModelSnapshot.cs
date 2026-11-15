@@ -119,7 +119,7 @@ public sealed class LevelInfo
     public bool HasFloors { get; }
 }
 
-/// <summary>A family type of the generic model or specialty equipment category placed in the model.</summary>
+/// <summary>A family type of the generic model, specialty or mechanical equipment category placed in the model.</summary>
 public sealed class FamilyTypeInfo
 {
     public FamilyTypeInfo(
@@ -128,7 +128,8 @@ public sealed class FamilyTypeInfo
         string typeName,
         string? gisKind = null,
         IEnumerable<long>? instanceIds = null,
-        string? gisCategory = null)
+        string? gisCategory = null,
+        IReadOnlyDictionary<string, string>? typeParameters = null)
     {
         ElementId = elementId;
         FamilyName = familyName ?? string.Empty;
@@ -136,6 +137,7 @@ public sealed class FamilyTypeInfo
         GisKind = gisKind ?? string.Empty;
         GisCategory = gisCategory ?? string.Empty;
         InstanceIds = (instanceIds ?? Array.Empty<long>()).ToList();
+        TypeParameters = typeParameters ?? new Dictionary<string, string>();
     }
 
     public long ElementId { get; }
@@ -149,6 +151,12 @@ public sealed class FamilyTypeInfo
     public string GisCategory { get; }
 
     public IReadOnlyList<long> InstanceIds { get; }
+
+    /// <summary>
+    /// The type's values of the parameters the standard family list requires (other than gis_kind),
+    /// trimmed; a parameter the type lacks is missing.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> TypeParameters { get; }
 }
 
 /// <summary>Everything the model tools read from one model.</summary>

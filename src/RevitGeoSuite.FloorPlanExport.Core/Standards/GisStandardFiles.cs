@@ -42,6 +42,8 @@ public static class GisStandardFiles
 
     public static string ReadFieldList() => Read(GisFieldList.FileName);
 
+    public static string ReadFamilies() => Read(FamilyStandard.FileName);
+
     private static string Read(string fileName)
     {
         Assembly assembly = typeof(GisStandardFiles).Assembly;

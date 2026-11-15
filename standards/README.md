@@ -5,6 +5,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | File | What it is | Edited by hand |
 |---|---|---|
 | `color_theme.json` | Kanizu's area colour table (StaNavi map design), copied unchanged from Kanizu `crates/kanizu-core/src/recolor/color_theme.json` (dev `de67c3c`) | No, copy it again from Kanizu |
+| `families.json` | The closed list of families per `gis_kind`: the allowed family names for escalators, moving walkways, elevators and ticket gates, and the type parameters every type of them fills | Yes |
 | `floor-types.json` | The 21 standard floor types with `gis_category`, `gis_restriction`, a `GIS_<area>` material and its theme colour, the `former_names` they replace, plus one material per theme area, `GIS_unlisted` (#E5E5E5) and the list of unit categories the export accepts | No, generated |
 | `KanizuGIS.SharedParameters.txt` | The shared parameter file, with fixed GUIDs | No, generated |
 | `fields.json` | The field list: one row per GIS field with its layer, GDB name, Japanese alias, type, pick list, Revit source and owner ([contract](../docs/kanizu-link-contract.md)) | No, generated; a station copy gets rows added by hand |
@@ -23,7 +24,7 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | `ordinal` | instance (integer) | levels, floors, rooms |
 | `gis_category` | type | floors, generic models, specialty equipment |
 | `gis_restriction` | type | floors, generic models, specialty equipment; empty means by location |
-| `gis_kind` | type | generic models, specialty equipment (escalator, moving_walkway, elevator, ticket_gate) |
+| `gis_kind` | type | generic models, specialty equipment, mechanical equipment (escalator, moving_walkway, elevator, ticket_gate) |
 | `gis_direction` | instance | stairs, generic models, specialty equipment (up, down, both) |
 | `gis_levels_served` | instance | generic models, specialty equipment, mechanical equipment; the levels an elevator stops at, by level name or `short_name`, separated by commas, set on any one floor's object of the shaft; empty means the levels of the elevator objects drawn in the same plan spot |
 | `gis_door` | type | doors; the opening's `door` field |
@@ -42,7 +43,20 @@ The first six names are the ones RevitGeoSuite has always used. Earlier versions
 
 The export no longer writes the resolved category back into a floor's `category` (rooms still get it), so a value there is always one somebody set. Exports before this standard wrote it into every floor, so until a model is set up with the standard (Project Information has `gis_standard_version`), a floor's `category` that only repeats what steps 3 and 4 give is read as that old echo and does not override a type that has its own `gis_category`. Set up model clears those echoes when it stamps the version; from then on every floor `category` counts.
 
-A generic model or specialty equipment family gets its unit category the same way: `gis_kind` first, then its own `category`, then its type's `gis_category` with `gis_restriction`, then the per-PC override and the family name catalog. A family with a category from these parameters is exported as a unit even when its name is not in the catalog.
+A generic model or specialty equipment family gets its unit category the same way: `gis_kind` first, then its own `category`, then its type's `gis_category` with `gis_restriction`, then the per-PC override and the standard family list. A family with a category from these parameters is exported as a unit even when its name is not on the list.
+
+## Families
+
+`families.json` is the closed list of families, as the 21 floor types are for floors. For each `gis_kind` it names the allowed families, exactly as Revit shows the family name, and the type parameters every type of them fills (`gis_kind`, which must equal the kind). Any type inside a listed family is standard, so duplicating a type to make a new size is fine. Floors keep their own rule: any floor type with a valid `gis_category` and `gis_restriction` pair counts, whatever its name.
+
+The export maps a listed family whose type has no `gis_kind` to its kind's unit category. The audit checks generic models, specialty equipment and mechanical equipment (where LUMINE draws `j EV`):
+
+- A listed family whose type has no `gis_kind`, or misses another required parameter: warning. The export still finds it by its name.
+- A listed family whose `gis_kind` says another kind: error. The export follows `gis_kind`.
+- A family off the list with a `gis_kind`: warning that names the standard families. Use a standard family, or add the family here.
+- A family off the list and without `gis_kind` or a unit category, whose name looks like an escalator, elevator, moving walkway or ticket gate: warning, since the export skips it.
+
+To allow a family, add its name under its kind and keep the file valid: every kind once, no family under two kinds. `FamilyStandardTests` checks both.
 
 ## Floor type names
 

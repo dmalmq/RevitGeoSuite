@@ -19,12 +19,18 @@ namespace RevitGeoSuite.FloorPlanExport.Core.Tests.GisTools;
 /// </summary>
 public sealed class GisToolsConformanceTests
 {
-    private static readonly JObject Cases = LoadCases();
+    private static readonly JObject Cases = LoadCases("gis-tools");
 
     [Fact]
-    public void Audit()
+    public void Audit() => AuditCases(Cases);
+
+    /// <summary>The closed family list's cases (G2), which only RevitGeoSuite knows, in their own file.</summary>
+    [Fact]
+    public void FamilyListAudit() => AuditCases(LoadCases("gis-families"));
+
+    private static void AuditCases(JObject cases)
     {
-        foreach (JObject testCase in Cases["audit"]!.Cast<JObject>())
+        foreach (JObject testCase in cases["audit"]!.Cast<JObject>())
         {
             IReadOnlyList<GisAuditFinding> findings = GisAudit.Run(BuildModel((JObject)testCase["model"]!), Standard);
 
@@ -189,9 +195,9 @@ public sealed class GisToolsConformanceTests
 
     private static string Format(IEnumerable<string> lines) => string.Join("; ", lines);
 
-    private static JObject LoadCases([CallerFilePath] string sourceFile = "")
+    private static JObject LoadCases(string folder, [CallerFilePath] string sourceFile = "")
     {
-        string path = Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", "..", "Fixtures", "Conformance", "gis-tools", "cases.json");
+        string path = Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", "..", "Fixtures", "Conformance", folder, "cases.json");
         return JObject.Parse(File.ReadAllText(path, Encoding.UTF8));
     }
 }
