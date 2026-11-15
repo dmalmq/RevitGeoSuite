@@ -225,12 +225,13 @@ internal sealed partial class GisStandardRun
         step.Check(found.Count == 0, $"The journal has no group violation ({string.Join(" | ", found.Take(5))}).");
     }
 
-    // Every bound definition named id must vary by group instance; a model can bind an older one beside the current one.
+    // Every instance-bound definition named id must vary by group instance (a model can bind an older one beside
+    // the current one); a type-bound one cannot vary, and the product switches only instance-bound ones.
     private void IdDefinitionsVary(StepResult step)
     {
         JsonArray definitions = host.Call("parameterDefinitions", new { names = new[] { "id" } })["definitions"]?.AsArray() ?? new JsonArray();
-        JsonNode?[] bound = definitions.Where(row => row?["binding"] != null).ToArray();
-        step.Check(bound.Length > 0 && bound.All(row => row?["variesAcrossGroups"]?.GetValue<bool>() == true), $"Every bound 'id' definition varies by group instance ({definitions.ToJsonString()}).");
+        JsonNode?[] instance = definitions.Where(row => row?["binding"]?.GetValue<string>() == "instance").ToArray();
+        step.Check(instance.Length > 0 && instance.All(row => row?["variesAcrossGroups"]?.GetValue<bool>() == true), $"Every instance-bound 'id' definition varies by group instance ({definitions.ToJsonString()}).");
     }
 
     private static bool Overlaps(ElementRow moved, ElementRow other, double dxFt) =>

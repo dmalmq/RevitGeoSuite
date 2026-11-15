@@ -328,7 +328,7 @@ What a person still does: the screenshots of the warning (H4.3) and the message 
 
 `--scenario b9-groups --model <file>` needs RevitGeoSuite B9. After Set up, the georeference and a station export, it picks a floor that is one unit and hosts nothing. A fixture groups that floor and places a second instance of the group type along the model X axis, at the first offset of 5, 10, 20, 40 or 80 m whose box clears the other floors on that level. Then it checks:
 
-- B9.2: the GIS export writes two different, non-empty `id` values, one per copy, each in one unit row, and every bound `id` definition varies by group instance. When the copies shared an `id`, copy 1 (the lower element id) keeps it, copy 2 gets a new GUID, and the export warnings say "Element <copy 1> keeps id …".
+- B9.2: the GIS export writes two different, non-empty `id` values, one per copy, each in one unit row, and every instance-bound `id` definition varies by group instance. When the copies shared an `id`, copy 1 (the lower element id) keeps it, copy 2 gets a new GUID, and the export warnings say "Element <copy 1> keeps id …".
 - B9.3: Set up model finishes.
 - B9.4: a drift file renames copy 2. Accepting it changes copy 2 only.
 - B9.5: with copy 2's `id` cleared, a second export gives copy 2 a new `id`, and copy 1 keeps its `id`.
