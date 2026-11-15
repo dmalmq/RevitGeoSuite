@@ -52,8 +52,8 @@
         </div>
         <div class="mt-2 h-1.5 bg-border rounded-full overflow-hidden">
           <div
-            class="h-full bg-primary transition-all duration-300"
-            style="width: {(completedCount / totalCount) * 100}%"
+            class="h-full w-full origin-left bg-primary transition-transform duration-300"
+            style="transform: scaleX({completedCount / totalCount})"
           ></div>
         </div>
       </div>

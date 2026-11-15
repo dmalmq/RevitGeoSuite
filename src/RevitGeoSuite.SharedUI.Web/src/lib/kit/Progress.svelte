@@ -34,11 +34,11 @@
     class="relative h-1.5 overflow-hidden rounded-full bg-border"
   >
     {#if percent == null}
-      <div class="kit-progress-indeterminate absolute inset-y-0 w-1/3 rounded-full {tone === 'danger' ? 'bg-destructive' : 'bg-primary'}"></div>
+      <div class="kit-progress-indeterminate kit-loading absolute inset-y-0 left-0 w-1/3 rounded-full {tone === 'danger' ? 'bg-destructive' : 'bg-primary'}"></div>
     {:else}
       <div
-        class="h-full rounded-full transition-[width] duration-200 {tone === 'danger' ? 'bg-destructive' : 'bg-primary'}"
-        style:width="{percent}%"
+        class="h-full w-full origin-left transition-transform duration-200 {tone === 'danger' ? 'bg-destructive' : 'bg-primary'}"
+        style:transform="scaleX({percent / 100})"
       ></div>
     {/if}
   </div>
@@ -46,15 +46,23 @@
 
 <style>
   .kit-progress-indeterminate {
-    animation: kit-progress-slide 1.2s ease-in-out infinite;
+    animation: kit-progress-slide 1.2s linear infinite;
+  }
+
+  /* Without motion a one-third bar reads as "33% done", so the bar fills the track and pulses instead. */
+  @media (prefers-reduced-motion: reduce) {
+    .kit-progress-indeterminate {
+      width: 100%;
+      transform: none;
+    }
   }
 
   @keyframes kit-progress-slide {
     from {
-      left: -33%;
+      transform: translateX(-100%);
     }
     to {
-      left: 100%;
+      transform: translateX(300%);
     }
   }
 </style>

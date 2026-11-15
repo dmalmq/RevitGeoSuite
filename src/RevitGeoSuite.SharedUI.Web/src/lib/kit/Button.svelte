@@ -56,7 +56,7 @@
   {...rest}
 >
   {#if busy}
-    <Icon name="loader-circle" size={ICON_SIZE[size]} class="animate-spin" />
+    <Icon name="loader-circle" size={ICON_SIZE[size]} class="animate-spin kit-loading" />
   {:else if icon}
     <Icon name={icon} size={ICON_SIZE[size]} />
   {/if}

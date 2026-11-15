@@ -113,6 +113,21 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /* A busy indicator that stops moving looks finished, so loading keeps a slow pulse. */
+  .kit-loading {
+    animation: kit-loading-pulse 2s ease-in-out infinite !important;
+  }
+}
+
+@keyframes kit-loading-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 html, body {
