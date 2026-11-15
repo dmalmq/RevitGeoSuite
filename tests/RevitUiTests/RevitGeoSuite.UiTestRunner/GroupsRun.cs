@@ -12,7 +12,7 @@ namespace RevitGeoSuite.UiTestRunner;
 /// </summary>
 internal sealed partial class GisStandardRun
 {
-    private const double GroupOffsetM = 5;
+    private static readonly double[] GroupOffsetsM = { 5, 10, 20, 40, 80 };
     private static readonly string[] AtomMarkers = { "Disallowed Atom Touch", "AtomViolation" };
 
     private readonly DateTime groupsStartedUtc = DateTime.UtcNow;
@@ -67,7 +67,23 @@ internal sealed partial class GisStandardRun
             return Task.CompletedTask;
         }
 
-        JsonObject fixture = host.Call("fixture", new { groupCopy = new { floor = groupFloors[0], offsetM = GroupOffsetM } });
+        // The copy goes along the model's X axis by the first offset whose box clears every other floor on
+        // F's level, so Revit has no overlap or "identical instances" warning to raise; the fixture logs
+        // any warning it removed.
+        ElementRow f = Element(groupFloors[0]);
+        ElementRow[] others = Elements(FloorScan().Select(row => row.Id).Where(id => id != f.Id)).Where(row => row.Exists && row.LevelId == f.LevelId && row.Min != null && row.Max != null).ToArray();
+        double offsetM = GroupOffsetsM.FirstOrDefault(offset => !others.Any(other => Overlaps(f, other, offset / 0.3048)), double.NaN);
+        if (double.IsNaN(offsetM))
+        {
+            offsetM = GroupOffsetsM[^1];
+            step.Note($"Every offset up to {offsetM} m overlaps another floor on F's level; the copy goes {offsetM} m along X anyway.");
+        }
+        else
+        {
+            step.Note($"The copy goes {offsetM} m along the model's X axis, where its box overlaps none of the {others.Length} other floor(s) on F's level.");
+        }
+
+        JsonObject fixture = host.Call("fixture", new { groupCopy = new { floor = groupFloors[0], offsetM } });
         step.Note($"Fixture: {fixture["log"]?.ToJsonString()}.");
         long[] floors = fixture["group"]?["floors"].Deserialize<long[]>() ?? Array.Empty<long>();
         if (!step.Check(floors.Length == 2 && floors.All(id => Element(id).Exists), $"Two floors, one per group instance ({string.Join(", ", floors)})."))
@@ -198,6 +214,9 @@ internal sealed partial class GisStandardRun
         List<string> found = AtomLines().Skip(atoms).ToList();
         step.Check(found.Count == 0, $"The journal has no group violation ({string.Join(" | ", found.Take(5))}).");
     }
+
+    private static bool Overlaps(ElementRow moved, ElementRow other, double dxFt) =>
+        moved.Min![0] + dxFt < other.Max![0] && moved.Max![0] + dxFt > other.Min![0] && moved.Min[1] < other.Max[1] && moved.Max![1] > other.Min![1];
 
     private List<string> AtomLines() =>
         JournalScan.LinesSince(JournalScan.DefaultFolder(options.RevitYear), groupsStartedUtc.AddMinutes(-1))

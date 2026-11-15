@@ -809,18 +809,37 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         ILocator done = Shell.Button("Open folder");
         ILocator failed = Shell.Text("Export failed");
         // A Revit dialog during the export (such as "A group has been changed outside group edit mode")
-        // holds it until someone answers, so look for one every 10 s: fail the step with its text and
-        // cancel it, as a person would, then keep waiting for the export's own end.
+        // holds it until someone answers. Every 10 s the test host lists the modal dialogs that hold Revit
+        // (no window message, so it answers while the export runs); one still there 10 s later fails the
+        // step with its text and is cancelled, as a person would, and the run keeps waiting for the export.
         DateTime end = DateTime.UtcNow + TimeSpan.FromMinutes(30);
         bool finished = false;
+        HashSet<long> seen = new();
+        int cancelled = 0;
         while (!finished && DateTime.UtcNow < end)
         {
             finished = await Shell.ShowsAsync(done.Or(failed), 10000);
-            if (!finished && host.Call("windows")["windows"]?.AsArray() is { Count: > 0 } open)
+            if (finished)
             {
-                JsonObject closed = host.Call("closeDialogs", new { timeoutMs = 20000 });
-                step.Check(false, $"Revit showed {open.Count} dialog(s) during the export; cancelled: {closed["closed"]?.ToJsonString() ?? open.ToJsonString()}");
+                break;
             }
+
+            long[] now = host.Call("blockingDialogs")["dialogs"]?.AsArray().Select(dialog => dialog!["handle"]!.GetValue<long>()).ToArray() ?? Array.Empty<long>();
+            long[] stuck = now.Where(seen.Contains).ToArray();
+            seen = now.ToHashSet();
+            if (stuck.Length > 0)
+            {
+                JsonObject closed = host.Call("closeDialogs", new { timeoutMs = 20000, handles = stuck });
+                if (++cancelled <= 3)
+                {
+                    step.Check(false, $"Revit held the export with {stuck.Length} dialog(s); cancelled: {closed["closed"]?.ToJsonString()}");
+                }
+            }
+        }
+
+        if (cancelled > 3)
+        {
+            step.Check(false, $"… and {cancelled - 3} more dialog(s) cancelled during the export.");
         }
 
         if (!step.Check(finished, "The export finishes within 30 minutes."))

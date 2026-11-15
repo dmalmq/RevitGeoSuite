@@ -326,14 +326,14 @@ What a person still does: the screenshots of the warning (H4.3) and the message 
 
 ## The b9-groups scenario
 
-`--scenario b9-groups --model <file>` needs RevitGeoSuite B9. After Set up, the georeference and a station export, it picks a floor that is one unit and hosts nothing. A fixture groups that floor and places a second instance of the group type 5 m east. Then it checks:
+`--scenario b9-groups --model <file>` needs RevitGeoSuite B9. After Set up, the georeference and a station export, it picks a floor that is one unit and hosts nothing. A fixture groups that floor and places a second instance of the group type along the model X axis, at the first offset of 5, 10, 20, 40 or 80 m whose box clears the other floors on that level. Then it checks:
 
 - B9.2: the GIS export writes two different, non-empty `id` values, one per copy, each in one unit row, and the `id` definition varies by group instance.
 - B9.3: Set up model finishes.
 - B9.4: a drift file renames copy 2. Accepting it changes copy 2 only.
 - B9.5: with copy 2's `id` cleared, a second export gives copy 2 a new `id`, and copy 1 keeps its `id`.
 
-Each of these steps also fails if Revit raised or showed a dialog, or if the journal logged "Disallowed Atom Touch" or "AtomViolation" during the step. The test host command `parameterDefinitions {names}` reports each bound parameter's binding and `variesAcrossGroups`. While any export runs, the runner checks for a Revit dialog every 10 s. When it finds one, it fails the step with the dialog's text and cancels it, so a dialog no longer holds the export for 30 minutes.
+Each of these steps also fails if Revit raised or showed a dialog, or if the journal logged "Disallowed Atom Touch" or "AtomViolation" during the step. The test host command `parameterDefinitions {names}` reports each bound parameter's binding and `variesAcrossGroups`. While any export runs, the runner asks the test host every 10 s for `blockingDialogs`: visible #32770 dialogs of Revit's process whose owner is disabled (modal), with a button and no progress bar. The test host reads them without sending a window message, so it answers while Revit is busy. A dialog still there at the next poll fails the step with its text and is cancelled by its handle, so a dialog no longer holds the export for 30 minutes. At most three such failures are listed, then a count.
 
 ## The model-facts scenario
 
