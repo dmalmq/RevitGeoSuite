@@ -65,6 +65,50 @@ public sealed class Tiles3DGeometryExtractor
     }
 
     /// <summary>
+    /// The host model's levels whose UniqueIds are listed, without any element geometry: name, key
+    /// and elevation in the same frame <see cref="Extract"/> gives a mesh's level, so a levels file
+    /// written from them reads like one written from meshes. Send to Kanizu writes it.
+    /// </summary>
+    public IReadOnlyList<Tiles3DLevelGroup> ExtractLevels(
+        Document document,
+        Tiles3DExportReferenceContext referenceContext,
+        IReadOnlyCollection<string> levelUniqueIds)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        if (referenceContext is null)
+        {
+            throw new ArgumentNullException(nameof(referenceContext));
+        }
+
+        var wanted = new HashSet<string>(levelUniqueIds ?? Array.Empty<string>(), StringComparer.Ordinal);
+        GeometryExtractionFrame frame = GeometryExtractionFrame.Create(document.ActiveProjectLocation, referenceContext);
+        return new FilteredElementCollector(document)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .Where(level => wanted.Contains(level.UniqueId ?? string.Empty))
+            .Select(level =>
+            {
+                double elevation = frame.ToLocalMeters(new XYZ(0, 0, level.ProjectElevation)).Z;
+                return new Tiles3DLevelGroup
+                {
+                    LevelKey = Tiles3DLevelMetadata.BuildLevelKey(level.Name),
+                    LevelName = level.Name ?? string.Empty,
+                    LevelElevationMeters = elevation,
+                    LevelUniqueIds = new List<string> { level.UniqueId ?? string.Empty },
+                    MinZMeters = elevation,
+                    MaxZMeters = elevation,
+                };
+            })
+            .OrderBy(group => group.LevelElevationMeters)
+            .ThenBy(group => group.LevelName, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
     /// Every placed room in the host and in the selected linked models, with its finish-face
     /// footprint in plane-grid easting and northing. Rooms have no geometry in a 3D view, so the
     /// scope's view does not filter them; its linked models do.

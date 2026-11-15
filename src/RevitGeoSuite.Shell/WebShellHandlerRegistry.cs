@@ -77,6 +77,8 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new CityGmlExportHandler(jobs));
         bridge.RegisterHandler(new CesiumExportStateHandler());
         bridge.RegisterHandler(new CesiumExportRunHandler(jobs));
+        bridge.RegisterHandler(new StationSendStateHandler());
+        bridge.RegisterHandler(new StationSendRunHandler(jobs));
         bridge.RegisterHandler(new CesiumPushHandler(jobs));
         bridge.RegisterHandler(new CesiumViewerSettingsGetHandler());
         bridge.RegisterHandler(new CesiumViewerSettingsSaveHandler());

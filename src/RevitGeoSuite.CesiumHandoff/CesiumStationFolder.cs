@@ -90,6 +90,74 @@ public static class CesiumStationFolder
         return slug.Length > 0 ? $"{slug}-{idPart.ToLowerInvariant()}" : idPart.ToLowerInvariant();
     }
 
+    /// <summary>
+    /// The newest other version in <paramref name="versionDirectory"/>'s model folder that has a
+    /// <c>gis/</c> folder, by the manifest's <c>createdUtc</c>, or null. Versions older than the
+    /// given one only, so a send compares with what was there before it. A folder that is hidden,
+    /// has no manifest or whose manifest cannot be read is skipped, as Kanizu skips it.
+    /// </summary>
+    public static string? PreviousVersion(string versionDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(versionDirectory))
+        {
+            throw new ArgumentException("A version folder is required.", nameof(versionDirectory));
+        }
+
+        string self = Path.GetFullPath(versionDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string? modelDirectory = Path.GetDirectoryName(self);
+        DateTime? selfCreated = ReadCreatedUtc(self);
+        if (modelDirectory is null || !Directory.Exists(modelDirectory) || selfCreated is null)
+        {
+            return null;
+        }
+
+        string? best = null;
+        DateTime bestCreated = DateTime.MinValue;
+        foreach (string candidate in Directory.GetDirectories(modelDirectory))
+        {
+            string name = Path.GetFileName(candidate);
+            if (name.StartsWith(".", StringComparison.Ordinal)
+                || string.Equals(Path.GetFullPath(candidate).TrimEnd(Path.DirectorySeparatorChar), self, StringComparison.OrdinalIgnoreCase)
+                || !Directory.Exists(Path.Combine(candidate, "gis")))
+            {
+                continue;
+            }
+
+            DateTime? created = ReadCreatedUtc(candidate);
+            if (created is null || created.Value > selfCreated.Value)
+            {
+                continue;
+            }
+
+            if (best is null || created.Value > bestCreated
+                || (created.Value == bestCreated && string.CompareOrdinal(name, Path.GetFileName(best)) > 0))
+            {
+                best = candidate;
+                bestCreated = created.Value;
+            }
+        }
+
+        return best;
+    }
+
+    private static DateTime? ReadCreatedUtc(string versionDirectory)
+    {
+        string manifestPath = Path.Combine(versionDirectory, "cesium-package.json");
+        if (!File.Exists(manifestPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath)).CreatedUtc.ToUniversalTime();
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is Newtonsoft.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>UTC time first so names sort by age, then the content hash prefix.</summary>
     public static string VersionFolderName(DateTime createdUtc, string? contentHash)
     {

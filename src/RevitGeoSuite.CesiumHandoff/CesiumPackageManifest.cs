@@ -139,7 +139,11 @@ public static class CesiumHeightDatums
 
 public sealed class CesiumPackageTiles
 {
-    public string Tileset { get; set; } = string.Empty;
+    /// <summary>
+    /// <c>tiles/tileset.json</c>. Absent on a package Send to Kanizu wrote, which has GIS and the
+    /// level and room indexes but no 3D Tiles.
+    /// </summary>
+    public string? Tileset { get; set; }
 
     public string? Levels { get; set; }
 

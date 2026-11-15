@@ -31,6 +31,8 @@ using RevitGeoSuite.SharedUI.Web.Contracts;
 [assembly: RpcMethod("citygml.export", typeof(CityGmlExportRequest), typeof(JobStarted))]
 [assembly: RpcMethod("cesium.export.getState", typeof(CesiumExportStateRequest), typeof(CesiumExportStateResponse))]
 [assembly: RpcMethod("cesium.export.run", typeof(CesiumExportRunRequest), typeof(JobStarted))]
+[assembly: RpcMethod("station.send.getState", typeof(StationSendStateRequest), typeof(StationSendStateResponse))]
+[assembly: RpcMethod("station.send.run", typeof(StationSendRunRequest), typeof(JobStarted))]
 [assembly: RpcMethod("cesium.push", typeof(CesiumPushRequest), typeof(JobStarted))]
 [assembly: RpcMethod("cesium.settings.get", typeof(CesiumViewerSettingsGetRequest), typeof(CesiumViewerSettingsPayload))]
 [assembly: RpcMethod("cesium.settings.save", typeof(CesiumViewerSettingsPayload), typeof(CesiumViewerSettingsPayload))]
