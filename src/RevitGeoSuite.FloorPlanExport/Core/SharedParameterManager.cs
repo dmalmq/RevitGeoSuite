@@ -103,29 +103,64 @@ public sealed class SharedParameterManager
     /// element's id, level and category are its own, not its group type's: aligned per group type,
     /// writing one on a group member edits the group, which Revit stops with a dialog when the type
     /// has one instance and refuses or copies to every instance when it has more. Turning it on keeps
-    /// every value the model holds.
+    /// every value the model holds. A parameter Revit or another user keeps aligned is listed in
+    /// <see cref="AlignedPerGroup"/> and warned about; nothing else changes.
     /// </summary>
     private void AllowVaryBetweenGroups(IEnumerable<GisParameterDefinition> definitions, ICollection<string> warnings)
     {
         Dictionary<string, BoundParameter> bound = ReadBoundParameters();
-        foreach (GisParameterDefinition standard in definitions.Where(definition => definition.Binding == GisParameterBinding.Instance))
+        foreach (string name in GisSharedParameters.VaryByGroupInstance(definitions))
         {
-            if (!bound.TryGetValue(standard.Name, out BoundParameter existing) ||
+            if (!bound.TryGetValue(name, out BoundParameter existing) ||
                 existing.Binding is not InstanceBinding ||
                 existing.Definition.VariesAcrossGroups)
             {
                 continue;
             }
 
-            try
+            string? refused = OwnedElsewhere(existing.Definition.Id);
+            if (refused == null)
             {
-                existing.Definition.SetAllowVaryBetweenGroups(_document, true);
+                try
+                {
+                    existing.Definition.SetAllowVaryBetweenGroups(_document, true);
+                    continue;
+                }
+                catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+                {
+                    refused = ex.Message;
+                }
             }
-            catch (Autodesk.Revit.Exceptions.ArgumentException ex)
-            {
-                warnings.Add($"Revit does not let '{standard.Name}' vary by group instance ({ex.Message}), so writing it on a grouped element edits the whole group.");
-            }
+
+            string line = GisSharedParameters.AlignedPerGroupLine(name, refused);
+            _alignedPerGroup.Add(line);
+            warnings.Add(line);
         }
+    }
+
+    private readonly List<string> _alignedPerGroup = new();
+
+    /// <summary>The instance parameters that still hold one value per group type, each with Revit's or the owner's reason.</summary>
+    public IReadOnlyList<string> AlignedPerGroup => _alignedPerGroup;
+
+    // Changing a definition another user borrowed, or one changed in central since the last reload,
+    // fails at commit and takes the whole transaction back with it, so it is not tried.
+    private string? OwnedElsewhere(ElementId id)
+    {
+        if (!_document.IsWorkshared)
+        {
+            return null;
+        }
+
+        if (WorksharingUtils.GetCheckoutStatus(_document, id) == CheckoutStatus.OwnedByOtherUser)
+        {
+            string owner = WorksharingUtils.GetWorksharingTooltipInfo(_document, id)?.Owner ?? "another user";
+            return $"{owner} has borrowed it; ask them to synchronize and relinquish";
+        }
+
+        return WorksharingUtils.GetModelUpdatesStatus(_document, id) is ModelUpdatesStatus.UpdatedInCentral or ModelUpdatesStatus.DeletedInCentral
+            ? "it changed in the central model; reload latest"
+            : null;
     }
 
     public void EnsureLevelIds(IEnumerable<Level> levels, ICollection<string> warnings)

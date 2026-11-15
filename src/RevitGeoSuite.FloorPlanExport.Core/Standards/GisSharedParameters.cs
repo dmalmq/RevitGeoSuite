@@ -218,6 +218,20 @@ public static class GisSharedParameters
             userModifiable: false),
     };
 
+    /// <summary>
+    /// The instance parameters that must hold their own value in each group instance: every one bound
+    /// to a category whose elements can be grouped. Project Information never is.
+    /// </summary>
+    public static IEnumerable<string> VaryByGroupInstance(IEnumerable<GisParameterDefinition> definitions) =>
+        definitions
+            .Where(definition => definition.Binding == GisParameterBinding.Instance &&
+                definition.Categories.Any(category => category != "OST_ProjectInformation"))
+            .Select(definition => definition.Name);
+
+    /// <summary>The warning for an instance parameter that still holds one value per group type.</summary>
+    public static string AlignedPerGroupLine(string name, string reason) =>
+        $"'{name}' still holds one value per group type ({reason}), so writing it on an element in a group edits the whole group.";
+
     public static bool TryGet(string name, out GisParameterDefinition definition)
     {
         definition = All.FirstOrDefault(entry => string.Equals(entry.Name, name, StringComparison.Ordinal))!;

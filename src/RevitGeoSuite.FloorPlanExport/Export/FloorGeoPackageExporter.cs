@@ -1010,7 +1010,7 @@ public sealed class FloorGeoPackageExporter
         }
 
         manager.EnsureElementIds(uniqueElements.Values.ToList(), warnings);
-        failures.Commit(transaction);
+        failures.Commit(transaction, manager.AlignedPerGroup);
         AddWarnings(warnings, failures);
     }
 
@@ -1121,7 +1121,7 @@ public sealed class FloorGeoPackageExporter
             }
         }
 
-        failures.Commit(transaction);
+        failures.Commit(transaction, manager.AlignedPerGroup);
         AddWarnings(warnings, failures);
     }
 

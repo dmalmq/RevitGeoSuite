@@ -70,7 +70,7 @@
   {#if error}<Banner tone="danger" onclose={() => (error = null)}>{error}</Banner>{/if}
   {#if applied}
     <AppliedBanner
-      title={format($t('GisStandard.Parameters.Done', '{0} parameter value(s) written'), applied.log.length)}
+      title={format($t('GisStandard.Parameters.Done', '{0} parameter value(s) written'), applied.log.filter((line) => !line.startsWith(' ')).length)}
       log={applied.log}
       skipped={applied.skipped}
       skippedTitle={format($t('GisStandard.Parameters.Skipped', '{0} ticked change(s) were not written:'), applied.skipped.length)}

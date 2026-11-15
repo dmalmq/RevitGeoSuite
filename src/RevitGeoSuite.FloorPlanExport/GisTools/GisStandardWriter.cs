@@ -377,7 +377,7 @@ public static class GisStandardWriter
         {
             work();
             failures.Commit(transaction);
-            log.AddRange(failures.WarningLines());
+            log.AddRange(failures.WarningLines().Select(line => "  " + line));
         }
         catch
         {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
 namespace RevitGeoSuite.FloorPlanExport.Core;
 
@@ -25,15 +26,14 @@ public sealed class TransactionFailures : IFailuresPreprocessor
     }
 
     /// <summary>Each distinct warning once, as a line for a log or a warnings list.</summary>
-    public IEnumerable<string> WarningLines() => Warnings.Distinct().Select(text => "Revit warned: " + text);
+    public IEnumerable<string> WarningLines() => RevitWriteText.WarningLines(Warnings);
 
-    /// <summary>Commits; when Revit rolled back instead, throws with the errors it gave.</summary>
-    public void Commit(Transaction transaction)
+    /// <summary>Commits; when Revit rolled back instead, throws with the errors it gave and <paramref name="hints"/>.</summary>
+    public void Commit(Transaction transaction, IEnumerable<string>? hints = null)
     {
         if (transaction.Commit() != TransactionStatus.Committed)
         {
-            string why = Errors.Count > 0 ? ": " + string.Join(" ", Errors.Distinct()) : ".";
-            throw new InvalidOperationException($"Revit did not commit '{transaction.GetName()}'{why}");
+            throw new InvalidOperationException(RevitWriteText.NotCommitted(transaction.GetName(), Errors, hints ?? Enumerable.Empty<string>()));
         }
     }
 
