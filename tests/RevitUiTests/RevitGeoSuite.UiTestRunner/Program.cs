@@ -14,51 +14,93 @@ catch (ArgumentException ex)
     return 2;
 }
 
-DateTime runStartedUtc = DateTime.UtcNow;
 Directory.CreateDirectory(options.OutputFolder);
-var report = new Report(options.OutputFolder);
-report.Header.Add($"Started {runStartedUtc:yyyy-MM-dd HH:mm:ss} UTC on {Environment.MachineName}.");
-GisStandardRun? run = null;
+var reports = new List<(string Name, Report Report, TimeSpan Took)>();
 TestHostClient? host = null;
+string? stopped = null;
+DateTime revitStartedUtc = DateTime.MinValue;
+var connect = new StepResult("START", "The test host answers");
+var ping = new List<string>();
 try
 {
     host = TestHostClient.Connect(TimeSpan.FromMinutes(5));
-    JsonObject ping = host.Call("ping");
-    options.RequireInside(ping["root"]!.GetValue<string>());
-    DateTime revitStartedUtc = DateTime.Parse(ping["started"]!.GetValue<string>(), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal);
-    report.Header.Add($"Revit {ping["revit"]}, process {ping["pid"]}, WebView2 arguments '{ping["webViewArguments"]}'.");
-    report.Header.Add($"Test host: {ping["testHost"]}.");
-    report.Header.Add($"RevitGeoSuite: {ping["rgs"] ?? "(test host without RevitGeoSuite start)"}; loaded from {ping["rgsLoaded"]?.ToJsonString() ?? "?"}.");
-
-    host.Call("arm", new { on = true });
-    run = new GisStandardRun(options, host, report);
-    try
-    {
-        await run.RunAsync(revitStartedUtc);
-    }
-    finally
-    {
-        host.Call("arm", new { on = false });
-    }
+    JsonObject reply = host.Call("ping");
+    options.RequireInside(reply["root"]!.GetValue<string>());
+    revitStartedUtc = DateTime.Parse(reply["started"]!.GetValue<string>(), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal);
+    ping.Add($"Revit {reply["revit"]}, process {reply["pid"]}, started {revitStartedUtc:yyyy-MM-dd HH:mm:ss} UTC, WebView2 arguments '{reply["webViewArguments"]}'.");
+    ping.Add($"Test host: {reply["testHost"]}.");
+    ping.Add($"RevitGeoSuite: {reply["rgs"] ?? "(test host without RevitGeoSuite start)"}; loaded from {reply["rgsLoaded"]?.ToJsonString() ?? "?"}.");
 }
 catch (Exception ex)
 {
-    // Revit gone, the pipe never up, or a call that timed out: the run still ends in a FAIL report.
-    report.Header.Add($"RUN STOPPED: {ex.GetType().Name}: {ex.Message}");
-    var stopped = new StepResult("STOP", "The run finished every step it was asked to run");
-    stopped.Check(false, $"The run stopped with {ex.GetType().Name}: {ex.Message}");
-    report.Steps.Add(stopped);
-    Console.Error.WriteLine($"Run stopped: {ex.Message}");
-}
-finally
-{
-    host?.Dispose();
+    stopped = $"{ex.GetType().Name}: {ex.Message}";
+    connect.Check(false, $"The run stopped with {stopped}");
 }
 
-CheckJournals(options, report, runStartedUtc, run?.TransactionsSeen ?? Array.Empty<string>());
-string path = report.Write();
-Console.WriteLine($"Report: {path}");
-return report.Steps.Any(step => step.Outcome == Outcome.Fail) ? 1 : 0;
+foreach (string name in options.ScenarioNames)
+{
+    RunOptions scenario = options.ForScenario(name);
+    Directory.CreateDirectory(scenario.OutputFolder);
+    var report = new Report(scenario.OutputFolder);
+    DateTime startedUtc = DateTime.UtcNow;
+    report.Header.Add($"Scenario {name}. Started {startedUtc:yyyy-MM-dd HH:mm:ss} UTC on {Environment.MachineName}.");
+    report.Header.AddRange(ping);
+    GisStandardRun? run = null;
+    if (stopped != null)
+    {
+        // Revit gone, the pipe never up, or a call that timed out: every scenario still ends in a FAIL report.
+        report.Header.Add($"RUN STOPPED: {stopped}");
+        var notRun = new StepResult("STOP", "The run finished every step it was asked to run");
+        notRun.Check(false, $"The run stopped before this scenario with {stopped}");
+        report.Steps.Add(notRun);
+    }
+    else
+    {
+        try
+        {
+            if (reports.Count > 0 && options.ExportSettings.Length > 0)
+            {
+                File.WriteAllText(options.ExportSettings, "{}");
+                report.Header.Add($"Emptied {options.ExportSettings} again, so this scenario starts from the export page's defaults.");
+            }
+
+            host!.Call("arm", new { on = true });
+            run = new GisStandardRun(scenario, host, report);
+            try
+            {
+                await run.RunAsync(revitStartedUtc);
+            }
+            finally
+            {
+                host.Call("arm", new { on = false });
+            }
+        }
+        catch (Exception ex)
+        {
+            stopped = $"{ex.GetType().Name}: {ex.Message}";
+            report.Header.Add($"RUN STOPPED: {stopped}");
+            var failed = new StepResult("STOP", "The run finished every step it was asked to run");
+            failed.Check(false, $"The run stopped with {stopped}");
+            report.Steps.Add(failed);
+            Console.Error.WriteLine($"Run stopped: {ex.Message}");
+        }
+
+        CheckJournals(scenario, report, startedUtc, run?.TransactionsSeen ?? Array.Empty<string>());
+    }
+
+    TimeSpan took = DateTime.UtcNow - startedUtc;
+    report.Header.Add($"Took {took.TotalMinutes:0.0} min.");
+    Console.WriteLine($"Report: {report.Write()}");
+    reports.Add((name, report, took));
+}
+
+host?.Dispose();
+if (options.ScenarioNames.Count > 1)
+{
+    Console.WriteLine($"Summary: {Suite.Write(options.OutputFolder, ping, connect, reports)}");
+}
+
+return reports.Any(item => item.Report.Steps.Any(step => step.Outcome == Outcome.Fail)) || connect.Outcome == Outcome.Fail ? 1 : 0;
 
 static void CheckJournals(RunOptions options, Report report, DateTime sinceUtc, IReadOnlyList<string> transactions)
 {

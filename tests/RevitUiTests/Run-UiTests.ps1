@@ -10,6 +10,10 @@
 
   .\Run-UiTests.ps1 -StartRevit --model C:\dev\revit-test\auto\lumine-pristine.rvt --export-view 1F --excel
 
+  Several scenarios share one Revit start: --scenario b1,b2a,c3a-reshape (or --scenario all with
+  -FloorPlanDataSandbox, which h4-shared-rules needs) runs them one after another, each on a fresh copy of
+  the model in <out>\<scenario>, and writes <out>\summary.md with each scenario's result and minutes.
+
   Nothing of the tests stays where Revit or a roaming profile looks. -StartRevit copies the test
   host's manifest (from Install-TestHost.ps1's folder) into %APPDATA%\Autodesk\Revit\Addins\<year>,
   starts Revit, and deletes the manifest again as soon as the test host's pipe is up, or when Revit
@@ -311,7 +315,9 @@ try {
             & $dotnet build (Join-Path $PSScriptRoot 'RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.csproj') -c Release
             if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
 
-            & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @RunnerArgs
+            # The runner empties the same file again between scenarios, so each one starts from the page's defaults.
+            $settingsArgs = if ($StartRevit) { @('--export-settings', $runSettings) } else { @() }
+            & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @settingsArgs @RunnerArgs
             $exitCode = $LASTEXITCODE
         }
     }
@@ -323,7 +329,8 @@ try {
             $changes = @($realAfter | Where-Object { $realBefore -notcontains $_ } | ForEach-Object { "after: $_" }) +
                 @($realBefore | Where-Object { $realAfter -notcontains $_ } | ForEach-Object { "before: $_" })
             if ($changes.Count -gt 0) {
-                $reportPath = if ($startFailure) { $startFailure } else { Join-Path $runFolder 'report.md' }
+                # Several scenarios write summary.md beside their folders; one writes report.md.
+                $reportPath = if ($startFailure) { $startFailure } elseif (Test-Path (Join-Path $runFolder 'summary.md')) { Join-Path $runFolder 'summary.md' } else { Join-Path $runFolder 'report.md' }
                 $text = if (Test-Path $reportPath) { [IO.File]::ReadAllText($reportPath) } else { "# RevitGeoSuite UI test run`n" }
                 $text = $text -replace '(?m)^\*\*PASS\*\*', '**FAIL**'
                 $text += "`n## REAL. The real floor plan folder is unchanged: **FAIL**`n`n- FAILED: $realStore differs from the record in real-folder-before.txt.`n" + (($changes | ForEach-Object { "  - ``$_``" }) -join "`n") + "`n"

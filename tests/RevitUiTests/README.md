@@ -73,6 +73,8 @@ The script's own options (`-StartRevit`, `-RevitYear`, `-RgsBuild`, `-PyRevitExt
 
 The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder also holds the screenshots, the CSVs, and the model copy. The exit code is 0 when no step failed.
 
+**Several scenarios in one Revit.** Starting Revit is the same cost for every scenario, so name several and they share one start: `--scenario b1,b2a,c3a-reshape`, or `--scenario all` (every scenario that checks RevitGeoSuite, with `h4-shared-rules` last, so pass `-FloorPlanDataSandbox`). They run one after another in the order named. Each opens its own fresh copy of the model in `<out>\<scenario>`, which also holds its `report.md`, screenshots and exports, and closes the copy before it. The runner empties the export page's `settings.json` again before each scenario after the first, and reloads the page, so each starts as it would in a Revit of its own. `<out>\summary.md` lists every scenario with its result and minutes. The exit code is 0 when no step of any scenario failed. A scenario that fails does not stop the ones after it; when Revit stops answering, the rest report FAIL with the reason. Each report gives the seconds of every step and of opening the model, so a slow step shows.
+
 - **A stopped run fails.** When the run stops early, for example because the active model is not the run's copy, the report gets a failed `STOP` step, says FAIL, and the exit code is 1.
 - **Revit closes on every exit.** `-StartRevit` closes the Revit it started when the runner ends, however it ends, and returns only once that process is gone, so a run straight after it does not find it still closing. It stops the process, which closes without saving and cannot meet a "save changes?" prompt.
 - **Revit starts in `C:\dev\revit-test`.** Revit names a detached model `<name>_detached.rvt` without a folder. The test host therefore saves the detached copy once, by full path, as `<copy>-detached.rvt` in the run folder.
@@ -86,7 +88,8 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts` or `undo-probe`. `--script` is the same option. |
+| `--scenario <names>` | One scenario, several comma-separated, or `all`: `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts` or `undo-probe`. `--script` is the same option. |
+| `--export-settings <file>` | The export page's `settings.json` that `Run-UiTests.ps1` emptied for the run; the runner empties it again before each scenario after the first. `Run-UiTests.ps1 -StartRevit` passes it. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
