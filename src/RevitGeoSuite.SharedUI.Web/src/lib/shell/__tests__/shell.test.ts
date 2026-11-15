@@ -19,12 +19,11 @@ vi.mock('$lib/i18n', async (importOriginal) => {
   return { ...real, t: derived(strings, ($s) => (key: string, fallback?: string) => $s[key] || fallback || key) }
 })
 import { flushSync, mount, unmount } from 'svelte'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import localizerSource from '../../../../../RevitGeoSuite.SharedUI/Localization/UiLocalizer.cs?raw'
 
 // Japanese strings as UiLocalizer.cs ships them: the second definition of each key is Japanese.
 const japanese: Record<string, string> = (() => {
-  const source = readFileSync(resolve(__dirname, '../../../../../RevitGeoSuite.SharedUI/Localization/UiLocalizer.cs'), 'utf-8')
+  const source = localizerSource
   const out: Record<string, string> = {}
   const seen = new Set<string>()
   for (const match of source.matchAll(/\["(Status\.[A-Za-z]+)"\] = "([^"]*)"/g)) {
@@ -88,6 +87,16 @@ describe('Sidebar', () => {
     expect(target.querySelector('[aria-current="page"]')?.textContent).toContain('Georeference')
     expect(target.querySelector('[aria-current="step"]')?.textContent).toContain('Apply')
     expect(target.querySelectorAll('ol li')).toHaveLength(2)
+  })
+
+  it('lists no steps under a page that is one screen', () => {
+    workflow.set({ route: '/georeference', steps: [{ id: 'review', label: 'Existing setup' }], current: 'review', completed: new Set() })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    instance = mount(Sidebar, { target, props: { currentRoute: '/georeference' } })
+    flushSync()
+    expect(target.querySelector('ol')).toBeNull()
+    expect(target.querySelector('[aria-current="page"]')?.textContent).toContain('Georeference')
   })
 })
 

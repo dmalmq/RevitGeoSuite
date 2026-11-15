@@ -86,7 +86,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts` or `undo-probe`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `r3-existing` or `undo-probe`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -379,3 +379,12 @@ A scenario is one entry in `GisStandardRun.Scenarios` (name, one-line summary, s
 Most checks are a click on the page plus an assertion on what `gisStandard.inspect` or the test host reports. Prefer the role and the visible English text of a control. The runner switches the page to English for the run and switches it back afterwards. When a check needs Revit in a particular state, add it to the `fixture` command rather than editing the pristine model.
 
 The test host runs code in an API context only while Revit is idle. While a file dialog or another modal window is open, use the commands that work on dialogs (`fileDialog`, `windows`, `pressButton`, `closeDialogs`).
+
+## The r3-existing scenario
+
+`--scenario r3-existing --model <file>` checks the Georeference page on a model that already has coordinates (LUMINE). It writes only RevitGeoSuite's georeference record on the copy.
+
+- R3.1 opens `#/georeference` and expects the one existing-setup screen: the title Existing setup, no "Step 1 of" line, the amber "Positions are estimated" note and the CRS select. With a stored CRS the select shows it; without one it asks and Save is off. The run then picks a CRS other than the stored one and expects the pick to stay, with the option reading code first. It reads Revit's project position through the test host (`floorScan`, `floorGeometry` at the origin and both axes), independent of RevitGeoSuite.
+- R3.2 clicks Save. It expects "Metadata saved", Save settled as Saved, and the stored CRS equal to the picked one. The commits must include Apply Georeference and nothing but Apply Georeference and Save Primary Mesh Code. The test host's project position must be unchanged, and the page's project position, Survey Point and Project Base Point must be present and unchanged.
+- R3.3 clicks "Set up new coordinates". It expects "Step 1 of 6", the CRS step's select, no "Metadata saved", and Confirm CRS moving on to step 2 with no transaction.
+- R3.4 is reported as not run: the runner cannot open the copy read-only. A web test covers Save being off in a read-only model.

@@ -525,7 +525,7 @@ export function responses(scenario: MockScenario): Record<string, unknown | ((pa
     ...gisStandard(scenario),
     'georeference.getCurrentState': currentState(scenario),
     'georeference.getAvailableCrs': {
-      groups: [{ region: 'Japan', entries: [{ epsgCode: 6677, name: 'JGD2011 / Japan Plane Rectangular CS IX', areaSummary: 'Tokyo' }] }]
+      groups: [{ region: 'Japan', entries: [{ epsgCode: 6677, name: 'JGD2011 / Japan Plane Rectangular CS IX', areaSummary: 'Tokyo' }, { epsgCode: 6678, name: 'JGD2011 / Japan Plane Rectangular CS X', areaSummary: 'Tohoku' }] }]
     },
     'georeference.getCrsOrigin': { lat: 36, lon: 139.8333 },
     'georeference.getGridCandidates': gridCandidates,

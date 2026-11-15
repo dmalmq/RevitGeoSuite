@@ -2,9 +2,19 @@
 <script lang="ts">
   import type { GeoreferenceCurrentStateResponse } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
-  import { Banner, Button } from '$lib/kit'
+  import { Banner, Button, Field, Result, Select } from '$lib/kit'
+  import { format } from '$lib/shell/nav'
+  import type { ApplyOutcome, CrsGroup } from './types'
 
   interface Props {
+    applyGeoreference: () => unknown
+    applyResult: ApplyOutcome | null
+    applying: boolean
+    crsReady: boolean
+    storedCrsMissing: string | null
+    crsGroups: CrsGroup[]
+    crsLoading: boolean
+    selectedCrs: string
     currentState: GeoreferenceCurrentStateResponse | null
     currentStateError: string | null
     currentStateLoading: boolean
@@ -15,24 +25,18 @@
     reverting: boolean
     treatAsExistingSetup: any
     undoSummary: string
+    startNewSetup: () => void
   }
 
-  let { currentState, currentStateError, currentStateLoading, currentStep = $bindable(), hasUndoSnapshot, overrideExistingSetup = $bindable(), revertGeoreference, reverting, treatAsExistingSetup, undoSummary }: Props = $props()
+  let { applyGeoreference, applyResult, applying, crsReady, storedCrsMissing, crsGroups, crsLoading, selectedCrs = $bindable(), currentState, currentStateError, currentStateLoading, currentStep = $bindable(), hasUndoSnapshot, overrideExistingSetup = $bindable(), revertGeoreference, reverting, treatAsExistingSetup, undoSummary, startNewSetup }: Props = $props()
 
-  const choices = $derived([
-    {
-      id: 'keep',
-      override: false,
-      label: $t('Georef.Wizard.Keep.Label', 'Keep this setup'),
-      description: $t('Georef.Wizard.Keep.Description', 'Save GeoSuite metadata so import and export use it. Nothing in Revit moves.')
-    },
-    {
-      id: 'new',
-      override: true,
-      label: $t('Georef.Wizard.New.Label', 'Set up new coordinates'),
-      description: $t('Georef.Wizard.New.Description', 'Pick a CRS and place the project again. Replaces the current setup.')
-    }
-  ])
+  // This screen shows only its own Save's result, and only for the CRS shown: picking another CRS
+  // makes it a new, unsaved choice.
+  const result = $derived(applyResult?.kept && applyResult.crs === selectedCrs ? applyResult : null)
+  // Save settles once the shown CRS is the stored one.
+  const saved = $derived(
+    result?.success === true && currentState?.storedCrsEpsgCode != null && selectedCrs === `EPSG:${currentState.storedCrsEpsgCode}`
+  )
 
   function formatLatLon(lat?: number | null, lon?: number | null): string {
     return lat != null && lon != null ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : '-'
@@ -77,39 +81,66 @@
             </div>
           {/if}
         </dl>
-        <p class="border-t border-border px-3 py-1.5 text-caption text-muted-foreground">{$t('Georef.Wizard.EstimatedNote', 'Positions are estimated from the shared coordinates.')}</p>
       {/if}
     </section>
+    {#if treatAsExistingSetup}
+      <Banner tone="warning">{$t('Georef.Wizard.EstimatedNote', 'Positions are estimated from the shared coordinates.')}</Banner>
+    {/if}
 
     {#if currentState.isReadOnly}
       <Banner tone="warning" title={$t('Georef.Wizard.ReadOnly', 'Read-only · preview only')} />
     {/if}
 
     {#if treatAsExistingSetup}
-      <!-- One choice, one button. -->
-      <div role="radiogroup" aria-labelledby="georef-existing-choice" class="flex flex-col gap-1">
-        <span id="georef-existing-choice" class="text-small font-medium text-foreground">{$t('Georef.Wizard.Existing.Question', 'What do you want to do?')}</span>
-        {#each choices as choice (choice.id)}
-          {@const selected = overrideExistingSetup === choice.override}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            class="flex items-start gap-2 rounded-control border px-2.5 py-1.5 text-left transition-colors {selected ? 'border-primary/40 bg-accent' : 'border-input bg-card hover:bg-accent'}"
-            onclick={() => (overrideExistingSetup = choice.override)}
-          >
-            <span class="mt-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full border {selected ? 'border-primary' : 'border-input'}">
-              {#if selected}<span class="h-1.5 w-1.5 rounded-full bg-primary"></span>{/if}
-            </span>
-            <span class="min-w-0">
-              <span class="block text-body font-medium {selected ? 'text-primary-text' : 'text-foreground'}">{choice.label}</span>
-              <span class="block text-small text-muted-foreground">{choice.description}</span>
-            </span>
-          </button>
-        {/each}
-      </div>
-      <Button variant="primary" class="w-full" iconAfter="arrow-right" onclick={() => (currentStep = overrideExistingSetup ? 'crs' : 'confirm')}>
-        {$t('Common.Continue', 'Continue')}
+      <!-- One screen: what was found, the CRS to save with it, and Save. Nothing in Revit moves. -->
+      <Field
+        label={$t('Crs.Title', 'Coordinate Reference System')}
+        id="confirm-crs-select"
+        hint={$t('Georef.Wizard.ConfirmCrsHint', 'The CRS will be saved with the existing Revit coordinates. Project location values will not be changed.')}
+      >
+        <Select id="confirm-crs-select" bind:value={selectedCrs} disabled={crsLoading || applying}>
+          {#if !selectedCrs}
+            <option value="" disabled>{$t('Georef.Wizard.ChooseCrs', 'Choose a CRS')}</option>
+          {/if}
+          {#each crsGroups as group}
+            <optgroup label={group.region}>
+              {#each group.entries as entry}
+                <option value="EPSG:{entry.epsgCode}">EPSG:{entry.epsgCode} · {entry.name}</option>
+              {/each}
+            </optgroup>
+          {/each}
+        </Select>
+      </Field>
+      {#if storedCrsMissing}
+        <Banner tone="warning">{format($t('Georef.Wizard.StoredCrsMissing', 'The model has {0} saved, which this list does not offer. Choose the CRS the model uses.'), storedCrsMissing)}</Banner>
+      {:else if !crsLoading && crsGroups.length === 0}
+        <Banner tone="danger">{$t('Georef.Wizard.CrsListFailed', 'The CRS list could not be loaded, so the CRS cannot be saved. Open the page again.')}</Banner>
+      {/if}
+      {#if result}
+        <Result
+          tone={result.success ? 'success' : 'danger'}
+          title={result.success ? $t('Georef.Wizard.MetadataSaved', 'Metadata saved') : $t('Georef.Wizard.SaveFailed', 'Could not save')}
+        >
+          <p class="text-body text-muted-foreground">
+            {result.success
+              ? format($t('Georef.Wizard.KeepSaved', 'Saved {0} with the coordinates Revit already has. Nothing in Revit moved.'), result.crs)
+              : result.message}
+          </p>
+        </Result>
+      {/if}
+      <Button
+        variant="primary"
+        size="lg"
+        class="w-full"
+        icon="check"
+        onclick={() => { overrideExistingSetup = false; applyGeoreference() }}
+        busy={applying}
+        disabled={currentState.isReadOnly || crsLoading || !crsReady || !selectedCrs || saved}
+      >
+        {applying ? $t('Georef.Wizard.Saving', 'Saving…') : saved ? $t('Georef.Wizard.Saved', 'Saved') : $t('Georef.Wizard.Save', 'Save')}
+      </Button>
+      <Button variant="ghost" class="w-full" onclick={startNewSetup} disabled={applying}>
+        {$t('Georef.Wizard.New.Label', 'Set up new coordinates')}
       </Button>
 
       {#if hasUndoSnapshot}
@@ -124,7 +155,7 @@
       <p class="text-body text-muted-foreground">
         {$t('Georef.Wizard.NoExisting', 'No existing coordinate setup was detected on the Survey Point or Project Base Point. You can set up a new georeference.')}
       </p>
-      <Button variant="primary" size="lg" onclick={() => (currentStep = 'crs')}>
+      <Button variant="primary" size="lg" onclick={startNewSetup}>
         {$t('Georef.Wizard.SetupNew', 'Set up new coordinates')}
       </Button>
     {/if}

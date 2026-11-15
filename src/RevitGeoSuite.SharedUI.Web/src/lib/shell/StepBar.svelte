@@ -5,8 +5,9 @@
   import ProblemsPill from './ProblemsPill.svelte'
   import type { LocalProblem } from './readiness'
 
-  // The top of a workflow page: a muted "Step 3 of 6" over a 20 px title, with a one-line promise
-  // under it, and the problems pill plus the page's own actions at the right.
+  // The top of a workflow page: a muted "Step 3 of 6" over a 20 px title that wraps to two lines in
+  // a narrow panel, a one-line promise under it, and the problems pill plus the page's own actions
+  // at the right.
   let {
     title,
     step,
@@ -24,7 +25,7 @@
       {#if step && of}
         <p class="text-small text-muted-foreground">{format($t('Nav.StepOf', 'Step {0} of {1}'), step, of)}</p>
       {/if}
-      <h1 class="truncate text-heading font-semibold leading-tight text-foreground">{title}</h1>
+      <h1 class="line-clamp-2 break-words text-heading font-semibold leading-tight text-foreground" {title}>{title}</h1>
     </div>
     <div class="flex shrink-0 items-center gap-1.5">
       <ProblemsPill local={problems} {compact} />

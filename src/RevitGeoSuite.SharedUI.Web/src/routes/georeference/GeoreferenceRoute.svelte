@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte'
+  import { onDestroy, onMount, tick, untrack } from 'svelte'
   import { startJob } from '$lib/bridge/jobs'
   import { request } from '$lib/bridge/rpc'
   import { parseManualCoordinate } from '$lib/georeference/manualCoordinate'
@@ -17,12 +17,12 @@
   import { filterPlateauAreas, hasPlateauAreaCoordinates } from '$lib/search/plateauAreaSearch'
   import { notifyProjectContextChanged } from '$lib/projectContext'
   import { Banner, Button } from '$lib/kit'
-  import { StepBar, focusRequest, narrow, readiness, refreshReadiness, stepNumber, takeFocusRequest, workflow, type ProblemTarget } from '$lib/shell'
+  import { StepBar, focusRequest, narrow, readiness, refreshReadiness, takeFocusRequest, workflow, type ProblemTarget } from '$lib/shell'
   import LeafletMap from '$lib/ui/LeafletMap.svelte'
-  import type { AreaInputMode, CrsGroup } from './steps/types'
+  import type { ApplyOutcome, AreaInputMode, CrsGroup } from './steps/types'
   import ReviewStep from './steps/ReviewStep.svelte'
+  import { problemField, problemStep, startsNewSetup, stepCount, visibleStep } from './problemStep'
   import CrsStep from './steps/CrsStep.svelte'
-  import ConfirmStep from './steps/ConfirmStep.svelte'
   import AreaStep from './steps/AreaStep.svelte'
   import GridsStep from './steps/GridsStep.svelte'
   import PreviewStep from './steps/PreviewStep.svelte'
@@ -41,9 +41,9 @@
   //   5. Preview               -> review the change before applying
   //   6. Apply
   //
-  // When an existing coordinate setup is detected the user can take a shortcut ("Confirm existing
-  // setup") that skips the area/grids/preview steps and only asks for the CRS before saving the
-  // shared metadata. The stepper reflects that with a 3-step list.
+  // When an existing coordinate setup is detected, the page is one screen: what was found, the CRS
+  // to save with it, and Save, which writes the shared metadata only. "Set up new coordinates" on
+  // that screen switches to the six steps above.
   let inputMode = $state<AreaInputMode>('map')
 
   const fullSteps = $derived([
@@ -55,15 +55,14 @@
     { id: 'apply', label: $t('Georef.Wizard.Step.Apply', 'Apply'), description: $t('Georef.Wizard.Step.ApplyDesc', 'Commit georeference to Revit') }
   ])
   const confirmSteps = $derived([
-    { id: 'review', label: $t('Georef.Wizard.Step.Review', 'Review Current Setup'), description: $t('Georef.Wizard.Step.ReviewDesc', 'Check existing georeference state') },
-    { id: 'confirm', label: $t('Georef.Wizard.Step.Confirm', 'Confirm Setup'), description: $t('Georef.Wizard.Step.ConfirmDesc', 'Save metadata for existing coordinates') },
-    { id: 'apply', label: $t('Georef.Wizard.Step.Apply', 'Apply'), description: $t('Georef.Wizard.Step.ApplyMetaDesc', 'Commit metadata to Revit') }
+    { id: 'review', label: $t('Georef.Wizard.Step.Existing', 'Existing setup'), description: $t('Georef.Wizard.Step.ExistingDesc', 'Save the CRS with the coordinates Revit already has') }
   ])
 
   let currentStep = $state('review')
   let completedSteps = $state(new Set<string>())
 
-  let selectedCrs = $state('EPSG:6677')
+  // Empty until something chooses: the stored CRS, the user, or the new-setup default below.
+  let selectedCrs = $state('')
   let surveyOrigin = $state<{ lat: number; lon: number } | null>(null)
   let confirmingCrs = $state(false)
 
@@ -96,7 +95,9 @@
   // coordinates; otherwise the web shell should default to confirming what Revit already says.
   let overrideExistingSetup = $state(false)
 
-  let applyResult = $state<{ success: boolean; message: string } | null>(null)
+  // What the last Save or Apply said, tagged with the flow and CRS it was for, so the keep screen
+  // and the six-step Apply each show only their own result.
+  let applyResult = $state<ApplyOutcome | null>(null)
   let applying = $state(false)
   let error = $state<string | null>(null)
 
@@ -202,22 +203,57 @@
   )
   const steps = $derived(isConfirmExistingSetupMode ? confirmSteps : fullSteps)
 
-  // When an existing setup is detected, pre-select the stored CRS in the dropdown so the user
-  // does not have to re-pick it. Runs once per currentState load; user can still override.
+  // Each load of the model's state presets the CRS once: the stored one when the list has it.
+  // Keeping an existing setup with no stored CRS asks for one (no silent default), so Save stays
+  // off until the user picks. The user's own pick is never overwritten until the next load.
+  let presetFor = $state.raw<GeoreferenceCurrentStateResponse | null>(null)
+  // Save waits for the preset, so a CRS list that failed to load never saves the default.
+  const crsReady = $derived(currentState != null && presetFor === currentState)
+  // The stored CRS when the list does not offer it: the screen says so instead of a blank select.
+  let storedCrsMissing = $state<string | null>(null)
   $effect(() => {
-    const stored = currentState?.storedCrsEpsgCode
-    if (stored == null) return
-    const candidate = `EPSG:${stored}`
-    if (!allCrsOptions.some(o => o.code === candidate)) return
-    if (selectedCrs !== candidate) {
-      selectedCrs = candidate
-    }
+    const state = currentState
+    const options = allCrsOptions
+    untrack(() => {
+      if (!state || state === presetFor) return
+      const stored = state.storedCrsEpsgCode
+      const candidate = stored == null ? null : `EPSG:${stored}`
+      if (candidate && options.length === 0) return
+      storedCrsMissing = null
+      if (candidate && options.some((o) => o.code === candidate)) {
+        selectedCrs = candidate
+      } else if (isConfirmExistingSetupMode) {
+        selectedCrs = ''
+        storedCrsMissing = candidate
+      }
+      presetFor = state
+    })
   })
+
+  // The six-step flow starts from the plane rectangular zone it always offered.
+  $effect(() => {
+    if (!isConfirmExistingSetupMode && !selectedCrs) selectedCrs = 'EPSG:6677'
+  })
+
+  // "Set up new coordinates" leaves the keep-this-setup screen: what Save said there does not
+  // belong to the new flow.
+  function startNewSetup() {
+    applyResult = null
+    error = null
+    overrideExistingSetup = true
+    currentStep = 'crs'
+  }
 
   function markComplete(stepId: string) {
     completedSteps.add(stepId)
     completedSteps = new Set(completedSteps)
   }
+
+  // Never show a step the flow does not have (the flow can change when the model's state reloads).
+  $effect(() => {
+    const shown = visibleStep(currentStep, steps.map((s) => s.id))
+    if (shown !== currentStep) currentStep = shown
+  })
 
   function handleStepClick(stepId: string) {
     // In confirm-existing mode the area/grids/preview steps are skipped entirely; the stepper
@@ -225,6 +261,7 @@
     if (isConfirmExistingSetupMode && (stepId === 'area' || stepId === 'grids' || stepId === 'preview')) {
       return
     }
+    if (startsNewSetup(stepId)) overrideExistingSetup = true
     currentStep = stepId
     if (currentStep === 'grids' && gridGeoJson) {
       renderGrids()
@@ -481,23 +518,27 @@
   }
 
   async function applyGeoreference() {
+    const keeping = isConfirmExistingSetupMode
     applying = true
     error = null
     try {
       const manualProjectBasePoint = !isConfirmExistingSetupMode && basePointSource === 'manual' && basePoint
         ? { easting: basePoint.easting, northing: basePoint.northing }
         : null
-      applyResult = await request('georeference.apply', {
-        crsCode: selectedCrs,
+      const crs = selectedCrs
+      const reply = await request<{ success: boolean; message: string }>('georeference.apply', {
+        crsCode: crs,
         selectedMeshCodes: isConfirmExistingSetupMode || basePointSource === 'manual' ? [] : Array.from(selectedGrids),
         ...(manualProjectBasePoint ? { manualProjectBasePoint } : {}),
         confirmExistingSetup: isConfirmExistingSetupMode
       })
-      markComplete('apply')
+      applyResult = { success: reply?.success === true, message: reply?.message ?? '', kept: keeping, crs }
+      if (!applyResult.success) return
+      markComplete(keeping ? 'review' : 'apply')
       await Promise.all([refreshReadiness(), loadCurrentState()])
       notifyProjectContextChanged()
     } catch (err: any) {
-      error = err.message || $t('Georef.Wizard.Error.Apply', 'Failed to apply georeference')
+      error = err.message || (keeping ? $t('Georef.Wizard.Error.Save', 'Could not save the CRS') : $t('Georef.Wizard.Error.Apply', 'Failed to apply georeference'))
     } finally {
       applying = false
     }
@@ -595,18 +636,13 @@
   })
   onDestroy(() => workflow.set(null))
 
-  // "Next problem" lands here from anywhere: open the step that fixes it (the CRS step is the
-  // confirm step when an existing setup is being kept) and focus its field.
-  const FIELD_IDS: Record<string, string> = { crs: 'crs-select', confirm: 'confirm-crs-select' }
-
   async function openProblem(target: ProblemTarget) {
-    let stepId = target.step
-    if (stepId === 'crs' && isConfirmExistingSetupMode) stepId = 'confirm'
-    if (!steps.some((s) => s.id === stepId)) stepId = 'review'
+    const stepId = problemStep(target.step, isConfirmExistingSetupMode, steps.map((s) => s.id))
+    if (startsNewSetup(stepId)) overrideExistingSetup = true
     currentStep = stepId
     inspectorOpen = true
     await tick()
-    const id = target.field ? FIELD_IDS[stepId] : undefined
+    const id = problemField(stepId, !!target.field)
     const element = id ? document.getElementById(id) : document.querySelector<HTMLElement>('[data-georef-panel] h1')
     if (element) {
       if (!id) element.setAttribute('tabindex', '-1')
@@ -620,8 +656,8 @@
     if (target) void openProblem(target)
   })
 
-  const activeStep = $derived(steps.find((s) => s.id === currentStep) ?? steps[0])
-  const activeStepNumber = $derived(stepNumber({ steps, current: currentStep }))
+  const activeStep = $derived(steps.find((s) => s.id === visibleStep(currentStep, steps.map((x) => x.id)))!)
+  const count = $derived(stepCount(steps.map((s) => s.id), currentStep))
 
   // Below the fold width the inspector floats over the map and can be tucked away.
   let inspectorOpen = $state(true)
@@ -658,13 +694,13 @@
       data-georef-panel
     >
       {#if $narrow}
-        <StepBar compact title={activeStep.label} step={activeStepNumber} of={steps.length} promise={activeStep.description}>
+        <StepBar compact title={activeStep.label} step={count.step} of={count.of} promise={activeStep.description}>
           {#snippet actions()}
             <Button variant="ghost" size="sm" icon="x" aria-label={$t('Common.Hide', 'Hide')} onclick={() => (inspectorOpen = false)} />
           {/snippet}
         </StepBar>
       {:else}
-        <StepBar compact title={activeStep.label} step={activeStepNumber} of={steps.length} promise={activeStep.description} />
+        <StepBar compact title={activeStep.label} step={count.step} of={count.of} promise={activeStep.description} />
       {/if}
 
       <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5">
@@ -674,6 +710,14 @@
 
         {#if currentStep === 'review'}
           <ReviewStep
+            {applyGeoreference}
+            {applyResult}
+            {applying}
+            {crsReady}
+            {storedCrsMissing}
+            {crsGroups}
+            {crsLoading}
+            bind:selectedCrs
             {currentState}
             {currentStateError}
             {currentStateLoading}
@@ -684,6 +728,7 @@
             {reverting}
             {treatAsExistingSetup}
             {undoSummary}
+            {startNewSetup}
           />
         {:else if currentStep === 'crs'}
           <CrsStep
@@ -691,15 +736,6 @@
             {confirmingCrs}
             {crsGroups}
             {crsLoading}
-            bind:selectedCrs
-          />
-        {:else if currentStep === 'confirm'}
-          <ConfirmStep
-            {crsGroups}
-            {crsLoading}
-            {currentState}
-            bind:currentStep
-            {markComplete}
             bind:selectedCrs
           />
         {:else if currentStep === 'area'}
@@ -754,14 +790,12 @@
         {:else if currentStep === 'apply'}
           <ApplyStep
             {applyGeoreference}
-            {applyResult}
+            applyResult={applyResult?.kept ? null : applyResult}
             {applying}
             {basePoint}
             {basePointSource}
-            {currentState}
             bind:currentStep
             {fmt}
-            {isConfirmExistingSetupMode}
             {reset}
             {selectedCrsName}
             {selectedMeshCodes}

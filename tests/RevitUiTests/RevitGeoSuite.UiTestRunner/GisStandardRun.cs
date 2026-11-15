@@ -102,6 +102,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         new("a3-fields", "the export writes elevator levels_served, door fields and GDB-owned field rows (RevitGeoSuite #45).", run => run.A3Steps()),
         new("b9-groups", "a floor grouped twice exports, sets up and takes a GDB edit with no Revit dialog and no group violation (B9).", run => run.GroupSteps()),
         new("model-facts", "reads every level (level_id, elevations in metres) and every group type (instances, member floors, rooms, doors) from a copy of the model; changes nothing; writes model-facts.md and .json.", run => run.ModelFactsSteps()),
+        new("r3-existing", "the Georeference page on a model that already has coordinates: one screen, Save records the CRS and moves nothing, Set up new starts the six steps (R3).", run => run.GeoreferenceScreenSteps()),
         new("georef-read", "reads RevitGeoSuite's georeference record and Revit's coordinates from a copy of the model; changes nothing.", run => run.Step("G.R", "Read the georeference record and coordinates", run.ReadGeoreference)),
         new("c4-waiting", "GDB edits waiting in the station's drift file show on the GIS standard button and the export page, and go once applied (C4).", run => run.WaitingSteps()),
         new("c8-network", "the Network tab shows Kanizu's walking network in Revit without a transaction (C8).", run => run.NetworkSteps()),

@@ -80,7 +80,7 @@
             {/if}
           </button>
 
-          {#if isActive && !$narrow && $workflow?.route === entry.route && $workflow.steps.length > 0}
+          {#if isActive && !$narrow && $workflow?.route === entry.route && $workflow.steps.length > 1}
             {@const flow = $workflow}
             <ol class="mb-1 ml-[15px] flex flex-col border-l border-border py-0.5 pl-2">
               {#each flow.steps as step, index (step.id)}
