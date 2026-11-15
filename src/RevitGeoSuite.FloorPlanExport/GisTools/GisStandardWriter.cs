@@ -17,6 +17,7 @@ public static class GisStandardWriter
 {
     public const string SetupTransactionName = "Kanizu GIS: Set up model";
     public const string FixTransactionName = "Kanizu GIS: Fix floor types";
+    public const string ResetFloorTypeTransactionName = "Kanizu GIS: Reset floor type";
     public const string ParametersTransactionName = "Kanizu GIS: Parameters";
     public const string DriftTransactionName = "Kanizu GIS: Review GDB edits";
 
@@ -51,6 +52,27 @@ public static class GisStandardWriter
                 parameter.Set(plan.VersionTo);
                 log.Add($"gis_standard_version = {plan.VersionTo}");
             }
+        });
+        return log;
+    }
+
+    /// <summary>
+    /// Writes a standard type's gis_category, gis_restriction and material back onto the floor type
+    /// that has its name. The material is left alone when the model has no material of that name.
+    /// </summary>
+    public static IReadOnlyList<string> ResetFloorType(Document document, FloorTypeSetupStep step)
+    {
+        long id = step.ElementId ?? throw new ArgumentException("A reset needs the floor type's id.", nameof(step));
+        RequireOwnable(document, new[] { id });
+        Dictionary<string, ElementId> materials = MaterialIdsByName(document);
+        List<string> log = new();
+        InTransaction(document, ResetFloorTypeTransactionName, log, () =>
+        {
+            FloorType floorType = document.GetElement(new ElementId(id)) as FloorType
+                ?? throw new InvalidOperationException($"Floor type {step.Name} is no longer in the model.");
+            SetTypeValues(floorType, step.Standard.GisCategory, step.Standard.GisRestriction ?? string.Empty,
+                materials.TryGetValue(step.Standard.Material, out ElementId? material) ? material : null);
+            log.Add($"Reset floor type {step.Name}: {string.Join("; ", step.Changes.Select(change => $"{change.Field} {(change.OldValue.Length > 0 ? change.OldValue : "(empty)")} to {(change.NewValue.Length > 0 ? change.NewValue : "(empty)")}"))}");
         });
         return log;
     }

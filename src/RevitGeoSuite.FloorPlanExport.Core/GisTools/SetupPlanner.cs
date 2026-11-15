@@ -216,23 +216,7 @@ public static class SetupPlanner
                 continue;
             }
 
-            List<FloorTypeFieldChange> changes = new();
-            string restriction = floorType.GisRestriction ?? string.Empty;
-            if (existing.GisCategory != floorType.GisCategory)
-            {
-                changes.Add(new FloorTypeFieldChange(GisSharedParameters.GisCategory, existing.GisCategory, floorType.GisCategory));
-            }
-
-            if (existing.GisRestriction != restriction)
-            {
-                changes.Add(new FloorTypeFieldChange(GisSharedParameters.GisRestriction, existing.GisRestriction, restriction));
-            }
-
-            if (existing.Material != floorType.Material)
-            {
-                changes.Add(new FloorTypeFieldChange("material", existing.Material, floorType.Material));
-            }
-
+            IReadOnlyList<FloorTypeFieldChange> changes = StandardTypeChanges(existing, floorType);
             if (changes.Count > 0)
             {
                 floorTypes.Add(new FloorTypeSetupStep(floorType.Name, SetupAction.Update, floorType, existing.ElementId, changes));
@@ -278,6 +262,50 @@ public static class SetupPlanner
         }
 
         return echoes;
+    }
+
+    /// <summary>
+    /// What resetting a floor type with a standard name to that standard type changes: its
+    /// gis_category, gis_restriction (empty where the standard restricts by location) and top-layer
+    /// material, each only where it differs.
+    /// </summary>
+    public static IReadOnlyList<FloorTypeFieldChange> StandardTypeChanges(FloorTypeInfo existing, StandardFloorType standardType)
+    {
+        List<FloorTypeFieldChange> changes = new();
+        string restriction = standardType.GisRestriction ?? string.Empty;
+        if (existing.GisCategory != standardType.GisCategory)
+        {
+            changes.Add(new FloorTypeFieldChange(GisSharedParameters.GisCategory, existing.GisCategory, standardType.GisCategory));
+        }
+
+        if (existing.GisRestriction != restriction)
+        {
+            changes.Add(new FloorTypeFieldChange(GisSharedParameters.GisRestriction, existing.GisRestriction, restriction));
+        }
+
+        if (existing.Material != standardType.Material)
+        {
+            changes.Add(new FloorTypeFieldChange("material", existing.Material, standardType.Material));
+        }
+
+        return changes;
+    }
+
+    /// <summary>
+    /// The reset of one floor type with a standard name to its standard type, planned from the model
+    /// as it is now, or null when the type is gone, has no standard name or already matches.
+    /// </summary>
+    public static FloorTypeSetupStep? ResetStep(ModelSnapshot snapshot, GisToolStandard standard, long floorTypeId)
+    {
+        FloorTypeInfo? existing = snapshot.FloorTypes.FirstOrDefault(floorType => floorType.ElementId == floorTypeId);
+        StandardFloorType? standardType = standard.FloorType(existing?.Name);
+        if (existing is null || standardType is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<FloorTypeFieldChange> changes = StandardTypeChanges(existing, standardType);
+        return changes.Count == 0 ? null : new FloorTypeSetupStep(standardType.Name, SetupAction.Update, standardType, existing.ElementId, changes);
     }
 
     /// <summary>The known category a floor type gives its floors after Set up model, lower case, or empty.</summary>

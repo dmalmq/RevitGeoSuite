@@ -297,6 +297,7 @@ const range = (start: number, count: number) => Array.from({ length: count }, (_
 function gisStandard(scenario: MockScenario) {
   let setUp = scenario === 'existing'
   let fixed = false
+  let platformReset = false
   const inspect = (): GisStandardInspectResponse => ({
     documentTitle: 'TokyoStation_Concourse.rvt',
     standardVersion: 2,
@@ -304,6 +305,18 @@ function gisStandard(scenario: MockScenario) {
     exportSummary: setUp ? 'On the current Kanizu GIS standard (version 2).' : 'Not set up with the Kanizu GIS standard.',
     exportBlockers: [],
     findings: [
+      ...(setUp && !platformReset
+        ? [
+            {
+              severity: 'error',
+              topic: 'floor types',
+              message: "Floor type j ホーム_床 is a standard type, but its gis_category 'walkway' differs from the standard ('platform'). Its 4 floors export as 'walkway', not as the name says. Reset it to the standard.",
+              elementIds: range(361, 4),
+              fix: 'resetFloorType',
+              fixTargetId: 204
+            }
+          ]
+        : []),
       ...(setUp ? [] : [{ severity: 'warning', topic: 'standard', message: 'The model has not been set up with the Kanizu GIS standard. Run Set up model.', elementIds: [] }]),
       ...(fixed
         ? []
@@ -316,7 +329,7 @@ function gisStandard(scenario: MockScenario) {
       { severity: 'warning', topic: 'levels', message: 'Level B1FL has no short_name, so the export guesses it from the level name.', elementIds: [11] },
       { severity: 'warning', topic: 'families', message: 'ESC_1200 : S800 looks like an escalator but has no gis_kind, so it is found only by its family name, if at all.', elementIds: [401, 402] },
       { severity: 'info', topic: 'parameters', message: 'Parameter name uses its own GUID 1f0c9e2a-0000-4000-8000-000000000001, not the standard\'s 47b8db20-e756-4280-a842-f570dc847db5. It exports, but other models cannot share schedules or families with it.', elementIds: [] }
-    ],
+    ].map((finding) => ({ fix: '', fixTargetId: 0, ...finding })),
     setupLines: setUp
       ? []
       : [
@@ -359,6 +372,10 @@ function gisStandard(scenario: MockScenario) {
         ]),
         skipped: []
       }
+    },
+    'gisStandard.resetFloorType': () => {
+      platformReset = true
+      return { log: ['Reset floor type j ホーム_床: gis_category walkway to platform'], skipped: [] }
     },
     'gisStandard.select': (payload: { elementIds?: number[] }) => ({ selected: payload?.elementIds?.length ?? 0 }),
     ...gisParameters(),

@@ -429,6 +429,8 @@ export interface GisAcceptedProposal {
 
 export interface GisAuditFindingItem {
   elementIds: number[]
+  fix: string
+  fixTargetId: number
   message: string
   severity: string
   topic: string
@@ -572,6 +574,10 @@ export interface GisParametersReadResponse {
 export interface GisParametersWriteResponse {
   path: string
   rowCount: number
+}
+
+export interface GisResetFloorTypeRequest {
+  floorTypeId: number
 }
 
 export interface GisSelectElementsRequest {
@@ -1309,6 +1315,7 @@ export interface RpcMethods {
   'gisParameters.write': { request: GisStandardEmptyRequest; response: GisParametersWriteResponse }
   'gisStandard.fixFloorTypes': { request: GisFixFloorTypesRequest; response: GisStandardApplyResponse }
   'gisStandard.inspect': { request: GisStandardEmptyRequest; response: GisStandardInspectResponse }
+  'gisStandard.resetFloorType': { request: GisResetFloorTypeRequest; response: GisStandardApplyResponse }
   'gisStandard.select': { request: GisSelectElementsRequest; response: GisSelectElementsResponse }
   'gisStandard.setup': { request: GisStandardEmptyRequest; response: GisStandardApplyResponse }
   'job.cancel': { request: JobCancelRequest; response: JobCancelResponse }

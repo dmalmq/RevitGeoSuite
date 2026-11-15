@@ -74,6 +74,28 @@ public sealed class GisFixFloorTypesHandler : IRpcHandler
     }
 }
 
+/// <summary>
+/// Resets one floor type with a standard name to its standard type (the audit's one-click repair),
+/// planned again from the model as it is now, in one transaction.
+/// </summary>
+public sealed class GisResetFloorTypeHandler : IRpcHandler
+{
+    public string Method => "gisStandard.resetFloorType";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        GisResetFloorTypeRequest request = (payload as JObject)?.ToObject<GisResetFloorTypeRequest>() ?? new GisResetFloorTypeRequest();
+        return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+        {
+            GisStandardWork.RequireEditable(doc);
+            FloorTypeSetupStep? step = SetupPlanner.ResetStep(ModelSnapshotReader.Read(doc), GisToolStandard.LoadEmbedded(), request.FloorTypeId);
+            IReadOnlyList<string> log = step is null ? Array.Empty<string>() : GisStandardWriter.ResetFloorType(doc, step);
+            GisStandardNotifier.Instance.Refresh(doc, force: true);
+            return (object?)new GisStandardApplyResponse { Log = log.ToArray() };
+        });
+    }
+}
+
 /// <summary>Selects the given elements in Revit and zooms the active view to them.</summary>
 public sealed class GisSelectElementsHandler : IRpcHandler
 {
@@ -133,6 +155,8 @@ internal static class GisStandardWork
                     Topic = finding.Topic,
                     Message = finding.Message,
                     ElementIds = finding.ElementIds.ToArray(),
+                    Fix = finding.Fix?.Kind == GisAuditFixKind.ResetFloorType ? "resetFloorType" : string.Empty,
+                    FixTargetId = finding.Fix?.TargetId ?? 0,
                 })
                 .ToArray(),
             SetupLines = (plan.IsEmpty ? Array.Empty<string>() : SetupPlanner.Describe(plan)).Concat(ExportViewPlanner.Describe(views)).ToArray(),
