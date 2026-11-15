@@ -181,6 +181,59 @@ internal static class ModelCommands
         };
     }
 
+    /// <summary>
+    /// Inside the fixture transaction: groups one floor (a model group of its own type), then places a
+    /// second instance of that type <paramref name="offsetM"/> metres east, so the type has two instances.
+    /// </summary>
+    public static Dictionary<string, object?> GroupAndCopy(Document document, long floorId, double offsetM, List<string> log)
+    {
+        Element floor = document.GetElement(new ElementId(floorId)) as Floor ?? throw new ArgumentException($"Element {floorId} is not a floor.");
+        Group first = document.Create.NewGroup(new[] { floor.Id });
+        document.Regenerate();
+        XYZ origin = (first.Location as LocationPoint)?.Point ?? XYZ.Zero;
+        Group second = document.Create.PlaceGroup(origin + new XYZ(offsetM / FeetToMetres, 0, 0), first.GroupType);
+        document.Regenerate();
+        long[] copies = second.GetMemberIds().Select(id => document.GetElement(id)).OfType<Floor>().Select(copy => copy.Id.Value).ToArray();
+        if (copies.Length != 1)
+        {
+            throw new InvalidOperationException($"The placed group holds {copies.Length} floor(s), not 1.");
+        }
+
+        log.Add($"grouped floor {floorId} as group {first.Id.Value} (type {first.GroupType.Id.Value} '{first.GroupType.Name}'); placed group {second.Id.Value} {offsetM} m east with floor {copies[0]}");
+        return new Dictionary<string, object?>
+        {
+            ["typeId"] = first.GroupType.Id.Value,
+            ["typeName"] = first.GroupType.Name,
+            ["groups"] = new List<long> { first.Id.Value, second.Id.Value },
+            ["floors"] = new List<long> { floorId, copies[0] },
+        };
+    }
+
+    /// <summary>Each named parameter bound in the model: instance or type, and whether its value varies by group instance.</summary>
+    public static Dictionary<string, object?> ParameterDefinitions(UIApplication app, string[] names)
+    {
+        Document document = Active(app);
+        var found = new Dictionary<string, Dictionary<string, object?>>(StringComparer.Ordinal);
+        DefinitionBindingMapIterator iterator = document.ParameterBindings.ForwardIterator();
+        while (iterator.MoveNext())
+        {
+            if (iterator.Key is InternalDefinition definition && names.Contains(definition.Name))
+            {
+                found[definition.Name] = new Dictionary<string, object?>
+                {
+                    ["name"] = definition.Name,
+                    ["binding"] = iterator.Current is TypeBinding ? "type" : "instance",
+                    ["variesAcrossGroups"] = definition.VariesAcrossGroups,
+                };
+            }
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["definitions"] = names.Select(name => found.TryGetValue(name, out var entry) ? entry : new Dictionary<string, object?> { ["name"] = name, ["binding"] = null }).ToList(),
+        };
+    }
+
     private static readonly string[] GroupMemberKinds = { "floors", "rooms", "doors", "stairs", "columns", "openings", "familyInstances", "other" };
 
     private static void CollectMembers(Document document, Group group, Dictionary<string, List<long>> members)

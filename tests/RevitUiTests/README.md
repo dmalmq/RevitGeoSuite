@@ -84,7 +84,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `georef-read`, `h4-shared-rules`, `model-facts` or `undo-probe`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts` or `undo-probe`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -323,6 +323,17 @@ The station folder is `<run>\h4-station`, so every file stays under the run fold
 | H4.9 | The real folder has the same files and hashes as before. The report's footer lists the three `gis.rules` blocks. |
 
 What a person still does: the screenshots of the warning (H4.3) and the message (H4.8) do not exist, because the runner starts the Cesium export through the bridge and no page shows the text. The report carries the text. The Japanese wording of H4.4's "Saved for station h4-station" line is in the step's notes, for a person to read.
+
+## The b9-groups scenario
+
+`--scenario b9-groups --model <file>` needs RevitGeoSuite B9. After Set up, the georeference and a station export, it picks a floor that is one unit and hosts nothing. A fixture groups that floor and places a second instance of the group type 5 m east. Then it checks:
+
+- B9.2: the GIS export writes two different, non-empty `id` values, one per copy, each in one unit row, and the `id` definition varies by group instance.
+- B9.3: Set up model finishes.
+- B9.4: a drift file renames copy 2. Accepting it changes copy 2 only.
+- B9.5: with copy 2's `id` cleared, a second export gives copy 2 a new `id`, and copy 1 keeps its `id`.
+
+Each of these steps also fails if Revit raised or showed a dialog, or if the journal logged "Disallowed Atom Touch" or "AtomViolation" during the step. The test host command `parameterDefinitions {names}` reports each bound parameter's binding and `variesAcrossGroups`. While any export runs, the runner checks for a Revit dialog every 10 s. When it finds one, it fails the step with the dialog's text and cancels it, so a dialog no longer holds the export for 30 minutes.
 
 ## The model-facts scenario
 

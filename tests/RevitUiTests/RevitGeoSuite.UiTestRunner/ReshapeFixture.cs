@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -89,6 +90,34 @@ internal static class ReshapeFixture
         }
 
         return parts;
+    }
+
+    /// <summary>Every unit row of this model: its floor's UniqueId and its <c>id</c> value (empty when the table has no id column).</summary>
+    public static List<(string UniqueId, string Id)> UnitIds(string exportFolder)
+    {
+        var rows = new List<(string, string)>();
+        foreach (string file in Directory.GetFiles(exportFolder, "*.gpkg", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = file, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+            connection.Open();
+            foreach ((string table, string _, int _) in UnitTables(connection))
+            {
+                using SqliteCommand command = connection.CreateCommand();
+                string id = HasColumn(connection, table, "id") ? "\"id\"" : "''";
+                command.CommandText = $"SELECT revit_key, {id} FROM \"{table.Replace("\"", "\"\"")}\"";
+                using SqliteDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    string[] key = Text(reader, 0).Split('|');
+                    if (key.Length >= 3 && !key[0].Contains('@'))
+                    {
+                        rows.Add((key[1], reader.IsDBNull(1) ? string.Empty : Convert.ToString(reader.GetValue(1), CultureInfo.InvariantCulture) ?? string.Empty));
+                    }
+                }
+            }
+        }
+
+        return rows;
     }
 
     /// <summary>The unit <paramref name="uniqueId"/> names, else the first of <paramref name="category"/>; null when none fits.</summary>

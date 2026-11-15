@@ -100,6 +100,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         new("c3d-hand-drawn", "Review GDB edits creates a floor for a unit drawn by hand in the GDB (C3d).", run => run.HandDrawnSteps()),
         new("undo-probe", "where Revit offers Undo after a fixture and after an Apply, and whether Ctrl+Z works (diagnosis).", run => run.UndoProbeSteps()),
         new("a3-fields", "the export writes elevator levels_served, door fields and GDB-owned field rows (RevitGeoSuite #45).", run => run.A3Steps()),
+        new("b9-groups", "a floor grouped twice exports, sets up and takes a GDB edit with no Revit dialog and no group violation (B9).", run => run.GroupSteps()),
         new("model-facts", "reads every level (level_id, elevations in metres) and every group type (instances, member floors, rooms, doors) from a copy of the model; changes nothing; writes model-facts.md and .json.", run => run.ModelFactsSteps()),
         new("georef-read", "reads RevitGeoSuite's georeference record and Revit's coordinates from a copy of the model; changes nothing.", run => run.Step("G.R", "Read the georeference record and coordinates", run.ReadGeoreference)),
         new("c4-waiting", "GDB edits waiting in the station's drift file show on the GIS standard button and the export page, and go once applied (C4).", run => run.WaitingSteps()),
@@ -807,7 +808,22 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     {
         ILocator done = Shell.Button("Open folder");
         ILocator failed = Shell.Text("Export failed");
-        if (!step.Check(await Shell.ShowsAsync(done.Or(failed), 1800000), "The export finishes within 30 minutes."))
+        // A Revit dialog during the export (such as "A group has been changed outside group edit mode")
+        // holds it until someone answers, so look for one every 10 s: fail the step with its text and
+        // cancel it, as a person would, then keep waiting for the export's own end.
+        DateTime end = DateTime.UtcNow + TimeSpan.FromMinutes(30);
+        bool finished = false;
+        while (!finished && DateTime.UtcNow < end)
+        {
+            finished = await Shell.ShowsAsync(done.Or(failed), 10000);
+            if (!finished && host.Call("windows")["windows"]?.AsArray() is { Count: > 0 } open)
+            {
+                JsonObject closed = host.Call("closeDialogs", new { timeoutMs = 20000 });
+                step.Check(false, $"Revit showed {open.Count} dialog(s) during the export; cancelled: {closed["closed"]?.ToJsonString() ?? open.ToJsonString()}");
+            }
+        }
+
+        if (!step.Check(finished, "The export finishes within 30 minutes."))
         {
             return false;
         }

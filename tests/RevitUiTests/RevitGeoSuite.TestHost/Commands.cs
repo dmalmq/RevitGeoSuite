@@ -55,6 +55,7 @@ internal sealed class Commands
                 "elevators" => api.Run(app => ModelCommands.Elevators(app, Strings(request, "uniqueIds")), Quick),
                 "doors" => api.Run(ModelCommands.Doors, Quick),
                 "groups" => api.Run(ModelCommands.Groups, TimeSpan.FromMinutes(5)),
+                "parameterDefinitions" => api.Run(app => ModelCommands.ParameterDefinitions(app, Strings(request, "names")), Quick),
                 "activateView" => api.Run(app => ViewCommands.ActivateView(app, Text(request, "name")), Quick),
                 "redo" => PostOrType("ID_EDIT_REDO", 'Y'),
                 "undoProbe" => UndoState(),
@@ -499,6 +500,7 @@ internal sealed class Commands
         long[] copies = Longs(request, "copyInPlace");
         List<Dictionary<string, object?>> openings = Objects(request, "openingInEastBand");
         long[] deletions = Longs(request, "delete");
+        Dictionary<string, object?>? groupCopy = request.TryGetValue("groupCopy", out object? copy) ? copy as Dictionary<string, object?> : null;
         return api.Run(app =>
         {
             Document document = app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");
@@ -561,13 +563,25 @@ internal sealed class Commands
                     Convert.ToDouble(opening["sizeM"], CultureInfo.InvariantCulture)));
             }
 
+            Dictionary<string, object?>? grouped = groupCopy == null ? null : ModelCommands.GroupAndCopy(
+                document,
+                Convert.ToInt64(groupCopy["floor"], CultureInfo.InvariantCulture),
+                Convert.ToDouble(groupCopy["offsetM"], CultureInfo.InvariantCulture),
+                log);
+
             if (transaction.Commit() != TransactionStatus.Committed)
             {
                 throw new InvalidOperationException($"Revit did not commit the fixture. {string.Join(" ", warnings.Errors)}");
             }
 
             log.AddRange(warnings.Removed.Select(text => $"removed Revit warning: {text}"));
-            return new Dictionary<string, object?> { ["log"] = log };
+            var reply = new Dictionary<string, object?> { ["log"] = log };
+            if (grouped != null)
+            {
+                reply["group"] = grouped;
+            }
+
+            return reply;
         }, Quick);
     }
 
