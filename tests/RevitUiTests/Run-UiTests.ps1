@@ -63,10 +63,14 @@ param(
     [string]$PyRevitExtension = '',
     [switch]$FloorPlanDataSandbox,
     [int]$StartMinutes = 5,
+    # The runner's --out, named here: under powershell -File, PowerShell would read "--out" as an ambiguous
+    # -Out* common parameter (-OutVariable, -OutBuffer) and refuse the call. -Out and --out both land here.
+    [string]$Out = '',
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$RunnerArgs
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Out) { $RunnerArgs = @($RunnerArgs | Where-Object { $null -ne $_ }) + @('--out', $Out) }
 if ($RevitYear -notmatch '^\d{4}$') { throw "-RevitYear must be a year such as 2024 (got '$RevitYear'). Pass runner options such as --scenario after the script's own -Options." }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $addins = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear"

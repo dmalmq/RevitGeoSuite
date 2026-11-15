@@ -69,7 +69,7 @@ cd C:\dev\RevitGeoSuite
 .\tests\RevitUiTests\Run-UiTests.ps1 -StartRevit --model C:\dev\revit-test\auto\lumine-pristine.rvt --export-view "1F" --excel
 ```
 
-The script's own options (`-StartRevit`, `-RevitYear`, `-RgsBuild`, `-PyRevitExtension`) bind by name only, so it can be called with `&` from another script; everything else goes to the runner. `-RevitYear` must be a four-digit year.
+The script's own options (`-StartRevit`, `-RevitYear`, `-RgsBuild`, `-PyRevitExtension`, `-FloorPlanDataSandbox`, `-Out`) bind by name only, so it can be called with `&` from another script; everything else goes to the runner. `-Out` (or `--out`) is the runner's run folder, named on the script because `powershell -File` would otherwise read `--out` as an ambiguous `-OutVariable`/`-OutBuffer` and refuse the call. `-RevitYear` must be a four-digit year.
 
 The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder also holds the screenshots, the CSVs, and the model copy. The exit code is 0 when no step failed.
 
