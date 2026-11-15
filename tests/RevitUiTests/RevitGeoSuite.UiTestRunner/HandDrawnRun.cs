@@ -183,6 +183,11 @@ internal sealed partial class GisStandardRun
         }
 
         string name = HandDrawnTransaction(drawn);
+        if (!drawnUndone)
+        {
+            step.Note($"No Redo: C3d.6 did not undo '{name}', so the edit is still in the model and this step checks it as it is.");
+        }
+
         if (drawnUndone && !UndoOrRedo(step, "redo", name))
         {
             // The floor is undone after C3d.6; apply the typed file again, as a person would after a refused Redo.
