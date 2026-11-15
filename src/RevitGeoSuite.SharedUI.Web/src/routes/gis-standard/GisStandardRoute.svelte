@@ -92,7 +92,13 @@
     applied = null
     try {
       const response = await request('gisStandard.resetFloorType', { floorTypeId })
-      applied = { title: $t('GisStandard.ResetFloorType.Done', 'Floor type reset to the standard'), log: response.log, skipped: response.skipped }
+      applied = {
+        title: response.log.length
+          ? $t('GisStandard.ResetFloorType.Done', 'Floor type reset to the standard')
+          : $t('GisStandard.ResetFloorType.Nothing', 'Nothing was reset'),
+        log: response.log,
+        skipped: response.skipped
+      }
       void refreshReadiness()
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')

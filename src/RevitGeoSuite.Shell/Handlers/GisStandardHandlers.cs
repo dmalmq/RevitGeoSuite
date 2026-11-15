@@ -88,8 +88,15 @@ public sealed class GisResetFloorTypeHandler : IRpcHandler
         return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
         {
             GisStandardWork.RequireEditable(doc);
-            FloorTypeSetupStep? step = SetupPlanner.ResetStep(ModelSnapshotReader.Read(doc), GisToolStandard.LoadEmbedded(), request.FloorTypeId);
-            IReadOnlyList<string> log = step is null ? Array.Empty<string>() : GisStandardWriter.ResetFloorType(doc, step);
+            ModelSnapshot snapshot = ModelSnapshotReader.Read(doc);
+            GisToolStandard standard = GisToolStandard.LoadEmbedded();
+            FloorTypeSetupStep? step = SetupPlanner.ResetStep(snapshot, standard, request.FloorTypeId);
+            if (step is null)
+            {
+                return (object?)new GisStandardApplyResponse { Skipped = new[] { SetupPlanner.NothingToReset(snapshot, standard, request.FloorTypeId) } };
+            }
+
+            IReadOnlyList<string> log = GisStandardWriter.ResetFloorType(doc, step);
             GisStandardNotifier.Instance.Refresh(doc, force: true);
             return (object?)new GisStandardApplyResponse { Log = log.ToArray() };
         });

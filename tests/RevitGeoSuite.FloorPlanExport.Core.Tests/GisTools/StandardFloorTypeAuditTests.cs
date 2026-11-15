@@ -30,11 +30,21 @@ public sealed class StandardFloorTypeAuditTests
         Assert.Equal((GisAuditSeverity.Error, "floor types"), (finding.Severity, finding.Topic));
         Assert.Equal(platform.FloorIds, finding.ElementIds);
         Assert.Equal(
-            "Floor type j ホーム_床 is a standard type, but its gis_category 'walkway' differs from the standard ('platform'). Its 1 floors export as 'walkway', not as the name says. Reset it to the standard.",
+            "Floor type j ホーム_床 is a standard type, but its gis_category 'walkway' differs from the standard ('platform'). Its 1 floor exports as 'walkway', not as the name says. Reset it to the standard.",
             finding.Message);
         Assert.NotNull(finding.Fix);
         Assert.Equal((GisAuditFixKind.ResetFloorType, platform.ElementId), (finding.Fix!.Kind, finding.Fix.TargetId));
         Assert.Single(GisAudit.BlockingFindings(new[] { finding }));
+    }
+
+    [Fact]
+    public void SeveralFloorsAreCountedInThePlural()
+    {
+        List<FloorTypeInfo> types = FloorTypesAsStandard()
+            .Select(type => type.Name == Platform ? new FloorTypeInfo(type.ElementId, type.Name, "walkway", type.GisRestriction, type.Material, new long[] { 1, 2, 3 }) : type)
+            .ToList();
+
+        Assert.Contains("Its 3 floors export as 'walkway'", Assert.Single(GisAudit.Run(ModelOnStandard(floorTypes: types), Standard)).Message);
     }
 
     [Fact]
@@ -99,8 +109,14 @@ public sealed class StandardFloorTypeAuditTests
         types.Add(new FloorTypeInfo(999, "Generic 150mm", "walkway"));
         ModelSnapshot model = ModelOnStandard(floorTypes: types);
 
-        Assert.Null(SetupPlanner.ResetStep(model, Standard, types.Single(type => type.Name == Platform).ElementId));
+        long platformId = types.Single(type => type.Name == Platform).ElementId;
+        Assert.Null(SetupPlanner.ResetStep(model, Standard, platformId));
         Assert.Null(SetupPlanner.ResetStep(model, Standard, 999));
         Assert.Null(SetupPlanner.ResetStep(model, Standard, 12345));
+
+        // What the page says instead of "reset" (the handler returns it as the skipped line).
+        Assert.Equal("Floor type j ホーム_床 already matches the standard.", SetupPlanner.NothingToReset(model, Standard, platformId));
+        Assert.Equal("Floor type Generic 150mm no longer has a standard name.", SetupPlanner.NothingToReset(model, Standard, 999));
+        Assert.Equal("Floor type 12345 is no longer in the model.", SetupPlanner.NothingToReset(model, Standard, 12345));
     }
 }

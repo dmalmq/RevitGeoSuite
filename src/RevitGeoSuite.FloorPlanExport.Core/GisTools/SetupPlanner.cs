@@ -308,6 +308,20 @@ public static class SetupPlanner
         return changes.Count == 0 ? null : new FloorTypeSetupStep(standardType.Name, SetupAction.Update, standardType, existing.ElementId, changes);
     }
 
+    /// <summary>Why <see cref="ResetStep"/> has nothing to do for a floor type, for the page to say instead of "reset".</summary>
+    public static string NothingToReset(ModelSnapshot snapshot, GisToolStandard standard, long floorTypeId)
+    {
+        FloorTypeInfo? existing = snapshot.FloorTypes.FirstOrDefault(floorType => floorType.ElementId == floorTypeId);
+        if (existing is null)
+        {
+            return $"Floor type {floorTypeId} is no longer in the model.";
+        }
+
+        return standard.FloorType(existing.Name) is null
+            ? $"Floor type {existing.Name} no longer has a standard name."
+            : $"Floor type {existing.Name} already matches the standard.";
+    }
+
     /// <summary>The known category a floor type gives its floors after Set up model, lower case, or empty.</summary>
     public static string CategoryGivenByType(FloorTypeInfo floorType, GisToolStandard standard)
     {

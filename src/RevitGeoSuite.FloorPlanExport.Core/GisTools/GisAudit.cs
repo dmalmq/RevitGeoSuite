@@ -294,7 +294,7 @@ public static class GisAudit
         string standardSays = string.Join(", ", changed.Select(change => Quoted(change.NewValue)));
         bool inUse = floorType.FloorIds.Count > 0;
         string consequence = inUse
-            ? $"Its {floorType.FloorIds.Count} floors export as {Quoted(GisToolStandard.Normalize(floorType.GisCategory))}, not as the name says."
+            ? (floorType.FloorIds.Count == 1 ? "Its 1 floor exports as " : $"Its {floorType.FloorIds.Count} floors export as ") + $"{Quoted(GisToolStandard.Normalize(floorType.GisCategory))}, not as the name says."
             : "No floor uses it yet; the next one drawn with it would export wrong.";
         return new GisAuditFinding(
             inUse ? GisAuditSeverity.Error : GisAuditSeverity.Warning,
