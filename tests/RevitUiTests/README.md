@@ -336,6 +336,9 @@ The test host command `exportViewImage {view?, path}` has Revit render a view to
 - B9.3: Set up model finishes.
 - B9.4: a drift file renames copy 2. Accepting it changes copy 2 only.
 - B9.5: with copy 2's `id` cleared, a second export gives copy 2 a new `id`, and copy 1 keeps its `id`.
+- B9.6: a fixture gives copy 2 copy 1's `id` (possible because `id` varies by group instance). A third export leaves it on copy 1, gives copy 2 a new GUID, and warns "Element <copy 1> keeps id <id> as the oldest; element copied from it got a new id: <copy 2>." No warning may say "still share" or "no longer holds it".
+
+b2a's B2.8 checks the same reissue on a floor pasted in place, which is not in a group. It exports once, then deletes the copy through the test host, because the export's transactions sit after the fixture on the undo stack.
 
 Each of these steps also fails if Revit raised or showed a dialog, or if the journal logged "Disallowed Atom Touch" or "AtomViolation" during the step. The test host command `parameterDefinitions {names}` reports every bound definition of each name (a model can bind an older `id` beside the current one) with its GUID, or `project` when not shared, its binding and `variesAcrossGroups`. While any export runs, the runner asks the test host every 10 s for `blockingDialogs`: visible #32770 dialogs of Revit's process whose owner is disabled (modal), with a button and no progress bar. The test host reads them without sending a window message, so it answers while Revit is busy. A dialog still there at the next poll fails the step with its text and is cancelled by its handle, so a dialog no longer holds the export for 30 minutes. At most three such failures are listed, then a count.
 

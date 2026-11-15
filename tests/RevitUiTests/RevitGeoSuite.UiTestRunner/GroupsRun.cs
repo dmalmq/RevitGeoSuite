@@ -28,10 +28,11 @@ internal sealed partial class GisStandardRun
         await Step("B9.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
         await Step("B9.P", "Export, pick a floor that is one unit and hosts nothing", PrepareGroups);
         await Step("B9.1", "Fixture: group the floor and place a second instance of its group type", step => WithoutDialogs(step, GroupFloor));
-        await Step("B9.2", "Export GIS: two unit rows with two different ids, and id varies by group instance", step => WithoutDialogs(step, () => ExportGroups(step, "b9-export-1", keepFirst: false)));
+        await Step("B9.2", "Export GIS: two unit rows with two different ids, and id varies by group instance", step => WithoutDialogs(step, () => ExportGroups(step, "b9-export-1", keepFirst: false, shared: groupIdBefore)));
         await Step("B9.3", "Set up model finishes", step => WithoutDialogs(step, () => SetUpGroups(step)));
         await Step("B9.4", "A GDB edit of the name on copy 2 changes copy 2 only", step => WithoutDialogs(step, () => EditOneCopy(step)));
         await Step("B9.5", "Clear id on copy 2 and export: copy 2 gets a new id, copy 1 keeps its id", step => WithoutDialogs(step, () => ReassignOneId(step)));
+        await Step("B9.6", "Give copy 2 copy 1's id and export: copy 1 keeps it, copy 2 gets a new one (the grouped write path)", step => WithoutDialogs(step, () => ShareThenExport(step)));
     }
 
     private async Task PrepareGroups(StepResult step)
@@ -99,7 +100,7 @@ internal sealed partial class GisStandardRun
         return Task.CompletedTask;
     }
 
-    private async Task ExportGroups(StepResult step, string folder, bool keepFirst)
+    private async Task ExportGroups(StepResult step, string folder, bool keepFirst, string shared)
     {
         if (groupFloors.Length != 2)
         {
@@ -133,13 +134,19 @@ internal sealed partial class GisStandardRun
             step.Check(revit[0] == groupIds[0], $"Copy 1 keeps its id '{groupIds[0]}' (now '{revit[0]}').");
             step.Check(revit[1].Length > 0 && revit[1] != groupIds[0], $"Copy 2 gets a new id ('{revit[1]}').");
         }
-        else if (groupIdBefore.Length > 0)
+        else if (shared.Length > 0)
         {
             // Among elements that share an id, the export leaves it on the lowest element id: copy 1, the original.
-            step.Check(revit[0] == groupIdBefore, $"Copy 1 ({groupFloors[0]}, the lower element id) keeps '{groupIdBefore}' (now '{revit[0]}').");
-            step.Check(Guid.TryParse(revit[1], out _) && revit[1] != groupIdBefore, $"Copy 2 gets a new GUID ('{revit[1]}').");
-            string? kept = warnings.FirstOrDefault(line => line.Contains($"Element {groupFloors[0]} keeps id {groupIdBefore} as the oldest; element copied from it got a new id: {groupFloors[1]}.", StringComparison.Ordinal));
-            step.Check(kept != null, $"The export warnings have 'Element {groupFloors[0]} keeps id {groupIdBefore} as the oldest; element copied from it got a new id: {groupFloors[1]}.' ({kept ?? "none"}).");
+            step.Check(revit[0] == shared, $"Copy 1 ({groupFloors[0]}, the lower element id) keeps '{shared}' (now '{revit[0]}').");
+            step.Check(Guid.TryParse(revit[1], out _) && revit[1] != shared, $"Copy 2 gets a new GUID ('{revit[1]}').");
+            string expected = $"Element {groupFloors[0]} keeps id {shared} as the oldest; element copied from it got a new id: {groupFloors[1]}.";
+            string? kept = warnings.FirstOrDefault(line => line.Contains(expected, StringComparison.Ordinal));
+            step.Check(kept != null, $"The export warnings have '{expected}'.");
+            if (kept != null)
+            {
+                step.Note($"Export warning: {kept}");
+            }
+
             // The id definition varies on this copy, so no copy may stay on the shared id and the original keeps it.
             string[] wrong = warnings.Where(line => line.Contains(" still share", StringComparison.Ordinal) || line.Contains("no longer holds it", StringComparison.Ordinal)).ToArray();
             step.Check(wrong.Length == 0, $"No 'still share(s) id' or 'no longer holds it' warning ({string.Join(" | ", wrong)}).");
@@ -209,7 +216,26 @@ internal sealed partial class GisStandardRun
         JsonObject fixture = host.Call("fixture", new { values = new[] { new { id = groupFloors[1], name = "id", value = string.Empty } } });
         step.Note($"Fixture: {fixture["log"]?.ToJsonString()}; copy 1 id '{ParamText(groupFloors[0], "id")}', copy 2 id '{ParamText(groupFloors[1], "id")}'.");
         step.Check(ParamText(groupFloors[0], "id") == groupIds[0], "Clearing copy 2's id leaves copy 1's.");
-        await ExportGroups(step, "b9-export-2", keepFirst: true);
+        await ExportGroups(step, "b9-export-2", keepFirst: true, shared: string.Empty);
+    }
+
+    private async Task ShareThenExport(StepResult step)
+    {
+        if (groupFloors.Length != 2 || groupIds.Length != 2)
+        {
+            step.NotRun("B9.5 did not export the two copies.");
+            return;
+        }
+
+        string first = ParamText(groupFloors[0], "id");
+        JsonObject fixture = host.Call("fixture", new { values = new[] { new { id = groupFloors[1], name = "id", value = first } } });
+        step.Note($"Fixture: {fixture["log"]?.ToJsonString()}; copy 1 id '{ParamText(groupFloors[0], "id")}', copy 2 id '{ParamText(groupFloors[1], "id")}'.");
+        if (!step.Check(ParamText(groupFloors[1], "id") == first && ParamText(groupFloors[0], "id") == first, $"Both copies now hold '{first}', and copy 1 still does."))
+        {
+            return;
+        }
+
+        await ExportGroups(step, "b9-export-3", keepFirst: false, shared: first);
     }
 
     /// <summary>Runs a step that changes the model, then checks Revit showed no dialog and logged no group violation.</summary>
