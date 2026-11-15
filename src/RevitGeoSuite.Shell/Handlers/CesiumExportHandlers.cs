@@ -21,6 +21,19 @@ using RevitGeoSuite.Tiles3DExport;
 
 namespace RevitGeoSuite.Shell.Handlers;
 
+internal sealed class GisStepResult
+{
+    public string ProjectKey = string.Empty;
+    public string BuildingName = string.Empty;
+    public string SourceModel = string.Empty;
+    public string CoordinateMode = string.Empty;
+    public int GisEpsg;
+    public List<string> ArtifactPaths = new();
+    public List<CesiumPackageLevelMapEntry> LevelMap = new();
+    public FloorGeoPackageExportResult ExportResult = new();
+    public CesiumPackageGisRules? Rules;
+}
+
 internal static class CesiumExportSupport
 {
     public static T ReadPayload<T>(object? payload) where T : new()
@@ -36,6 +49,59 @@ internal static class CesiumExportSupport
         }
 
         return JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(payload)) ?? new T();
+    }
+
+    /// <summary>
+    /// Runs the floor plan export of profile <paramref name="profileName"/> into
+    /// <paramref name="gisDirectory"/> as one GeoPackage per building, for a station package.
+    /// <paramref name="baselineName"/> keeps this caller's change baseline apart from the others'.
+    /// </summary>
+    public static GisStepResult RunGisExport(
+        Document document,
+        string profileName,
+        string gisDirectory,
+        string baselineName,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        string projectKey = DocumentProjectKeyBuilder.Create(document);
+        IReadOnlyList<ExportProfile> profiles = new ExportProfileStore(rules: GisRulesSourceFactory.For(document)).LoadWithDiagnostics(projectKey).Value;
+        ExportProfile profile = profiles.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException(
+                $"Floor plan profile '{profileName}' was not found for this project.");
+
+        ModelCoordinateInfo coordinateInfo = new ModelCoordinateInfoReader().Read(document);
+        var exporter = new FloorPlanHeadlessExporter(document, uiDocument: null);
+        FloorGeoPackageExportResult result = exporter.Export(
+            profile,
+            coordinateInfo,
+            outputDirectoryOverride: gisDirectory,
+            packagingModeOverride: PackagingMode.PerBuildingGeoPackage,
+            outputFormatOverride: ExportFormat.GeoPackage,
+            progressCallback: null,
+            cancellationToken: cancellationToken,
+            baselineKeyOverride: $"{projectKey}__{profile.Name}__{baselineName}",
+            persistBaseline: false);
+        warnings.AddRange(result.Warnings);
+
+        ExportDialogSettings settings = profile.ToSettings();
+        return new GisStepResult
+        {
+            ProjectKey = projectKey,
+            BuildingName = DocumentProjectKeyBuilder.CreateDisplayName(document),
+            SourceModel = Path.GetFileName(document.PathName ?? string.Empty),
+            CoordinateMode = settings.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs
+                ? "ConvertToTargetCrs"
+                : "SharedCoordinates",
+            GisEpsg = settings.TargetEpsg,
+            ArtifactPaths = result.ArtifactResults.Select(artifact => artifact.OutputFilePath).ToList(),
+            LevelMap = CesiumExportSupport.BuildLevelMap(document),
+            ExportResult = result,
+            Rules = result.GisRules == null
+                ? null
+                : new CesiumPackageGisRules { Source = result.GisRules.Source, Profile = result.GisRules.Profile, Hash = result.GisRules.Hash },
+        };
     }
 
     /// <summary>
@@ -272,19 +338,6 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         public CesiumPackageExport? Export;
     }
 
-    private sealed class GisStepResult
-    {
-        public string ProjectKey = string.Empty;
-        public string BuildingName = string.Empty;
-        public string SourceModel = string.Empty;
-        public string CoordinateMode = string.Empty;
-        public int GisEpsg;
-        public List<string> ArtifactPaths = new();
-        public List<CesiumPackageLevelMapEntry> LevelMap = new();
-        public FloorGeoPackageExportResult ExportResult = new();
-        public CesiumPackageGisRules? Rules;
-    }
-
     private static Tiles3DStepResult RunTilesExport(
         Document document,
         CesiumExportRunRequest request,
@@ -353,13 +406,6 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         List<string> warnings,
         CancellationToken cancellationToken)
     {
-        string projectKey = DocumentProjectKeyBuilder.Create(document);
-        IReadOnlyList<ExportProfile> profiles = new ExportProfileStore(rules: GisRulesSourceFactory.For(document)).LoadWithDiagnostics(projectKey).Value;
-        ExportProfile profile = profiles.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, request.FloorPlanProfileName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException(
-                $"Floor plan profile '{request.FloorPlanProfileName}' was not found for this project.");
-
         if (request.KeepVersions)
         {
             // The station folder holds the model's gis-model.json; remember it so every later
@@ -367,37 +413,8 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             new ModelIdentityService().RecordStationFolder(document, request.OutputFolder, warnings);
         }
 
-        ModelCoordinateInfo coordinateInfo = new ModelCoordinateInfoReader().Read(document);
-        var exporter = new FloorPlanHeadlessExporter(document, uiDocument: null);
-        FloorGeoPackageExportResult result = exporter.Export(
-            profile,
-            coordinateInfo,
-            outputDirectoryOverride: layout.GisDirectory,
-            packagingModeOverride: PackagingMode.PerBuildingGeoPackage,
-            outputFormatOverride: ExportFormat.GeoPackage,
-            progressCallback: null,
-            cancellationToken: cancellationToken,
-            baselineKeyOverride: $"{projectKey}__{profile.Name}__cesium",
-            persistBaseline: false);
-        warnings.AddRange(result.Warnings);
-
-        ExportDialogSettings settings = profile.ToSettings();
-        return new GisStepResult
-        {
-            ProjectKey = projectKey,
-            BuildingName = DocumentProjectKeyBuilder.CreateDisplayName(document),
-            SourceModel = Path.GetFileName(document.PathName ?? string.Empty),
-            CoordinateMode = settings.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs
-                ? "ConvertToTargetCrs"
-                : "SharedCoordinates",
-            GisEpsg = settings.TargetEpsg,
-            ArtifactPaths = result.ArtifactResults.Select(artifact => artifact.OutputFilePath).ToList(),
-            LevelMap = CesiumExportSupport.BuildLevelMap(document),
-            ExportResult = result,
-            Rules = result.GisRules == null
-                ? null
-                : new CesiumPackageGisRules { Source = result.GisRules.Source, Profile = result.GisRules.Profile, Hash = result.GisRules.Hash },
-        };
+        return CesiumExportSupport.RunGisExport(
+            document, request.FloorPlanProfileName, layout.GisDirectory, "cesium", warnings, cancellationToken);
     }
 }
 

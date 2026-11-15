@@ -1143,6 +1143,38 @@ export interface ReadinessStatusResponse {
   statusMessage: string
 }
 
+export interface StationSendLayerChange {
+  added: number
+  edited: number
+  layer: string
+  removed: number
+}
+
+export interface StationSendRunRequest {
+  stationFolder: string
+}
+
+export interface StationSendRunResponse {
+  elementsAdded: number
+  elementsChanged: number
+  elementsEdited: number
+  elementsRemoved: number
+  hasPrevious: boolean
+  layers: StationSendLayerChange[]
+  seconds: number
+  versionFolder: string
+  warnings: string[]
+}
+
+export interface StationSendStateRequest {
+}
+
+export interface StationSendStateResponse {
+  modelName: string
+  profileName: string
+  stationFolder: string
+}
+
 export interface Tiles3DExportOptions {
   geoidOffset?: number
   geometryMode: string
@@ -1332,6 +1364,8 @@ export interface RpcMethods {
   'plateau.onlineImport': { request: PlateauOnlineImportRequest; response: JobStarted }
   'plateau.scanFolder': { request: PlateauScanRequest; response: JobStarted }
   'readiness.getStatus': { request: ReadinessStatusRequest; response: ReadinessStatusResponse }
+  'station.send.getState': { request: StationSendStateRequest; response: StationSendStateResponse }
+  'station.send.run': { request: StationSendRunRequest; response: JobStarted }
   'tiles3d.export': { request: Tiles3DExportRequest; response: JobStarted }
   'tiles3d.export.prepare': { request: Tiles3DExportPrepareRequest; response: Tiles3DExportPrepareResponse }
   'tiles3d.exportOptions': { request: Tiles3DExportOptionsRequest; response: Tiles3DExportOptionsResponse }

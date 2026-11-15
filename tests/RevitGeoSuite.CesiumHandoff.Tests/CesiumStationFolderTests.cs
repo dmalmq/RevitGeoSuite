@@ -99,6 +99,53 @@ public sealed class CesiumStationFolderTests : IDisposable
         Assert.Equal(2, Directory.GetDirectories(Path.GetDirectoryName(firstPublished.RootDirectory)!).Length);
     }
 
+    private CesiumPackageLayout PublishGis(string modelId, DateTime createdUtc, bool withGis = true)
+    {
+        CesiumPackageLayout staging = CesiumStationFolder.CreateStagingLayout(_station);
+        if (withGis)
+        {
+            File.WriteAllText(Path.Combine(staging.GisDirectory, "station.gpkg"), createdUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            Directory.Delete(staging.GisDirectory);
+            File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "{}");
+        }
+
+        CesiumPackageManifest manifest = new CesiumPackageLayoutBuilder().WriteManifest(staging, Inputs(modelId));
+        manifest.CreatedUtc = createdUtc;
+        File.WriteAllText(staging.ManifestPath, CesiumPackageManifestSerializer.Serialize(manifest));
+        return CesiumStationFolder.Publish(staging, _station, manifest);
+    }
+
+    [Fact]
+    public void Previous_version_is_the_newest_older_one_with_gis()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        CesiumPackageLayout oldest = PublishGis("model-a", start);
+        CesiumPackageLayout middle = PublishGis("model-a", start.AddHours(1));
+        PublishGis("model-a", start.AddHours(2), withGis: false);
+        CesiumPackageLayout newest = PublishGis("model-a", start.AddHours(3));
+        Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(newest.RootDirectory)!, ".tmp-x", "gis"));
+
+        Assert.Equal(middle.RootDirectory, CesiumStationFolder.PreviousVersion(newest.RootDirectory));
+        Assert.Equal(oldest.RootDirectory, CesiumStationFolder.PreviousVersion(middle.RootDirectory));
+        Assert.Null(CesiumStationFolder.PreviousVersion(oldest.RootDirectory));
+    }
+
+    [Fact]
+    public void Previous_version_skips_a_folder_without_a_readable_manifest()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        CesiumPackageLayout first = PublishGis("model-a", start);
+        CesiumPackageLayout second = PublishGis("model-a", start.AddHours(1));
+        string stray = Path.Combine(Path.GetDirectoryName(first.RootDirectory)!, "20990101T000000Z-copy");
+        Directory.CreateDirectory(Path.Combine(stray, "gis"));
+        File.WriteAllText(Path.Combine(stray, "cesium-package.json"), "not json");
+
+        Assert.Equal(first.RootDirectory, CesiumStationFolder.PreviousVersion(second.RootDirectory));
+    }
+
     [Fact]
     public void Publish_refuses_a_package_without_a_manifest()
     {
