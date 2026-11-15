@@ -18,8 +18,6 @@ namespace RevitGeoSuite.FloorPlanExport.Extractors;
 
 public sealed class DetailExtractor
 {
-    private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
-    private const double StairStepFallbackSpacingMeters = 0.30d;
     private static readonly GeometryFactory GeometryFactory = new();
 
     private readonly Document _document;
@@ -32,11 +30,8 @@ public sealed class DetailExtractor
     private readonly SchemaProfile _schemaProfile;
     private readonly StairVisibilityResolver _stairVisibilityResolver;
 
-    internal View3D? CurrentGeometryView { get; private set; }
-
     internal void SetCurrentGeometryView(View3D? geometryView)
     {
-        CurrentGeometryView = geometryView;
         _stairVisibilityResolver.CurrentGeometryView = geometryView;
     }
 
@@ -312,48 +307,32 @@ public sealed class DetailExtractor
             bool linkedUnderHostView = stairVisibility == null &&
                                        view != null &&
                                        !ReferenceEquals(view.Document, _document);
-            if ((stairVisibility?.SourceKind == VerticalCirculationVisibilitySourceKind.DrawingRule || linkedUnderHostView) &&
-                TryBuildDrawingRuleStepLines(
-                    stair,
-                    view,
-                    levelId,
-                    stairKey,
-                    visibleFootprintMask,
-                    geometryRepair,
-                    viewName,
-                    warnings,
-                    stairVisibilityAttributes,
-                    features))
+            bool ruleDrawsFloor = stairVisibility?.SourceKind == VerticalCirculationVisibilitySourceKind.DrawingRule ||
+                                  linkedUnderHostView;
+            foreach (IGrouping<StairPathPiece, StairStepLine> runLines in BuildStepLines(stair, view, ruleDrawsFloor)
+                         .GroupBy(line => line.Run))
             {
-                continue;
-            }
-
-            foreach (ElementId runId in stair.GetStairsRuns())
-            {
-                if (_document.GetElement(runId) is not StairsRun run)
+                if (runLines.Key.Key == null || _document.GetElement(runLines.Key.Key) is not StairsRun run)
                 {
                     continue;
                 }
 
-                if (!TryBuildRunStepLines(
-                        stair,
-                        run,
-                        view,
+                if (!TryClipRunStepLines(
+                        runLines.Select(line => line.Line).ToList(),
                         visibleFootprintMask,
-                        out List<LineString2D> stepLines,
                         geometryRepair,
-                        warnings))
+                        out List<LineString2D> clipped))
                 {
                     continue;
                 }
 
-                for (int i = 0; i < stepLines.Count; i++)
+                for (int i = 0; i < clipped.Count; i++)
                 {
                     long syntheticElementId = (run.Id.Value * 1000L) + (i + 1);
                     features.Add(
                         CreateFeature(
                             run,
-                            stepLines[i],
+                            clipped[i],
                             BuildSyntheticId("detail.stair.step", syntheticElementId, levelId),
                             levelId,
                             "stair-step",
@@ -371,237 +350,35 @@ public sealed class DetailExtractor
     }
 
     /// <summary>
-    /// Step lines by the stair drawing rule: every 0.60 m on one grid for the whole stair, wall to
-    /// wall, stopping short of the middle on each floor, none on landings.
+    /// Step lines by the stair drawing rule: every 0.60 m (the model's step spacing) on one grid
+    /// for the whole stair, wall to wall, none on landings. On a floor the rule draws, they stop
+    /// short of the middle; anywhere else the stair gets every line of the grid and the view's
+    /// visible part of the stair clips them. A stair the rule cannot read as one walking path,
+    /// such as one with runs side by side, gets a grid on each run, starting at that run's own
+    /// start, so its runs do not share one grid. Revit's own treads are never
+    /// drawn: the reference GDBs draw steps at the standard spacing, not tread by tread.
     /// </summary>
-    private bool TryBuildDrawingRuleStepLines(
-        Stairs stair,
-        ViewPlan? view,
-        string levelId,
-        string? stairKey,
-        Geometry? visibleFootprintMask,
-        GeometryRepairResult geometryRepair,
-        string? viewName,
-        ICollection<string> warnings,
-        IReadOnlyDictionary<string, object?>? stairVisibilityAttributes,
-        List<ExportLineString> features)
+    private IReadOnlyList<StairStepLine> BuildStepLines(Stairs stair, ViewPlan? view, bool ruleDrawsFloor)
     {
-        StairFloorSide? side = _stairVisibilityResolver.ResolveDrawingRuleSide(stair, view);
-        if (side == null ||
-            _stairVisibilityResolver.DrawingSettings == null ||
-            !StairDrawingPieces.TryRead(stair, ProjectPoint, out IReadOnlyList<StairPathPiece> pieces))
+        StairDrawingSettings settings = _stairVisibilityResolver.DrawingSettings ?? StairDrawingSettings.Default;
+        if (StairDrawingPieces.TryRead(stair, ProjectPoint, out IReadOnlyList<StairPathPiece> pieces))
         {
-            return false;
+            StairDrawingRule rule = new(pieces);
+            StairFloorSide? side = ruleDrawsFloor ? _stairVisibilityResolver.ResolveDrawingRuleSide(stair, view) : null;
+            return side == null ? rule.BuildAllStepLines(settings) : rule.BuildStepLines(side.Value, settings);
         }
 
-        StairDrawingRule rule = new(pieces);
-        foreach (IGrouping<StairPathPiece, StairStepLine> runLines in rule
-                     .BuildStepLines(side.Value, _stairVisibilityResolver.DrawingSettings)
-                     .GroupBy(line => line.Run))
+        List<StairStepLine> lines = new();
+        foreach (ElementId runId in stair.GetStairsRuns())
         {
-            if (runLines.Key.Key == null || _document.GetElement(runLines.Key.Key) is not StairsRun run)
+            if (_document.GetElement(runId) is StairsRun run &&
+                StairDrawingPieces.TryReadRun(run, ProjectPoint, out StairPathPiece piece))
             {
-                continue;
-            }
-
-            if (!TryClipRunStepLines(
-                    runLines.Select(line => line.Line).ToList(),
-                    visibleFootprintMask,
-                    geometryRepair,
-                    out List<LineString2D> clipped))
-            {
-                continue;
-            }
-
-            for (int i = 0; i < clipped.Count; i++)
-            {
-                long syntheticElementId = (run.Id.Value * 1000L) + (i + 1);
-                features.Add(
-                    CreateFeature(
-                        run,
-                        clipped[i],
-                        BuildSyntheticId("detail.stair.step", syntheticElementId, levelId),
-                        levelId,
-                        "stair-step",
-                        RevitKey.Create(_modelKey, run.UniqueId, i),
-                        DetailCategory.Steps,
-                        stairKey,
-                        viewName,
-                        warnings,
-                        stairVisibilityAttributes));
+                lines.AddRange(new StairDrawingRule(new[] { piece }).BuildAllStepLines(settings));
             }
         }
 
-        return true;
-    }
-
-    private bool TryBuildRunStepLines(
-        Stairs stair,
-        StairsRun run,
-        ViewPlan? view,
-        Geometry? visibleFootprintMask,
-        out List<LineString2D> lines,
-        GeometryRepairResult geometryRepair,
-        ICollection<string> warnings)
-    {
-        lines = new List<LineString2D>();
-
-        CurveLoop stairsPath;
-        try
-        {
-            stairsPath = run.GetStairsPath();
-        }
-        catch (Exception)
-        {
-            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} path could not be read for detail export.");
-            return false;
-        }
-
-        List<Point2D> pathPoints = ProjectCurveLoop(stairsPath, closeLoop: false);
-        if (pathPoints.Count < 2)
-        {
-            return false;
-        }
-
-        double pathLengthMeters = GetLength(pathPoints);
-        if (pathLengthMeters < _geometryRepairOptions.MinimumOpeningLengthMeters)
-        {
-            return false;
-        }
-
-        if (TryBuildModeledRunStepLines(stair, run, view, pathPoints, pathLengthMeters, warnings, out lines))
-        {
-            return TryClipRunStepLines(lines, visibleFootprintMask, geometryRepair, out lines);
-        }
-
-        CurveLoop footprintBoundary;
-        try
-        {
-            footprintBoundary = run.GetFootprintBoundary();
-        }
-        catch (Exception)
-        {
-            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} footprint boundary could not be read for detail export.");
-            return false;
-        }
-
-        if (!TryCreatePolygonFromCurveLoop(
-                footprintBoundary,
-                out Polygon footprintPolygon,
-                warnings,
-                $"{BuildStairRunWarningPrefix(stair, run)} footprint boundary"))
-        {
-            return false;
-        }
-
-        if (TryBuildSchematicRunStepLines(run, pathPoints, pathLengthMeters, footprintPolygon, geometryRepair, out lines))
-        {
-            geometryRepair.SimplifiedDetails++;
-            return TryClipRunStepLines(lines, visibleFootprintMask, geometryRepair, out lines);
-        }
-
-        return false;
-    }
-
-    private bool TryBuildModeledRunStepLines(
-        Stairs stair,
-        StairsRun run,
-        ViewPlan? view,
-        IReadOnlyList<Point2D> pathPoints,
-        double pathLengthMeters,
-        ICollection<string> warnings,
-        out List<LineString2D> lines)
-    {
-        lines = new List<LineString2D>();
-
-        if (view != null &&
-            ReferenceEquals(view.Document, _document) &&
-            TryBuildModeledRunStepLines(run, pathPoints, pathLengthMeters, CreateGeometryOptions(view), out lines))
-        {
-            return true;
-        }
-
-        if (TryBuildModeledRunStepLines(run, pathPoints, pathLengthMeters, CreateGeometryOptions(), out lines))
-        {
-            return true;
-        }
-
-        warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} tread geometry could not be read; using schematic stair detail lines.");
-        return false;
-    }
-
-    private bool TryBuildModeledRunStepLines(
-        StairsRun run,
-        IReadOnlyList<Point2D> pathPoints,
-        double pathLengthMeters,
-        Options geometryOptions,
-        out List<LineString2D> lines)
-    {
-        lines = new List<LineString2D>();
-
-        GeometryElement? geometry;
-        try
-        {
-            geometry = run.get_Geometry(geometryOptions);
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-
-        if (geometry == null)
-        {
-            return false;
-        }
-
-        List<Solid> solids = CollectSolids(geometry);
-        if (solids.Count == 0)
-        {
-            return false;
-        }
-
-        double runWidthMeters = Math.Max(0.5d, run.ActualRunWidth * FeetToMeters);
-        double minLineLengthMeters = _geometryRepairOptions.MinimumOpeningLengthMeters;
-        double maxDistanceToPathMeters = Math.Max(minLineLengthMeters, runWidthMeters * 0.35d);
-        List<StairTreadLineCandidate> candidates = new();
-
-        for (int solidIndex = 0; solidIndex < solids.Count; solidIndex++)
-        {
-            Solid solid = solids[solidIndex];
-            foreach (Face face in solid.Faces)
-            {
-                if (face is not PlanarFace planarFace || planarFace.FaceNormal.Z < 0.98d)
-                {
-                    continue;
-                }
-
-                if (TryBuildTreadFaceLineCandidate(
-                        planarFace,
-                        pathPoints,
-                        minLineLengthMeters,
-                        maxDistanceToPathMeters,
-                        out StairTreadLineCandidate candidate))
-                {
-                    candidates.Add(candidate);
-                }
-            }
-        }
-
-        if (candidates.Count == 0)
-        {
-            return false;
-        }
-
-        IReadOnlyList<LineString2D> selected = StairTreadLineSelector.SelectDistinctOrderedLines(
-            candidates,
-            BuildStationMergeThreshold(run, pathLengthMeters));
-        if (selected.Count == 0)
-        {
-            return false;
-        }
-
-        lines.AddRange(selected);
-        return true;
+        return lines;
     }
 
     private bool TryClipRunStepLines(
@@ -643,344 +420,6 @@ public sealed class DetailExtractor
 
         clippedLines = visibleLines;
         return clippedLines.Count > 0;
-    }
-
-    private bool TryBuildTreadFaceLineCandidate(
-        PlanarFace face,
-        IReadOnlyList<Point2D> pathPoints,
-        double minimumLineLengthMeters,
-        double maxDistanceToPathMeters,
-        out StairTreadLineCandidate candidate)
-    {
-        candidate = default;
-        List<StairTreadLineCandidate> edgeCandidates = new();
-        List<Point2D> facePoints = new();
-
-        foreach (EdgeArray edgeArray in face.EdgeLoops)
-        {
-            foreach (Edge edge in edgeArray)
-            {
-                if (!TryExtractEdgeLineString(edge, out LineString2D line))
-                {
-                    continue;
-                }
-
-                if (!TryInterpolateOnPolyline(line.Points, 0.5d, out Point2D midpoint, out _))
-                {
-                    continue;
-                }
-
-                if (!TryLocateOnPolyline(pathPoints, midpoint, out double stationMeters, out _, out double distanceToPathMeters) ||
-                    distanceToPathMeters > maxDistanceToPathMeters)
-                {
-                    continue;
-                }
-
-                edgeCandidates.Add(new StairTreadLineCandidate(line, stationMeters));
-                facePoints.AddRange(line.Points);
-            }
-        }
-
-        if (edgeCandidates.Count == 0 || facePoints.Count < 3)
-        {
-            return false;
-        }
-
-        Point2D centroid = GetAveragePoint(facePoints);
-        if (!TryLocateOnPolyline(pathPoints, centroid, out _, out Point2D tangent, out double faceDistanceToPathMeters) ||
-            faceDistanceToPathMeters > maxDistanceToPathMeters)
-        {
-            return false;
-        }
-
-        return StairTreadLineSelector.TrySelectFrontEdge(edgeCandidates, tangent, minimumLineLengthMeters, out candidate);
-    }
-
-    private bool TryBuildSchematicRunStepLines(
-        StairsRun run,
-        IReadOnlyList<Point2D> pathPoints,
-        double pathLengthMeters,
-        Polygon footprintPolygon,
-        GeometryRepairResult geometryRepair,
-        out List<LineString2D> lines)
-    {
-        lines = new List<LineString2D>();
-
-        IReadOnlyList<double> linePositions = BuildActualStepPositions(run, pathLengthMeters);
-        double halfCutLengthMeters = Math.Max(0.5d, run.ActualRunWidth * FeetToMeters) * 1.5d;
-        HashSet<string> emittedLineKeys = new(StringComparer.Ordinal);
-        for (int i = 0; i < linePositions.Count; i++)
-        {
-            double distanceMeters = linePositions[i];
-            double fraction = pathLengthMeters <= 1e-9d ? 0d : distanceMeters / pathLengthMeters;
-            if (!TryInterpolateOnPolyline(pathPoints, fraction, out Point2D point, out Point2D tangent))
-            {
-                continue;
-            }
-
-            Point2D perpendicular = new(-tangent.Y, tangent.X);
-            Coordinate start = new(
-                point.X - (perpendicular.X * halfCutLengthMeters),
-                point.Y - (perpendicular.Y * halfCutLengthMeters));
-            Coordinate end = new(
-                point.X + (perpendicular.X * halfCutLengthMeters),
-                point.Y + (perpendicular.Y * halfCutLengthMeters));
-            LineString cutLine = GeometryFactory.CreateLineString(new[] { start, end });
-
-            if (!TryGetLongestIntersectionSegment(footprintPolygon, cutLine, out LineString2D segment))
-            {
-                continue;
-            }
-
-            if (GetLength(segment.Points) < _geometryRepairOptions.MinimumOpeningLengthMeters)
-            {
-                geometryRepair.SimplifiedDetails++;
-                continue;
-            }
-
-            string lineKey = BuildLineKey(segment);
-            if (emittedLineKeys.Add(lineKey))
-            {
-                lines.Add(segment);
-            }
-        }
-
-        return lines.Count > 0;
-    }
-
-    private static double BuildStationMergeThreshold(StairsRun run, double pathLengthMeters)
-    {
-        int treadCount = Math.Max(run.ActualTreadsNumber, Math.Max(1, run.ActualRisersNumber - 1));
-        if (treadCount <= 0 || pathLengthMeters <= 0d)
-        {
-            return 0.05d;
-        }
-
-        double nominalTreadDepthMeters = pathLengthMeters / treadCount;
-        return Math.Max(0.03d, nominalTreadDepthMeters * 0.2d);
-    }
-
-    private static IReadOnlyList<double> BuildActualStepPositions(StairsRun run, double pathLengthMeters)
-    {
-        int riserCount = run.ActualRisersNumber;
-
-        if (riserCount < 2)
-        {
-            return StairDetailLayout.BuildCenteredLinePositions(pathLengthMeters, StairStepFallbackSpacingMeters);
-        }
-
-        double treadDepthMeters = pathLengthMeters / (riserCount - 1);
-        if (treadDepthMeters <= 1e-6d)
-        {
-            return StairDetailLayout.BuildCenteredLinePositions(pathLengthMeters, StairStepFallbackSpacingMeters);
-        }
-
-        List<double> positions = new(riserCount - 1);
-        for (int i = 1; i < riserCount; i++)
-        {
-            double position = i * treadDepthMeters;
-            if (position < pathLengthMeters - 1e-6d)
-            {
-                positions.Add(position);
-            }
-        }
-
-        return positions.Count > 0
-            ? positions
-            : StairDetailLayout.BuildCenteredLinePositions(pathLengthMeters, StairStepFallbackSpacingMeters);
-    }
-
-    private bool TryExtractEdgeLineString(Edge edge, out LineString2D line)
-    {
-        line = null!;
-        IList<XYZ> tessellated = edge.Tessellate();
-        if (tessellated.Count < 2)
-        {
-            Curve? curve = edge.AsCurve();
-            if (curve == null)
-            {
-                return false;
-            }
-
-            tessellated = new[]
-            {
-                curve.GetEndPoint(0),
-                curve.GetEndPoint(1),
-            };
-        }
-
-        List<Point2D> points = new(tessellated.Count);
-        for (int i = 0; i < tessellated.Count; i++)
-        {
-            Point2D point = ProjectPoint(tessellated[i]);
-            if (points.Count == 0 || !IsSamePoint(points[points.Count - 1], point))
-            {
-                points.Add(point);
-            }
-        }
-
-        if (points.Count < 2)
-        {
-            return false;
-        }
-
-        line = new LineString2D(points);
-        return true;
-    }
-
-    private Options CreateGeometryOptions(View? view = null)
-    {
-        Options options = new()
-        {
-            ComputeReferences = false,
-            IncludeNonVisibleObjects = true,
-        };
-
-        View? effectiveView = (View?)CurrentGeometryView ?? view;
-        if (effectiveView != null)
-        {
-            options.View = effectiveView;
-            options.IncludeNonVisibleObjects = false;
-        }
-        else
-        {
-            options.DetailLevel = ViewDetailLevel.Fine;
-        }
-
-        return options;
-    }
-
-    private static List<Solid> CollectSolids(GeometryElement geometry)
-    {
-        List<Solid> solids = new();
-        foreach (GeometryObject geometryObject in geometry)
-        {
-            switch (geometryObject)
-            {
-                case Solid solid when solid.Volume > 0d:
-                    solids.Add(solid);
-                    break;
-                case GeometryInstance instance:
-                    solids.AddRange(CollectSolids(instance.GetInstanceGeometry()));
-                    break;
-            }
-        }
-
-        return solids;
-    }
-
-    private bool TryCreatePolygonFromCurveLoop(
-        CurveLoop loop,
-        out Polygon polygon,
-        ICollection<string>? warnings = null,
-        string? context = null)
-    {
-        polygon = null!;
-        List<Point2D> points = ProjectCurveLoop(loop, closeLoop: true);
-        if (points.Count < 4)
-        {
-            if (!string.IsNullOrWhiteSpace(context))
-            {
-                warnings?.Add($"{context} could not form a closed polygon for detail export.");
-            }
-
-            return false;
-        }
-
-        List<Coordinate> coordinates = points
-            .Select(point => new Coordinate(point.X, point.Y))
-            .ToList();
-        Coordinate first = coordinates[0];
-        Coordinate last = coordinates[coordinates.Count - 1];
-        if (!first.Equals2D(last))
-        {
-            coordinates.Add(new Coordinate(first.X, first.Y));
-        }
-
-        LinearRing shell;
-        try
-        {
-            shell = GeometryFactory.CreateLinearRing(coordinates.ToArray());
-        }
-        catch (ArgumentException)
-        {
-            if (!string.IsNullOrWhiteSpace(context))
-            {
-                warnings?.Add($"{context} could not form a closed polygon for detail export.");
-            }
-
-            return false;
-        }
-
-        Polygon created = GeometryFactory.CreatePolygon(shell);
-        if (!created.IsValid)
-        {
-            Geometry healed = created.Buffer(0d);
-            if (healed is Polygon healedPolygon)
-            {
-                polygon = healedPolygon;
-                return true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(context))
-            {
-                warnings?.Add($"{context} produced an invalid polygon for detail export.");
-            }
-
-            return false;
-        }
-
-        polygon = created;
-        return true;
-    }
-
-    private List<Point2D> ProjectCurveLoop(CurveLoop loop, bool closeLoop)
-    {
-        List<Point2D> points = new();
-        foreach (Curve curve in loop)
-        {
-            List<Point2D> curvePoints = ProjectCurve(curve);
-            for (int i = 0; i < curvePoints.Count; i++)
-            {
-                Point2D point = curvePoints[i];
-                if (points.Count == 0 || !IsSamePoint(points[points.Count - 1], point))
-                {
-                    points.Add(point);
-                }
-            }
-        }
-
-        if (closeLoop && points.Count >= 3 && !IsSamePoint(points[0], points[points.Count - 1]))
-        {
-            points.Add(points[0]);
-        }
-
-        return points;
-    }
-
-    private List<Point2D> ProjectCurve(Curve curve)
-    {
-        IList<XYZ> tessellated = curve.Tessellate();
-        if (tessellated.Count < 2)
-        {
-            tessellated = new[]
-            {
-                curve.GetEndPoint(0),
-                curve.GetEndPoint(1),
-            };
-        }
-
-        List<Point2D> points = new(tessellated.Count);
-        for (int i = 0; i < tessellated.Count; i++)
-        {
-            Point2D point = ProjectPoint(tessellated[i]);
-            if (points.Count == 0 || !IsSamePoint(points[points.Count - 1], point))
-            {
-                points.Add(point);
-            }
-        }
-
-        return points;
     }
 
     private Point2D ProjectPoint(XYZ point)
@@ -1050,160 +489,6 @@ public sealed class DetailExtractor
             _sourceDescriptor.LinkInstanceId.Value.ToString(),
             elementId.ToString(),
             levelId);
-    }
-
-    private static bool TryInterpolateOnPolyline(
-        IReadOnlyList<Point2D> points,
-        double fraction,
-        out Point2D position,
-        out Point2D tangent)
-    {
-        position = default;
-        tangent = default;
-        if (points == null || points.Count < 2)
-        {
-            return false;
-        }
-
-        double clampedFraction = Math.Max(0d, Math.Min(1d, fraction));
-        double totalLength = GetLength(points);
-        if (totalLength <= 1e-9d)
-        {
-            return false;
-        }
-
-        double targetDistance = totalLength * clampedFraction;
-        double traversed = 0d;
-        for (int i = 0; i < points.Count - 1; i++)
-        {
-            Point2D a = points[i];
-            Point2D b = points[i + 1];
-            double dx = b.X - a.X;
-            double dy = b.Y - a.Y;
-            double length = Math.Sqrt((dx * dx) + (dy * dy));
-            if (length <= 1e-9d)
-            {
-                continue;
-            }
-
-            if (traversed + length >= targetDistance)
-            {
-                double segmentDistance = targetDistance - traversed;
-                double t = segmentDistance / length;
-                position = new Point2D(a.X + (dx * t), a.Y + (dy * t));
-                tangent = new Point2D(dx / length, dy / length);
-                return true;
-            }
-
-            traversed += length;
-        }
-
-        Point2D lastStart = points[points.Count - 2];
-        Point2D lastEnd = points[points.Count - 1];
-        double lastDx = lastEnd.X - lastStart.X;
-        double lastDy = lastEnd.Y - lastStart.Y;
-        double lastLength = Math.Sqrt((lastDx * lastDx) + (lastDy * lastDy));
-        if (lastLength <= 1e-9d)
-        {
-            return false;
-        }
-
-        position = lastEnd;
-        tangent = new Point2D(lastDx / lastLength, lastDy / lastLength);
-        return true;
-    }
-
-    private static bool TryLocateOnPolyline(
-        IReadOnlyList<Point2D> polyline,
-        Point2D point,
-        out double stationMeters,
-        out Point2D tangent,
-        out double distanceToPathMeters)
-    {
-        stationMeters = 0d;
-        tangent = default;
-        distanceToPathMeters = double.MaxValue;
-
-        if (polyline == null || polyline.Count < 2)
-        {
-            return false;
-        }
-
-        bool found = false;
-        double traversed = 0d;
-        double bestDistanceSquared = double.MaxValue;
-        for (int i = 0; i < polyline.Count - 1; i++)
-        {
-            Point2D start = polyline[i];
-            Point2D end = polyline[i + 1];
-            double dx = end.X - start.X;
-            double dy = end.Y - start.Y;
-            double segmentLengthSquared = (dx * dx) + (dy * dy);
-            if (segmentLengthSquared <= 1e-9d)
-            {
-                continue;
-            }
-
-            double segmentLength = Math.Sqrt(segmentLengthSquared);
-            double projection = (((point.X - start.X) * dx) + ((point.Y - start.Y) * dy)) / segmentLengthSquared;
-            double clampedProjection = Math.Max(0d, Math.Min(1d, projection));
-            double projectedX = start.X + (dx * clampedProjection);
-            double projectedY = start.Y + (dy * clampedProjection);
-            double distanceX = point.X - projectedX;
-            double distanceY = point.Y - projectedY;
-            double distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
-            if (distanceSquared < bestDistanceSquared)
-            {
-                bestDistanceSquared = distanceSquared;
-                stationMeters = traversed + (segmentLength * clampedProjection);
-                tangent = new Point2D(dx / segmentLength, dy / segmentLength);
-                distanceToPathMeters = Math.Sqrt(distanceSquared);
-                found = true;
-            }
-
-            traversed += segmentLength;
-        }
-
-        return found;
-    }
-
-    private static bool TryGetLongestIntersectionSegment(
-        Polygon polygon,
-        LineString cutLine,
-        out LineString2D segment)
-    {
-        segment = null!;
-        Geometry intersection = polygon.Intersection(cutLine);
-        if (intersection.IsEmpty)
-        {
-            return false;
-        }
-
-        List<LineString> lineStrings = new();
-        CollectLineStrings(intersection, lineStrings);
-        if (lineStrings.Count == 0)
-        {
-            return false;
-        }
-
-        LineString longest = lineStrings
-            .OrderByDescending(line => line.Length)
-            .First();
-        if (longest.Length <= 1e-9d)
-        {
-            return false;
-        }
-
-        List<Point2D> points = longest.Coordinates
-            .Select(coord => new Point2D(coord.X, coord.Y))
-            .ToList();
-        if (points.Count < 2)
-        {
-            return false;
-        }
-
-        segment = new LineString2D(points);
-        return true;
     }
 
     private static Geometry? CreatePolygonMask(IReadOnlyList<Polygon2D> polygons)
@@ -1412,28 +697,6 @@ public sealed class DetailExtractor
         }
 
         return total;
-    }
-
-    private static Point2D GetAveragePoint(IReadOnlyList<Point2D> points)
-    {
-        double x = 0d;
-        double y = 0d;
-        for (int i = 0; i < points.Count; i++)
-        {
-            x += points[i].X;
-            y += points[i].Y;
-        }
-
-        double scale = points.Count == 0 ? 0d : 1d / points.Count;
-        return new Point2D(x * scale, y * scale);
-    }
-
-    private string BuildStairRunWarningPrefix(Stairs stair, StairsRun run)
-    {
-        string prefix = $"Stairs {stair.Id.Value} run {run.Id.Value}";
-        return _sourceDescriptor.IsLinkedSource
-            ? $"{prefix} in source '{_sourceDocumentName}'"
-            : prefix;
     }
 
     private static bool IsSamePoint(Point2D left, Point2D right)
