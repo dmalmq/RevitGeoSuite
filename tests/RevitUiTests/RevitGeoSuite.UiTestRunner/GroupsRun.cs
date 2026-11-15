@@ -158,7 +158,7 @@ internal sealed partial class GisStandardRun
 
         Dictionary<long, string?> before = ReadNames(groupFloors);
         string current = before[groupFloors[1]] ?? string.Empty;
-        string renamed = $"{current} (B9)";
+        string renamed = current.Length > 0 ? $"{current} (B9)" : "B9 copy 2"; // the product trims names, so no leading space
         string path = Path.Combine(options.OutputFolder, "b9-name.gis-drift.json");
         File.WriteAllText(path, DriftFixture.Write(stationModelKey, groupUniqueIds[1], current, renamed));
         step.Note($"Wrote {path}: copy 2 ({groupFloors[1]}) name '{current}' to '{renamed}' (model '{stationModelKey}').");
