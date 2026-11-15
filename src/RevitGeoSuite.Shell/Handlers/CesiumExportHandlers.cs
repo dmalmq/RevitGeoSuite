@@ -52,6 +52,17 @@ internal static class CesiumExportSupport
         return JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(payload)) ?? new T();
     }
 
+    /// <summary>The model's floor plan profile by name; throws when it has none by that name.</summary>
+    public static ExportProfile FindProfile(Document document, string profileName)
+    {
+        string projectKey = DocumentProjectKeyBuilder.Create(document);
+        IReadOnlyList<ExportProfile> profiles = new ExportProfileStore(rules: GisRulesSourceFactory.For(document)).LoadWithDiagnostics(projectKey).Value;
+        return profiles.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException(
+                $"Floor plan profile '{profileName}' was not found for this project.");
+    }
+
     /// <summary>
     /// Runs the floor plan export of profile <paramref name="profileName"/> into
     /// <paramref name="gisDirectory"/> as one GeoPackage per building, for a station package.
@@ -66,11 +77,7 @@ internal static class CesiumExportSupport
         CancellationToken cancellationToken)
     {
         string projectKey = DocumentProjectKeyBuilder.Create(document);
-        IReadOnlyList<ExportProfile> profiles = new ExportProfileStore(rules: GisRulesSourceFactory.For(document)).LoadWithDiagnostics(projectKey).Value;
-        ExportProfile profile = profiles.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException(
-                $"Floor plan profile '{profileName}' was not found for this project.");
+        ExportProfile profile = FindProfile(document, profileName);
 
         ModelCoordinateInfo coordinateInfo = new ModelCoordinateInfoReader().Read(document);
         var exporter = new FloorPlanHeadlessExporter(document, uiDocument: null);
@@ -411,6 +418,9 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         List<string> warnings,
         CancellationToken cancellationToken)
     {
+        // Look the profile up first, as before the send shared this step: a missing profile must
+        // fail before the station folder is recorded.
+        CesiumExportSupport.FindProfile(document, request.FloorPlanProfileName);
         if (request.KeepVersions)
         {
             // The station folder holds the model's gis-model.json; remember it so every later

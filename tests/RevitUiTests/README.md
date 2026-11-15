@@ -365,12 +365,12 @@ It writes `model-facts.md` and `model-facts.json` into the run folder as well as
 
 ## The f1-send scenario
 
-`--scenario f1-send --model <file>` checks Send to Kanizu. Everything it writes goes to `station/` in the run folder, which the copy records as its station folder.
+`--scenario f1-send --model <file>` checks Send to Kanizu. Everything it writes goes to `station/` in the run folder, which the copy records as its station folder. Run it with `-FloorPlanDataSandbox`: a send reads the per-PC profile store and commits an export baseline there.
 
 - F1.1 runs Set up model when the copy needs it, then a coarse Cesium export into `station/`. That version is the one the first send compares with, and its time is noted.
-- F1.2 sends through `station.send.run`. It expects a new version with a GeoPackage, `tiles/levels.json` and `tiles/rooms.json`, and no tileset or GLB. It expects a manifest without `tiles.tileset` or `export`, the Cesium export's model id, and nothing changed. Every `levelMap` level must be in `levels.json` with the same UniqueId and the same height above TP as in the Cesium export, within 1 cm.
-- F1.3 opens `#/send/now`, as the ribbon button does. It expects one new version, "Nothing changed since the last send." and the address back at `#/send`. If the copy has audit errors, it clicks Send anyway and notes that.
-- F1.4 sets `j ホーム_床` to `walkway`. When that is an audit error, it expects the page to stop with no new version. After Send anyway, it expects only edited elements and a Units row.
+- F1.2 reads `station.send.getState` for `station/` (a station folder, and the document key the run must send back), then sends through `station.send.run`. It expects the changes counted, a new version with a GeoPackage, `tiles/levels.json` and `tiles/rooms.json`, and no tileset or GLB. It expects a manifest without `tiles.tileset` or `export`, the Cesium export's model id, and nothing changed. Every `levelMap` level must be in `levels.json` with the same UniqueId and the same height above TP as in the Cesium export, within 1 cm, and at least one level must be compared.
+- F1.3 opens `#/send/now`, as the ribbon button does. It expects the page to send without stopping (the copy has no audit errors after Set up model), one new version, "Nothing changed since the last send." and the address back at `#/send`.
+- F1.4 sets `j ホーム_床` to `walkway`. It expects that to be an audit error, and the page to stop with no new version. After Send anyway, it expects only edited elements and a single changed layer, Units.
 
 ## The georef-read scenario
 

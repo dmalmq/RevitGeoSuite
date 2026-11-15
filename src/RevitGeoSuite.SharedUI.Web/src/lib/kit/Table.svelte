@@ -30,8 +30,17 @@
     background: hsl(var(--muted));
     color: hsl(var(--muted-foreground));
     font-weight: 500;
-    text-align: left;
     white-space: nowrap;
+  }
+
+  /* Headers start-align unless they ask for the right, as number columns do: this rule outranks
+     a utility class, so it must leave those headers alone. */
+  .kit-table :global(th:not(.text-right):not(.text-center)) {
+    text-align: left;
+  }
+
+  .kit-table :global(th.text-right) {
+    text-align: right;
   }
 
   .kit-table :global(td) {

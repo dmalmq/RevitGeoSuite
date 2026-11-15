@@ -1,7 +1,8 @@
 <!--
   Send to Kanizu: audits the model, then writes its GIS package (with the level and room indexes,
   no 3D Tiles) as a new version in the station folder, and says what changed since the last send.
-  From the ribbon button (#/send/now) it sends at once unless the audit has errors; from the
+  From the ribbon button (#/send/now) it sends at once unless the audit has errors, the folder has
+  no Kanizu versions yet, or the model's last send came from another file (Save As); from the
   sidebar (#/send) it waits for a click. The first send asks for the station folder once.
 -->
 <script lang="ts">
@@ -19,6 +20,7 @@
   let phase = $state<Phase>('loading')
   let sendState = $state<StationSendStateResponse | null>(null)
   let folder = $state('')
+  let folderKind = $state('')
   let errors = $state<string[]>([])
   let errorFindings = $state<GisAuditFindingItem[]>([])
   let progress = $state<JobProgress | null>(null)
@@ -50,8 +52,9 @@
     try {
       sendState = await request<StationSendStateResponse>('station.send.getState', {})
       folder = sendState.stationFolder
+      folderKind = sendState.folderKind
       phase = 'ready'
-      if (sendNow && folder) await send(false)
+      if (sendNow && folderKind === 'station' && !sendState.lastSentFromAnotherFile) await send(false)
     } catch (err: any) {
       failure = err?.message ?? $t('Send.Error.Read', 'Could not read the model.')
       phase = 'ready'
@@ -59,11 +62,17 @@
   }
 
   async function pickFolder() {
+    failure = null
     try {
+      // A cancelled picker answers with no path; anything thrown is a real failure.
       const picked = (await request('dialog.openFolder', { title: $t('Send.PickFolder', 'Choose the station folder') })) as { path?: string }
-      if (picked?.path) folder = picked.path
-    } catch {
-      // The picker was cancelled.
+      if (!picked?.path) return
+      const picks = await request<StationSendStateResponse>('station.send.getState', { stationFolder: picked.path })
+      folder = picks.stationFolder
+      folderKind = picks.folderKind
+      if (sendState) sendState = { ...sendState, lastSentFromAnotherFile: picks.lastSentFromAnotherFile }
+    } catch (err: any) {
+      failure = err?.message ?? $t('Send.Error.Read', 'Could not read the model.')
     }
   }
 
@@ -91,7 +100,11 @@
     phase = 'sending'
     progress = null
     try {
-      const job = startJob<StationSendRunResponse>('station.send.run', { stationFolder: folder }, { onProgress: (p) => (progress = p) })
+      const job = startJob<StationSendRunResponse>(
+        'station.send.run',
+        { stationFolder: folder, documentKey: sendState?.documentKey ?? '', confirmNewFolder: folderKind === 'new' },
+        { onProgress: (p) => (progress = p) }
+      )
       result = await job.result
       phase = 'sent'
     } catch (err: any) {
@@ -118,7 +131,7 @@
   promise={$t('Send.Promise', 'Audit the model and write its GIS package to the station folder. No 3D Tiles, so it takes seconds; Export to Cesium stays for the 3D viewer.')}
 >
   {#snippet actions()}
-    <Button variant="primary" icon="send" onclick={() => send(false)} disabled={busy || !folder} busy={phase === 'auditing' || phase === 'sending'}>
+    <Button variant="primary" icon="send" onclick={() => send(false)} disabled={busy || !folder || folderKind === 'missing'} busy={phase === 'auditing' || phase === 'sending'}>
       {$t('Send.Send', 'Send')}
     </Button>
   {/snippet}
@@ -140,6 +153,14 @@
           {folder ? $t('Send.Folder.Change', 'Change') : $t('Send.Folder.Choose', 'Choose')}
         </Button>
       </div>
+      {#if folderKind === 'new'}
+        <p class="mt-2 text-small text-warning-foreground">{$t('Send.Folder.New', 'This folder has no Kanizu versions yet. Sending makes it this station\'s folder.')}</p>
+      {:else if folderKind === 'missing'}
+        <p class="mt-2 text-small text-destructive-text">{$t('Send.Folder.Missing', 'This folder cannot be found. Check that the share is reachable, or choose another.')}</p>
+      {/if}
+      {#if sendState?.lastSentFromAnotherFile && phase !== 'sent'}
+        <p class="mt-2 text-small text-warning-foreground">{$t('Send.OtherFile', 'The last send of this model came from another file, as after Save As. Check that this file should become the newest version, then Send.')}</p>
+      {/if}
       {#if sendState && !sendState.profileName}
         <p class="mt-2 text-small text-warning-foreground">{$t('Send.NoProfile', 'This model has no floor plan export profile yet. Save one on GeoPackage Export first.')}</p>
       {/if}
@@ -166,6 +187,9 @@
     {:else if phase === 'sent' && result}
       <Result title={$t('Send.Done', 'Sent to Kanizu')}>
         <p>{changeLine(result, $t)}</p>
+        {#if result.rulesDiffer}
+          <p class="mt-1 text-small text-warning-foreground">{$t('Send.RulesDiffer', 'The last send used other GIS rules or another profile, so some edits may come from the rules rather than the model.')}</p>
+        {/if}
         <p class="mt-1 truncate font-mono text-small text-muted-foreground" title={result.versionFolder}>
           {format($t('Send.Done.Where', 'In {0} s, to {1}'), result.seconds, result.versionFolder)}
         </p>
@@ -206,7 +230,7 @@
     {#if phase !== 'sent'}
       <p class="text-small text-muted-foreground">
         <Chip tone="neutral">{$t('Send.NoTiles', 'GIS only')}</Chip>
-        {$t('Send.NoTilesHint', 'Kanizu compares the GIS and pairs the levels as usual. The 3D view and the element change list keep the last Export to Cesium.')}
+        {$t('Send.NoTilesHint', 'Kanizu compares the GIS and pairs the levels as usual. Its Revit element change list compares two Export to Cesium versions, so it has nothing to list for a send.')}
       </p>
     {/if}
   </div>

@@ -97,9 +97,69 @@ public sealed class GisPackageChangesTests : IDisposable
         Assert.Equal(1, counts["L2"]);
     }
 
+    [Fact]
+    public void AFeatureWithoutAKeyMatchesByItsId()
+    {
+        string before = Write("v1", Unit("a", 0, "Room A", id: "u-1", keyed: false), Unit("b", 20, "Room B", id: "u-2", keyed: false));
+        string after = Write("v2", Unit("a", 0, "Room A", id: "u-1", keyed: false), Unit("b", 20, "Concourse", id: "u-2", keyed: false));
+
+        GisLayerChanges unit = Assert.Single(GisPackageChanges.Compare(before, after).Layers);
+
+        Assert.Equal((0, 0, 1, 1), (unit.Added, unit.Removed, unit.Edited, unit.Unchanged));
+    }
+
+    [Fact]
+    public void AFeatureWithoutAKeyOrIdMatchesByItsWholeRow()
+    {
+        string before = Write("v1", Unit("a", 0, "Room A", id: "", keyed: false), Unit("b", 20, "Room B", id: "", keyed: false));
+        string after = Write("v2", Unit("a", 0, "Room A", id: "", keyed: false), Unit("b", 20, "Concourse", id: "", keyed: false));
+
+        GisLayerChanges unit = Assert.Single(GisPackageChanges.Compare(before, after).Layers);
+
+        Assert.Equal((1, 1, 0, 1), (unit.Added, unit.Removed, unit.Edited, unit.Unchanged));
+    }
+
+    [Fact]
+    public void AMovedFeatureIsAnEdit()
+    {
+        string before = Write("v1", Unit("a", 0, "Room A"));
+        string after = Write("v2", Unit("a", 0.5, "Room A"));
+
+        Assert.Equal(1, GisPackageChanges.Compare(before, after).ElementsEdited);
+    }
+
+    [Fact]
+    public void RepeatedKeysPairTheSameWayWhateverTheRowOrder()
+    {
+        string before = Write("v1", Unit("a", 0, "Room A"), Unit("a", 0, "Room A2"));
+        string after = Write("v2", Unit("a", 0, "Room A2"), Unit("a", 0, "Room A"));
+
+        Assert.Equal(0, GisPackageChanges.Compare(before, after).ElementsChanged);
+    }
+
+    [Fact]
+    public void ReadsEveryGeoPackageInTheFolder()
+    {
+        string before = Write("v1", Unit("a", 0, "Room A"));
+        WriteFile(before, "second.gpkg", Unit("b", 20, "Room B"));
+        string after = Write("v2", Unit("a", 0, "Room A"));
+        WriteFile(after, "second.gpkg", Unit("b", 20, "Concourse"));
+
+        GisPackageChanges changes = GisPackageChanges.Compare(before, after);
+
+        Assert.Equal(1, changes.ElementsEdited);
+        Assert.Equal((1, 1), (Assert.Single(changes.Layers).Edited, changes.Layers[0].Unchanged));
+    }
+
     private string Write(string version, params ExportPolygon[] units)
     {
         string folder = Path.Combine(_root, version, "gis");
+        WriteFile(folder, "station.gpkg", units);
+        return folder;
+    }
+
+    private static void WriteFile(string folder, string file, params ExportPolygon[] units)
+    {
         Directory.CreateDirectory(folder);
         ExportLayer layer = new(
             name: "unit",
@@ -116,11 +176,10 @@ public sealed class GisPackageChangesTests : IDisposable
             layer.AddFeature(unit);
         }
 
-        new GpkgWriter().Write(Path.Combine(folder, "station.gpkg"), srsId: 6677, layers: new[] { layer });
-        return folder;
+        new GpkgWriter().Write(Path.Combine(folder, file), srsId: 6677, layers: new[] { layer });
     }
 
-    private static ExportPolygon Unit(string uniqueId, double x, string name, string level = "L1", int part = 0, string? id = null)
+    private static ExportPolygon Unit(string uniqueId, double x, string name, string level = "L1", int part = 0, string? id = null, bool keyed = true)
     {
         Polygon2D polygon = new(new[]
         {
@@ -133,7 +192,7 @@ public sealed class GisPackageChangesTests : IDisposable
         return new ExportPolygon(polygon, new Dictionary<string, object?>
         {
             ["id"] = id ?? $"{uniqueId}-{level}-{part}",
-            [RevitKey.AttributeName] = RevitKey.Create(Model, uniqueId, part),
+            [RevitKey.AttributeName] = keyed ? RevitKey.Create(Model, uniqueId, part) : null,
             ["level_id"] = level,
             ["name"] = name,
         });

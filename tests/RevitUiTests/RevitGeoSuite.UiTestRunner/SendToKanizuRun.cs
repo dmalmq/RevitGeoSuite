@@ -42,7 +42,13 @@ internal sealed partial class GisStandardRun
             }
 
             int seq = host.LastEvent();
-            JsonNode? result = await Shell.JobAsync("station.send.run", new { stationFolder = station }, CesiumWait);
+            JsonNode? state = await Shell.RpcAsync("station.send.getState", new { stationFolder = station });
+            step.Note($"State: {state?.ToJsonString()}");
+            step.Check(state?["folderKind"]?.GetValue<string>() == "station", "The Cesium export's folder reads as a station folder.");
+            JsonNode? result = await Shell.JobAsync(
+                "station.send.run",
+                new { stationFolder = station, documentKey = state?["documentKey"]?.GetValue<string>() ?? string.Empty, confirmNewFolder = false },
+                CesiumWait);
             firstSend = result?["versionFolder"]?.GetValue<string>();
             step.Note($"Send: {result?.ToJsonString()}");
             step.Note($"Transactions: {string.Join(" / ", host.EventsAfter(seq).Where(item => item.Kind == "commit"))}.");
@@ -51,6 +57,7 @@ internal sealed partial class GisStandardRun
                 return;
             }
 
+            step.Check(result?["changesCounted"]?.GetValue<bool>() == true, "The changes were counted.");
             step.Check(result?["hasPrevious"]?.GetValue<bool>() == true, "It compares with the Cesium export's version.");
             step.Check(result?["elementsChanged"]?.GetValue<int>() == 0, $"Nothing changed since the Cesium export ({result?["elementsChanged"]} element(s); layers {result?["layers"]?.ToJsonString()}).");
             CheckSendPackage(step, firstSend!, cesiumVersion!);
@@ -66,9 +73,9 @@ internal sealed partial class GisStandardRun
 
             int before = Versions(station).Length;
             bool blocked = await OpenSendNow(step);
-            if (blocked)
+            // After Set up model in F1.1 the copy has no audit errors, so the ribbon's page must send at once.
+            if (!step.Check(!blocked, "The page sent without stopping: the copy has no audit errors after Set up model."))
             {
-                step.Note("This copy has audit errors, so the page stopped before sending; Send anyway sends it.");
                 await Shell.Button("Send anyway").ClickAsync();
             }
 
@@ -97,21 +104,20 @@ internal sealed partial class GisStandardRun
             bool blocked = await OpenSendNow(step);
             FindingItem? finding = (await Inspect()).Findings.FirstOrDefault(item => item.FixTargetId == typeId);
             step.Note($"Finding: {finding?.Severity} {finding?.Message}");
-            if (finding?.Severity == "error")
+            if (!step.Check(finding?.Severity == "error", "The changed category is an audit error on the platform floor type."))
             {
-                step.Check(blocked, "The page lists the audit errors instead of sending.");
-                step.Check(Versions(station).Length == before, "No version was written.");
-                await Shot(step, "F1-4-blocked");
-            }
-            else
-            {
-                step.Note("No floor uses the type, so the finding is a warning and the page sends without stopping.");
+                return;
             }
 
-            if (blocked)
+            step.Check(blocked, "The page lists the audit errors instead of sending.");
+            step.Check(Versions(station).Length == before, "No version was written.");
+            await Shot(step, "F1-4-blocked");
+            if (!blocked)
             {
-                await Shell.Button("Send anyway").ClickAsync();
+                return;
             }
+
+            await Shell.Button("Send anyway").ClickAsync();
 
             if (!step.Check(await Shell.ShowsAsync(Shell.Text("Sent to Kanizu"), 300000), "The page shows 'Sent to Kanizu'."))
             {
@@ -129,6 +135,8 @@ internal sealed partial class GisStandardRun
             }
 
             step.Check(await Shell.ShowsAsync(Shell.Page.GetByRole(AriaRole.Cell, new() { Name = "Units", Exact = true }), 5000), "The Units row lists the edits.");
+            int rows = await Shell.Page.Locator("table tbody tr").CountAsync();
+            step.Check(rows == 1, $"Only the Units layer changed ({rows} layer row(s)): the category change touches the platform units and nothing else.");
             await Shot(step, "F1-4-sent-edits");
         });
     }
@@ -214,6 +222,6 @@ internal sealed partial class GisStandardRun
             matched++;
         }
 
-        step.Note($"{matched} level(s) compared with the Cesium export.");
+        step.Check(matched > 0, $"{matched} level(s) compared with the Cesium export.");
     }
 }

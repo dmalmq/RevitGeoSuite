@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 
 namespace RevitGeoSuite.CesiumHandoff;
 
@@ -142,6 +143,75 @@ public static class CesiumStationFolder
 
     private static DateTime? ReadCreatedUtc(string versionDirectory)
     {
+        return TryReadManifest(versionDirectory)?.CreatedUtc.ToUniversalTime();
+    }
+
+    /// <summary>What a folder is to Send to Kanizu before the first send into it.</summary>
+    public enum FolderKind
+    {
+        /// <summary>No such folder: a mistyped or unplugged share.</summary>
+        Missing,
+
+        /// <summary>The folder exists but holds no <c>revit/</c> versions yet; a send makes it a station folder.</summary>
+        New,
+
+        /// <summary>It already holds <c>revit/</c> versions.</summary>
+        Station,
+    }
+
+    public static FolderKind Classify(string? stationFolder)
+    {
+        if (string.IsNullOrWhiteSpace(stationFolder) || !Directory.Exists(stationFolder))
+        {
+            return FolderKind.Missing;
+        }
+
+        return Directory.Exists(Path.Combine(stationFolder, RevitDirectoryName)) ? FolderKind.Station : FolderKind.New;
+    }
+
+    /// <summary>
+    /// The source of the newest version of the model <paramref name="modelId"/> in the station
+    /// folder, by <c>createdUtc</c>, or null. Its <c>documentKey</c> hashes the file path the
+    /// version was written from, so a Save As copy of the model, which keeps the model id, can tell
+    /// that the last version came from another file.
+    /// </summary>
+    public static CesiumPackageSource? LatestSource(string stationFolder, string modelId)
+    {
+        string revit = Path.Combine(stationFolder ?? string.Empty, RevitDirectoryName);
+        if (string.IsNullOrWhiteSpace(modelId) || !Directory.Exists(revit))
+        {
+            return null;
+        }
+
+        CesiumPackageSource? best = null;
+        DateTime bestCreated = DateTime.MinValue;
+        foreach (string version in Directory.GetDirectories(revit).SelectMany(Directory.GetDirectories))
+        {
+            if (Path.GetFileName(version).StartsWith(".", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            CesiumPackageManifest? manifest = TryReadManifest(version);
+            if (manifest?.Source is null || !string.Equals(manifest.Source.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            DateTime created = manifest.CreatedUtc.ToUniversalTime();
+            if (best is null || created > bestCreated)
+            {
+                best = manifest.Source;
+                bestCreated = created;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>A version's manifest, or null when it is missing or cannot be read.</summary>
+    public static CesiumPackageManifest? TryReadManifest(string versionDirectory)
+    {
         string manifestPath = Path.Combine(versionDirectory, "cesium-package.json");
         if (!File.Exists(manifestPath))
         {
@@ -150,9 +220,9 @@ public static class CesiumStationFolder
 
         try
         {
-            return CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath)).CreatedUtc.ToUniversalTime();
+            return CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath));
         }
-        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is Newtonsoft.Json.JsonException)
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is Newtonsoft.Json.JsonException || ex is InvalidOperationException)
         {
             return null;
         }
