@@ -10,9 +10,10 @@
 
   .\Run-UiTests.ps1 -StartRevit --model C:\dev\revit-test\auto\lumine-pristine.rvt --export-view 1F --excel
 
-  Several scenarios share one Revit start: --scenario b1,b2a,c3a-reshape (or --scenario all with
-  -FloorPlanDataSandbox, which h4-shared-rules needs) runs them one after another, each on a fresh copy of
-  the model in <out>\<scenario>, and writes <out>\summary.md with each scenario's result and minutes.
+  Several scenarios share one Revit start: -FloorPlanDataSandbox --scenario b1,b2a,c3a-reshape (or --scenario
+  all) runs them one after another, each on a fresh copy of the model in <out>\<scenario>, and writes
+  <out>\summary.md with each scenario's result and minutes. A list needs -FloorPlanDataSandbox: the runner
+  resets the export page's settings and profiles between scenarios, and only ever in the run's own copy.
 
   Nothing of the tests stays where Revit or a roaming profile looks. -StartRevit copies the test
   host's manifest (from Install-TestHost.ps1's folder) into %APPDATA%\Autodesk\Revit\Addins\<year>,
@@ -93,6 +94,17 @@ function Write-FolderSnapshot([string]$Folder, [string]$Path) {
     }
     [IO.File]::WriteAllText($Path, $(if ($lines.Count -eq 0) { '' } else { ($lines -join "`n") + "`n" }), [Text.UTF8Encoding]::new($false))
     return $lines
+}
+
+# Several scenarios: the runner rewrites the export page's settings.json and profiles.json between them, so they run only
+# against the run's sandbox copy of the store, never the roaming %APPDATA% one. Refuse before anything is touched.
+$scenarioValue = $null
+$given = @($RunnerArgs | Where-Object { $null -ne $_ })
+for ($i = 0; $i -lt $given.Count - 1; $i++) { if ($given[$i] -in '--scenario', '--script') { $scenarioValue = $given[$i + 1] } }
+if ($scenarioValue) {
+    if (($scenarioValue -match ',' -or $scenarioValue -eq 'all') -and -not $FloorPlanDataSandbox) {
+        throw "Several scenarios ('$scenarioValue') need -FloorPlanDataSandbox: between scenarios the runner resets the export page's settings and profiles, which may only be the run's own copy."
+    }
 }
 
 if ($FloorPlanDataSandbox) {

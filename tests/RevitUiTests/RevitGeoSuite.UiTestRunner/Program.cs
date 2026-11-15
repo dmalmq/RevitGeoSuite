@@ -49,6 +49,10 @@ foreach (string name in options.ScenarioNames)
     // The first scenario also answers for Revit's start-up, so it reads the whole journal; each later one only its own lines.
     string journals = JournalScan.DefaultFolder(options.RevitYear);
     JournalMark journal = reports.Count == 0 ? new JournalMark(journals, startedUtc, new Dictionary<string, int>()) : JournalScan.Mark(journals);
+    if (reports.Count == 0 && options.ScenarioNames.Count > 1)
+    {
+        report.Header.Add("The journal check (J) of this first scenario also covers Revit's start-up: an error there may come from the start, not from these steps.");
+    }
     report.Header.Add($"Scenario {name}. Started {startedUtc:yyyy-MM-dd HH:mm:ss} UTC on {Environment.MachineName}.");
     report.Header.AddRange(ping);
     GisStandardRun? run = null;

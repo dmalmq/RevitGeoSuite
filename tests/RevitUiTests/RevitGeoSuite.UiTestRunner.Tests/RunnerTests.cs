@@ -113,10 +113,26 @@ public class RunOptionsTests
         Assert.Throws<ArgumentException>(() => RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "everything" }));
     }
 
+    private const string SandboxSettings = "/tmp/revit-test/auto/9/appdata/RevitGeoSuite/FloorPlanExport/settings.json";
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("/tmp/appdata/RevitGeoSuite/FloorPlanExport/settings.json")]
+    public void Several_scenarios_refuse_an_export_store_outside_the_run(string? settings)
+    {
+        var args = new List<string> { "--model", "/tmp/revit-test/a.rvt", "--out", "/tmp/revit-test/auto/9", "--scenario", "b1,b2a" };
+        if (settings != null)
+        {
+            args.AddRange(new[] { "--export-settings", settings });
+        }
+
+        Assert.Contains("-FloorPlanDataSandbox", Assert.Throws<ArgumentException>(() => RunOptions.Parse(args.ToArray())).Message);
+    }
+
     [Fact]
     public void Several_scenarios_run_in_order_each_in_a_folder_of_its_own()
     {
-        RunOptions options = RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--out", "/tmp/revit-test/auto/9", "--scenario", "b1, c3a-reshape" });
+        RunOptions options = RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--out", "/tmp/revit-test/auto/9", "--scenario", "b1, c3a-reshape", "--export-settings", SandboxSettings });
 
         Assert.Equal(new[] { "b1", "c3a-reshape" }, options.ScenarioNames);
         RunOptions reshape = options.ForScenario("c3a-reshape");
@@ -136,7 +152,7 @@ public class RunOptionsTests
     [Fact]
     public void All_names_known_scenarios_with_h4_last()
     {
-        RunOptions options = RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--scenario", "all" });
+        RunOptions options = RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--out", "/tmp/revit-test/auto/9", "--scenario", "all", "--export-settings", SandboxSettings });
 
         Assert.Equal(RunOptions.AllScenarios, options.ScenarioNames);
         Assert.All(options.ScenarioNames, name => Assert.Contains(GisStandardRun.Scenarios, scenario => scenario.Name == name));

@@ -26,7 +26,7 @@ internal sealed record RunOptions
     /// <summary>
     /// --scenario all: every scenario that checks RevitGeoSuite on the LUMINE copy. Left out: undo-probe (a
     /// diagnosis that types into Revit), model-facts and georef-read (they read, they check nothing).
-    /// h4-shared-rules comes last and needs Run-UiTests.ps1 -FloorPlanDataSandbox.
+    /// h4-shared-rules comes last, because it moves the sandbox's per-PC rules.
     /// </summary>
     public static readonly IReadOnlyList<string> AllScenarios = new[]
     {
@@ -69,7 +69,8 @@ internal sealed record RunOptions
           --scenario <names>     Which scenario to run (--script is the same). Default gis-standard. Several,
                                  comma-separated, or "all", run one after another in the same Revit, each
                                  on its own copy of the model in <out>\<name> with its own report.md, and
-                                 <out>\summary.md lists them with their minutes.
+                                 <out>\summary.md lists them with their minutes. Several need
+                                 Run-UiTests.ps1 -FloorPlanDataSandbox.
         {ScenarioList}
           --baseline-export <dir> b1: an export folder made before Set up model, to compare counts with.
           --drift <file>         c3a-reshape: use this drift file instead of making one from the run's own export.
@@ -117,6 +118,12 @@ internal sealed record RunOptions
         }
 
         options = options with { RunFolder = options.OutputFolder };
+        if (options.ScenarioNames.Count > 1 && !(options.ExportSettings.Length > 0 && TestPaths.IsUnder(options.ExportSettings, options.RunFolder)))
+        {
+            // Between scenarios the runner rewrites the export page's files; that may only ever be the run's sandbox copy.
+            throw new ArgumentException("Several scenarios need --export-settings inside --out: run them with Run-UiTests.ps1 -StartRevit -FloorPlanDataSandbox, so the export store between scenarios is the run's own copy, never the roaming %APPDATA% one.");
+        }
+
         if (renames.Count > 0)
         {
             options = options with { Renames = renames };
