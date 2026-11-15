@@ -225,6 +225,8 @@ public static class ExportAudit
             return string.Equals(category, VerticalCirculation.EscalatorCategory, StringComparison.OrdinalIgnoreCase);
         }
 
+        // The shipped list, as the export catalog reads it. A station-level family list would have to
+        // reach this check, the audit (GisToolStandard.Families) and ZoneCatalog together.
         StandardFamilyKind? listed = FamilyStandard.Embedded.KindOf(familyName);
         if (listed != null)
         {

@@ -173,6 +173,15 @@ public static class GisAudit
                     "parameters",
                     $"Parameter {parameter.Name} is bound as a {BindingText(bound.Binding)} parameter; the standard binds it as {BindingText(parameter.Binding)}.");
             }
+            else if (parameter.Categories.Except(bound.Categories, StringComparer.Ordinal).ToList() is { Count: > 0 } missing)
+            {
+                // A standard that binds a parameter to one more category (gis_kind to Mechanical
+                // Equipment) reaches a model set up before it here, without raising the version.
+                yield return new GisAuditFinding(
+                    GisAuditSeverity.Warning,
+                    "parameters",
+                    $"Parameter {parameter.Name} is not bound to {string.Join(", ", missing.Select(CategoryText))}, so those elements cannot hold it. Run Set up model.");
+            }
         }
     }
 
@@ -378,6 +387,9 @@ public static class GisAudit
 
     private static string StandardNames(StandardFamilyKind? kind) =>
         kind == null || kind.Families.Count == 0 ? "the standard lists none yet" : "standard: " + string.Join(", ", kind.Families);
+
+    private static string CategoryText(string category) =>
+        category.StartsWith("OST_", StringComparison.Ordinal) ? category.Substring(4) : category;
 
     internal static string GuidText(Guid? guid) => guid.HasValue ? guid.Value.ToString("D") : "(project parameter)";
 

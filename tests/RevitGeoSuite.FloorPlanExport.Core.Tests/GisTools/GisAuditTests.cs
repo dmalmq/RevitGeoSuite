@@ -105,6 +105,21 @@ public sealed class GisAuditTests
     }
 
     [Fact]
+    public void AModelSetUpBeforeGisKindReachedMechanicalEquipmentIsToldToRunSetUp()
+    {
+        List<BoundParameterInfo> bound = BoundAsStandard()
+            .Select(parameter => parameter.Name == GisSharedParameters.GisKind
+                ? new BoundParameterInfo(parameter.Name, parameter.Guid, parameter.Binding, new[] { "OST_GenericModel", "OST_SpecialityEquipment" })
+                : parameter)
+            .ToList();
+
+        GisAuditFinding finding = Assert.Single(Audit(ModelOnStandard(bound)));
+
+        Assert.Equal((GisAuditSeverity.Warning, "parameters"), (finding.Severity, finding.Topic));
+        Assert.Equal("Parameter gis_kind is not bound to MechanicalEquipment, so those elements cannot hold it. Run Set up model.", finding.Message);
+    }
+
+    [Fact]
     public void AStandardFamilyWithItsKindIsCleanAlsoInADuplicatedType()
     {
         Assert.Empty(Audit(ModelOnStandard(familyTypes: new[]
