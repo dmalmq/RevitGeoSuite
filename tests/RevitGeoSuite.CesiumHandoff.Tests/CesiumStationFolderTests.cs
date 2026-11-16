@@ -158,6 +158,11 @@ public sealed class CesiumStationFolderTests : IDisposable
         Assert.Equal(CesiumStationFolder.FolderKind.New, CesiumStationFolder.Classify(_station));
         Directory.CreateDirectory(Path.Combine(_station, "revit", "some-project-files"));
         Assert.Equal(CesiumStationFolder.FolderKind.New, CesiumStationFolder.Classify(_station));
+        // A version set aside (hidden) is not a version Kanizu reads.
+        string hidden = Path.Combine(_station, "revit", "some-model", ".set-aside");
+        Directory.CreateDirectory(hidden);
+        File.WriteAllText(Path.Combine(hidden, "cesium-package.json"), "{}");
+        Assert.Equal(CesiumStationFolder.FolderKind.New, CesiumStationFolder.Classify(_station));
         PublishGis("model-a", new DateTime(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc));
         Assert.Equal(CesiumStationFolder.FolderKind.Station, CesiumStationFolder.Classify(_station));
     }

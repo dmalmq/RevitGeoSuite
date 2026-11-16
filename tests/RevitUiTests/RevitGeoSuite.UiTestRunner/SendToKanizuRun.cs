@@ -154,11 +154,26 @@ internal sealed partial class GisStandardRun
                 refused = ex.Message;
             }
 
-            step.Check(refused != null, $"A run with another model's key is refused ({refused}).");
+            step.Check(refused?.Contains("Another model is active now", StringComparison.Ordinal) == true, $"A run with another model's key is refused as another model ({refused}).");
             step.Check(Versions(station).Length == before, "It wrote no version.");
 
+            // The send makes its staging folder (revit/.tmp-*) as it starts, after taking the one-send
+            // lock, so once that folder shows the first send is surely running.
             Task<JsonNode?> first = Shell.JobAsync("station.send.run", new { stationFolder = station, documentKey, confirmNewFolder = false }, CesiumWait);
-            await Shell.Page.WaitForTimeoutAsync(300);
+            string revit = Path.Combine(station, "revit");
+            bool started = false;
+            for (int waited = 0; waited < 60000 && !first.IsCompleted; waited += 50)
+            {
+                if (Directory.EnumerateDirectories(revit, ".tmp-*").Any())
+                {
+                    started = true;
+                    break;
+                }
+
+                await Task.Delay(50);
+            }
+
+            step.Check(started, "The first send started (its staging folder showed) before the second was asked for.");
             string? busy = null;
             try
             {
@@ -170,9 +185,49 @@ internal sealed partial class GisStandardRun
             }
 
             JsonNode? result = await first;
-            step.Check(busy != null, $"A second run while the first is going is refused ({busy}).");
+            step.Check(busy?.Contains("A send is already running", StringComparison.Ordinal) == true, $"A second run while the first is going is refused as busy ({busy}).");
             step.Check(result?["versionFolder"] != null, "The first run finished.");
             step.Check(Versions(station).Length == before + 1, $"Exactly one new version ({before} before, {Versions(station).Length} after).");
+        });
+
+        await Step("F1.6", "A send that fails after recording a new folder puts back the folder the model had and leaves nothing in the new one", async step =>
+        {
+            if (firstSend == null)
+            {
+                step.NotRun("No send to take the model folder's name from.");
+                return;
+            }
+
+            JsonNode? state = await Shell.RpcAsync("station.send.getState", new { });
+            string documentKey = state?["documentKey"]?.GetValue<string>() ?? string.Empty;
+            string remembered = state?["stationFolder"]?.GetValue<string>() ?? string.Empty;
+            if (!step.Check(SamePath(remembered, station), $"The model remembers the station folder ({remembered})."))
+            {
+                return;
+            }
+
+            // A file where this model's folder goes: the send records the new folder, exports, and
+            // then cannot publish, so it must put the old folder back.
+            string broken = Path.Combine(options.OutputFolder, "station-broken");
+            string brokenRevit = Path.Combine(broken, "revit");
+            Directory.CreateDirectory(brokenRevit);
+            File.WriteAllText(Path.Combine(brokenRevit, Path.GetFileName(Path.GetDirectoryName(firstSend)!)), "Stands in for the model folder so the send cannot publish.");
+            string? failed = null;
+            try
+            {
+                await Shell.JobAsync("station.send.run", new { stationFolder = broken, documentKey, confirmNewFolder = true }, CesiumWait);
+            }
+            catch (Exception ex)
+            {
+                failed = ex.Message;
+            }
+
+            step.Check(failed != null, $"The send failed ({failed}).");
+            step.Check(failed?.Contains("could not be pointed back", StringComparison.Ordinal) != true, "It did not say the folder could not be put back.");
+            string now = (await Shell.RpcAsync("station.send.getState", new { }))?["stationFolder"]?.GetValue<string>() ?? string.Empty;
+            step.Check(SamePath(now, station), $"The model points at its station folder again ({now}).");
+            string[] left = Directory.GetDirectories(brokenRevit);
+            step.Check(left.Length == 0, $"No version or staging folder was left in the failed folder ({string.Join(", ", left.Select(Path.GetFileName))}).");
         });
     }
 

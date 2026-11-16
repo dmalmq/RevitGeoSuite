@@ -162,7 +162,8 @@ public static class CesiumStationFolder
 
     /// <summary>
     /// A folder is a station folder when <c>revit/</c> holds at least one version with a manifest;
-    /// a project folder that merely has a <c>revit</c> directory is new. IO errors read as missing.
+    /// a project folder that merely has a <c>revit</c> directory is new. Hidden folders (staging,
+    /// set aside) do not count. IO errors and a path that is not valid read as missing.
     /// </summary>
     public static FolderKind Classify(string? stationFolder)
     {
@@ -177,10 +178,11 @@ public static class CesiumStationFolder
             bool hasVersion = Directory.Exists(revit) && Directory.EnumerateDirectories(revit)
                 .Where(model => !Path.GetFileName(model).StartsWith(".", StringComparison.Ordinal))
                 .SelectMany(Directory.EnumerateDirectories)
+                .Where(version => !Path.GetFileName(version).StartsWith(".", StringComparison.Ordinal))
                 .Any(version => File.Exists(Path.Combine(version, "cesium-package.json")));
             return hasVersion ? FolderKind.Station : FolderKind.New;
         }
-        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        catch (Exception ex) when (IsPathError(ex))
         {
             return FolderKind.Missing;
         }
@@ -195,8 +197,7 @@ public static class CesiumStationFolder
     /// </summary>
     public static CesiumPackageSource? LatestSource(string stationFolder, string modelId)
     {
-        string revit = Path.Combine(stationFolder ?? string.Empty, RevitDirectoryName);
-        if (string.IsNullOrWhiteSpace(modelId))
+        if (string.IsNullOrWhiteSpace(stationFolder) || string.IsNullOrWhiteSpace(modelId))
         {
             return null;
         }
@@ -205,6 +206,7 @@ public static class CesiumStationFolder
         idPart = (idPart.Length > 8 ? idPart.Substring(0, 8) : idPart).ToLowerInvariant();
         try
         {
+            string revit = Path.Combine(stationFolder, RevitDirectoryName);
             if (!Directory.Exists(revit))
             {
                 return null;
@@ -238,11 +240,16 @@ public static class CesiumStationFolder
 
             return best;
         }
-        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        catch (Exception ex) when (IsPathError(ex))
         {
             return null;
         }
     }
+
+    // A typed folder can hold characters .NET Framework rejects (ArgumentException, NotSupportedException
+    // for a stray colon) besides the usual IO and access errors.
+    private static bool IsPathError(Exception ex) =>
+        ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is NotSupportedException;
 
     /// <summary>A version's manifest, or null when it is missing or cannot be read.</summary>
     public static CesiumPackageManifest? TryReadManifest(string versionDirectory)
