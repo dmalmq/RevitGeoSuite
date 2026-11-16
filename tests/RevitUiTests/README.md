@@ -88,7 +88,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <names>` | One scenario, several comma-separated, or `all`: `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g7-reset`, `f1-send` or `undo-probe`. `--script` is the same option. |
+| `--scenario <names>` | One scenario, several comma-separated, or `all`: `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g7-reset`, `f1-send`, `r7-datum` or `undo-probe`. `--script` is the same option. |
 | `--export-settings <file>` | The export page's `settings.json` that `Run-UiTests.ps1` emptied for the run; the runner empties it again before each scenario after the first. `Run-UiTests.ps1 -StartRevit` passes it. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
@@ -397,3 +397,16 @@ A scenario is one entry in `GisStandardRun.Scenarios` (name, one-line summary, s
 Most checks are a click on the page plus an assertion on what `gisStandard.inspect` or the test host reports. Prefer the role and the visible English text of a control. The runner switches the page to English for the run and switches it back afterwards. When a check needs Revit in a particular state, add it to the `fixture` command rather than editing the pristine model.
 
 The test host runs code in an API context only while Revit is idle. While a file dialog or another modal window is open, use the commands that work on dialogs (`fileDialog`, `windows`, `pressButton`, `closeDialogs`).
+
+## The r7-datum scenario
+
+`--scenario r7-datum --model <file>` checks the survey point question in Export to Cesium. Everything it writes goes to `station/` in the run folder.
+
+- R7.G records the copy's georeference, as the other Cesium scenarios do.
+- R7.1 saves a floor plan export profile first when the PC has none, as the other Cesium scenarios do. It then opens Export to Cesium from `#/export`. A copy that remembers `TP` or `notTp` must show that answer picked. Any other copy, an old `unknown` included, must show neither picked, Export off, and "Answer this before you export."
+- R7.2 calls `cesium.export.run` with `unknown`, an empty answer and `ellipsoidal`. Each must be refused with that sentence and no job, and nothing may be written to `station/`.
+- R7.3 exports from the dialog the way a person does: it picks "No, or I have not checked", types `station/` as the package folder, picks coarse, ticks a new version each time, clears the push, and clicks Export. Export first saves the viewer URL to `%APPDATA%\RevitGeoSuite\CesiumHandoff\viewer-settings.json`; the run turns that one call into the read-only `cesium.settings.get` inside the page, so the real settings are never written. The step fails if it cannot install that redirect. It expects `anchor.heightDatum` `unknown` in the manifest and `lastHeightDatum` `notTp` in the export state.
+- R7.4 reloads the page and opens the dialog again. It expects "No, or I have not checked" picked and Export on.
+- R7.5 exports with `TP` through the bridge, which stores that answer. It expects `anchor.heightDatum` `TP` in the manifest, and after a reload, "Yes, it was set from T.P." picked and Export on.
+
+No step can store an old `unknown`: the export refuses it now, and the test host does not write RevitGeoSuite's storage. `cesium.export.getState` passes every stored answer through `CesiumHeightDatums.Answer`, so a stored `unknown` reads the same as no answer, which R7.1 sees on a copy that was never answered. R7.1 says which case the copy was. A send to Kanizu after `notTp` builds its manifest through the same builder, which a CesiumHandoff test checks writes `unknown`.

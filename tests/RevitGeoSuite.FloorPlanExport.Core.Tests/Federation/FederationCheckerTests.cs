@@ -174,6 +174,15 @@ public sealed class FederationCheckerTests : IDisposable
         Assert.Equal(ReadinessCheckStatus.Fail, datumRule.Status);
         Assert.Contains("LINK-HEIGHT-DATUM-MISMATCH", datumRule.Issues.Select(i => i.Code));
 
+        // A link whose user answered "No, or I have not checked" states no datum, so it is not a mismatch.
+        FederationCheckSnapshot answeredNo = CreateCleanHubSnapshot();
+        answeredNo.LinkedModels = new[]
+        {
+            BuildLink("EastWing.rvt", "east-002", crsEpsg: 6677, heightDatum: CesiumHeightDatums.ForComparison(CesiumHeightDatums.NotTp), geoidModel: "EGM2008"),
+        };
+        FederationRuleResult answeredNoRule = FederationChecker.Evaluate(answeredNo).GetRule(FederationChecker.RuleCrsAndPose);
+        Assert.DoesNotContain("LINK-HEIGHT-DATUM-MISMATCH", answeredNoRule.Issues.Select(i => i.Code));
+
         FederationCheckSnapshot geoidMismatch = CreateCleanHubSnapshot();
         geoidMismatch.LinkedModels = new[]
         {
