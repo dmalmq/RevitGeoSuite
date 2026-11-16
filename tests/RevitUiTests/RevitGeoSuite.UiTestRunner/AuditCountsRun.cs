@@ -11,7 +11,7 @@ namespace RevitGeoSuite.UiTestRunner;
 /// </summary>
 internal sealed partial class GisStandardRun
 {
-    private static readonly string[] ListedTopics = { "families", "floor types" };
+    private static readonly string[] ListedTopics = { "families", "floor types", "doors", "stairs" };
 
     private async Task AuditCountsSteps()
     {
@@ -76,7 +76,7 @@ internal sealed partial class GisStandardRun
                 text.Append(CultureInfo.InvariantCulture, $"| {group.Key.Topic} | {group.Key.Severity} | {group.Count()} | {group.Sum(finding => finding.ElementIds.Length)} |\n");
             }
 
-            text.Append("\nFamily and floor type findings:\n\n");
+            text.Append("\nFamily, floor type, door and stair findings:\n\n");
             foreach (FindingItem finding in model.Findings.Where(finding => ListedTopics.Contains(finding.Topic)))
             {
                 text.Append(CultureInfo.InvariantCulture, $"- {finding.Severity}, {finding.ElementIds.Length} element(s): {finding.Message}\n");

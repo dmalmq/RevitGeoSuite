@@ -16,20 +16,48 @@ namespace RevitGeoSuite.FloorPlanExport.GisTools;
 public static class ExportAuditReader
 {
     /// <summary>
-    /// Every finding of <see cref="GisAudit"/> and <see cref="ExportAudit"/>, errors first.
-    /// <paramref name="views"/> is read when not given.
+    /// Every finding of <see cref="GisAudit"/> and <see cref="ExportAudit"/>, errors first, with the
+    /// guesses on <c>GIS_</c> plans raised to errors. <paramref name="views"/> is read when not given.
+    /// Doors are checked only once <c>gis_door</c> is bound as the standard binds it (a type parameter
+    /// of Doors); until then the parameter audit says what is wrong with the binding. A family the
+    /// export dialog maps by hand is not a guess.
     /// </summary>
-    public static IReadOnlyList<GisAuditFinding> Audit(Document document, ModelSnapshot snapshot, GisToolStandard standard, ExportViewSnapshot? views = null) =>
-        GisAudit.Run(snapshot, standard)
-            .Concat(ExportAudit.Run(Read(document, views ?? ExportViewSetup.Read(document))))
-            .OrderBy(finding => (int)finding.Severity)
-            .ToList();
+    public static IReadOnlyList<GisAuditFinding> Audit(Document document, ModelSnapshot snapshot, GisToolStandard standard, ExportViewSnapshot? views = null)
+    {
+        ExportAuditSnapshot audit = Read(document, views ?? ExportViewSetup.Read(document), DoorsCanHoldGisDoor(snapshot));
+        IReadOnlyCollection<string> mapped = MappedFamilies(document);
+        return ExportAudit.RaiseGuessesOnGisPlans(GisAudit.Run(snapshot, standard, mapped).Concat(ExportAudit.Run(audit)), audit);
+    }
 
-    public static ExportAuditSnapshot Read(Document document, ExportViewSnapshot views)
+    /// <summary>
+    /// The families the export dialog maps by hand, as its rules store them. The audit is the single
+    /// entry for the page, the export gate and the report, so a rules file it cannot read only means
+    /// no family counts as mapped.
+    /// </summary>
+    public static IReadOnlyCollection<string> MappedFamilies(Document document)
+    {
+        try
+        {
+            return GisRulesSourceFactory.For(document).Load().Value.FamilyCategoryOverrides.Keys.ToList();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"The audit read no hand-mapped families: {ex.Message}");
+            return Array.Empty<string>();
+        }
+    }
+
+    private static bool DoorsCanHoldGisDoor(ModelSnapshot snapshot) =>
+        snapshot.BoundParameters.TryGetValue(GisSharedParameters.GisDoor, out BoundParameterInfo? bound) &&
+        bound.Binding == GisParameterBinding.Type &&
+        bound.Categories.Contains("OST_Doors", StringComparer.Ordinal);
+
+    public static ExportAuditSnapshot Read(Document document, ExportViewSnapshot views, bool readDoors)
     {
         List<Level> levels = new FilteredElementCollector(document).OfClass(typeof(Level)).Cast<Level>().ToList();
         List<AuditStair> stairs = ReadStairs(document).ToList();
         List<AuditFamily> families = ReadFamilies(document, levels).ToList();
+        ElementLevelResolver resolver = new(document);
         return new ExportAuditSnapshot(
             views,
             stairs,
@@ -38,7 +66,74 @@ public static class ExportAuditReader
             levels.Select(level => new AuditIdValue(level.Id.Value, ModelSnapshotReader.ReadText(level, GisSharedParameters.LevelId))),
             ReadFloors(document),
             ReadWaysIn(document, stairs, families),
-            levels.Select(level => new KeyValuePair<long, double>(level.Id.Value, level.ProjectElevation)));
+            levels.Select(level => new KeyValuePair<long, double>(level.Id.Value, level.ProjectElevation)),
+            readDoors ? ReadDoors(document, resolver).ToList() : null,
+            ReadUnread(document, resolver).ToList(),
+            ReadElementLevels(document, resolver, families).ToList());
+    }
+
+    /// <summary>Every door the export's views show, with its type's gis_door, read once per type.</summary>
+    private static IEnumerable<AuditDoor> ReadDoors(Document document, ElementLevelResolver resolver)
+    {
+        Dictionary<long, (string Label, string GisDoor)> types = new();
+        foreach (FamilyInstance door in new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_Doors).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>())
+        {
+            if (!ElementLevelResolver.Counts(door) || door.Symbol is not FamilySymbol symbol || resolver.LevelOf(door) is not long level)
+            {
+                continue;
+            }
+
+            if (!types.TryGetValue(symbol.Id.Value, out (string Label, string GisDoor) type))
+            {
+                type = ((symbol.FamilyName ?? string.Empty) + " : " + (symbol.Name ?? string.Empty), ModelSnapshotReader.ReadText(symbol, GisSharedParameters.GisDoor));
+                types[symbol.Id.Value] = type;
+            }
+
+            yield return new AuditDoor(door.Id.Value, symbol.Id.Value, type.Label, level, type.GisDoor);
+        }
+    }
+
+    /// <summary>Revit ramps and families of the Floors category the export's views show: the export reads neither.</summary>
+    private static IEnumerable<AuditUnread> ReadUnread(Document document, ElementLevelResolver resolver)
+    {
+        foreach (Element ramp in new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_Ramps).WhereElementIsNotElementType())
+        {
+            if (ElementLevelResolver.Counts(ramp) && resolver.LevelOf(ramp) is long level)
+            {
+                yield return new AuditUnread(ramp.Id.Value, UnreadKind.Ramp, level);
+            }
+        }
+
+        foreach (FamilyInstance floor in new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_Floors).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>())
+        {
+            if (floor.SuperComponent == null && ElementLevelResolver.Counts(floor) && resolver.LevelOf(floor) is long level)
+            {
+                yield return new AuditUnread(floor.Id.Value, UnreadKind.FloorFamily, level);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The level of every element a guess can name: floors, family instances of the audited family
+    /// categories, and the stairs made as families. Demolished elements and secondary design options
+    /// are left out, so a guess about them is never raised.
+    /// </summary>
+    private static IEnumerable<KeyValuePair<long, long>> ReadElementLevels(Document document, ElementLevelResolver resolver, IEnumerable<AuditFamily> families)
+    {
+        IEnumerable<Element> floors = new FilteredElementCollector(document).OfClass(typeof(Floor)).WhereElementIsNotElementType();
+        IEnumerable<Element> instances = new FilteredElementCollector(document)
+            .WherePasses(new ElementMulticategoryFilter(ModelSnapshotReader.AuditedFamilyCategories))
+            .OfClass(typeof(FamilyInstance))
+            .WhereElementIsNotElementType();
+        IEnumerable<Element> stairFamilies = families.Select(family => document.GetElement(new ElementId(family.ElementId))).Where(element => element != null);
+        HashSet<long> seen = new();
+        foreach (Element element in floors.Concat(instances).Concat(stairFamilies))
+        {
+            if (seen.Add(element.Id.Value) && ElementLevelResolver.Counts(element) && resolver.LevelOf(element) is long level)
+            {
+                yield return new KeyValuePair<long, long>(element.Id.Value, level);
+            }
+        }
     }
 
     /// <summary>Every floor with the unit category the export resolves for it, its top outline and the height of its top's lowest and highest point.</summary>

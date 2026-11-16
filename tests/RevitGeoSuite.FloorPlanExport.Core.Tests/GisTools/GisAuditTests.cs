@@ -24,6 +24,16 @@ public sealed class GisAuditTests
     }
 
     [Fact]
+    public void AFloorTypeWithoutACategoryExportsByGuess()
+    {
+        ModelSnapshot model = ModelOnStandard(floorTypes: FloorTypesAsStandard().Append(new FloorTypeInfo(99, "機械室", floorIds: new long[] { 991, 992 })));
+        GisAuditFinding finding = Assert.Single(Audit(model));
+
+        Assert.Equal("Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.", finding.Message);
+        Assert.True(finding.ExportsByGuess);
+    }
+
+    [Fact]
     public void FlagsAnOlderStandard()
     {
         Assert.Contains("current one is 2", Audit(ModelOnStandard(standardVersion: "0"))[0].Message);
@@ -102,6 +112,9 @@ public sealed class GisAuditTests
             findings.Select(finding => (finding.Severity, finding.ElementIds.Single())));
         Assert.Contains("is a standard escalator family, but its type has no gis_kind", findings[1].Message);
         Assert.Contains("looks like a moving_walkway", findings[2].Message);
+
+        // A standard family missing a parameter is found by its listed name; a look-alike off the list is a guess.
+        Assert.Equal(new[] { false, false, true }, findings.Select(finding => finding.ExportsByGuess));
     }
 
     [Fact]
@@ -147,6 +160,27 @@ public sealed class GisAuditTests
     }
 
     [Fact]
+    public void ALookAlikeTheExportDialogMapsByHandIsNoFinding()
+    {
+        ModelSnapshot model = ModelOnStandard(familyTypes: new[] { new FamilyTypeInfo(2, "Moving Walkway", "Type 1", "", new long[] { 22 }) });
+
+        Assert.Single(GisAudit.Run(model, Standard));
+        Assert.Empty(GisAudit.Run(model, Standard, new[] { "Moving Walkway" }));
+    }
+
+    [Fact]
+    public void AHandMappedFamilyMatchesWithItsNameTrimmedAndCaseKept()
+    {
+        // The export's rules store a family name trimmed and match it ordinally (ProjectMappingRules.ResolveFamilyCategory).
+        ModelSnapshot padded = ModelOnStandard(familyTypes: new[] { new FamilyTypeInfo(2, " Moving Walkway ", "Type 1", "", new long[] { 22 }) });
+        Assert.Empty(GisAudit.Run(padded, Standard, new[] { "Moving Walkway" }));
+        Assert.Empty(GisAudit.Run(padded, Standard, new[] { " Moving Walkway\t" }));
+
+        ModelSnapshot otherCase = ModelOnStandard(familyTypes: new[] { new FamilyTypeInfo(2, "moving walkway", "Type 1", "", new long[] { 22 }) });
+        Assert.Single(GisAudit.Run(otherCase, Standard, new[] { "Moving Walkway" }));
+    }
+
+    [Fact]
     public void AFamilyOffTheListIsReportedWithTheStandardNames()
     {
         GisAuditFinding finding = Assert.Single(Audit(ModelOnStandard(familyTypes: new[]
@@ -155,6 +189,7 @@ public sealed class GisAuditTests
         })));
 
         Assert.Equal(GisAuditSeverity.Warning, finding.Severity);
+        Assert.True(finding.ExportsByGuess);
         Assert.Equal("Lift : A has gis_kind elevator, but Lift is not a standard elevator family (standard: j EV). Use a standard family, or add this one to standards/families.json.", finding.Message);
     }
 

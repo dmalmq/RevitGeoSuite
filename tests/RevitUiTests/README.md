@@ -86,7 +86,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts` or `undo-probe`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g3-guess` or `undo-probe`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -357,7 +357,22 @@ It writes `model-facts.md` and `model-facts.json` into the run folder as well as
 
 ## The audit-counts scenario
 
-`--scenario audit-counts --model <file>` reads the GIS standard page's audit on a copy of the model (AC.1), applies Set up model (AC.2), and reads it again (AC.3). The report notes the counts by topic and severity and every family and floor type finding in full. The run folder gets `audit-counts.md` (counts and messages) and `audit-findings.json` (with element ids). It gives the real numbers of an audit rule before the rule decides anything, such as the standard family list (G2) and the standard floor type check (G7).
+`--scenario audit-counts --model <file>` reads the GIS standard page's audit on a copy of the model (AC.1), applies Set up model (AC.2), and reads it again (AC.3). The report notes the counts by topic and severity and every family, floor type, door and stair finding in full. The run folder gets `audit-counts.md` (counts and messages) and `audit-findings.json` (with element ids). It gives the real numbers of an audit rule before the rule decides anything, such as the standard family list (G2) and the standard floor type check (G7).
+
+## The g3-guess scenario
+
+`--scenario g3-guess --model <file>` checks that what the export decides by guess is an error on a level a `GIS_` plan exports (G3). Run it with `-RgsBuild` and `-FloorPlanDataSandbox` on a detached copy.
+
+- G3.0 runs Set up model when the copy has not had it, so `gis_door` is bound.
+- G3.1 reads the audit and notes the counts by topic and severity, with every family, floor type, door and stair finding in full. The test host's `instances` command lists the model's Revit ramps and Floors-category family instances, with each one's own level, whether it is in-place or demolished, and its design option.
+  - Every one that is not demolished, is in no design option, and whose own level has a `GIS_` plan must be in an error that says the export never reads it.
+  - Every element of those errors must be one of the listed ones.
+- G3.2 clears `gis_category` on the type of a floor that stands on a level with a `GIS_` plan and has no floor type finding yet. The audit must then hold a `floor types` error for that floor, ending "… on levels with a GIS_ plan, so the export asks to fix or accept this first."
+- G3.3 sets `gis_door` on the type of a door on such a level and expects no `doors` finding for the door. It then clears `gis_door` and expects a `doors` warning. A blank door is a warning, not an error: Kanizu keeps the GDB's door type for a blank `door` where the opening already has one.
+- G3.4 has the test host's `placeFamily` command make a one-metre box family, "UITest Escalator G3", a Generic Model, and place it on G3.2's floor. It must be a `families` error that says it looks like an escalator.
+- G3.5 does the same with "UITest Floor G3", of the Floors category, which must be an error that says it is a floor made as a family. If Revit refuses the Floors category for a loadable family, G3.5 is reported as not run, with Revit's message; then the floor-family rule is proven only by the core tests and a hand-drawn in-place floor. Any other failure of `placeFamily` fails the step.
+  - The Revit API cannot make a Revit ramp or an in-place floor. For those, someone draws both on a copy, and G3.1 then lists them. When G3.1 finds none, it says the rule was not exercised.
+- G3.6 exports the `GIS_` plan of G3.2's level. The export must ask first, and the gate's list of errors must hold G3.2's floor type error word for word; the step then ticks the box, exports anyway, and expects the export to finish.
 
 ## The georef-read scenario
 

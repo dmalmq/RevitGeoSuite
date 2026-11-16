@@ -258,4 +258,110 @@ public sealed class ExportAuditTests
             "Floor 501 (ramp) on level 1FL runs from +0.40 m to +4.15 m against its level, so neither end is on it and the export does not guess where it leads. Its unit gets no to_level. Set its level and offset so its lower or upper end sits on its level.",
             Assert.Single(Slope(0.4, 4.15)).Message);
     }
+
+    // G3: what the export decides by guess is an error on a level a GIS_ plan exports.
+    private static ExportAuditSnapshot OnLevels(
+        AuditDoor[]? doors = null,
+        AuditUnread[]? unread = null,
+        params (long Element, long Level)[] levels) =>
+        new(Views(), doors: doors, unread: unread, elementLevels: levels.Select(entry => new KeyValuePair<long, long>(entry.Element, entry.Level)));
+
+    private static GisAuditFinding Guess(params long[] elements) =>
+        new(GisAuditSeverity.Warning, "floor types", "Floor type X (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.", elements, exportsByGuess: true);
+
+    [Fact]
+    public void AGuessOnAGisPlanBecomesAnError()
+    {
+        GisAuditFinding raised = Assert.Single(ExportAudit.RaiseGuessesOnGisPlans(new[] { Guess(501, 502) }, OnLevels(levels: new[] { (501L, 2L), (502L, 4L) })));
+
+        Assert.Equal(GisAuditSeverity.Error, raised.Severity);
+        Assert.Equal(new long[] { 501, 502 }, raised.ElementIds);
+        Assert.EndsWith("Run Fix floor types. 1 of its 2 elements are on levels with a GIS_ plan, so the export asks to fix or accept this first.", raised.Message);
+        Assert.Single(GisAudit.BlockingFindings(new[] { raised }));
+    }
+
+    [Fact]
+    public void AGuessOffTheGisPlansAndAWarningThatIsNoGuessStayWarnings()
+    {
+        GisAuditFinding notAGuess = new(GisAuditSeverity.Warning, "levels", "Level 1FL has no ordinal.", new long[] { 2 });
+        IReadOnlyList<GisAuditFinding> findings = ExportAudit.RaiseGuessesOnGisPlans(
+            new[] { Guess(501), notAGuess, Guess(503) },
+            OnLevels(levels: new[] { (501L, 4L), (2L, 2L) }));
+
+        Assert.All(findings, finding => Assert.Equal(GisAuditSeverity.Warning, finding.Severity));
+        Assert.Equal("Floor type X (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.", findings[0].Message);
+    }
+
+    [Fact]
+    public void ErrorsComeFirstAfterRaising()
+    {
+        GisAuditFinding info = new(GisAuditSeverity.Info, "floors", "note");
+        IReadOnlyList<GisAuditFinding> findings = ExportAudit.RaiseGuessesOnGisPlans(new[] { info, Guess(501) }, OnLevels(levels: new[] { (501L, 1L) }));
+
+        Assert.Equal(new[] { GisAuditSeverity.Error, GisAuditSeverity.Info }, findings.Select(finding => finding.Severity));
+        Assert.EndsWith(" Its element is on levels with a GIS_ plan, so the export asks to fix or accept this first.", findings[0].Message);
+    }
+
+    [Fact]
+    public void AllElementsOnGisPlansAreCountedOnce()
+    {
+        GisAuditFinding raised = Assert.Single(ExportAudit.RaiseGuessesOnGisPlans(new[] { Guess(501, 502) }, OnLevels(levels: new[] { (501L, 1L), (502L, 2L) })));
+
+        Assert.EndsWith(" All 2 of its elements are on levels with a GIS_ plan, so the export asks to fix or accept this first.", raised.Message);
+    }
+
+    [Fact]
+    public void APlanWithoutALevelExportsNoLevel()
+    {
+        ExportViewSnapshot views = Views(plans: new ExportPlanView[] { new(11, "GIS_B1FL", 1, North, null, 900), new(19, "GIS_draft", -1, North, null, 900) });
+        ExportAuditSnapshot snapshot = new(views, elementLevels: new[] { new KeyValuePair<long, long>(501, -1) });
+
+        Assert.Equal(new long[] { 1 }, snapshot.GisPlanLevels);
+        Assert.Equal(GisAuditSeverity.Warning, Assert.Single(ExportAudit.RaiseGuessesOnGisPlans(new[] { Guess(501) }, snapshot)).Severity);
+    }
+
+    [Fact]
+    public void AStairMadeAsAFamilyIsAGuess()
+    {
+        GisAuditFinding finding = Assert.Single(Audit(families: new[] { new AuditFamily(401, 80, "階段_手摺付", "W1200") }));
+
+        Assert.True(finding.ExportsByGuess);
+    }
+
+    [Fact]
+    public void ADoorTypeWithoutGisDoorOnAGisPlanIsAWarning()
+    {
+        IReadOnlyList<GisAuditFinding> findings = ExportAudit.Run(OnLevels(doors: new[]
+        {
+            new AuditDoor(601, 90, "片開き : 900", 1, ""),
+            new AuditDoor(602, 90, "片開き : 900", 2, ""),
+            new AuditDoor(603, 90, "片開き : 900", 4, ""),
+            new AuditDoor(604, 91, "両開き : 1800", 1, "double"),
+            new AuditDoor(605, 92, "Store : 900", 4, ""),
+        }));
+
+        GisAuditFinding finding = Assert.Single(findings);
+        Assert.Equal(GisAuditSeverity.Warning, finding.Severity);
+        Assert.False(finding.ExportsByGuess);
+        Assert.Equal("doors", finding.Topic);
+        Assert.Equal(new long[] { 601, 602 }, finding.ElementIds);
+        Assert.Equal("Door type 片開き : 900 (2 on levels with a GIS_ plan) has no gis_door, so its openings export with no door type; Kanizu keeps the GDB's door type only where the opening already has one. Set gis_door on the type.", finding.Message);
+    }
+
+    [Fact]
+    public void RampsAndFloorFamiliesOnAGisPlanAreErrors()
+    {
+        IReadOnlyList<GisAuditFinding> findings = ExportAudit.Run(OnLevels(unread: new[]
+        {
+            new AuditUnread(701, UnreadKind.Ramp, 2),
+            new AuditUnread(702, UnreadKind.Ramp, 2),
+            new AuditUnread(703, UnreadKind.Ramp, 4),
+            new AuditUnread(704, UnreadKind.FloorFamily, 1),
+        }));
+
+        Assert.Equal(new[] { new long[] { 701, 702 }, new long[] { 704 } }, findings.Select(finding => finding.ElementIds.ToArray()));
+        Assert.All(findings, finding => Assert.Equal(GisAuditSeverity.Error, finding.Severity));
+        Assert.Equal("Level 1FL has a GIS_ plan and 2 Revit ramp(s), which the export never reads: their area is missing from the export. Model each slope as a floor of a ramp floor type.", findings[0].Message);
+        Assert.StartsWith("Level B1FL has a GIS_ plan and 1 floor(s) made as a family, which", findings[1].Message);
+    }
 }

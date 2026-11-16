@@ -279,7 +279,9 @@ public sealed class FloorTypeMatcherTests
             FloorType("j 店舗_床", "retail", floors: 6, elementId: 1),
             FloorType("smoking room", "smokingarea", floors: 2, elementId: 2),
         });
-        List<string> messages = GisAudit.Run(model, Standard).Select(finding => finding.Message).Where(message => message.Contains("uses an old name")).ToList();
+        List<GisAuditFinding> oldNames = GisAudit.Run(model, Standard).Where(finding => finding.Message.Contains("uses an old name")).ToList();
+        List<string> messages = oldNames.Select(finding => finding.Message).ToList();
+        Assert.All(oldNames, finding => Assert.True(finding.ExportsByGuess));
 
         Assert.Equal(
             new[]
@@ -294,7 +296,9 @@ public sealed class FloorTypeMatcherTests
     public void Audit_asks_for_the_side_of_an_old_shop_type_when_both_names_are_taken()
     {
         ModelSnapshot model = ModelOnStandard(floorTypes: FloorTypesAsStandard().Append(FloorType("j 店舗_床", "retail", floors: 6, elementId: 1)));
-        List<string> messages = GisAudit.Run(model, Standard).Select(finding => finding.Message).Where(message => message.Contains("old name")).ToList();
+        List<GisAuditFinding> oldNames = GisAudit.Run(model, Standard).Where(finding => finding.Message.Contains("old name")).ToList();
+        List<string> messages = oldNames.Select(finding => finding.Message).ToList();
+        Assert.All(oldNames, finding => Assert.True(finding.ExportsByGuess));
 
         Assert.Equal(
             new[]

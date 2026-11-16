@@ -68,6 +68,17 @@ internal sealed class Commands
                 "floorScan" => api.Run(FloorCommands.FloorScan, TimeSpan.FromMinutes(5)),
                 "fixture" => Fixture(request),
                 "newFamily" => NewFamily(request),
+                "placeFamily" => api.Run(
+                    app => FamilyFixtures.Place(
+                        app,
+                        root,
+                        TestRoot.Require(root, Text(request, "path")),
+                        Text(request, "category"),
+                        Text(request, "level"),
+                        Convert.ToDouble(request["x"], CultureInfo.InvariantCulture),
+                        Convert.ToDouble(request["y"], CultureInfo.InvariantCulture)),
+                    Slow),
+                "instances" => api.Run(app => FamilyFixtures.Instances(app, Text(request, "category")), Quick),
                 "fileDialog" => Win32Dialogs.FillFileDialog(TestRoot.Require(root, Text(request, "path")), Milliseconds(request)),
                 "windows" => Win32Dialogs.List(),
                 "closeDialogs" => Win32Dialogs.CloseAll(Milliseconds(request), Longs(request, "handles")),

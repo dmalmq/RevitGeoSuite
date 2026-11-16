@@ -17,12 +17,13 @@ public enum GisAuditSeverity
 /// <summary>One thing that would need fixing by hand after a GDB export.</summary>
 public sealed class GisAuditFinding
 {
-    public GisAuditFinding(GisAuditSeverity severity, string topic, string message, IEnumerable<long>? elementIds = null)
+    public GisAuditFinding(GisAuditSeverity severity, string topic, string message, IEnumerable<long>? elementIds = null, bool exportsByGuess = false)
     {
         Severity = severity;
         Topic = topic;
         Message = message;
         ElementIds = (elementIds ?? Array.Empty<long>()).ToList();
+        ExportsByGuess = exportsByGuess;
     }
 
     public GisAuditSeverity Severity { get; }
@@ -34,11 +35,19 @@ public sealed class GisAuditFinding
 
     /// <summary>The elements the finding is about, to select or show in Revit.</summary>
     public IReadOnlyList<long> ElementIds { get; }
+
+    /// <summary>
+    /// The export decides by name what the standard should have told it: a floor type without a valid
+    /// category, a family off the standard list. On a <c>GIS_</c> plan such a warning is raised to an
+    /// error (<see cref="ExportAudit.RaiseGuessesOnGisPlans"/>).
+    /// </summary>
+    public bool ExportsByGuess { get; }
 }
 
 /// <summary>
 /// Audit: what would need fixing by hand after a GDB export. Reads a <see cref="ModelSnapshot"/> and
-/// changes nothing. Errors make the export come out wrong; warnings make it guess.
+/// changes nothing. Errors make the export come out wrong; warnings make it guess, and a guess on a
+/// <c>GIS_</c> plan is raised to an error by <see cref="ExportAudit.RaiseGuessesOnGisPlans"/>.
 /// </summary>
 public static class GisAudit
 {
@@ -53,7 +62,8 @@ public static class GisAudit
         (new[] { "自動改札", "改札機", "ticket gate", "ticket_gate" }, "ticket_gate"),
     };
 
-    public static IReadOnlyList<GisAuditFinding> Run(ModelSnapshot snapshot, GisToolStandard standard)
+    /// <param name="mappedFamilies">Families the export dialog maps to a category by hand, as its rules store them (trimmed); the export neither guesses nor skips them.</param>
+    public static IReadOnlyList<GisAuditFinding> Run(ModelSnapshot snapshot, GisToolStandard standard, IReadOnlyCollection<string>? mappedFamilies = null)
     {
         if (snapshot is null)
         {
@@ -71,7 +81,7 @@ public static class GisAudit
         findings.AddRange(AuditFloorTypes(snapshot, standard));
         findings.AddRange(AuditFloors(snapshot, standard));
         findings.AddRange(AuditLevels(snapshot));
-        findings.AddRange(AuditFamilies(snapshot, standard));
+        findings.AddRange(AuditFamilies(snapshot, standard, new HashSet<string>((mappedFamilies ?? Array.Empty<string>()).Select(name => name.Trim()), StringComparer.Ordinal)));
 
         // A stable sort: errors first, each severity in the order the checks found them.
         return findings.OrderBy(finding => (int)finding.Severity).ToList();
@@ -212,7 +222,8 @@ public static class GisAudit
                         GisAuditSeverity.Warning,
                         "floor types",
                         $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name. Run Fix floor types to rename it to {string.Join(" or ", renames)}.{OneChoiceForAllFloors(floorType, renames)}",
-                        floorType.FloorIds);
+                        floorType.FloorIds,
+                        exportsByGuess: true);
                     continue;
                 }
 
@@ -223,7 +234,8 @@ public static class GisAudit
                         GisAuditSeverity.Warning,
                         "floor types",
                         $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) uses an old name that can be {string.Join(" or ", undecided)}. Run Fix floor types to choose one. All {floorType.FloorIds.Count} floors of this type follow the choice. If some belong to the other one, duplicate the type and move those floors to the copy first.",
-                        floorType.FloorIds);
+                        floorType.FloorIds,
+                        exportsByGuess: true);
                     continue;
                 }
 
@@ -231,7 +243,8 @@ public static class GisAudit
                     GisAuditSeverity.Warning,
                     "floor types",
                     $"Floor type {floorType.Name} ({floorType.FloorIds.Count} floors) has no gis_category, so its floors export by type name. Run Fix floor types.",
-                    floorType.FloorIds);
+                    floorType.FloorIds,
+                    exportsByGuess: true);
             }
         }
     }
@@ -298,7 +311,7 @@ public static class GisAudit
         }
     }
 
-    private static IEnumerable<GisAuditFinding> AuditFamilies(ModelSnapshot snapshot, GisToolStandard standard)
+    private static IEnumerable<GisAuditFinding> AuditFamilies(ModelSnapshot snapshot, GisToolStandard standard, ISet<string> mappedFamilies)
     {
         foreach (FamilyTypeInfo familyType in snapshot.FamilyTypes)
         {
@@ -331,11 +344,12 @@ public static class GisAudit
                     GisAuditSeverity.Warning,
                     "families",
                     $"{name} has gis_kind {kind}, but {familyType.FamilyName} is not a standard {kind} family ({StandardNames(standard.Families.Kind(kind))}). Use a standard family, or add this one to standards/families.json.",
-                    familyType.InstanceIds);
+                    familyType.InstanceIds,
+                    exportsByGuess: true);
                 continue;
             }
 
-            if (standard.IsKnownCategory(familyType.GisCategory))
+            if (standard.IsKnownCategory(familyType.GisCategory) || mappedFamilies.Contains(familyType.FamilyName.Trim()))
             {
                 // The export maps a family by its category or gis_category as well as by gis_kind.
                 continue;
@@ -348,7 +362,8 @@ public static class GisAudit
                     GisAuditSeverity.Warning,
                     "families",
                     $"{name} looks like {("aeiou".IndexOf(suggested[0]) >= 0 ? "an" : "a")} {suggested} but has no gis_kind and is not a standard family ({StandardNames(standard.Families.Kind(suggested))}), so the export skips it unless the export dialog maps the family by hand.",
-                    familyType.InstanceIds);
+                    familyType.InstanceIds,
+                    exportsByGuess: true);
             }
         }
     }

@@ -264,7 +264,7 @@
           {/snippet}
         </Card>
 
-        <Card title={$t('GisStandard.Audit.Title', 'Audit')} description={$t('GisStandard.Audit.Description', 'What would need fixing by hand after a GDB export. Errors make the export come out wrong; warnings make it guess.')}>
+        <Card title={$t('GisStandard.Audit.Title', 'Audit')} description={$t('GisStandard.Audit.Description', 'What would need fixing by hand after a GDB export. Errors make the export come out wrong, or make it guess on a GIS_ plan; warnings make it guess elsewhere.')}>
           {#if findings.length === 0}
             <p class="text-small text-muted-foreground">{$t('GisStandard.Audit.Clean', 'Nothing to fix.')}</p>
           {:else}

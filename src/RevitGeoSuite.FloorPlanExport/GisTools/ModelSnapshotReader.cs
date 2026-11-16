@@ -17,7 +17,7 @@ public static class ModelSnapshotReader
         new[] { BuiltInCategory.OST_GenericModel, BuiltInCategory.OST_SpecialityEquipment };
 
     /// <summary>The categories the audit checks families in: the unit ones, and mechanical equipment for elevators.</summary>
-    private static readonly BuiltInCategory[] AuditedFamilyCategories =
+    internal static readonly BuiltInCategory[] AuditedFamilyCategories =
         FamilyCategories.Concat(new[] { BuiltInCategory.OST_MechanicalEquipment }).ToArray();
 
     public static ModelSnapshot Read(Document document)
