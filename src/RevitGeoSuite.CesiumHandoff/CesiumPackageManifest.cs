@@ -227,6 +227,21 @@ public sealed class CesiumPackageGisRules
     public string Profile { get; set; } = string.Empty;
 
     public string Hash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when both versions recorded their rules and the rules hash or the profile differ. A
+    /// version without a hash (an older export) says nothing, so no difference is claimed.
+    /// </summary>
+    public static bool Differ(CesiumPackageGisRules? previous, CesiumPackageGisRules? current)
+    {
+        if (string.IsNullOrEmpty(previous?.Hash) || string.IsNullOrEmpty(current?.Hash))
+        {
+            return false;
+        }
+
+        return !string.Equals(previous!.Hash, current!.Hash, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(previous.Profile, current.Profile, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed class CesiumPackageGisArtifact

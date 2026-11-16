@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -159,54 +160,88 @@ public static class CesiumStationFolder
         Station,
     }
 
+    /// <summary>
+    /// A folder is a station folder when <c>revit/</c> holds at least one version with a manifest;
+    /// a project folder that merely has a <c>revit</c> directory is new. IO errors read as missing.
+    /// </summary>
     public static FolderKind Classify(string? stationFolder)
     {
-        if (string.IsNullOrWhiteSpace(stationFolder) || !Directory.Exists(stationFolder))
+        try
+        {
+            if (string.IsNullOrWhiteSpace(stationFolder) || !Directory.Exists(stationFolder))
+            {
+                return FolderKind.Missing;
+            }
+
+            string revit = Path.Combine(stationFolder, RevitDirectoryName);
+            bool hasVersion = Directory.Exists(revit) && Directory.EnumerateDirectories(revit)
+                .Where(model => !Path.GetFileName(model).StartsWith(".", StringComparison.Ordinal))
+                .SelectMany(Directory.EnumerateDirectories)
+                .Any(version => File.Exists(Path.Combine(version, "cesium-package.json")));
+            return hasVersion ? FolderKind.Station : FolderKind.New;
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
         {
             return FolderKind.Missing;
         }
-
-        return Directory.Exists(Path.Combine(stationFolder, RevitDirectoryName)) ? FolderKind.Station : FolderKind.New;
     }
 
     /// <summary>
     /// The source of the newest version of the model <paramref name="modelId"/> in the station
-    /// folder, by <c>createdUtc</c>, or null. Its <c>documentKey</c> hashes the file path the
-    /// version was written from, so a Save As copy of the model, which keeps the model id, can tell
-    /// that the last version came from another file.
+    /// folder, by <c>createdUtc</c>, or null. Only that model's folders are read (their names end
+    /// with the start of the model id, see <see cref="ModelFolderName"/>). Its <c>documentKey</c>
+    /// hashes the file path the version was written from, so a Save As copy of the model, which
+    /// keeps the model id, can tell that the last version came from another file.
     /// </summary>
     public static CesiumPackageSource? LatestSource(string stationFolder, string modelId)
     {
         string revit = Path.Combine(stationFolder ?? string.Empty, RevitDirectoryName);
-        if (string.IsNullOrWhiteSpace(modelId) || !Directory.Exists(revit))
+        if (string.IsNullOrWhiteSpace(modelId))
         {
             return null;
         }
 
-        CesiumPackageSource? best = null;
-        DateTime bestCreated = DateTime.MinValue;
-        foreach (string version in Directory.GetDirectories(revit).SelectMany(Directory.GetDirectories))
+        string idPart = modelId.Replace("-", string.Empty);
+        idPart = (idPart.Length > 8 ? idPart.Substring(0, 8) : idPart).ToLowerInvariant();
+        try
         {
-            if (Path.GetFileName(version).StartsWith(".", StringComparison.Ordinal))
+            if (!Directory.Exists(revit))
             {
-                continue;
+                return null;
             }
 
-            CesiumPackageManifest? manifest = TryReadManifest(version);
-            if (manifest?.Source is null || !string.Equals(manifest.Source.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+            CesiumPackageSource? best = null;
+            DateTime bestCreated = DateTime.MinValue;
+            IEnumerable<string> versions = Directory.EnumerateDirectories(revit)
+                .Where(model =>
+                {
+                    string name = Path.GetFileName(model).ToLowerInvariant();
+                    return name == idPart || name.EndsWith("-" + idPart, StringComparison.Ordinal);
+                })
+                .SelectMany(Directory.EnumerateDirectories)
+                .Where(version => !Path.GetFileName(version).StartsWith(".", StringComparison.Ordinal));
+            foreach (string version in versions)
             {
-                continue;
+                CesiumPackageManifest? manifest = TryReadManifest(version);
+                if (manifest?.Source is null || !string.Equals(manifest.Source.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                DateTime created = manifest.CreatedUtc.ToUniversalTime();
+                if (best is null || created > bestCreated)
+                {
+                    best = manifest.Source;
+                    bestCreated = created;
+                }
             }
 
-            DateTime created = manifest.CreatedUtc.ToUniversalTime();
-            if (best is null || created > bestCreated)
-            {
-                best = manifest.Source;
-                bestCreated = created;
-            }
+            return best;
         }
-
-        return best;
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>A version's manifest, or null when it is missing or cannot be read.</summary>

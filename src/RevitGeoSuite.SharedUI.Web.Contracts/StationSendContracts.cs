@@ -42,7 +42,11 @@ public sealed class StationSendStateResponse
 [TsExport]
 public sealed class StationSendRunRequest
 {
-    /// <summary>The station folder; the model remembers it after the send succeeds.</summary>
+    /// <summary>
+    /// The station folder. The model records it when the send starts, because the export reads the
+    /// model's gis-model.json from it; a send that fails before its version is published puts back
+    /// the folder the model had. A first send that fails keeps it: the record cannot be emptied.
+    /// </summary>
     public string StationFolder { get; set; } = string.Empty;
 
     /// <summary>The document key from <c>station.send.getState</c>.</summary>
@@ -79,7 +83,10 @@ public sealed class StationSendRunResponse
     /// </summary>
     public bool ChangesCounted { get; set; }
 
-    /// <summary>The previous version was written with other GIS rules, so edits may come from the rules.</summary>
+    /// <summary>
+    /// Both versions recorded their rules and the rules hash or the profile differ, so edits may
+    /// come from the rules. False when either version has no rules hash.
+    /// </summary>
     public bool RulesDiffer { get; set; }
 
     public int ElementsAdded { get; set; }
