@@ -15,6 +15,7 @@ using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.FloorPlanExport.UI;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.Storage;
+using RevitGeoSuite.SharedUI.Localization;
 using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Web.Contracts;
 using RevitGeoSuite.Tiles3DExport;
@@ -60,7 +61,7 @@ internal static class CesiumExportSupport
         return profiles.FirstOrDefault(candidate =>
                 string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException(
-                $"Floor plan profile '{profileName}' was not found for this project.");
+                string.Format(UiLocalizer.Instance.Get("Export.Error.NoSuchProfile"), profileName));
     }
 
     /// <summary>

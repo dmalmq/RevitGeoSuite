@@ -28,29 +28,37 @@ public sealed class StationSendStateHandler : IRpcHandler
 {
     public string Method => "station.send.getState";
 
-    public Task<object?> HandleAsync(object? payload)
+    public async Task<object?> HandleAsync(object? payload)
     {
         StationSendStateRequest request = CesiumExportSupport.ReadPayload<StationSendStateRequest>(payload);
-        return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
+        // Revit's thread reads only the model; the folder is read after, so a slow share never
+        // holds Revit up.
+        var model = await RevitContext.Instance.InvokeWithDocumentAsync(document =>
         {
             GeoProjectInfo? info = new GeoProjectInfoStorage().Load(new RevitDocumentHandle(document));
-            string remembered = info?.GisStationFolder?.Trim() ?? string.Empty;
-            string folder = string.IsNullOrWhiteSpace(request.StationFolder) ? remembered : request.StationFolder!.Trim();
-            string documentKey = DocumentProjectKeyBuilder.Create(document);
-            string? modelId = info?.ModelId;
-            CesiumPackageSource? last = folder.Length == 0 || string.IsNullOrWhiteSpace(modelId)
-                ? null
-                : CesiumStationFolder.LatestSource(folder, modelId!);
-            return new StationSendStateResponse
-            {
-                StationFolder = folder,
-                ProfileName = StationSend.ProfileName(document),
-                DocumentKey = documentKey,
-                FolderKind = folder.Length == 0 ? string.Empty : StationSend.KindName(CesiumStationFolder.Classify(folder)),
-                LastSentFromAnotherFile = last is not null && last.DocumentKey.Length > 0
-                    && !string.Equals(last.DocumentKey, documentKey, StringComparison.Ordinal),
-            };
-        });
+            return (
+                Remembered: info?.GisStationFolder?.Trim() ?? string.Empty,
+                ModelId: info?.ModelId,
+                DocumentKey: DocumentProjectKeyBuilder.Create(document),
+                IsWorkshared: document.IsWorkshared,
+                ProfileName: StationSend.ProfileName(document));
+        }).ConfigureAwait(false);
+
+        string folder = string.IsNullOrWhiteSpace(request.StationFolder) ? model.Remembered : request.StationFolder!.Trim();
+        // A workshared model's document key hashes each user's local copy, so every colleague's
+        // send would look like another file; Save As there makes a new central, which is rare.
+        CesiumPackageSource? last = folder.Length == 0 || model.IsWorkshared || string.IsNullOrWhiteSpace(model.ModelId)
+            ? null
+            : CesiumStationFolder.LatestSource(folder, model.ModelId!);
+        return new StationSendStateResponse
+        {
+            StationFolder = folder,
+            ProfileName = model.ProfileName,
+            DocumentKey = model.DocumentKey,
+            FolderKind = folder.Length == 0 ? string.Empty : StationSend.KindName(CesiumStationFolder.Classify(folder)),
+            LastSentFromAnotherFile = last is not null && last.DocumentKey.Length > 0
+                && !string.Equals(last.DocumentKey, model.DocumentKey, StringComparison.Ordinal),
+        };
     }
 }
 
@@ -116,6 +124,32 @@ public sealed class StationSendRunHandler : IRpcHandler
 
     private static string Text(string key) => UiLocalizer.Instance.Get(key);
 
+    /// <summary>
+    /// Puts the model's station folder back after a failed send. Null when that worked or nothing
+    /// had changed; otherwise a sentence for the error, so the user knows the model now points at
+    /// the new folder. Never throws.
+    /// </summary>
+    private static async Task<string?> RestoreFolderAsync(string documentKey, string? before, string attempted)
+    {
+        if (string.IsNullOrWhiteSpace(before) || string.Equals(before!.Trim(), attempted, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        try
+        {
+            var restoreWarnings = new List<string>();
+            bool restored = await RevitContext.Instance
+                .InvokeWithDocumentAsync(document => StationSend.Restore(document, documentKey, before!, restoreWarnings))
+                .ConfigureAwait(false);
+            return restored ? null : string.Format(Text("Send.Error.RestoreFailed"), before, string.Join(" ", restoreWarnings));
+        }
+        catch (Exception ex)
+        {
+            return string.Format(Text("Send.Error.RestoreFailed"), before, ex.Message);
+        }
+    }
+
     private static async Task<StationSendRunResponse> SendAsync(string stationFolder, string documentKey, CancellationToken ct, IProgress<JobProgress> progress)
     {
         Stopwatch clock = Stopwatch.StartNew();
@@ -125,30 +159,53 @@ public sealed class StationSendRunHandler : IRpcHandler
         {
             var warnings = new List<string>();
             progress.Report(new JobProgress { Phase = "gis", Percent = 10, Message = Text("Send.Progress.Gis") });
-            StationSend.Step step = await RevitContext.Instance
-                .InvokeWithDocumentAsync(document => StationSend.Run(document, documentKey, stationFolder, staging, warnings, ct))
-                .ConfigureAwait(false);
 
-            progress.Report(new JobProgress { Phase = "manifest", Percent = 80, Message = Text("Send.Progress.Manifest") });
-            CesiumPackageManifest manifest = builder.WriteManifest(staging, step.Inputs);
-            CesiumPackageLayout layout = CesiumStationFolder.Publish(staging, stationFolder, manifest);
-            step.Gis.ExportResult.CommitPendingBaseline(staging.RootDirectory, layout.RootDirectory);
+            // The model records the station folder before the export, because the export reads the
+            // model's gis-model.json from the folder the model remembers (and records its views,
+            // EPSG and links there). Until the version is published, any failure puts back the folder
+            // the model had; what the export wrote to the new folder's gis-model.json stays.
+            string? before = await RevitContext.Instance
+                .InvokeWithDocumentAsync(document => StationSend.RememberedFolder(document, documentKey))
+                .ConfigureAwait(false);
+            StationSend.Step step;
+            CesiumPackageManifest manifest;
+            CesiumPackageLayout layout;
+            try
+            {
+                step = await RevitContext.Instance
+                    .InvokeWithDocumentAsync(document => StationSend.Run(document, documentKey, stationFolder, staging, warnings, ct))
+                    .ConfigureAwait(false);
+
+                progress.Report(new JobProgress { Phase = "manifest", Percent = 80, Message = Text("Send.Progress.Manifest") });
+                manifest = builder.WriteManifest(staging, step.Inputs);
+                layout = CesiumStationFolder.Publish(staging, stationFolder, manifest);
+            }
+            catch (Exception ex)
+            {
+                string? restoreFailure = await RestoreFolderAsync(documentKey, before, stationFolder).ConfigureAwait(false);
+                if (restoreFailure is null)
+                {
+                    throw;
+                }
+
+                throw new InvalidOperationException($"{ex.Message} {restoreFailure}", ex);
+            }
 
             // The version is on the share from here on: a failed count must not read as a failed send.
             progress.Report(new JobProgress { Phase = "compare", Percent = 90, Message = Text("Send.Progress.Compare") });
             var response = new StationSendRunResponse { VersionFolder = layout.RootDirectory };
             try
             {
+                step.Gis.ExportResult.CommitPendingBaseline(staging.RootDirectory, layout.RootDirectory);
                 string? previous = CesiumStationFolder.PreviousVersion(layout.RootDirectory);
                 GisPackageChanges changes = GisPackageChanges.Compare(
                     previous is null ? null : new CesiumPackageLayout(previous).GisDirectory,
                     layout.GisDirectory);
-                string? previousRules = previous is null ? null : CesiumStationFolder.TryReadManifest(previous)?.Gis?.Rules?.Hash;
-                string? rules = manifest.Gis?.Rules?.Hash;
+                CesiumPackageGisRules? previousRules = previous is null ? null : CesiumStationFolder.TryReadManifest(previous)?.Gis?.Rules;
+                CesiumPackageGisRules? rules = manifest.Gis?.Rules;
                 response.ChangesCounted = true;
                 response.HasPrevious = changes.HasPrevious;
-                response.RulesDiffer = !string.IsNullOrEmpty(previousRules) && !string.IsNullOrEmpty(rules)
-                    && !string.Equals(previousRules, rules, StringComparison.OrdinalIgnoreCase);
+                response.RulesDiffer = CesiumPackageGisRules.Differ(previousRules, rules);
                 response.ElementsAdded = changes.ElementsAdded;
                 response.ElementsRemoved = changes.ElementsRemoved;
                 response.ElementsEdited = changes.ElementsEdited;
@@ -160,7 +217,7 @@ public sealed class StationSendRunHandler : IRpcHandler
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                warnings.Add(string.Format(Text("Send.Warning.NotCounted"), ex.Message));
+                warnings.Add(string.Format(Text("Send.Warning.NotCounted"), ex.GetType().Name + ": " + ex.Message));
             }
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = Text("Send.Progress.Done") });
@@ -194,13 +251,41 @@ internal static class StationSend
         _ => "station",
     };
 
-    public static Step Run(Document document, string documentKey, string stationFolder, CesiumPackageLayout staging, List<string> warnings, CancellationToken ct)
+    /// <summary>The page read its state from one model; the shell is modeless, so another may be active now.</summary>
+    private static void RequireDocument(Document document, string documentKey)
     {
-        // The page read its state from one model; the shell is modeless, so another may be active now.
         if (!string.Equals(DocumentProjectKeyBuilder.Create(document), documentKey, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(UiLocalizer.Instance.Get("Send.Error.OtherModel"));
         }
+    }
+
+    /// <summary>The station folder the model remembers before this send, after checking it is the page's model.</summary>
+    public static string? RememberedFolder(Document document, string documentKey)
+    {
+        RequireDocument(document, documentKey);
+        return new GeoProjectInfoStorage().Load(new RevitDocumentHandle(document))?.GisStationFolder?.Trim();
+    }
+
+    /// <summary>
+    /// Records <paramref name="folder"/> again. RecordStationFolder opens its own transaction, is a
+    /// no-op when the folder is already recorded, and writes only the model's GeoSuite record (not
+    /// gis-model.json). False, with its warning, when the model is no longer active or is read-only.
+    /// </summary>
+    public static bool Restore(Document document, string documentKey, string folder, List<string> warnings)
+    {
+        if (!string.Equals(DocumentProjectKeyBuilder.Create(document), documentKey, StringComparison.Ordinal))
+        {
+            warnings.Add(UiLocalizer.Instance.Get("Send.Error.OtherModel"));
+            return false;
+        }
+
+        return new ModelIdentityService().RecordStationFolder(document, folder, warnings);
+    }
+
+    public static Step Run(Document document, string documentKey, string stationFolder, CesiumPackageLayout staging, List<string> warnings, CancellationToken ct)
+    {
+        RequireDocument(document, documentKey);
 
         string profileName = ProfileName(document);
         if (profileName.Length == 0)
@@ -212,26 +297,8 @@ internal static class StationSend
         // Resolve first: a model without a georeference fails here, before anything is written.
         var (coordinator, reference, _) = Tiles3DExportSupport.Resolve(document, handle, currentState, info, "whole", null);
 
-        // The export reads the model's gis-model.json from the station folder the model remembers,
-        // so the folder is recorded first. The page checked it exists, and a folder without Kanizu
-        // versions was confirmed. A failed export puts the folder the model had back.
-        var identity = new ModelIdentityService();
-        string? before = new GeoProjectInfoStorage().Load(handle)?.GisStationFolder;
-        identity.RecordStationFolder(document, stationFolder, warnings);
-        GisStepResult gis;
-        try
-        {
-            gis = CesiumExportSupport.RunGisExport(document, profileName, staging.GisDirectory, "station", warnings, ct);
-        }
-        catch
-        {
-            if (!string.IsNullOrWhiteSpace(before))
-            {
-                identity.RecordStationFolder(document, before!, new List<string>());
-            }
-
-            throw;
-        }
+        new ModelIdentityService().RecordStationFolder(document, stationFolder, warnings);
+        GisStepResult gis = CesiumExportSupport.RunGisExport(document, profileName, staging.GisDirectory, "station", warnings, ct);
 
         // The levels the GIS export used, by UniqueId, each with its count of features.
         Dictionary<string, string> levelIdByUniqueId = new FilteredElementCollector(document)

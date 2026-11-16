@@ -139,6 +139,41 @@ internal sealed partial class GisStandardRun
             step.Check(rows == 1, $"Only the Units layer changed ({rows} layer row(s)): the category change touches the platform units and nothing else.");
             await Shot(step, "F1-4-sent-edits");
         });
+        await Step("F1.5", "station.send.run refuses another model's key, and a second send while one runs; neither writes a version", async step =>
+        {
+            JsonNode? state = await Shell.RpcAsync("station.send.getState", new { stationFolder = station });
+            string documentKey = state?["documentKey"]?.GetValue<string>() ?? string.Empty;
+            int before = Versions(station).Length;
+            string? refused = null;
+            try
+            {
+                await Shell.JobAsync("station.send.run", new { stationFolder = station, documentKey = "path:C:\\NOT-THIS-MODEL.RVT", confirmNewFolder = false }, CesiumWait);
+            }
+            catch (Exception ex)
+            {
+                refused = ex.Message;
+            }
+
+            step.Check(refused != null, $"A run with another model's key is refused ({refused}).");
+            step.Check(Versions(station).Length == before, "It wrote no version.");
+
+            Task<JsonNode?> first = Shell.JobAsync("station.send.run", new { stationFolder = station, documentKey, confirmNewFolder = false }, CesiumWait);
+            await Shell.Page.WaitForTimeoutAsync(300);
+            string? busy = null;
+            try
+            {
+                await Shell.RpcAsync("station.send.run", new { stationFolder = station, documentKey, confirmNewFolder = false });
+            }
+            catch (Exception ex)
+            {
+                busy = ex.Message;
+            }
+
+            JsonNode? result = await first;
+            step.Check(busy != null, $"A second run while the first is going is refused ({busy}).");
+            step.Check(result?["versionFolder"] != null, "The first run finished.");
+            step.Check(Versions(station).Length == before + 1, $"Exactly one new version ({before} before, {Versions(station).Length} after).");
+        });
     }
 
     /// <summary>Opens #/send/now as the ribbon does; true when the page stopped on audit errors.</summary>
