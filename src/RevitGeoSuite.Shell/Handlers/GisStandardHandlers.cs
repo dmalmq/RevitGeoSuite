@@ -64,7 +64,8 @@ public sealed class GisFixFloorTypesHandler : IRpcHandler
             FloorTypeFix fix = FloorTypeMatcher.Accept(
                 snapshot,
                 standard,
-                request.Accepted.Select(entry => (entry.FloorTypeId, entry.StandardTypeName)));
+                (request.Accepted ?? Array.Empty<GisAcceptedProposal>()).Select(entry => (entry.FloorTypeId, entry.StandardTypeName)),
+                (request.Picked ?? Array.Empty<GisAcceptedProposal>()).Select(entry => (entry.FloorTypeId, entry.StandardTypeName)));
             IReadOnlyList<string> log = fix.Proposals.Count == 0
                 ? Array.Empty<string>()
                 : GisStandardWriter.ApplyProposals(doc, fix.Proposals, fix.EchoFloorIds);
@@ -164,6 +165,9 @@ internal static class GisStandardWork
                 })
                 .ToArray(),
             FixBlocker = FloorTypeMatcher.WriteBlocker(snapshot),
+            StandardFloorTypes = standard.FloorTypes
+                .Select(floorType => new GisStandardFloorTypeItem { Name = floorType.Name, GisCategory = floorType.GisCategory, GisRestriction = floorType.GisRestriction ?? string.Empty })
+                .ToArray(),
         };
     }
 

@@ -508,6 +508,7 @@ export interface GisExportRequest {
 
 export interface GisFixFloorTypesRequest {
   accepted: GisAcceptedProposal[]
+  picked: GisAcceptedProposal[]
 }
 
 export interface GisFloorTypeProposalItem {
@@ -622,6 +623,12 @@ export interface GisStandardApplyResponse {
 export interface GisStandardEmptyRequest {
 }
 
+export interface GisStandardFloorTypeItem {
+  gisCategory: string
+  gisRestriction: string
+  name: string
+}
+
 export interface GisStandardInspectResponse {
   documentTitle: string
   exportBlockers: string[]
@@ -631,6 +638,7 @@ export interface GisStandardInspectResponse {
   modelVersion: string
   proposals: GisFloorTypeProposalItem[]
   setupLines: string[]
+  standardFloorTypes: GisStandardFloorTypeItem[]
   standardVersion: number
   unmatched: GisUnmatchedFloorTypeItem[]
 }

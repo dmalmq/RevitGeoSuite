@@ -9,7 +9,8 @@ internal sealed record InspectReply(
     string[] SetupLines,
     ProposalItem[] Proposals,
     UnmatchedItem[] Unmatched,
-    string FixBlocker)
+    string FixBlocker,
+    StandardFloorTypeItem[]? StandardFloorTypes = null)
 {
     public int Count(string severity) => Findings.Count(finding => finding.Severity == severity);
 
@@ -22,3 +23,5 @@ internal sealed record FindingItem(string Severity, string Topic, string Message
 internal sealed record ProposalItem(long FloorTypeId, string FloorTypeName, int FloorCount, string? StandardTypeName = null, string? GisCategory = null, string? NewName = null, string? Reason = null);
 
 internal sealed record UnmatchedItem(long FloorTypeId, string Name, long[] FloorIds);
+
+internal sealed record StandardFloorTypeItem(string Name, string GisCategory, string GisRestriction);

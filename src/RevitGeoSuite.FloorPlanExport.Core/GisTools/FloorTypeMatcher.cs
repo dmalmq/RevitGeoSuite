@@ -28,7 +28,7 @@ public sealed class FloorTypeProposal
 
     public string Material => StandardType.Material;
 
-    /// <summary>"name", "old name" or "words in the name".</summary>
+    /// <summary>"name", "old name", "words in the name" or "picked by hand".</summary>
     public string Reason { get; }
 
     /// <summary>
@@ -203,14 +203,22 @@ public static class FloorTypeMatcher
     /// <paramref name="snapshot"/>. A type that is gone, no longer needs a fix or no longer matches,
     /// or that has two accepted candidates, is reported in <see cref="FloorTypeFix.Skipped"/> instead
     /// of being dropped. When two accepted types would take one new name, the one with more floors
-    /// renames and the other only gets its parameters.
+    /// renames and the other only gets its parameters. <paramref name="picked"/> are standard types a
+    /// person picked for a floor type that matches none; each applies only while that type still
+    /// matches none, and never renames it.
     /// </summary>
-    public static FloorTypeFix Accept(ModelSnapshot snapshot, GisToolStandard standard, IEnumerable<(long FloorTypeId, string StandardTypeName)> accepted)
+    public static FloorTypeFix Accept(
+        ModelSnapshot snapshot,
+        GisToolStandard standard,
+        IEnumerable<(long FloorTypeId, string StandardTypeName)> accepted,
+        IEnumerable<(long FloorTypeId, string StandardTypeName)>? picked = null)
     {
         IReadOnlyList<FloorTypeProposal> current = Propose(snapshot, standard);
         List<FloorTypeProposal> proposals = new();
         List<string> skipped = new();
-        foreach (IGrouping<long, (long FloorTypeId, string StandardTypeName)> group in accepted.Distinct().GroupBy(entry => entry.FloorTypeId))
+        List<(long FloorTypeId, string StandardTypeName)> byHand = (picked ?? Array.Empty<(long, string)>()).Distinct().ToList();
+        HashSet<long> pickedIds = new(byHand.Select(entry => entry.FloorTypeId));
+        foreach (IGrouping<long, (long FloorTypeId, string StandardTypeName)> group in accepted.Distinct().Where(entry => !pickedIds.Contains(entry.FloorTypeId)).GroupBy(entry => entry.FloorTypeId))
         {
             long id = group.Key;
             FloorTypeInfo? floorType = snapshot.FloorTypes.FirstOrDefault(entry => entry.ElementId == id);
@@ -233,6 +241,38 @@ public static class FloorTypeMatcher
                 : NeedsFix(floorType, snapshot, standard)
                     ? $"Floor type {floorType.Name} no longer matches {standardName}."
                     : $"Floor type {floorType.Name} no longer needs a fix.");
+        }
+
+        HashSet<long> unmatched = new(Unmatched(snapshot, standard).Select(floorType => floorType.ElementId));
+        foreach (IGrouping<long, (long FloorTypeId, string StandardTypeName)> group in byHand.GroupBy(entry => entry.FloorTypeId))
+        {
+            FloorTypeInfo? floorType = snapshot.FloorTypes.FirstOrDefault(entry => entry.ElementId == group.Key);
+            string name = floorType?.Name ?? group.Key.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            StandardFloorType? standardType = standard.FloorType(group.First().StandardTypeName);
+            if (group.Count() > 1)
+            {
+                skipped.Add($"Floor type {name} has more than one picked standard type. Choose one.");
+            }
+            else if (floorType is null)
+            {
+                skipped.Add($"Floor type {name} is no longer in the model.");
+            }
+            else if (standardType is null)
+            {
+                skipped.Add($"Floor type {name}: the standard has no floor type {group.First().StandardTypeName}.");
+            }
+            else if (!unmatched.Contains(floorType.ElementId))
+            {
+                skipped.Add(NeedsFix(floorType, snapshot, standard)
+                    ? $"Floor type {name} now matches a standard type by name. Choose from its row."
+                    : $"Floor type {name} no longer needs a fix.");
+            }
+            else
+            {
+                // A pick writes the standard type's own category and restriction, as its picker shows
+                // them; nothing is read from the floor type's name.
+                proposals.Add(new FloorTypeProposal(floorType, standardType, standardType.GisRestriction ?? string.Empty, "picked by hand"));
+            }
         }
 
         foreach (IGrouping<string?, FloorTypeProposal> clash in proposals.Where(entry => entry.NewName != null).GroupBy(entry => entry.NewName).Where(entry => entry.Count() > 1))

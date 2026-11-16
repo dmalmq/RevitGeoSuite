@@ -268,7 +268,7 @@ internal sealed partial class GisStandardRun
             return;
         }
 
-        await StandardTab().ClickAsync();
+        await ReadinessTab().ClickAsync();
         await CheckAgain();
         FindingItem[] found = (await Inspect()).Findings.Where(finding => finding.Topic == "network").ToArray();
         step.Note($"network: {string.Join(" | ", found.Select(finding => $"{finding.Severity} '{finding.Message}' ({finding.ElementIds.Length} element(s))"))}");
@@ -415,7 +415,7 @@ internal sealed partial class GisStandardRun
 
     private ILocator NetworkTab() => Shell.Page.GetByRole(AriaRole.Radio, new() { Name = "Network", Exact = true });
 
-    private ILocator StandardTab() => Shell.Page.GetByRole(AriaRole.Radio, new() { Name = "Standard", Exact = true });
+    private ILocator ReadinessTab() => Shell.Page.GetByRole(AriaRole.Radio, new() { Name = "Readiness", Exact = true });
 
     private async Task ReadAgain()
     {

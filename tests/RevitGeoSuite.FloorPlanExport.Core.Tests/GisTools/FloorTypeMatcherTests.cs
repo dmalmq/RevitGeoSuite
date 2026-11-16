@@ -217,6 +217,49 @@ public sealed class FloorTypeMatcherTests
     }
 
     [Fact]
+    public void APickByHandAppliesOnlyToATypeThatMatchesNothing()
+    {
+        List<FloorTypeInfo> floorTypes = FloorTypesAsStandard();
+        floorTypes.Add(new FloorTypeInfo(1, "j 改札内コンコース_床", floorIds: new long[] { 11 }));
+        floorTypes.Add(new FloorTypeInfo(3, "j 謎の部屋_床", floorIds: new long[] { 14 }));
+        floorTypes.Add(new FloorTypeInfo(4, "j 待合_床 (fixed)", "walkway", floorIds: new long[] { 15 }));
+        floorTypes.Add(new FloorTypeInfo(5, "Generic 150mm", floorIds: new long[] { 16, 17 }));
+        ModelSnapshot model = ModelOnStandard(floorTypes: floorTypes);
+
+        FloorTypeFix fix = FloorTypeMatcher.Accept(
+            model,
+            Standard,
+            System.Array.Empty<(long, string)>(),
+            new[] { (3L, "j 待合室_床"), (1L, "j 待合室_床"), (4L, "j 待合室_床"), (5L, "no such type"), (999L, "j 待合室_床") });
+
+        FloorTypeProposal proposal = Assert.Single(fix.Proposals);
+        Assert.Equal((3L, "j 待合室_床", "picked by hand"), (proposal.FloorType.ElementId, proposal.StandardType.Name, proposal.Reason));
+        Assert.Null(proposal.NewName);
+        StandardFloorType picked = Standard.FloorType("j 待合室_床")!;
+        Assert.Equal((picked.GisCategory, picked.GisRestriction ?? string.Empty), (proposal.GisCategory, proposal.GisRestriction));
+        Assert.Equal(
+            new[]
+            {
+                "Floor type j 改札内コンコース_床 now matches a standard type by name. Choose from its row.",
+                "Floor type j 待合_床 (fixed) no longer needs a fix.",
+                "Floor type Generic 150mm: the standard has no floor type no such type.",
+                "Floor type 999 is no longer in the model.",
+            },
+            fix.Skipped);
+    }
+
+    [Fact]
+    public void TwoPicksForOneTypeAreSkipped()
+    {
+        ModelSnapshot model = ModelOnStandard(floorTypes: FloorTypesAsStandard().Append(new FloorTypeInfo(3, "j 謎の部屋_床", floorIds: new long[] { 14 })));
+
+        FloorTypeFix fix = FloorTypeMatcher.Accept(model, Standard, System.Array.Empty<(long, string)>(), new[] { (3L, "j 待合室_床"), (3L, "j 喫煙所_床") });
+
+        Assert.Empty(fix.Proposals);
+        Assert.Equal(new[] { "Floor type j 謎の部屋_床 has more than one picked standard type. Choose one." }, fix.Skipped);
+    }
+
+    [Fact]
     public void AcceptSkipsATypeWithTwoAcceptedCandidates()
     {
         ModelSnapshot model = new(floorTypes: new[] { FloorType("j 店舗_床", "retail", elementId: 1), FloorType("smoking room", elementId: 2) });

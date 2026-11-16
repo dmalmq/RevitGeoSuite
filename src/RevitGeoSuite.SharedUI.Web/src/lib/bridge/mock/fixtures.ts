@@ -314,6 +314,8 @@ function gisStandard(scenario: MockScenario) {
       { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
       { severity: 'error', topic: 'families', message: "Lift : A has gis_kind 'lift', which the export does not know; its instances export as plain fixtures.", elementIds: [501] },
       { severity: 'warning', topic: 'levels', message: 'Level B1FL has no short_name, so the export guesses it from the level name.', elementIds: [11] },
+      { severity: 'warning', topic: 'doors', message: "Door type 片開き : 900 (12 on levels with a GIS_ plan) has no gis_door, so its openings export with no door type; Kanizu keeps the GDB's door type only where the opening already has one. Set gis_door on the type.", elementIds: range(601, 12) },
+      { severity: 'error', topic: 'floors', message: 'Level 1FL has a GIS_ plan and 1 Revit ramp(s), which the export never reads: their slope is missing from the export. Model them as sloped floors.', elementIds: [701] },
       { severity: 'warning', topic: 'families', message: 'ESC_1200 : S800 looks like an escalator but has no gis_kind, so it is found only by its family name, if at all.', elementIds: [401, 402] },
       { severity: 'info', topic: 'parameters', message: 'Parameter name uses its own GUID 1f0c9e2a-0000-4000-8000-000000000001, not the standard\'s 47b8db20-e756-4280-a842-f570dc847db5. It exports, but other models cannot share schedules or families with it.', elementIds: [] }
     ],
@@ -337,8 +339,16 @@ function gisStandard(scenario: MockScenario) {
             { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ外店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_gai', material: 'GIS_店舗', newName: 'j ラチ外店舗_床', reason: 'oldName' },
             { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ内店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_nai', material: 'GIS_店舗', newName: 'j ラチ内店舗_床', reason: 'oldName' }
           ],
-    unmatched: [{ floorTypeId: 203, name: '機械室', floorIds: [321, 322] }],
-    fixBlocker: setUp ? '' : 'gis_category is not bound yet. Run Set up model first.'
+    unmatched: fixed ? [] : [{ floorTypeId: 203, name: '機械室', floorIds: [321, 322] }],
+    fixBlocker: setUp ? '' : 'gis_category is not bound yet. Run Set up model first.',
+    standardFloorTypes: [
+      { name: 'j ラチ内コンコース_床', gisCategory: 'walkway', gisRestriction: 'rachi_nai' },
+      { name: 'j ラチ外コンコース_床', gisCategory: 'walkway', gisRestriction: 'rachi_gai' },
+      { name: 'j ラチ内店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_nai' },
+      { name: 'j ラチ外店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_gai' },
+      { name: 'j 待合室_床', gisCategory: 'room', gisRestriction: '' },
+      { name: 'j 機械室_床', gisCategory: 'room.mechanical', gisRestriction: '' }
+    ]
   })
   return {
     'gisStandard.inspect': inspect,

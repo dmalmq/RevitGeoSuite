@@ -280,6 +280,7 @@ internal sealed partial class GisStandardRun
     {
         InspectReply before = await Inspect();
         int seq = host.LastEvent();
+        await OpenReadinessRow("setup");
         await Shell.Button($"Apply {before.SetupLines.Length} change(s)").ClickAsync();
         step.Check(await Shell.ShowsAsync(Shell.Text("Set up model applied"), 120000), "Green banner 'Set up model applied'.");
         ExpectEvent(step, seq, "commit", SetupTransaction);

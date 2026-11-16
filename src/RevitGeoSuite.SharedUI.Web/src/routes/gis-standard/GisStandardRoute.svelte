@@ -1,21 +1,25 @@
 <!--
-  GIS standard: audits the active model against the Kanizu GIS standard and brings it there.
-  Set up model binds the shared parameters and adds the GIS_ materials and standard floor types;
-  Fix floor types gives non-standard floor types the category of the standard type they match.
-  Both preview first, plan again in Revit when applied, and run in one transaction each.
+  GIS standard: is this model ready to export? The Readiness tab reads top to bottom as one
+  checklist: Set up model, levels, Fix floor types, families, doors, floors and the rest of the
+  audit, each group folded to one line when it is fine. Set up model and Fix floor types preview
+  first, plan again in Revit when applied, and run in one transaction each.
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
   import { request } from '$lib/bridge/rpc'
-  import type { GisAuditFindingItem, GisFloorTypeProposalItem, GisStandardApplyResponse, GisStandardInspectResponse } from '$lib/bridge/contracts.generated'
+  import type { GisStandardApplyResponse, GisStandardInspectResponse } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
-  import { Banner, Button, Card, Checkbox, Chip, Segmented, SummaryStrip, Table, type Tone } from '$lib/kit'
+  import { Banner, Button, Chip, Segmented, type Tone } from '$lib/kit'
   import { ToolSheet, format, refreshReadiness } from '$lib/shell'
-  import { allFloorsHint, initiallyTicked, proposalKey, toggled } from '$lib/gisStandard/fixSelection'
+  import { initiallyTicked } from '$lib/gisStandard/fixSelection'
+  import { answerHint, fixRequest, hasBody, openFirst, readinessGroups, verdict, type GroupId, type ReadinessGroup } from '$lib/gisStandard/readiness'
   import AppliedBanner from './AppliedBanner.svelte'
   import DriftPanel from './DriftPanel.svelte'
+  import FindingList from './FindingList.svelte'
+  import FloorTypesPanel from './FloorTypesPanel.svelte'
   import NetworkPanel from './NetworkPanel.svelte'
   import ParametersPanel from './ParametersPanel.svelte'
+  import ReadinessRow from './ReadinessRow.svelte'
 
   type Tab = 'standard' | 'parameters' | 'drift' | 'network'
   // #/gis-standard/drift opens on the GDB edits tab: the export page links there.
@@ -27,21 +31,30 @@
   let error = $state<string | null>(null)
   let applied = $state<{ title: string; log: string[]; skipped: string[] } | null>(null)
   let ticked = $state<Set<string>>(new Set())
+  let picks = $state<Map<number, string>>(new Map())
+  let opened = $state<Partial<Record<GroupId, boolean>>>({})
 
-  const findings = $derived(model?.findings ?? [])
-  const count = (severity: string) => findings.filter((finding) => finding.severity === severity).length
-  const accepted = $derived((model?.proposals ?? []).filter((proposal) => ticked.has(proposalKey(proposal))))
-  const candidateCounts = $derived.by(() => {
-    const counts = new Map<number, number>()
-    for (const proposal of model?.proposals ?? []) counts.set(proposal.floorTypeId, (counts.get(proposal.floorTypeId) ?? 0) + 1)
-    return counts
-  })
+  const fix = $derived(fixRequest(model?.proposals ?? [], ticked, picks))
+  const fixCount = $derived(fix.accepted.length + fix.picked.length)
+  // What waits to be applied: Set up model's lines, and the floor types Fix floor types can fix or pick for.
+  const groupsOf = (inspected: GisStandardInspectResponse) =>
+    readinessGroups(inspected.findings, {
+      setup: inspected.setupLines.length,
+      floorTypes: new Set([...inspected.proposals.map((proposal) => proposal.floorTypeId), ...inspected.unmatched.map((floorType) => floorType.floorTypeId)]).size
+    })
+  const groups = $derived(model ? groupsOf(model) : [])
+  const answer = $derived(verdict(groups, model?.exportBlockers.length ?? 0))
   const busy = $derived(loading || applying !== null)
 
-  const SEVERITY: Record<string, { tone: Tone; key: string; fallback: string }> = {
-    error: { tone: 'danger', key: 'GisStandard.Severity.Error', fallback: 'Error' },
-    warning: { tone: 'warning', key: 'GisStandard.Severity.Warning', fallback: 'Warning' },
-    info: { tone: 'info', key: 'GisStandard.Severity.Info', fallback: 'Note' }
+  const TITLES: Record<GroupId, [string, string]> = {
+    setup: ['GisStandard.Group.Setup', 'Parameters and materials'],
+    levels: ['GisStandard.Group.Levels', 'Levels and GIS_ plans'],
+    floorTypes: ['GisStandard.Group.FloorTypes', 'Floor types'],
+    families: ['GisStandard.Group.Families', 'Families'],
+    doors: ['GisStandard.Group.Doors', 'Doors'],
+    floors: ['GisStandard.Group.Floors', 'Floors and stairs'],
+    network: ['GisStandard.Group.Network', 'Network'],
+    other: ['GisStandard.Group.Other', 'Other']
   }
 
   onMount(() => void inspect())
@@ -52,6 +65,10 @@
     try {
       model = await request('gisStandard.inspect', {})
       ticked = initiallyTicked(model.proposals)
+      picks = new Map()
+      const all = groupsOf(model)
+      const first = openFirst(all)
+      opened = Object.fromEntries(all.map((group) => [group.id, group.id === first]))
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
     } finally {
@@ -64,15 +81,12 @@
     error = null
     applied = null
     try {
-      const response: GisStandardApplyResponse =
-        kind === 'setup'
-          ? await request('gisStandard.setup', {})
-          : await request('gisStandard.fixFloorTypes', { accepted: accepted.map((proposal) => ({ floorTypeId: proposal.floorTypeId, standardTypeName: proposal.standardTypeName })) })
+      const response: GisStandardApplyResponse = kind === 'setup' ? await request('gisStandard.setup', {}) : await request('gisStandard.fixFloorTypes', fix)
       applied = {
         title:
           kind === 'setup'
             ? $t('GisStandard.Setup.Done', 'Set up model applied')
-            : format($t('GisStandard.Fix.Done', '{0} floor type(s) fixed'), accepted.length - response.skipped.length),
+            : format($t('GisStandard.Fix.Done', '{0} floor type(s) fixed'), fixCount - response.skipped.length),
         log: response.log,
         skipped: response.skipped
       }
@@ -85,10 +99,6 @@
     await inspect()
   }
 
-  function toggle(proposal: GisFloorTypeProposalItem, checked: boolean) {
-    ticked = toggled(model?.proposals ?? [], ticked, proposal, checked)
-  }
-
   async function select(ids: number[]) {
     try {
       await request('gisStandard.select', { elementIds: ids })
@@ -97,9 +107,37 @@
     }
   }
 
-  function severity(finding: GisAuditFindingItem) {
-    return SEVERITY[finding.severity] ?? SEVERITY.info
+  function mark(group: ReadinessGroup): { count: number; tone: Tone } {
+    if (group.errors) return { count: group.errors, tone: 'danger' }
+    if (group.warnings) return { count: group.warnings, tone: 'warning' }
+    if (group.changes) return { count: group.changes, tone: 'info' }
+    return { count: 0, tone: 'success' }
   }
+
+  function summary(group: ReadinessGroup): string {
+    const parts: string[] = []
+    if (group.errors) parts.push(format($t('GisStandard.Count.Errors', '{0} error(s)'), group.errors))
+    if (group.warnings) parts.push(format($t('GisStandard.Count.Warnings', '{0} warning(s)'), group.warnings))
+    if (group.changes && group.id === 'setup') parts.push(format($t('GisStandard.Count.SetupChanges', '{0} change(s) to set up'), group.changes))
+    if (group.changes && group.id === 'floorTypes') parts.push(format($t('GisStandard.Count.FloorTypes', '{0} floor type(s) to fix'), group.changes))
+    // Set up model always says when it has nothing left to do, whatever else the group holds.
+    const current = group.id === 'setup' && model && !group.changes ? format($t('GisStandard.Setup.Current', 'On standard version {0}. Nothing to set up.'), model.standardVersion) : ''
+    const counts = parts.join($t('GisStandard.Count.Join', ', '))
+    if (counts && current) return `${format($t('GisStandard.Count.Sentence', '{0}.'), counts)} ${current}`
+    if (counts) return counts
+    if (current) return current
+    return group.notes ? format($t('GisStandard.Count.Notes', 'Nothing to fix, {0} note(s)'), group.notes) : $t('GisStandard.Audit.Clean', 'Nothing to fix.')
+  }
+
+  function answerLine(): string {
+    const hint = answerHint(answer)
+    if (hint.key === 'blocked') return format($t('GisStandard.Answer.BlockedHint', '{0} thing(s) below stop the export before the checklist matters.'), hint.blockers)
+    if (hint.key === 'notReady') return format($t('GisStandard.Answer.NotReadyHint', '{0} error(s), {1} warning(s). Fix from the top.'), hint.errors, hint.warnings)
+    if (hint.key === 'warnings') return format($t('GisStandard.Answer.WarningsHint', '{0} warning(s) make the export guess. Fix them from the top when you can.'), hint.warnings)
+    return $t('GisStandard.Answer.CleanHint', 'Nothing to fix.')
+  }
+
+
 </script>
 
 <ToolSheet
@@ -109,30 +147,12 @@
   {#snippet actions()}
     <Button icon="refresh-cw" onclick={inspect} disabled={busy} busy={loading}>{$t('GisStandard.Refresh', 'Check again')}</Button>
   {/snippet}
-  {#snippet summary()}
-    {#if model}
-      <SummaryStrip
-        items={[
-          { label: $t('GisStandard.Errors', 'Errors'), value: count('error'), tone: count('error') > 0 ? 'danger' : 'neutral' },
-          { label: $t('GisStandard.Warnings', 'Warnings'), value: count('warning'), tone: count('warning') > 0 ? 'warning' : 'neutral' },
-          { label: $t('GisStandard.Notes', 'Notes'), value: count('info') },
-          {
-            label: $t('GisStandard.Version', 'Standard version'),
-            value: `${model.modelVersion || '–'} / ${model.standardVersion}`,
-            tone: model.modelVersion === String(model.standardVersion) ? 'success' : 'warning',
-            mono: true
-          }
-        ]}
-      />
-    {/if}
-  {/snippet}
-
   <div class="flex flex-col gap-3">
     <Segmented
       label={$t('GisStandard.Tabs', 'GIS standard tools')}
       bind:value={tab}
       options={[
-        { value: 'standard', label: $t('GisStandard.Tab.Standard', 'Standard'), icon: 'list-checks' },
+        { value: 'standard', label: $t('GisStandard.Tab.Readiness', 'Readiness'), icon: 'list-checks' },
         { value: 'parameters', label: $t('GisStandard.Tab.Parameters', 'Parameters'), icon: 'download' },
         { value: 'drift', label: $t('GisStandard.Tab.Drift', 'GDB edits'), icon: 'refresh-cw' },
         { value: 'network', label: $t('GisStandard.Tab.Network', 'Network'), icon: 'route' }
@@ -161,6 +181,11 @@
       {#if !model}
         <p class="text-small text-muted-foreground">{loading ? $t('GisStandard.Reading', 'Reading the model…') : ''}</p>
       {:else}
+        <div class="flex flex-wrap items-center gap-2" data-testid="readiness-answer">
+          <Chip tone={answer.ready ? 'success' : 'danger'}>{answer.ready ? $t('GisStandard.Answer.Ready', 'Ready to export') : $t('GisStandard.Answer.NotReady', 'Not ready to export')}</Chip>
+          <span class="text-small text-muted-foreground">{answerLine()}</span>
+        </div>
+
         {#if model.exportBlockers.length}
           <Banner tone="danger" title={model.exportSummary}>
             <ul class="ml-4 list-disc">
@@ -169,120 +194,39 @@
           </Banner>
         {/if}
 
-        <Card title={$t('GisStandard.Setup.Title', 'Set up model')} description={$t('GisStandard.Setup.Description', 'Binds the shared parameters and adds the GIS_ materials and standard floor types. Nothing is deleted and no floor changes type.')}>
-          {#if model.setupLines.length === 0}
-            <p class="text-small text-muted-foreground">{format($t('GisStandard.Setup.Current', 'The model is on standard version {0}. Nothing to set up.'), model.standardVersion)}</p>
-          {:else}
-            <ul class="ml-4 max-h-56 list-disc overflow-y-auto text-small">
-              {#each model.setupLines as line, index (index)}<li>{line}</li>{/each}
-            </ul>
-          {/if}
-          {#snippet actions()}
-            {#if model && model.setupLines.length > 0}
-              <Button variant="primary" icon="check" onclick={() => apply('setup')} disabled={busy} busy={applying === 'setup'}>
-                {format($t('GisStandard.Setup.Apply', 'Apply {0} change(s)'), model.setupLines.length)}
-              </Button>
-            {/if}
-          {/snippet}
-        </Card>
-
-        <Card title={$t('GisStandard.Fix.Title', 'Fix floor types')} description={$t('GisStandard.Fix.Description', 'Gives each floor type without a category the category of the standard type it matches, and renames a type that has an old name. Floors keep their type.')}>
-          {#if model.fixBlocker}
-            <Banner tone="warning">{model.fixBlocker}</Banner>
-          {:else if model.proposals.length === 0}
-            <p class="text-small text-muted-foreground">{$t('GisStandard.Fix.None', 'No floor type needs a category that can be matched by name.')}</p>
-          {:else}
-            <Table maxHeight="40vh">
-              <thead>
-                <tr>
-                  <th class="w-8"></th>
-                  <th>{$t('GisStandard.Fix.FloorType', 'Floor type')}</th>
-                  <th class="w-16 text-right">{$t('GisStandard.Fix.Floors', 'Floors')}</th>
-                  <th>{$t('GisStandard.Fix.Becomes', 'Becomes')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each model.proposals as proposal (proposalKey(proposal))}
-                  <tr>
-                    <td>
-                      <Checkbox
-                        checked={ticked.has(proposalKey(proposal))}
-                        onchange={(event) => toggle(proposal, event.currentTarget.checked)}
-                        aria-label={`${proposal.floorTypeName} to ${proposal.standardTypeName}`}
-                      />
-                    </td>
-                    <td class="max-w-0"><div class="truncate" title={proposal.floorTypeName}>{proposal.floorTypeName}</div></td>
-                    <td class="text-right font-mono tabular-nums">{proposal.floorCount}</td>
-                    <td class="max-w-0">
-                      <div class="truncate" title={proposal.standardTypeName}>
-                        {proposal.standardTypeName}
-                        <span class="font-mono text-muted-foreground">{proposal.gisCategory}{proposal.gisRestriction ? `, ${proposal.gisRestriction}` : ''}</span>
-                        {#if proposal.reason === 'words'}
-                          <Chip tone="info" title={$t('GisStandard.Fix.ByWordsHint', 'Matched by words in the name, not the whole name. Check it.')}>{$t('GisStandard.Fix.ByWords', 'by words')}</Chip>
-                        {:else if proposal.reason === 'oldName'}
-                          <Chip tone="warning" title={$t('GisStandard.Fix.OldNameHint', 'An old floor type name. The standard has a new name for it.')}>{$t('GisStandard.Fix.OldName', 'old name')}</Chip>
-                        {/if}
-                        {#if (candidateCounts.get(proposal.floorTypeId) ?? 0) > 1}
-                          <Chip tone="neutral" title={$t('GisStandard.Fix.ChooseOneHint', 'This floor type fits more than one standard type. Tick the one it is.')}>{$t('GisStandard.Fix.ChooseOne', 'choose one')}</Chip>
-                        {/if}
-                      </div>
-                      {#if proposal.newName}
-                        <div class="truncate text-small text-muted-foreground" title={proposal.newName}>
-                          {format($t('GisStandard.Fix.RenamesTo', 'renames to {0}'), proposal.newName)}
-                        </div>
-                      {/if}
-                      {#if (candidateCounts.get(proposal.floorTypeId) ?? 0) > 1}
-                        <div class="whitespace-normal text-small text-muted-foreground">
-                          {allFloorsHint($t('GisStandard.Fix.AllFloors', 'All {0} floors of this type become {1}. If some belong to the other choice, duplicate the type for those floors first.'), proposal)}
-                        </div>
-                      {/if}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </Table>
-          {/if}
-          {#if model.unmatched.length > 0}
-            <details class="mt-2 rounded-control border border-border px-3 py-2 text-small">
-              <summary class="cursor-pointer">{format($t('GisStandard.Fix.Unmatched', '{0} floor type(s) match no standard type: decide by hand'), model.unmatched.length)}</summary>
-              <ul class="mt-1 max-h-40 overflow-y-auto">
-                {#each model.unmatched as floorType (floorType.floorTypeId)}
-                  <li class="flex items-center justify-between gap-2 py-0.5">
-                    <span class="truncate">{floorType.name} <span class="text-muted-foreground">({floorType.floorIds.length})</span></span>
-                    <Button size="sm" variant="ghost" icon="crosshair" onclick={() => select(floorType.floorIds)}>{$t('GisStandard.Select', 'Select')}</Button>
-                  </li>
-                {/each}
-              </ul>
-            </details>
-          {/if}
-          {#snippet actions()}
-            {#if model && !model.fixBlocker && model.proposals.length > 0}
-              <Button variant="primary" icon="check" onclick={() => apply('fix')} disabled={busy || accepted.length === 0} busy={applying === 'fix'}>
-                {format($t('GisStandard.Fix.Apply', 'Apply to {0} type(s)'), accepted.length)}
-              </Button>
-            {/if}
-          {/snippet}
-        </Card>
-
-        <Card title={$t('GisStandard.Audit.Title', 'Audit')} description={$t('GisStandard.Audit.Description', 'What would need fixing by hand after a GDB export. Errors make the export come out wrong, or make it guess on a GIS_ plan; warnings make it guess elsewhere.')}>
-          {#if findings.length === 0}
-            <p class="text-small text-muted-foreground">{$t('GisStandard.Audit.Clean', 'Nothing to fix.')}</p>
-          {:else}
-            <ul class="flex flex-col divide-y divide-border">
-              {#each findings as finding, index (index)}
-                <li class="flex items-start gap-2 py-1.5 text-small">
-                  <Chip tone={severity(finding).tone}>{$t(severity(finding).key, severity(finding).fallback)}</Chip>
-                  <span class="min-w-0 flex-1"><span class="text-muted-foreground">{finding.topic}:</span> {finding.message}</span>
-                  {#if finding.elementIds.length}
-                    <Button size="sm" variant="ghost" icon="crosshair" onclick={() => select(finding.elementIds)}>
-                      {format($t('GisStandard.SelectCount', 'Select {0}'), finding.elementIds.length)}
-                    </Button>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </Card>
+        <div class="flex flex-col divide-y divide-border rounded-card border border-border bg-card">
+          {#each groups as group (group.id)}
+            {@const shown = mark(group)}
+            <ReadinessRow id={group.id} title={$t(TITLES[group.id][0], TITLES[group.id][1])} summary={summary(group)} count={shown.count} tone={shown.tone} expandable={hasBody(group, { setupLines: model.setupLines.length, fixBlocker: model.fixBlocker ?? '' })} bind:open={opened[group.id]}>
+              {#snippet actions()}
+                {#if !opened[group.id]}
+                  <!-- Apply shows only with the row open, so what it applies is in view. -->
+                {:else if group.id === 'setup' && model && model.setupLines.length > 0}
+                  <Button size="sm" variant="primary" icon="check" onclick={() => apply('setup')} disabled={busy} busy={applying === 'setup'}>
+                    {format($t('GisStandard.Setup.Apply', 'Apply {0} change(s)'), model.setupLines.length)}
+                  </Button>
+                {:else if group.id === 'floorTypes' && model && !model.fixBlocker && group.changes > 0}
+                  <Button size="sm" variant="primary" icon="check" onclick={() => apply('fix')} disabled={busy || fixCount === 0} busy={applying === 'fix'}>
+                    {format($t('GisStandard.Fix.Apply', 'Apply to {0} type(s)'), fixCount)}
+                  </Button>
+                {/if}
+              {/snippet}
+              {#if group.id === 'setup' && model.setupLines.length > 0}
+                <p class="m-0 text-small text-muted-foreground">{$t('GisStandard.Setup.Description', 'Binds the shared parameters and adds the GIS_ materials and standard floor types. Nothing is deleted and no floor changes type.')}</p>
+                <ul class="m-0 ml-4 max-h-56 list-disc overflow-y-auto text-small">
+                  {#each model.setupLines as line, index (index)}<li>{line}</li>{/each}
+                </ul>
+              {:else if group.id === 'floorTypes'}
+                {#if model.fixBlocker}
+                  <Banner tone="warning">{model.fixBlocker}</Banner>
+                {:else}
+                  <FloorTypesPanel proposals={model.proposals} unmatched={model.unmatched} standardFloorTypes={model.standardFloorTypes} bind:ticked bind:picks disabled={busy} onselect={select} />
+                {/if}
+              {/if}
+              <FindingList findings={group.findings} onselect={select} />
+            </ReadinessRow>
+          {/each}
+        </div>
       {/if}
     {/if}
   </div>

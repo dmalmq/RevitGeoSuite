@@ -38,6 +38,21 @@ public sealed class GisStandardInspectResponse
 
     /// <summary>Why Fix floor types cannot write yet, such as gis_category not bound; empty when it can.</summary>
     public string FixBlocker { get; set; } = string.Empty;
+
+    /// <summary>The standard's floor types, in its order, for picking one for an unmatched floor type.</summary>
+    public GisStandardFloorTypeItem[] StandardFloorTypes { get; set; } = Array.Empty<GisStandardFloorTypeItem>();
+}
+
+/// <summary>A floor type of the standard.</summary>
+[TsExport]
+public sealed class GisStandardFloorTypeItem
+{
+    public string Name { get; set; } = string.Empty;
+
+    public string GisCategory { get; set; } = string.Empty;
+
+    /// <summary>rachi_nai, rachi_gai or empty.</summary>
+    public string GisRestriction { get; set; } = string.Empty;
 }
 
 /// <summary>One audit finding: something that would need fixing by hand after a GDB export.</summary>
@@ -100,11 +115,14 @@ public sealed class GisAcceptedProposal
     public string StandardTypeName { get; set; } = string.Empty;
 }
 
-/// <summary>Payload of <c>gisStandard.fixFloorTypes</c>: the proposals the user accepted.</summary>
+/// <summary>Payload of <c>gisStandard.fixFloorTypes</c>: the proposals the user accepted, and the standard types picked for unmatched floor types.</summary>
 [TsExport]
 public sealed class GisFixFloorTypesRequest
 {
     public GisAcceptedProposal[] Accepted { get; set; } = Array.Empty<GisAcceptedProposal>();
+
+    /// <summary>A standard type picked by hand for a floor type that matches none; the type keeps its name.</summary>
+    public GisAcceptedProposal[] Picked { get; set; } = Array.Empty<GisAcceptedProposal>();
 }
 
 /// <summary>What <c>gisStandard.setup</c> or <c>gisStandard.fixFloorTypes</c> changed, one line per change.</summary>

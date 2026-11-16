@@ -119,6 +119,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         await Step("5", "Apply Set up model twice: the second run has nothing to do", SetupTwice);
         await Step("6", "Fix floor types with one row unticked", FixFloorTypes);
         await Step("7", "Undo Fix floor types, then Check again", UndoFix);
+        await Step("7b", "A floor type that matches nothing takes the standard type picked for it, keeps its name, and one Undo takes it back", PickForUnmatched);
         await Step("8", "Select buttons select and show the elements", SelectButtons);
         await Step("10", "Parameters: Write CSV", WriteCsv);
         await Step("11", "Parameters: read an Excel-edited CSV", ReadEditedCsv);
@@ -250,10 +251,10 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         step.Note($"DevTools port {port} (127.0.0.1), page {Shell.Page.Url}.");
         await Shell.UseEnglishAsync();
         await Shell.GoToAsync("/gis-standard");
-        step.Check(await Shell.ShowsAsync(Shell.Text("Standard version")), "The summary strip shows the standard version cell.");
-        foreach (string label in new[] { "Set up model", "Fix floor types", "Audit" })
+        step.Check(await Shell.ShowsAsync(Shell.Page.GetByTestId("readiness-answer")), "The Readiness tab answers whether the model is ready to export.");
+        foreach (string group in new[] { "setup", "levels", "floorTypes", "families", "doors", "floors" })
         {
-            step.Check(await Shell.ShowsAsync(Shell.Text(label)), $"The '{label}' card is on the page.");
+            step.Check(await Shell.ShowsAsync(Shell.Page.GetByTestId($"readiness-{group}")), $"The checklist has the '{group}' row.");
         }
 
         firstInspect = await Inspect();
@@ -267,11 +268,12 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         InspectReply model = await Inspect();
         if (model.SetupLines.Length == 0)
         {
-            step.Check(await Shell.ShowsAsync(Shell.Text($"The model is on standard version {model.StandardVersion}. Nothing to set up.")), "Says there is nothing to set up.");
+            step.Check(await Shell.ShowsAsync(Shell.Text($"On standard version {model.StandardVersion}. Nothing to set up.")), "Says there is nothing to set up.");
             step.Note("The model was already set up, so steps 3-5 have nothing to apply. Use a pristine copy that was never set up.");
             return;
         }
 
+        await OpenReadinessRow("setup");
         step.Check(await Shell.ShowsAsync(Shell.Button($"Apply {model.SetupLines.Length} change(s)")), $"Shows 'Apply {model.SetupLines.Length} change(s)'.");
         step.Note($"{model.SetupLines.Length} setup line(s), first: {model.SetupLines[0]}");
     }
@@ -286,12 +288,12 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         int seq = host.LastEvent();
+        await OpenReadinessRow("setup");
         await Shell.Button($"Apply {before.SetupLines.Length} change(s)").ClickAsync();
         step.Check(await Shell.ShowsAsync(Shell.Text("Set up model applied"), 120000), "Green banner 'Set up model applied'.");
         ExpectEvent(step, seq, "commit", SetupTransaction);
-        step.Check(await Shell.ShowsAsync(Shell.Text("Nothing to set up.")), "The Set up card now says nothing to set up.");
-        string version = $"{before.StandardVersion} / {before.StandardVersion}";
-        step.Check(await Shell.ShowsAsync(Shell.Text(version)), $"The version cell shows '{version}'.");
+        string current = $"On standard version {before.StandardVersion}. Nothing to set up.";
+        step.Check(await Shell.ShowsAsync(Shell.Text(current)), $"The set-up row now says '{current}'.");
         await Shot(step, "03-setup-applied");
     }
 
@@ -321,13 +323,14 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         int seq = host.LastEvent();
+        await OpenReadinessRow("setup");
         await Shell.Button($"Apply {before.SetupLines.Length} change(s)").ClickAsync();
         step.Check(await Shell.ShowsAsync(Shell.Text("Set up model applied"), 120000), "Set up model applied again.");
         ExpectEvent(step, seq, "commit", SetupTransaction);
         await CheckAgain();
         InspectReply after = await Inspect();
         step.Check(after.SetupLines.Length == 0, $"The second check reports nothing to do (has {after.SetupLines.Length} line(s): {string.Join("; ", after.SetupLines.Take(3))}).");
-        step.Check(await Shell.ShowsAsync(Shell.Text("Nothing to set up.")), "The card says nothing to set up.");
+        step.Check(await Shell.ShowsAsync(Shell.Text("Nothing to set up.")), "The set-up row says nothing to set up.");
     }
 
     private ProposalItem[] fixProposals = Array.Empty<ProposalItem>();
@@ -362,6 +365,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
 
         ProposalItem kept = ticked[0];
         int fixedCount = ticked.Count - 1;
+        await OpenReadinessRow("floorTypes");
         await ProposalCheckbox(kept.FloorTypeName, kept.StandardTypeName).UncheckAsync();
         int seq = host.LastEvent();
         await Shell.Button($"Apply to {fixedCount} type(s)").ClickAsync();
@@ -375,6 +379,133 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         int warningsAfter = after.FloorTypeFindings();
         step.Check(warningsAfter == warningsBefore - fixedCount, $"Floor type findings drop by {fixedCount} (were {warningsBefore}, now {warningsAfter}).");
         await Shot(step, "06-floor-types-fixed");
+    }
+
+    private const string UnmatchedFixtureName = "UITest Unmatched F6";
+
+    private async Task PickForUnmatched(StepResult step)
+    {
+        await CheckAgain();
+        InspectReply before = await Inspect();
+        (FloorTypeRow Type, string? Category)? madeUnmatched = null;
+        if (!before.Unmatched.Any(item => item.FloorIds.Length > 0))
+        {
+            // LUMINE may have no such type: rename one that has floors and is not on Fix floor types'
+            // list, and clear its gis_category, so it matches nothing.
+            HashSet<long> listed = before.Proposals.Select(proposal => proposal.FloorTypeId).ToHashSet();
+            FloorTypeRow? spare = FloorTypes().FirstOrDefault(type => type.Floors > 0 && !listed.Contains(type.Id));
+            if (!step.Check(spare != null, "A floor type with floors that Fix floor types does not list, to make it match nothing."))
+            {
+                return;
+            }
+
+            madeUnmatched = (spare!, TypeParameter(spare!.Id, "gis_category"));
+            JsonObject fixture = host.Call("fixture", new
+            {
+                renames = new[] { new { from = spare!.Name, to = UnmatchedFixtureName } },
+                values = new[] { new { id = spare.Id, name = "gis_category", value = string.Empty } },
+            });
+            step.Note($"Fixture: {spare.Name} renamed to {UnmatchedFixtureName}, gis_category cleared: {fixture["log"]?.ToJsonString()}");
+            await CheckAgain();
+            before = await Inspect();
+        }
+
+        try
+        {
+            UnmatchedItem? target = before.Unmatched.FirstOrDefault(item => item.FloorIds.Length > 0);
+            if (!step.Check(target != null, "A floor type with floors matches no standard type."))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(before.FixBlocker))
+            {
+                step.Check(false, $"Fix floor types is blocked: {before.FixBlocker}");
+                return;
+            }
+
+            await OpenReadinessRow("floorTypes");
+            ILocator picker = Shell.Page.GetByRole(AriaRole.Combobox, new() { Name = $"Standard type for {target!.Name}", Exact = true });
+            if (!step.Check(await Shell.ShowsAsync(picker), $"'{target.Name}' has a picker of the standard's floor types."))
+            {
+                return;
+            }
+
+            await picker.SelectOptionAsync(new SelectOptionValue { Index = 1 });
+            string standardName = await picker.InputValueAsync();
+            StandardFloorTypeItem? standardType = before.StandardFloorTypes?.FirstOrDefault(type => type.Name == standardName);
+            if (!step.Check(standardType != null, $"The picked {standardName} is one of the standard's floor types the page was given."))
+            {
+                return;
+            }
+
+            (string? Category, string? Restriction) Values() => (TypeParameter(target.FloorTypeId, "gis_category"), TypeParameter(target.FloorTypeId, "gis_restriction"));
+            string? NameNow() => FloorTypes().FirstOrDefault(type => type.Id == target.FloorTypeId)?.Name;
+            (string? Category, string? Restriction) old = Values();
+            int fixedCount = SingleCandidates(before).Count + 1;
+            step.Note($"Picked {standardName} ({standardType!.GisCategory}, '{standardType.GisRestriction}') for {target.Name} ({target.FloorIds.Length} floor(s), was '{old.Category}', '{old.Restriction}'); {fixedCount - 1} single-candidate type(s) stay ticked.");
+            int seq = host.LastEvent();
+            await Shell.Button($"Apply to {fixedCount} type(s)").ClickAsync();
+            step.Check(await Shell.ShowsAsync(Shell.Text($"{fixedCount} floor type(s) fixed"), 120000), $"Banner '{fixedCount} floor type(s) fixed'.");
+            ExpectEvent(step, seq, "commit", FixTransaction);
+            InspectReply after = await Inspect();
+            (string? Category, string? Restriction) now = Values();
+            step.Check(after.Unmatched.All(item => item.FloorTypeId != target.FloorTypeId), $"'{target.Name}' no longer matches nothing.");
+            step.Check(NameNow() == target.Name, $"The picked type keeps its name (now '{NameNow()}').");
+            step.Check(now.Category == standardType.GisCategory, $"gis_category is {standardType.GisCategory}, the picked type's (is '{now.Category}').");
+            step.Check((now.Restriction ?? string.Empty) == standardType.GisRestriction, $"gis_restriction is '{standardType.GisRestriction}', the picked type's (is '{now.Restriction}').");
+
+            seq = host.LastEvent();
+            host.PostCommand("undo");
+            ExpectEvent(step, seq, "undo", FixTransaction);
+            await CheckAgain();
+            InspectReply undone = await Inspect();
+            step.Check(undone.Unmatched.Any(item => item.FloorTypeId == target.FloorTypeId), $"After one Undo, '{target.Name}' matches nothing again.");
+            step.Check(Values() == old, $"After one Undo, gis_category and gis_restriction are '{old.Category}', '{old.Restriction}' again (are '{Values().Category}', '{Values().Restriction}').");
+            step.Check(NameNow() == target.Name, $"After one Undo, the type is still named {target.Name}.");
+            await Shot(step, "07b-unmatched-picked-undone");
+        }
+        finally
+        {
+            await RestoreUnmatchedFixture(step, madeUnmatched);
+        }
+    }
+
+    // Puts back the type 7b's fixture renamed and cleared, so later steps see the model as before.
+    private async Task RestoreUnmatchedFixture(StepResult step, (FloorTypeRow Type, string? Category)? made)
+    {
+        if (made is not ({ } type, var category))
+        {
+            return;
+        }
+
+        JsonObject fixture = host.Call("fixture", new
+        {
+            renames = new[] { new { from = UnmatchedFixtureName, to = type.Name } },
+            values = new[] { new { id = type.Id, name = "gis_category", value = category ?? string.Empty } },
+        });
+        step.Note($"Fixture put back: {UnmatchedFixtureName} renamed to {type.Name}, gis_category '{category}': {fixture["log"]?.ToJsonString()}");
+        step.Check(FloorTypes().FirstOrDefault(row => row.Id == type.Id)?.Name == type.Name && TypeParameter(type.Id, "gis_category") == category, $"The fixture's type is {type.Name} with gis_category '{category}' again.");
+        await CheckAgain();
+    }
+
+    /// <summary>Opens a row of the Readiness checklist (setup, floorTypes, …) if it is folded: only the first row that needs something starts open.</summary>
+    private async Task OpenReadinessRow(string id)
+    {
+        // The title button carries aria-expanded; a row with nothing to unfold has none.
+        ILocator toggle = Shell.Page.GetByTestId($"readiness-{id}").Locator($"button[aria-expanded][aria-controls='readiness-{id}-body']");
+        if (await toggle.CountAsync() > 0 && await toggle.First.GetAttributeAsync("aria-expanded") != "true")
+        {
+            await toggle.First.ClickAsync();
+        }
+    }
+
+    private async Task OpenAllReadinessRows()
+    {
+        foreach (string id in await Shell.Page.Locator("[data-testid^='readiness-']:is(section)").EvaluateAllAsync<string[]>("rows => rows.map(row => row.dataset.testid.slice('readiness-'.length))"))
+        {
+            await OpenReadinessRow(id);
+        }
     }
 
     private static List<ProposalItem> SingleCandidates(InspectReply model) =>
@@ -410,15 +541,19 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
     private async Task SelectButtons(StepResult step)
     {
         InspectReply model = await Inspect();
-        FindingItem? finding = model.Findings.FirstOrDefault(item => item.ElementIds.Length > 0);
-        if (finding == null)
+        await OpenAllReadinessRows();
+        // The first audit row on the page with a Select button, and the finding it shows.
+        ILocator row = Shell.Page.Locator("li").Filter(new() { Has = Shell.Button(new Regex(@"^Select \d+$")) }).First;
+        string shown = await row.CountAsync() > 0 ? await row.InnerTextAsync() : string.Empty;
+        FindingItem? finding = model.Findings.FirstOrDefault(item => item.ElementIds.Length > 0 && shown.Contains(item.Message, StringComparison.Ordinal));
+        if (shown.Length == 0)
         {
             step.Note("No audit row has elements to select.");
         }
-        else
+        else if (step.Check(finding != null, $"The first audit row on the page is one of the audit's findings: {shown}"))
         {
-            await Shell.Button(new Regex(@"^Select \d+$")).First.ClickAsync();
-            await ExpectSelection(step, finding.ElementIds, $"audit row '{finding.Topic}: {finding.Message}'");
+            await row.GetByRole(AriaRole.Button, new() { NameRegex = new Regex(@"^Select \d+$") }).ClickAsync();
+            await ExpectSelection(step, finding!.ElementIds, $"audit row '{finding.Topic}: {finding.Message}'");
             RevitShot(step, "08-audit-selection");
         }
 
@@ -429,8 +564,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         else
         {
             UnmatchedItem unmatched = model.Unmatched[0];
-            await Shell.Text(new Regex("match no standard type")).First.ClickAsync();
-            await Shell.Button("Select").First.ClickAsync();
+            await Shell.Page.GetByTestId("floor-types-unmatched").GetByRole(AriaRole.Button, new() { Name = "Select", Exact = true }).First.ClickAsync();
             await ExpectSelection(step, unmatched.FloorIds, $"floor type '{unmatched.Name}'");
             RevitShot(step, "08-unmatched-selection");
         }

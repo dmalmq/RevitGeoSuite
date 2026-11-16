@@ -74,6 +74,7 @@ internal sealed partial class GisStandardRun
         }
 
         int seq = host.LastEvent();
+        await OpenReadinessRow("setup");
         await Shell.Button($"Apply {before.SetupLines.Length} change(s)").ClickAsync();
         step.Check(await Shell.ShowsAsync(Shell.Text("Set up model applied"), 120000), "Banner 'Set up model applied'.");
         ExpectEvent(step, seq, "commit", SetupTransaction);
@@ -138,6 +139,7 @@ internal sealed partial class GisStandardRun
     private async Task FloorTypeProposals(StepResult step)
     {
         InspectReply model = await Inspect();
+        await OpenReadinessRow("floorTypes");
         List<string> inUse = OldNamesInUse(typesBefore);
         foreach ((string old, string renamed, string category) in Renames.Where(rename => inUse.Contains(rename.Old)))
         {
@@ -151,7 +153,7 @@ internal sealed partial class GisStandardRun
             }
         }
 
-        step.Check(await Shell.ShowsAsync(Shell.Text("old name")), "Rows carry the 'old name' chip.");
+        step.Check(await Shell.ShowsAsync(Shell.Text("renamed in the standard")), "Rows carry the 'renamed in the standard' chip.");
         step.Check(await Shell.ShowsAsync(Shell.Text(new Regex("^renames to "))), "Rows say 'renames to …'.");
 
         if (inUse.Contains(Shop))
@@ -169,18 +171,21 @@ internal sealed partial class GisStandardRun
             }
             else if (step.Check(shop.Count == 2 && outside != null && inside != null, $"{Shop} has two rows, {ShopOutside} and {ShopInside} (has {shop.Count})."))
             {
-                ILocator outsideBox = ProposalCheckbox(Shop, ShopOutside);
-                ILocator insideBox = ProposalCheckbox(Shop, ShopInside);
-                step.Check(!await outsideBox.IsCheckedAsync() && !await insideBox.IsCheckedAsync(), "Neither shop row starts ticked.");
-                await insideBox.CheckAsync();
-                await outsideBox.CheckAsync();
-                step.Check(await outsideBox.IsCheckedAsync() && !await insideBox.IsCheckedAsync(), "Ticking one shop row unticks the other.");
-                step.Check(await Shell.ShowsAsync(Shell.Text(new Regex(@"All \d+ floors of this type become"))), "The shop rows say all floors of the type follow the choice.");
+                // One row for the shop type: a choice named after it, "Not now" until a side is picked.
+                ILocator choice = Shell.Page.GetByRole(AriaRole.Radiogroup, new() { Name = Shop, Exact = true });
+                ILocator notNow = choice.GetByRole(AriaRole.Radio, new() { Name = "Not now", Exact = true });
+                ILocator outsideSide = choice.GetByRole(AriaRole.Radio, new() { Name = "Outside the gates", Exact = true });
+                ILocator insideSide = choice.GetByRole(AriaRole.Radio, new() { Name = "Inside the gates", Exact = true });
+                step.Check(await notNow.IsCheckedAsync(), "The shop type starts on 'Not now'.");
+                await insideSide.ClickAsync();
+                await outsideSide.ClickAsync();
+                step.Check(await outsideSide.IsCheckedAsync() && !await insideSide.IsCheckedAsync(), "Picking one side leaves the other unpicked.");
+                step.Check(await Shell.ShowsAsync(Shell.Text(new Regex(@"All \d+ floors of this type follow the choice"))), "The shop row says all floors of the type follow the choice.");
             }
         }
 
         await Shot(step, "F3-fix-floor-types");
-        // Single-candidate types start ticked; a two-candidate shop type counts once it is ticked above.
+        // Single-candidate types start ticked; a two-candidate shop type counts once a side is picked above.
         int types = model.Proposals.GroupBy(item => item.FloorTypeId).Count(group => group.Count() == 1) + (inUse.Contains(Shop) && shopSide == null ? 1 : 0);
         int seq = host.LastEvent();
         await Shell.Button($"Apply to {types} type(s)").ClickAsync();

@@ -102,14 +102,15 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Step | Check |
 |---|---|
-| 1 | The ribbon button opens the page. It has the summary strip and the three cards, and no error banner. |
-| 2 | The Set up model card offers "Apply N change(s)" with the same N as `gisStandard.inspect`. |
-| 3 | The banner appears, a `commit` event named `Kanizu GIS: Set up model` arrives, the version reads `1 / 1`, and the card says "Nothing to set up". |
+| 1 | The ribbon button opens the page on the Readiness tab: the answer line and the checklist rows (set up, levels, floor types, families, doors, floors), and no error banner. |
+| 2 | The Parameters and materials row (open while it has changes) offers "Apply N change(s)" with the same N as `gisStandard.inspect`. |
+| 3 | The banner appears, a `commit` event named `Kanizu GIS: Set up model` arrives, and the row says "On standard version N. Nothing to set up." |
 | 4 | Undo gives an `undo` event with that name. After Check again, the preview is the same as in step 2. |
 | 5 | A second apply, then Check again, reports nothing to do. |
 | 6 | If needed, the fixture renames two floor types first. One pre-ticked row is unticked, then "Apply to N type(s)": the banner, the commit event, the fixed types leave the table, the unticked one stays, and the floor type findings drop by N. |
 | 7 | Undo gives the `undo` event. The proposals are back. |
-| 8 | An audit row's Select button and an unmatched type's Select button each select exactly those elements in Revit. The active view, the zoom, and a Revit screenshot are recorded. |
+| 7b | If no floor type with floors matches nothing, the fixture renames one that Fix floor types does not list to "UITest Unmatched F6" and clears its gis_category. That type gets the first standard type from its picker ("Standard type for …"), with the single-candidate rows still ticked. Apply gives the banner and the commit event; the type leaves the unmatched list, keeps its name, and has the picked type's gis_category and gis_restriction. One Undo brings back both old values, keeps the name, and puts it back on the list. At the end the fixture's rename and cleared gis_category are put back, so later steps see the model as before. |
+| 8 | With every checklist row opened, the first audit row's Select button and an unmatched type's Select button each select exactly those elements in Revit. The active view, the zoom, and a Revit screenshot are recorded. |
 | 10 | Write CSV saves through the Save dialog. The file has a UTF-8 byte order mark, and the row count matches the page. With `--excel`, an Excel round trip reads back with no changes. |
 | 11 | The runner edits the CSV the way step 11 of the script does and saves it as Japanese Excel does (Shift-JIS). The preview has 3 changes, shows the Japanese name, and lists `'shop' is not a unit category`. |
 | 12 | Writing all but one change: the banner, the commit event, and the Japanese name on the floor. Undo restores the names. Reading the same edits saved as UTF-8 proposes them again. |
@@ -125,8 +126,8 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 | Step | Check |
 |---|---|
 | F1 | Set up model plans and creates none of j 喫煙所_床, j ベビー休憩室_床, j 屋外_床, j ラチ外店舗_床, or j ラチ内店舗_床 while the old-named type is in use. The model goes to standard version 2. j その他_床 has gis_category nonpublic and an empty gis_restriction. |
-| F2 | There is one "uses an old name" warning per old-named type in use, naming the new name. The j 店舗_床 warning names both shop types and says that all its floors follow the choice. If j 店舗_床 already has a gis_restriction, it names only that side, and the card shows one row for it. |
-| F3 | smoking room, Baby room, and Roof are proposed as old names that rename to the new names with the right categories, and start ticked. The two j 店舗_床 rows start unticked, and ticking one unticks the other. Ticking j ラチ外店舗_床 and applying gives the banner, the commit event, and a "Renamed X to Y" line for each type. |
+| F2 | There is one "uses an old name" warning per old-named type in use, naming the new name. The j 店舗_床 warning names both shop types and says that all its floors follow the choice. If j 店舗_床 already has a gis_restriction, it names only that side, and the Floor types row shows one tick for it. |
+| F3 | smoking room, Baby room, and Roof are proposed as old names that rename to the new names with the right categories, and start ticked. j 店舗_床 is one row whose choice (named after the type) starts on "Not now"; picking "Inside the gates" then "Outside the gates" leaves only Outside picked. Picking Outside (j ラチ外店舗_床) and applying gives the banner, the commit event, and a "Renamed X to Y" line for each type. |
 | F4 | Each renamed type keeps its element id and its floor count in Revit. |
 | F5 | After Check again, no old-name warning is left and nothing more is proposed for those types. Set up model now offers to create j ラチ内店舗_床. |
 | F6 | The export's unit tables have shop units with restriction rachi_gai and roof units with category unenclosedarea. |
