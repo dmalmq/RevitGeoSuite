@@ -86,7 +86,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g3-guess` or `undo-probe`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g3-guess`, `g4-guard` or `undo-probe`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -373,6 +373,21 @@ It writes `model-facts.md` and `model-facts.json` into the run folder as well as
 - G3.5 does the same with "UITest Floor G3", of the Floors category, which must be an error that says it is a floor made as a family. If Revit refuses the Floors category for a loadable family, G3.5 is reported as not run, with Revit's message; then the floor-family rule is proven only by the core tests and a hand-drawn in-place floor. Any other failure of `placeFamily` fails the step.
   - The Revit API cannot make a Revit ramp or an in-place floor. For those, someone draws both on a copy, and G3.1 then lists them. When G3.1 finds none, it says the rule was not exercised.
 - G3.6 exports the `GIS_` plan of G3.2's level. The export must ask first, and the gate's list of errors must hold G3.2's floor type error word for word; the step then ticks the box, exports anyway, and expects the export to finish.
+
+## The g4-guard scenario
+
+`--scenario g4-guard --model <file>` checks the Revit warning RevitGeoSuite raises when a floor or family outside the standard is placed or re-typed on a level with a `GIS_` plan (G4). Run it with `-RgsBuild` and `-FloorPlanDataSandbox` on a detached copy, with RevitGeoSuite in English: the guard's texts are read in the language RevitGeoSuite starts in, and the checks match the English ones. The test host's fixture places elements in its own transaction and logs each Revit warning it takes off ("removed Revit warning: …"), so the guard's warning shows in that log.
+
+Doors are not guarded yet. Nearly every door type lacks `gis_door` today, so every door placed would warn; they come back once the GIS standard page can set `gis_door` from its row (F6).
+
+- G4.0 runs Set up model when the copy has not had it.
+- G4.1 copies a floor in place on a level with a `GIS_` plan, picking a floor the audit does not name under "floor types". No guard warning may appear.
+- G4.2 clears `gis_category` on that floor's type. Editing the type must not warn. Copying the floor again must log the warning "This floor's type has no unit category of the Kanizu GIS standard …".
+- G4.3 re-types another floor on such a level, of another type, to that type with the test host's fixture `retype`. The commit must log the same warning.
+- G4.4 has the test host's `placeFamily` command place a box family, "UITest Escalator G4", a Generic Model, on that floor's level. It must warn "This family is not a standard escalator family (j エスカレータ-lightweight, …)".
+- G4.5 places "UITest Floor G4", of the Floors category, the same way. It must warn "This floor is made as a family …". If Revit refuses the Floors category for a loadable family, the step is reported as not run, with Revit's message.
+- G4.6 copies the floor ten times in one fixture and notes the time. One warning must be logged for the ten floors.
+- G4.7 is a probe. The test host's `guardProbe` copies the floor once more, keeps the guard's warning (no fixture deletes it), and reads the model's stored warnings (`Document.GetWarnings`) three times: after the commit; in a copy saved under the run folder and reopened; and after `gis_category` is set back on the type. The notes give each list. It runs last, because it saves this run's copy under the run folder. A model reopened in the same Revit still has the guard's warning definitions registered, so the probe cannot show what a colleague without RevitGeoSuite sees.
 
 ## The georef-read scenario
 

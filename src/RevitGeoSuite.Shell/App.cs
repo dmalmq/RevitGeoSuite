@@ -20,6 +20,7 @@ public sealed class App : IExternalApplication
         EnsureRibbonTab(application);
         PushButton? standardButton = AddWebShellButtons(application);
         GisStandardNotifier.Instance.Attach(application, standardButton);
+        StandardGuardUpdater.Register(application);
 
         return Result.Succeeded;
     }
@@ -27,6 +28,7 @@ public sealed class App : IExternalApplication
     public Result OnShutdown(UIControlledApplication application)
     {
         GisStandardNotifier.Instance.Detach(application);
+        StandardGuardUpdater.Unregister(application);
         return Result.Succeeded;
     }
 

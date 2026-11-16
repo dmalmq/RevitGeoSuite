@@ -79,6 +79,15 @@ internal sealed class Commands
                         Convert.ToDouble(request["y"], CultureInfo.InvariantCulture)),
                     Slow),
                 "instances" => api.Run(app => FamilyFixtures.Instances(app, Text(request, "category")), Quick),
+                "guardProbe" => api.Run(
+                    app => GuardProbe.Run(
+                        app,
+                        root,
+                        Convert.ToInt64(request["floorId"], CultureInfo.InvariantCulture),
+                        Convert.ToInt64(request["typeId"], CultureInfo.InvariantCulture),
+                        Text(request, "gisCategory"),
+                        Text(request, "path")),
+                    Slow),
                 "fileDialog" => Win32Dialogs.FillFileDialog(TestRoot.Require(root, Text(request, "path")), Milliseconds(request)),
                 "windows" => Win32Dialogs.List(),
                 "closeDialogs" => Win32Dialogs.CloseAll(Milliseconds(request), Longs(request, "handles")),
@@ -513,6 +522,7 @@ internal sealed class Commands
         long[] copies = Longs(request, "copyInPlace");
         List<Dictionary<string, object?>> openings = Objects(request, "openingInEastBand");
         long[] deletions = Longs(request, "delete");
+        List<Dictionary<string, object?>> retypes = Objects(request, "retype");
         Dictionary<string, object?>? groupCopy = request.TryGetValue("groupCopy", out object? copy) ? copy as Dictionary<string, object?> : null;
         return api.Run(app =>
         {
@@ -561,6 +571,15 @@ internal sealed class Commands
             }
 
             log.AddRange(ViewCommands.CopyInPlace(document, copies));
+            foreach (Dictionary<string, object?> retype in retypes)
+            {
+                long id = Convert.ToInt64(retype["id"], CultureInfo.InvariantCulture);
+                long typeId = Convert.ToInt64(retype["typeId"], CultureInfo.InvariantCulture);
+                Element element = document.GetElement(new ElementId(id)) ?? throw new ArgumentException($"No element {id}.");
+                element.ChangeTypeId(new ElementId(typeId));
+                log.Add($"retyped {id} to {typeId}");
+            }
+
             foreach (long id in deletions)
             {
                 ICollection<ElementId> gone = document.Delete(new ElementId(id));
