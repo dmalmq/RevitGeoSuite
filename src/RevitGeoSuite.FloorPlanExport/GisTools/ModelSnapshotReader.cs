@@ -73,7 +73,8 @@ public static class ModelSnapshotReader
                 level.Name ?? string.Empty,
                 ReadInteger(level, GisSharedParameters.Ordinal),
                 ReadText(level, GisSharedParameters.ShortName),
-                levelsWithFloors.Contains(level.Id.Value)))
+                levelsWithFloors.Contains(level.Id.Value),
+                level.Elevation))
             .ToList();
 
         return new ModelSnapshot(

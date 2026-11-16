@@ -348,6 +348,28 @@ public static class ExportViewPlanner
             RepairFor(snapshot.Template));
     }
 
+    /// <summary>
+    /// A <c>GIS_</c> plan for one level, whether or not it holds floors: a finding's Fix for a level
+    /// that stairs or escalators end on. Brings the template if there is none and the level's
+    /// <c>level_id</c> if it has none; nothing else Set up model would do. Empty when the level
+    /// already has a <c>GIS_</c> plan or is not in the model.
+    /// </summary>
+    public static ExportViewPlan PlanFor(ExportViewSnapshot snapshot, long levelId)
+    {
+        ExportViewLevel? level = snapshot.Levels.FirstOrDefault(entry => entry.ElementId == levelId);
+        if (level is null || snapshot.PlanViews.Any(view => view.IsGisView && view.LevelId == levelId))
+        {
+            return new ExportViewPlan(false, Array.Empty<NewExportView>(), Array.Empty<ExportViewCrop>(), Array.Empty<ExportViewLevel>());
+        }
+
+        string name = FreeName(GisModelFile.GisViewPrefix + level.Name, new HashSet<string>(snapshot.ViewNames, StringComparer.OrdinalIgnoreCase));
+        return new ExportViewPlan(
+            !snapshot.HasTemplate,
+            new[] { new NewExportView(level.ElementId, level.Name, name) },
+            Array.Empty<ExportViewCrop>(),
+            level.HasLevelId ? Array.Empty<ExportViewLevel>() : new[] { level });
+    }
+
     /// <summary>The owned visibility <paramref name="template"/> has lost; null when it has lost none or there is no template.</summary>
     public static TemplateRepair? RepairFor(ExportTemplate? template)
     {

@@ -17,6 +17,7 @@ public static class GisStandardWriter
 {
     public const string SetupTransactionName = "Kanizu GIS: Set up model";
     public const string FixTransactionName = "Kanizu GIS: Fix floor types";
+    public const string FindingFixTransactionName = "Kanizu GIS: Fix";
     public const string ParametersTransactionName = "Kanizu GIS: Parameters";
     public const string DriftTransactionName = "Kanizu GIS: Review GDB edits";
 
@@ -120,6 +121,55 @@ public static class GisStandardWriter
             }
         });
         return (log, skipped);
+    }
+
+    /// <summary>
+    /// A finding's Fix: writes its values in one transaction. A whole number parameter left empty
+    /// is skipped and listed, because Revit has no empty whole number to write.
+    /// </summary>
+    public static (IReadOnlyList<string> Log, IReadOnlyList<string> Skipped) ApplyFix(Document document, IReadOnlyList<GisFixWrite> writes)
+    {
+        RequireOwnable(document, writes.Select(write => write.ElementId));
+        List<string> log = new();
+        List<string> skipped = new();
+        InTransaction(document, FindingFixTransactionName, log, () =>
+        {
+            foreach (GisFixWrite write in writes)
+            {
+                Parameter? parameter = document.GetElement(new ElementId(write.ElementId))?.LookupParameter(write.Parameter);
+                if (parameter == null || parameter.IsReadOnly)
+                {
+                    skipped.Add($"Skipped {write.Label()}: the parameter is missing or read-only.");
+                    continue;
+                }
+
+                if (parameter.StorageType == StorageType.Integer)
+                {
+                    if (!int.TryParse(write.NewValue, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out int number))
+                    {
+                        skipped.Add($"Skipped {write.Label()}: the parameter takes a whole number.");
+                        continue;
+                    }
+
+                    parameter.Set(number);
+                }
+                else
+                {
+                    parameter.Set(write.NewValue);
+                }
+
+                log.Add(write.Label());
+            }
+        });
+        return (log, skipped);
+    }
+
+    /// <summary>A finding's Fix that adds a <c>GIS_</c> plan for one level, in one transaction.</summary>
+    public static IReadOnlyList<string> AddPlan(Document document, ExportViewPlan plan)
+    {
+        List<string> log = new();
+        InTransaction(document, FindingFixTransactionName, log, () => ExportViewSetup.Apply(document, plan, log));
+        return log;
     }
 
     /// <summary>

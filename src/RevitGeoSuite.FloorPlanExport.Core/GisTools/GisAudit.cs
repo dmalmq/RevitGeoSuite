@@ -17,13 +17,14 @@ public enum GisAuditSeverity
 /// <summary>One thing that would need fixing by hand after a GDB export.</summary>
 public sealed class GisAuditFinding
 {
-    public GisAuditFinding(GisAuditSeverity severity, string topic, string message, IEnumerable<long>? elementIds = null, bool exportsByGuess = false)
+    public GisAuditFinding(GisAuditSeverity severity, string topic, string message, IEnumerable<long>? elementIds = null, bool exportsByGuess = false, GisFix? fix = null)
     {
         Severity = severity;
         Topic = topic;
         Message = message;
         ElementIds = (elementIds ?? Array.Empty<long>()).ToList();
         ExportsByGuess = exportsByGuess;
+        Fix = fix;
     }
 
     public GisAuditSeverity Severity { get; }
@@ -42,6 +43,9 @@ public sealed class GisAuditFinding
     /// error (<see cref="ExportAudit.RaiseGuessesOnGisPlans"/>).
     /// </summary>
     public bool ExportsByGuess { get; }
+
+    /// <summary>What the finding's Fix button does, or null when it is fixed by hand or by its group's own Apply.</summary>
+    public GisFix? Fix { get; }
 }
 
 /// <summary>
@@ -272,6 +276,10 @@ public static class GisAudit
 
     private static IEnumerable<GisAuditFinding> AuditLevels(ModelSnapshot snapshot)
     {
+        // The ordinal the export gives a level without one: the Fix suggests that number.
+        IReadOnlyDictionary<long, int> exported = LevelOrdinals.Resolve(
+            snapshot.Levels.Select(level => new LevelOrdinalInput(level.ElementId, level.Name, level.ElevationFeet, level.Ordinal)),
+            new HashSet<long>()).Ordinals;
         foreach (LevelInfo level in snapshot.Levels)
         {
             if (!level.HasFloors)
@@ -296,7 +304,8 @@ public static class GisAudit
                     GisAuditSeverity.Warning,
                     "levels",
                     $"Level {level.Name} has no {string.Join(" or ", missing)}. The export counts a missing ordinal from the other levels and leaves a missing short_name empty.",
-                    new[] { level.ElementId });
+                    new[] { level.ElementId },
+                    fix: LevelFix(level, exported.TryGetValue(level.ElementId, out int ordinal) ? ordinal : null));
             }
         }
 
@@ -310,6 +319,29 @@ public static class GisAudit
                 withFloors.Select(level => level.ElementId));
         }
     }
+
+    // Writes what the export would use for a missing ordinal and the level's name as its short_name,
+    // both editable, so applying makes the export's guess explicit or corrects it.
+    private static GisFix LevelFix(LevelInfo level, int? ordinal)
+    {
+        List<GisFixWrite> writes = new();
+        if (level.Ordinal is null)
+        {
+            writes.Add(new GisFixWrite(level.ElementId, level.Name, GisSharedParameters.Ordinal, string.Empty, ordinal?.ToString(CultureInfo.InvariantCulture) ?? string.Empty, editable: true, wholeNumber: true));
+        }
+
+        if (level.ShortName.Length == 0)
+        {
+            writes.Add(new GisFixWrite(level.ElementId, level.Name, GisSharedParameters.ShortName, string.Empty, level.Name, editable: true));
+        }
+
+        return GisFix.Write("level:" + level.ElementId.ToString(CultureInfo.InvariantCulture), writes);
+    }
+
+    private static GisFix KindFix(FamilyTypeInfo familyType, string name, string kind) =>
+        GisFix.Write(
+            "kind:" + familyType.ElementId.ToString(CultureInfo.InvariantCulture),
+            new[] { new GisFixWrite(familyType.ElementId, name, GisSharedParameters.GisKind, familyType.GisKind, kind) });
 
     private static IEnumerable<GisAuditFinding> AuditFamilies(ModelSnapshot snapshot, GisToolStandard standard, ISet<string> mappedFamilies)
     {
@@ -377,7 +409,8 @@ public static class GisAudit
                 GisAuditSeverity.Error,
                 "families",
                 $"{name} is a standard {listed.Kind} family, but its gis_kind says {kind}. The export follows gis_kind. Set gis_kind to {listed.Kind} on the type.",
-                familyType.InstanceIds);
+                familyType.InstanceIds,
+                fix: KindFix(familyType, name, listed.Kind));
             yield break;
         }
 
@@ -393,7 +426,9 @@ public static class GisAudit
                 GisAuditSeverity.Warning,
                 "families",
                 $"{name} is a standard {listed.Kind} family, but its type has no {string.Join(" or ", missing)}. The export finds it by its family name; fill {fill} on the type.",
-                familyType.InstanceIds);
+                familyType.InstanceIds,
+                // Only gis_kind has a value the list knows; the other parameters are filled by hand.
+                fix: missing.Contains(GisSharedParameters.GisKind) ? KindFix(familyType, name, listed.Kind) : null);
         }
     }
 
