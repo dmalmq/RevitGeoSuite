@@ -371,6 +371,8 @@ It writes `model-facts.md` and `model-facts.json` into the run folder as well as
 - F1.2 reads `station.send.getState` for `station/` (a station folder, and the document key the run must send back), then sends through `station.send.run`. It expects the changes counted, a new version with a GeoPackage, `tiles/levels.json` and `tiles/rooms.json`, and no tileset or GLB. It expects a manifest without `tiles.tileset` or `export`, the Cesium export's model id, and nothing changed. Every `levelMap` level must be in `levels.json` with the same UniqueId and the same height above TP as in the Cesium export, within 1 cm, and at least one level must be compared.
 - F1.3 opens `#/send/now`, as the ribbon button does. It expects the page to send without stopping (the copy has no audit errors after Set up model), one new version, "Nothing changed since the last send." and the address back at `#/send`.
 - F1.4 sets `j ホーム_床` to `walkway`. It expects that to be an audit error, and the page to stop with no new version. After Send anyway, it expects only edited elements and a single changed layer, Units.
+- F1.5 sends with another model's document key and expects "Another model is active now" and no version. It then starts a send, waits for its staging folder (`revit/.tmp-*`) to show, and asks for a second send, which must be refused as busy; exactly one new version results.
+- F1.6 puts a file where this model's folder goes in a new folder `station-broken/`, and sends there with the new folder confirmed. The send records the new folder, exports, and cannot publish. It expects the send to fail without a restore error, the model to point at `station/` again, and nothing left in `station-broken/revit/` but the file.
 
 ## The georef-read scenario
 

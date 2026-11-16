@@ -170,10 +170,11 @@ public sealed class StationSendRunHandler : IRpcHandler
             StationSend.Step step;
             CesiumPackageManifest manifest;
             CesiumPackageLayout layout;
+            var attempt = new StationSend.Attempt();
             try
             {
                 step = await RevitContext.Instance
-                    .InvokeWithDocumentAsync(document => StationSend.Run(document, documentKey, stationFolder, staging, warnings, ct))
+                    .InvokeWithDocumentAsync(document => StationSend.Run(document, documentKey, stationFolder, staging, attempt, warnings, ct))
                     .ConfigureAwait(false);
 
                 progress.Report(new JobProgress { Phase = "manifest", Percent = 80, Message = Text("Send.Progress.Manifest") });
@@ -182,10 +183,19 @@ public sealed class StationSendRunHandler : IRpcHandler
             }
             catch (Exception ex)
             {
-                string? restoreFailure = await RestoreFolderAsync(documentKey, before, stationFolder).ConfigureAwait(false);
+                // The restore is its own invoke, after the export's transactions have ended. Only a
+                // send that got as far as recording the folder has anything to put back.
+                string? restoreFailure = attempt.Recorded
+                    ? await RestoreFolderAsync(documentKey, before, stationFolder).ConfigureAwait(false)
+                    : null;
                 if (restoreFailure is null)
                 {
                     throw;
+                }
+
+                if (ex is OperationCanceledException)
+                {
+                    throw new OperationCanceledException($"{ex.Message} {restoreFailure}", ex, ct);
                 }
 
                 throw new InvalidOperationException($"{ex.Message} {restoreFailure}", ex);
@@ -197,6 +207,14 @@ public sealed class StationSendRunHandler : IRpcHandler
             try
             {
                 step.Gis.ExportResult.CommitPendingBaseline(staging.RootDirectory, layout.RootDirectory);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                warnings.Add(string.Format(Text("Send.Warning.BaselineNotSaved"), ex.GetType().Name + ": " + ex.Message));
+            }
+
+            try
+            {
                 string? previous = CesiumStationFolder.PreviousVersion(layout.RootDirectory);
                 GisPackageChanges changes = GisPackageChanges.Compare(
                     previous is null ? null : new CesiumPackageLayout(previous).GisDirectory,
@@ -283,7 +301,13 @@ internal static class StationSend
         return new ModelIdentityService().RecordStationFolder(document, folder, warnings);
     }
 
-    public static Step Run(Document document, string documentKey, string stationFolder, CesiumPackageLayout staging, List<string> warnings, CancellationToken ct)
+    /// <summary>How far a send got on Revit's side: whether the model now records the new folder.</summary>
+    internal sealed class Attempt
+    {
+        public bool Recorded;
+    }
+
+    public static Step Run(Document document, string documentKey, string stationFolder, CesiumPackageLayout staging, Attempt attempt, List<string> warnings, CancellationToken ct)
     {
         RequireDocument(document, documentKey);
 
@@ -297,7 +321,15 @@ internal static class StationSend
         // Resolve first: a model without a georeference fails here, before anything is written.
         var (coordinator, reference, _) = Tiles3DExportSupport.Resolve(document, handle, currentState, info, "whole", null);
 
-        new ModelIdentityService().RecordStationFolder(document, stationFolder, warnings);
+        // The export reads gis-model.json from the recorded folder; if the model cannot record this
+        // one (read-only, busy), it would export with the old folder's settings into the new folder.
+        var recordWarnings = new List<string>();
+        if (!new ModelIdentityService().RecordStationFolder(document, stationFolder, recordWarnings))
+        {
+            throw new InvalidOperationException(string.Format(UiLocalizer.Instance.Get("Send.Error.RecordFailed"), stationFolder, string.Join(" ", recordWarnings)).Trim());
+        }
+
+        attempt.Recorded = true;
         GisStepResult gis = CesiumExportSupport.RunGisExport(document, profileName, staging.GisDirectory, "station", warnings, ct);
 
         // The levels the GIS export used, by UniqueId, each with its count of features.
