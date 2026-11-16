@@ -106,6 +106,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         new("c4-waiting", "GDB edits waiting in the station's drift file show on the GIS standard button and the export page, and go once applied (C4).", run => run.WaitingSteps()),
         new("c8-network", "the Network tab shows Kanizu's walking network in Revit without a transaction (C8).", run => run.NetworkSteps()),
         new("g3-guess", "guesses on GIS_ plans are errors: the copy's counts, then a floor type without gis_category and a door type without gis_door (G3).", run => run.GuessSteps()),
+        new("f6b-fixes", "each kind of Fix on a finding applied from its row on the copy, and one Undo takes each back (F6b).", run => run.FixSteps()),
         new("g4-guard", "the Revit warning when a floor or family outside the standard is placed on a level with a GIS_ plan, and none for a standard one (G4).", run => run.GuardSteps()),
         new("audit-counts", "the audit's findings on a copy before and after Set up model, counted by topic, with every family and floor type finding (audit-counts.md); for G2 and G7.", run => run.AuditCountsSteps()),
         new("h4-shared-rules", "every PC exports the same GIS package from the station's gis-rules.json (H4); needs Run-UiTests.ps1 -FloorPlanDataSandbox.", run => run.SharedRulesSteps()),

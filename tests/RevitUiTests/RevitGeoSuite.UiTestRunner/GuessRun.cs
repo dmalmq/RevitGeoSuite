@@ -238,4 +238,4 @@ internal sealed partial class GisStandardRun
     }
 }
 
-internal sealed record InstanceRow(long Id, string Class, long LevelId, bool? InPlace, bool Demolished, string? DesignOption);
+internal sealed record InstanceRow(long Id, string Class, long LevelId, bool? InPlace, bool Demolished, string? DesignOption, long? SymbolId = null, string? Family = null, string? Type = null);

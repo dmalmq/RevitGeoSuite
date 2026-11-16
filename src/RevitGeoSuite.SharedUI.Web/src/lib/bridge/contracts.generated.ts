@@ -427,8 +427,15 @@ export interface GisAcceptedProposal {
   standardTypeName: string
 }
 
+export interface GisApplyFixRequest {
+  fixId: string
+  preview: string[]
+  writes: GisFixWriteItem[]
+}
+
 export interface GisAuditFindingItem {
   elementIds: number[]
+  fix?: GisFixItem
   message: string
   severity: string
   topic: string
@@ -509,6 +516,25 @@ export interface GisExportRequest {
 export interface GisFixFloorTypesRequest {
   accepted: GisAcceptedProposal[]
   picked: GisAcceptedProposal[]
+}
+
+export interface GisFixItem {
+  id: string
+  kind: string
+  levelId: number
+  levelName: string
+  preview: string[]
+  writes: GisFixWriteItem[]
+}
+
+export interface GisFixWriteItem {
+  editable: boolean
+  elementId: number
+  elementName: string
+  newValue: string
+  oldValue: string
+  parameter: string
+  wholeNumber: boolean
 }
 
 export interface GisFloorTypeProposalItem {
@@ -1315,6 +1341,7 @@ export interface RpcMethods {
   'gisParameters.apply': { request: GisParametersApplyRequest; response: GisStandardApplyResponse }
   'gisParameters.read': { request: GisStandardEmptyRequest; response: GisParametersReadResponse }
   'gisParameters.write': { request: GisStandardEmptyRequest; response: GisParametersWriteResponse }
+  'gisStandard.applyFix': { request: GisApplyFixRequest; response: GisStandardApplyResponse }
   'gisStandard.fixFloorTypes': { request: GisFixFloorTypesRequest; response: GisStandardApplyResponse }
   'gisStandard.inspect': { request: GisStandardEmptyRequest; response: GisStandardInspectResponse }
   'gisStandard.select': { request: GisSelectElementsRequest; response: GisSelectElementsResponse }

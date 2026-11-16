@@ -99,13 +99,14 @@ public sealed class MaterialInfo
 
 public sealed class LevelInfo
 {
-    public LevelInfo(long elementId, string name, int? ordinal = null, string? shortName = null, bool hasFloors = true)
+    public LevelInfo(long elementId, string name, int? ordinal = null, string? shortName = null, bool hasFloors = true, double elevationFeet = 0)
     {
         ElementId = elementId;
         Name = name ?? string.Empty;
         Ordinal = ordinal;
         ShortName = shortName ?? string.Empty;
         HasFloors = hasFloors;
+        ElevationFeet = elevationFeet;
     }
 
     public long ElementId { get; }
@@ -117,6 +118,9 @@ public sealed class LevelInfo
     public string ShortName { get; }
 
     public bool HasFloors { get; }
+
+    /// <summary>Level.Elevation, as the export's ordinal count reads it.</summary>
+    public double ElevationFeet { get; }
 }
 
 /// <summary>A family type of the generic model, specialty or mechanical equipment category placed in the model.</summary>

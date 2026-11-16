@@ -17,6 +17,7 @@ public static class GisStandardWriter
 {
     public const string SetupTransactionName = "Kanizu GIS: Set up model";
     public const string FixTransactionName = "Kanizu GIS: Fix floor types";
+    public const string FindingFixTransactionName = "Kanizu GIS: Fix";
     public const string ParametersTransactionName = "Kanizu GIS: Parameters";
     public const string DriftTransactionName = "Kanizu GIS: Review GDB edits";
 
@@ -120,6 +121,69 @@ public static class GisStandardWriter
             }
         });
         return (log, skipped);
+    }
+
+    /// <summary>
+    /// A finding's Fix: writes its values in one transaction. A whole number parameter left empty
+    /// is skipped and listed, because Revit has no empty whole number to write.
+    /// </summary>
+    public static (IReadOnlyList<string> Log, IReadOnlyList<string> Skipped) ApplyFix(Document document, IReadOnlyList<GisFixWrite> writes)
+    {
+        RequireOwnable(document, writes.Select(write => write.ElementId));
+        List<string> log = new();
+        List<string> skipped = new();
+        // A write Revit refuses is skipped and named; when every write is skipped, nothing is
+        // committed, so there is no empty step to undo.
+        InTransaction(document, FindingFixTransactionName, log, () =>
+        {
+            foreach (GisFixWrite write in writes)
+            {
+                if (Write(document, write) is string why)
+                {
+                    skipped.Add($"Skipped {write.Label()}: {why}");
+                }
+                else
+                {
+                    log.Add(write.Label());
+                }
+            }
+        }, commit: () => log.Count > 0);
+        return (log, skipped);
+    }
+
+    // Null when the value was written, else why not.
+    private static string? Write(Document document, GisFixWrite write)
+    {
+        Parameter? parameter = document.GetElement(new ElementId(write.ElementId))?.LookupParameter(write.Parameter);
+        if (parameter == null || parameter.IsReadOnly)
+        {
+            return "the parameter is missing or read-only.";
+        }
+
+        if (parameter.StorageType == StorageType.Integer)
+        {
+            if (!int.TryParse(write.NewValue, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out int number))
+            {
+                return "the parameter takes a whole number.";
+            }
+
+            return parameter.Set(number) ? null : "Revit did not take the value.";
+        }
+
+        if (parameter.StorageType != StorageType.String)
+        {
+            return $"the parameter holds a {parameter.StorageType}, not text.";
+        }
+
+        return parameter.Set(write.NewValue) ? null : "Revit did not take the value.";
+    }
+
+    /// <summary>A finding's Fix that adds a <c>GIS_</c> plan for one level, in one transaction.</summary>
+    public static IReadOnlyList<string> AddPlan(Document document, ExportViewPlan plan)
+    {
+        List<string> log = new();
+        InTransaction(document, FindingFixTransactionName, log, () => ExportViewSetup.Apply(document, plan, log));
+        return log;
     }
 
     /// <summary>
@@ -368,7 +432,7 @@ public static class GisStandardWriter
         new FilteredElementCollector(document).OfClass(typeof(Material)).FirstOrDefault(material => material.Name == name)?.Id.Value;
 
     /// <summary>Runs <paramref name="work"/> in one transaction. Revit's warnings join <paramref name="log"/> instead of a dialog; an error rolls it back and throws.</summary>
-    private static void InTransaction(Document document, string name, List<string> log, Action work)
+    private static void InTransaction(Document document, string name, List<string> log, Action work, Func<bool>? commit = null)
     {
         using Transaction transaction = new(document, name);
         TransactionFailures failures = TransactionFailures.Attach(transaction);
@@ -376,6 +440,12 @@ public static class GisStandardWriter
         try
         {
             work();
+            if (commit != null && !commit())
+            {
+                transaction.RollBack();
+                return;
+            }
+
             failures.Commit(transaction);
             log.AddRange(failures.WarningLines().Select(line => "  " + line));
         }

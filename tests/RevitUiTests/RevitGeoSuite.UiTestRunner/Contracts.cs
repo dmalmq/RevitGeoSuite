@@ -17,7 +17,15 @@ internal sealed record InspectReply(
     public int FloorTypeFindings() => Findings.Count(finding => finding.Topic.Contains("floor type", StringComparison.OrdinalIgnoreCase));
 }
 
-internal sealed record FindingItem(string Severity, string Topic, string Message, long[] ElementIds);
+internal sealed record FindingItem(string Severity, string Topic, string Message, long[] ElementIds, FixItem? Fix = null);
+
+// F6b: a finding's Fix (write, setup or addPlan) and the values it writes.
+internal sealed record FixItem(string Id, string Kind, FixWriteItem[] Writes, long LevelId, string LevelName, string[]? Preview = null);
+
+internal sealed record FixWriteItem(long ElementId, string ElementName, string Parameter, string OldValue, string NewValue, bool Editable, bool WholeNumber = false);
+
+// gisStandard.applyFix's reply.
+internal sealed record ApplyReply(string[] Log, string[] Skipped);
 
 // NewName and Reason "oldName" come with floor type standard version 2 (RevitGeoSuite #52); older builds leave them empty.
 internal sealed record ProposalItem(long FloorTypeId, string FloorTypeName, int FloorCount, string? StandardTypeName = null, string? GisCategory = null, string? NewName = null, string? Reason = null);

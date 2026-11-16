@@ -68,6 +68,66 @@ public sealed class GisAuditFindingItem
     public string Message { get; set; } = string.Empty;
 
     public long[] ElementIds { get; set; } = Array.Empty<long>();
+
+    /// <summary>What the finding's Fix button does; null when it has none.</summary>
+    public GisFixItem? Fix { get; set; }
+}
+
+/// <summary>A finding's fix: parameter values to write (shown first), Set up model, or a GIS_ plan to add.</summary>
+[TsExport]
+public sealed class GisFixItem
+{
+    /// <summary>Names the finding's subject; <c>gisStandard.applyFix</c> reads the model again and applies the fix of that id.</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>write, setup or addPlan.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public GisFixWriteItem[] Writes { get; set; } = Array.Empty<GisFixWriteItem>();
+
+    /// <summary>The level an addPlan fix adds a GIS_ plan for, else 0.</summary>
+    public long LevelId { get; set; }
+
+    /// <summary>The name of that level, for the button.</summary>
+    public string LevelName { get; set; } = string.Empty;
+
+    /// <summary>What the fix does beyond its writes, shown before Apply: an added plan's steps, or which level keeps a shared id.</summary>
+    public string[] Preview { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>One value a fix writes. An editable one is a suggestion the user can change before applying.</summary>
+[TsExport]
+public sealed class GisFixWriteItem
+{
+    public long ElementId { get; set; }
+
+    public string ElementName { get; set; } = string.Empty;
+
+    public string Parameter { get; set; } = string.Empty;
+
+    public string OldValue { get; set; } = string.Empty;
+
+    public string NewValue { get; set; } = string.Empty;
+
+    public bool Editable { get; set; }
+
+    /// <summary>The value must be a whole number (an ordinal).</summary>
+    public bool WholeNumber { get; set; }
+}
+
+/// <summary>
+/// Payload of <c>gisStandard.applyFix</c>: the fix's id and everything the user was shown, so the
+/// handler applies it only when a fresh read of the model gives the same fix: every write (element,
+/// parameter, old value, and the new value as shown or edited) and the preview lines.
+/// </summary>
+[TsExport]
+public sealed class GisApplyFixRequest
+{
+    public string FixId { get; set; } = string.Empty;
+
+    public GisFixWriteItem[] Writes { get; set; } = Array.Empty<GisFixWriteItem>();
+
+    public string[] Preview { get; set; } = Array.Empty<string>();
 }
 
 /// <summary>Fix floor types' proposal: give a floor type the category of the standard type it matches.</summary>

@@ -7,7 +7,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { request } from '$lib/bridge/rpc'
-  import type { GisStandardApplyResponse, GisStandardInspectResponse } from '$lib/bridge/contracts.generated'
+  import type { GisFixItem, GisFixWriteItem, GisStandardApplyResponse, GisStandardInspectResponse } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
   import { Banner, Button, Chip, Segmented, type Tone } from '$lib/kit'
   import { ToolSheet, format, refreshReadiness } from '$lib/shell'
@@ -27,9 +27,9 @@
 
   let model = $state<GisStandardInspectResponse | null>(null)
   let loading = $state(false)
-  let applying = $state<'setup' | 'fix' | null>(null)
+  let applying = $state<'setup' | 'fix' | 'finding' | null>(null)
   let error = $state<string | null>(null)
-  let applied = $state<{ title: string; log: string[]; skipped: string[] } | null>(null)
+  let applied = $state<{ title: string; log: string[]; skipped: string[]; skippedTitle?: string } | null>(null)
   let ticked = $state<Set<string>>(new Set())
   let picks = $state<Map<number, string>>(new Map())
   let opened = $state<Partial<Record<GroupId, boolean>>>({})
@@ -97,6 +97,35 @@
       applying = null
     }
     await inspect()
+  }
+
+  // A finding's own fix: the model is read again on the Revit side, and a fix whose finding has
+  // gone is refused there instead of applied stale.
+  async function applyFix(fixItem: GisFixItem, values: GisFixWriteItem[]) {
+    applying = 'finding'
+    error = null
+    applied = null
+    try {
+      const response = await request('gisStandard.applyFix', { fixId: fixItem.id, writes: values, preview: fixItem.preview })
+      applied = {
+        title: response.log.length ? $t('GisStandard.Fix.Applied', 'Fix applied') : $t('GisStandard.Fix.NothingChanged', 'Nothing was changed'),
+        log: response.log,
+        skipped: response.skipped,
+        skippedTitle: $t('GisStandard.Fix.NotApplied', 'Not applied:')
+      }
+      void refreshReadiness()
+    } catch (err: any) {
+      error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
+    } finally {
+      applying = null
+    }
+    await inspect()
+  }
+
+  // A finding Set up model fixes: open its row, where Set up model shows what it would do.
+  function showSetup() {
+    opened = { ...opened, setup: true }
+    document.querySelector('[data-testid="readiness-setup"]')?.scrollIntoView({ block: 'nearest' })
   }
 
   async function select(ids: number[]) {
@@ -173,7 +202,7 @@
           title={applied.title}
           log={applied.log}
           skipped={applied.skipped}
-          skippedTitle={format($t('GisStandard.Fix.Skipped', '{0} accepted floor type(s) were skipped because the model changed since the preview:'), applied.skipped.length)}
+          skippedTitle={applied.skippedTitle ?? format($t('GisStandard.Fix.Skipped', '{0} accepted floor type(s) were skipped because the model changed since the preview:'), applied.skipped.length)}
           onclose={() => (applied = null)}
         />
       {/if}
@@ -223,7 +252,7 @@
                   <FloorTypesPanel proposals={model.proposals} unmatched={model.unmatched} standardFloorTypes={model.standardFloorTypes} bind:ticked bind:picks disabled={busy} onselect={select} />
                 {/if}
               {/if}
-              <FindingList findings={group.findings} onselect={select} />
+              <FindingList findings={group.findings} busy={busy} onselect={select} onfix={applyFix} onsetup={showSetup} />
             </ReadinessRow>
           {/each}
         </div>

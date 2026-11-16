@@ -129,6 +129,9 @@ internal static class FamilyFixtures
                     ["inPlace"] = (element as FamilyInstance)?.Symbol?.Family?.IsInPlace,
                     ["demolished"] = element.DemolishedPhaseId != ElementId.InvalidElementId,
                     ["designOption"] = element.DesignOption?.Name,
+                    ["symbolId"] = (element as FamilyInstance)?.Symbol?.Id.Value,
+                    ["family"] = (element as FamilyInstance)?.Symbol?.FamilyName,
+                    ["type"] = (element as FamilyInstance)?.Symbol?.Name,
                 })
                 .ToList(),
         };

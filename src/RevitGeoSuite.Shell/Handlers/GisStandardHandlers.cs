@@ -75,6 +75,64 @@ public sealed class GisFixFloorTypesHandler : IRpcHandler
     }
 }
 
+/// <summary>
+/// A finding's Fix: reads the model again, finds the fix of that id in a fresh audit, and applies it
+/// in one transaction only when it is still what the user was shown (refused when its finding has
+/// gone or the model changed), with the values the user edited.
+/// </summary>
+public sealed class GisApplyFixHandler : IRpcHandler
+{
+    public string Method => "gisStandard.applyFix";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        GisApplyFixRequest request = (payload as JObject)?.ToObject<GisApplyFixRequest>() ?? new GisApplyFixRequest();
+        return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+        {
+            GisStandardWork.RequireEditable(doc);
+            GisToolStandard standard = GisToolStandard.LoadEmbedded();
+            ExportViewSnapshot views = ExportViewSetup.Read(doc);
+            GisFix? fix = GisStandardWork.Findings(doc, ModelSnapshotReader.Read(doc), standard, views)
+                .Select(finding => finding.Fix)
+                .FirstOrDefault(candidate => candidate != null && candidate.Id == request.FixId);
+            if (fix == null)
+            {
+                return (object?)new GisStandardApplyResponse { Skipped = new[] { "Nothing was changed: the model no longer has this finding. Check again." } };
+            }
+
+            switch (fix.Kind)
+            {
+                case GisFixKind.Write:
+                    // Null strings become empty in GisFixWrite; a null entry stays null and Accept refuses it.
+                    List<GisFixWrite?> shown = (request.Writes ?? Array.Empty<GisFixWriteItem>())
+                        .Select(write => write == null ? null : new GisFixWrite(write.ElementId, write.ElementName, write.Parameter, write.OldValue, write.NewValue))
+                        .ToList();
+                    (IReadOnlyList<GisFixWrite> writes, string? refused) = fix.Accept(shown, request.Preview);
+                    if (refused != null)
+                    {
+                        return new GisStandardApplyResponse { Skipped = new[] { refused } };
+                    }
+
+                    (IReadOnlyList<string> log, IReadOnlyList<string> skipped) = GisStandardWriter.ApplyFix(doc, writes);
+                    return new GisStandardApplyResponse { Log = log.ToArray(), Skipped = skipped.ToArray() };
+                case GisFixKind.AddPlan:
+                    // The notes are the plan's own lines, so the same notes mean the same plan.
+                    if (!fix.ShowsSameNotes(request.Preview))
+                    {
+                        return new GisStandardApplyResponse { Skipped = new[] { GisFix.Changed } };
+                    }
+
+                    ExportViewPlan plan = ExportViewPlanner.PlanFor(views, fix.LevelId!.Value);
+                    return plan.IsEmpty
+                        ? new GisStandardApplyResponse { Skipped = new[] { "Nothing was changed: the level already has a GIS_ plan." } }
+                        : new GisStandardApplyResponse { Log = GisStandardWriter.AddPlan(doc, plan).ToArray() };
+                default:
+                    throw new InvalidOperationException("This finding is fixed by Set up model.");
+            }
+        });
+    }
+}
+
 /// <summary>Selects the given elements in Revit and zooms the active view to them.</summary>
 public sealed class GisSelectElementsHandler : IRpcHandler
 {
@@ -126,14 +184,14 @@ internal static class GisStandardWork
             ModelVersion = snapshot.StandardVersion,
             ExportSummary = status.Summary,
             ExportBlockers = status.Issues.Where(issue => issue.BlocksExport).Select(issue => issue.Message).ToArray(),
-            Findings = ExportAuditReader.Audit(document, snapshot, standard, viewSnapshot)
-                .Concat(GisNetworkSource.Audit(document))
+            Findings = Findings(document, snapshot, standard, viewSnapshot)
                 .Select(finding => new GisAuditFindingItem
                 {
                     Severity = finding.Severity.ToString().ToLowerInvariant(),
                     Topic = finding.Topic,
                     Message = finding.Message,
                     ElementIds = finding.ElementIds.ToArray(),
+                    Fix = finding.Fix is GisFix fix ? FixItem(document, fix) : null,
                 })
                 .ToArray(),
             SetupLines = (plan.IsEmpty ? Array.Empty<string>() : SetupPlanner.Describe(plan)).Concat(ExportViewPlanner.Describe(views)).ToArray(),
@@ -170,6 +228,36 @@ internal static class GisStandardWork
                 .ToArray(),
         };
     }
+
+    /// <summary>The audit the page shows: the export's audit and the walking network's findings.</summary>
+    public static IEnumerable<GisAuditFinding> Findings(Document document, ModelSnapshot snapshot, GisToolStandard standard, ExportViewSnapshot viewSnapshot) =>
+        ExportAuditReader.Audit(document, snapshot, standard, viewSnapshot).Concat(GisNetworkSource.Audit(document));
+
+    private static GisFixItem FixItem(Document document, GisFix fix) => new()
+    {
+        Id = fix.Id,
+        Kind = fix.Kind switch
+        {
+            GisFixKind.SetUp => "setup",
+            GisFixKind.AddPlan => "addPlan",
+            _ => "write",
+        },
+        Writes = fix.Writes
+            .Select(write => new GisFixWriteItem
+            {
+                ElementId = write.ElementId,
+                ElementName = write.ElementName,
+                Parameter = write.Parameter,
+                OldValue = write.OldValue,
+                NewValue = write.NewValue,
+                Editable = write.Editable,
+                WholeNumber = write.WholeNumber,
+            })
+            .ToArray(),
+        LevelId = fix.LevelId ?? 0,
+        LevelName = fix.LevelId is long levelId ? document.GetElement(new ElementId(levelId))?.Name ?? string.Empty : string.Empty,
+        Preview = fix.Notes.ToArray(),
+    };
 
     public static void RequireProject(Document document)
     {

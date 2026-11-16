@@ -197,6 +197,29 @@ public sealed class ExportViewPlannerTests
         Assert.Null(ExportViewPlanner.Plan(Model(views: GisViews(), floor: Array.Empty<Point2D>())).Repair);
     }
 
+    [Fact]
+    public void APlanForOneLevelAddsOnlyThatPlanEvenWithoutFloors()
+    {
+        ExportViewPlan plan = ExportViewPlanner.PlanFor(Model(levels: new[] { Level(1, "1FL"), Level(3, "TP±0", hasFloors: false, hasLevelId: false) }, names: new[] { "GIS_TP±0" }), 3);
+
+        Assert.False(plan.CreatesTemplate);
+        Assert.Equal(new[] { "GIS_TP±0 (2)" }, plan.NewViews.Select(view => view.ViewName));
+        Assert.Equal(new long[] { 3 }, plan.LevelIds.Select(level => level.ElementId));
+        Assert.Empty(plan.Crops);
+        Assert.Equal("Create plan GIS_TP±0 (2) for level TP±0", ExportViewPlanner.Describe(plan)[0]);
+        Assert.Contains(ExportViewPlanner.Describe(plan), line => line.StartsWith("The crop holds every floor plus 5 m", System.StringComparison.Ordinal));
+        Assert.Equal("Give 1 level(s) a level_id: TP±0", ExportViewPlanner.Describe(plan).Last());
+        Assert.True(ExportViewPlanner.PlanFor(Model(hasTemplate: false), 3).CreatesTemplate);
+        Assert.Equal("Create view template GIS Export", ExportViewPlanner.Describe(ExportViewPlanner.PlanFor(Model(hasTemplate: false), 3))[0]);
+    }
+
+    [Fact]
+    public void APlanForALevelThatHasOneOrIsGoneIsEmpty()
+    {
+        Assert.True(ExportViewPlanner.PlanFor(Model(views: GisViews()), 1).IsEmpty);
+        Assert.True(ExportViewPlanner.PlanFor(Model(), 99).IsEmpty);
+    }
+
     private static ExportPlanView[] GisViews() => new ExportPlanView[]
     {
         new(11, "GIS_1FL", 1, North, null, 900),

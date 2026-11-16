@@ -194,6 +194,38 @@ public sealed class GisAuditTests
     }
 
     [Fact]
+    public void ALevelFixSuggestsTheExportsOrdinalAndTheLevelNameBothEditable()
+    {
+        GisAuditFinding finding = Assert.Single(Audit(ModelOnStandard(levels: new[]
+        {
+            new LevelInfo(1, "1FL", 0, "1F", elevationFeet: 0),
+            new LevelInfo(2, "B1FL", null, null, elevationFeet: -15),
+        })));
+
+        GisFix fix = finding.Fix!;
+        Assert.Equal((GisFixKind.Write, "level:2"), (fix.Kind, fix.Id));
+        Assert.Equal(
+            new[] { ("ordinal", "", "-1", true, true), ("short_name", "", "B1FL", true, false) },
+            fix.Writes.Select(write => (write.Parameter, write.OldValue, write.NewValue, write.Editable, write.WholeNumber)));
+    }
+
+    [Fact]
+    public void AStandardFamilyIsFixedWithTheKindItIsListedAs()
+    {
+        IReadOnlyList<GisAuditFinding> findings = Audit(ModelOnStandard(familyTypes: new[]
+        {
+            new FamilyTypeInfo(1, "j エスカレータ-lightweight", "S1000", "", new long[] { 21 }),
+            new FamilyTypeInfo(2, "j 自動改札", "通常", "escalator", new long[] { 22 }),
+            new FamilyTypeInfo(3, "Lift", "A", "lift", new long[] { 23 }),
+        }));
+
+        GisFixWrite Write(long instance) => Assert.Single(findings.Single(finding => finding.ElementIds.Contains(instance)).Fix!.Writes);
+        Assert.Equal((1L, "gis_kind", "", "escalator"), (Write(21).ElementId, Write(21).Parameter, Write(21).OldValue, Write(21).NewValue));
+        Assert.Equal((2L, "escalator", "ticket_gate"), (Write(22).ElementId, Write(22).OldValue, Write(22).NewValue));
+        Assert.Null(findings.Single(finding => finding.ElementIds.Contains(23)).Fix);
+    }
+
+    [Fact]
     public void AStandardFamilyMarkedAsAnotherKindIsAnError()
     {
         GisAuditFinding finding = Assert.Single(Audit(ModelOnStandard(familyTypes: new[]

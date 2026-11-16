@@ -86,7 +86,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g3-guess`, `g4-guard` or `undo-probe`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g3-guess`, `g4-guard`, `f6b-fixes` or `undo-probe`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -389,6 +389,20 @@ Doors are not guarded yet. Nearly every door type lacks `gis_door` today, so eve
 - G4.5 places "UITest Floor G4", of the Floors category, the same way. It must warn "This floor is made as a family …". If Revit refuses the Floors category for a loadable family, the step is reported as not run, with Revit's message.
 - G4.6 copies the floor ten times in one fixture and notes the time. One warning must be logged for the ten floors.
 - G4.7 is a probe. The test host's `guardProbe` copies the floor once more, keeps the guard's warning (no fixture deletes it), and reads the model's stored warnings (`Document.GetWarnings`) three times: after the commit; in a copy saved under the run folder and reopened; and after `gis_category` is set back on the type. The notes give each list. It runs last, because it saves this run's copy under the run folder. A model reopened in the same Revit still has the guard's warning definitions registered, so the probe cannot show what a colleague without RevitGeoSuite sees.
+
+## The f6b-fixes scenario
+
+Each kind of Fix on a finding, applied from its row on the Readiness tab of the detached copy, with one Undo each. Every Fix runs in one transaction, `Kanizu GIS: Fix`. Each step but F6b.6 makes its finding with the fixture and puts its change back in a finally, so the steps run on any copy.
+
+| Step | What it checks |
+| --- | --- |
+| F6b.0 | The model has had Set up model once. |
+| F6b.1 | The fixture clears short_name on a level with a GIS_ plan. The level's Fix suggests the level name, editable. Changed to UIT and applied: the banner, the commit event, short_name UIT, and the finding gone. One Undo empties short_name again. |
+| F6b.2 | A stale fix. The page shows the level's fix, then the fixture types a short_name behind it: Apply says "Nothing was changed", commits nothing, and leaves the typed value. Then `gisStandard.applyFix` straight from the page: writes with another old value, and writes missing one, are refused as changed; a non-whole ordinal is refused (noted instead when the level has an ordinal, so its fix has no ordinal). |
+| F6b.3 | The fixture clears gis_kind on a type of a family families.json lists, or places a family under a listed name when the copy has none. Fix writes the listed kind, and the finding goes. One Undo empties it again. |
+| F6b.4 | The fixture gives a second level with a GIS_ plan the first one's level_id. The preview names the level that keeps it; Fix clears it on the other. One Undo makes them share it again. |
+| F6b.5 | The fixture takes the template off a GIS_ plan. That finding's Fix opens the Set up row, shows no preview and commits nothing. The template goes back on. |
+| F6b.6 | A level without floors that stairs or escalators end on, with no GIS_ plan: the preview names the plan, Fix adds it, and one Undo takes it away. NOT RUN when the copy has none: no fixture can make stairs end on a new level. |
 
 ## The georef-read scenario
 

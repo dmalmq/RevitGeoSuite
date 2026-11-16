@@ -287,7 +287,7 @@ public static class ExportAudit
                 ? string.Format(CultureInfo.InvariantCulture, "All {0} of its elements are", count)
                 : string.Format(CultureInfo.InvariantCulture, "{0} of its {1} elements are", onPlans, count);
         string message = finding.Message + " " + which + " on levels with a GIS_ plan, so the export asks to fix or accept this first.";
-        return new GisAuditFinding(GisAuditSeverity.Error, finding.Topic, message, finding.ElementIds, exportsByGuess: true);
+        return new GisAuditFinding(GisAuditSeverity.Error, finding.Topic, message, finding.ElementIds, exportsByGuess: true, fix: finding.Fix);
     }
 
     /// <summary>
@@ -438,7 +438,11 @@ public static class ExportAudit
                     "Levels {0} share level_id {1}, so the GDB gets one id for different levels. Clear level_id on all but one; Set up model gives a cleared level a new one.",
                     string.Join(", ", shared.Select(entry => levelName(entry.ElementId))),
                     shared.Key),
-                shared.Select(entry => entry.ElementId));
+                shared.Select(entry => entry.ElementId),
+                fix: GisFix.Write(
+                    "levelid:" + shared.Key,
+                    shared.Skip(1).Select(entry => new GisFixWrite(entry.ElementId, levelName(entry.ElementId), GisSharedParameters.LevelId, entry.Value, string.Empty)),
+                    new[] { $"{levelName(shared.First().ElementId)} keeps level_id {shared.Key}." }));
         }
     }
 
@@ -548,7 +552,8 @@ public static class ExportAudit
                     withFloors.Contains(level.Key)
                         ? "Run Set up model to add its plan."
                         : "Add a GIS_ plan for it, or end them on a level that is exported."),
-                elements);
+                elements,
+                fix: withFloors.Contains(level.Key) ? GisFix.SetUp : GisFix.AddPlan(level.Key, ExportViewPlanner.Describe(ExportViewPlanner.PlanFor(snapshot.Views, level.Key))));
         }
     }
 
@@ -562,7 +567,8 @@ public static class ExportAudit
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "views",
-                    $"The view template {name} is missing, so the GIS_ plans may hide what the export reads. Run Set up model.");
+                    $"The view template {name} is missing, so the GIS_ plans may hide what the export reads. Run Set up model.",
+                    fix: GisFix.SetUp);
             }
 
             yield break;
@@ -573,7 +579,8 @@ public static class ExportAudit
             yield return new GisAuditFinding(
                 GisAuditSeverity.Warning,
                 "views",
-                $"The view template {name} was changed in what the export reads. Run Set up model to {repair.Changes()}.");
+                $"The view template {name} was changed in what the export reads. Run Set up model to {repair.Changes()}.",
+                fix: GisFix.SetUp);
         }
 
         List<ExportPlanView> others = views.PlanViews.Where(view => view.IsGisView && view.TemplateId != template.ElementId).ToList();

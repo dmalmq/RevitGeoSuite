@@ -10,6 +10,8 @@ import type {
   GeoreferenceGridCandidatesResponse,
   GeoreferenceHasUndoResponse,
   GisExportOptionsResponse,
+  GisApplyFixRequest,
+  GisAuditFindingItem,
   GisStandardInspectResponse,
   MeshOverlayResponse,
   PreviewInitialStateResponse,
@@ -297,6 +299,61 @@ const range = (start: number, count: number) => Array.from({ length: count }, (_
 function gisStandard(scenario: MockScenario) {
   let setUp = scenario === 'existing'
   let fixed = false
+  // Findings fixed from their own row, by fix id.
+  const fixedFindings = new Set<string>()
+  const write = (elementId: number, elementName: string, parameter: string, oldValue: string, newValue: string, editable = false) => ({
+    elementId,
+    elementName,
+    parameter,
+    oldValue,
+    newValue,
+    editable,
+    wholeNumber: parameter === 'ordinal'
+  })
+  const withFix: GisAuditFindingItem[] = [
+    {
+      severity: 'warning',
+      topic: 'levels',
+      message: 'Level B1FL has no ordinal or short_name. The export counts a missing ordinal from the other levels and leaves a missing short_name empty.',
+      elementIds: [11],
+      fix: { id: 'level:11', kind: 'write', levelId: 0, levelName: '', preview: [], writes: [write(11, 'B1FL', 'ordinal', '', '-1', true), write(11, 'B1FL', 'short_name', '', 'B1FL', true)] }
+    },
+    {
+      severity: 'warning',
+      topic: 'levels',
+      message: 'Level B2 Machine has no GIS_ plan, so the export does not write it, but 1 stair(s) and 0 escalator(s) end on it: their links have nowhere to land. Add a GIS_ plan for it, or end them on a level that is exported.',
+      elementIds: [801],
+      fix: {
+        id: 'plan:12',
+        kind: 'addPlan',
+        levelId: 12,
+        levelName: 'B2 Machine',
+        writes: [],
+        preview: ['Create plan GIS_B2 Machine for level B2 Machine', 'The crop holds every floor plus 5 m: about 182 m by 96 m', 'Give 1 level(s) a level_id: B2 Machine']
+      }
+    },
+    {
+      severity: 'warning',
+      topic: 'views',
+      message: 'The view template GIS Export was changed in what the export reads. Run Set up model to show Floors.',
+      elementIds: [],
+      fix: { id: 'setup', kind: 'setup', levelId: 0, levelName: '', writes: [], preview: [] }
+    },
+    {
+      severity: 'warning',
+      topic: 'families',
+      message: 'j エスカレータ-lightweight : S1000 is a standard escalator family, but its type has no gis_kind. The export finds it by its family name; fill gis_kind = escalator on the type.',
+      elementIds: [411, 412],
+      fix: { id: 'kind:410', kind: 'write', levelId: 0, levelName: '', preview: [], writes: [write(410, 'j エスカレータ-lightweight : S1000', 'gis_kind', '', 'escalator')] }
+    },
+    {
+      severity: 'error',
+      topic: 'ids',
+      message: 'Levels 2F, 2F copy share level_id L-2F, so the GDB gets one id for different levels. Clear level_id on all but one; Set up model gives a cleared level a new one.',
+      elementIds: [13, 14],
+      fix: { id: 'levelid:L-2F', kind: 'write', levelId: 0, levelName: '', preview: ['2F keeps level_id L-2F.'], writes: [write(14, '2F copy', 'level_id', 'L-2F', '')] }
+    }
+  ]
   const inspect = (): GisStandardInspectResponse => ({
     documentTitle: 'TokyoStation_Concourse.rvt',
     standardVersion: 2,
@@ -313,7 +370,7 @@ function gisStandard(scenario: MockScenario) {
           ]),
       { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
       { severity: 'error', topic: 'families', message: "Lift : A has gis_kind 'lift', which the export does not know; its instances export as plain fixtures.", elementIds: [501] },
-      { severity: 'warning', topic: 'levels', message: 'Level B1FL has no short_name, so the export guesses it from the level name.', elementIds: [11] },
+      ...withFix.filter((finding) => !fixedFindings.has(finding.fix!.id) && (finding.fix!.kind !== 'setup' || setUp)),
       { severity: 'warning', topic: 'doors', message: "Door type 片開き : 900 (12 on levels with a GIS_ plan) has no gis_door, so its openings export with no door type; Kanizu keeps the GDB's door type only where the opening already has one. Set gis_door on the type.", elementIds: range(601, 12) },
       { severity: 'error', topic: 'floors', message: 'Level 1FL has a GIS_ plan and 1 Revit ramp(s), which the export never reads: their slope is missing from the export. Model them as sloped floors.', elementIds: [701] },
       { severity: 'warning', topic: 'families', message: 'ESC_1200 : S800 looks like an escalator but has no gis_kind, so it is found only by its family name, if at all.', elementIds: [401, 402] },
@@ -367,6 +424,20 @@ function gisStandard(scenario: MockScenario) {
           names[floorTypeId] ?? `Floor type ${floorTypeId}`,
           ...(floorTypeId === 202 ? [`Renamed j 店舗_床 to ${standardTypeName}`] : [])
         ]),
+        skipped: []
+      }
+    },
+    'gisStandard.applyFix': (payload: GisApplyFixRequest) => {
+      const finding = withFix.find((entry) => entry.fix!.id === payload.fixId)
+      if (!finding || fixedFindings.has(payload.fixId)) return { log: [], skipped: ['Nothing was changed: the model no longer has this finding. Check again.'] }
+      fixedFindings.add(payload.fixId)
+      const edited = (elementId: number, parameter: string, fallback: string) =>
+        payload.writes?.find((value) => value.elementId === elementId && value.parameter === parameter)?.newValue ?? fallback
+      return {
+        log:
+          finding.fix!.kind === 'addPlan'
+            ? [`Created plan GIS_${finding.fix!.levelName}`, `Gave 1 level(s) a level_id: ${finding.fix!.levelName}`]
+            : finding.fix!.writes.map((entry) => `${entry.elementName}: ${entry.parameter} ${entry.oldValue || '(empty)'} -> ${edited(entry.elementId, entry.parameter, entry.newValue) || '(empty)'}`),
         skipped: []
       }
     },

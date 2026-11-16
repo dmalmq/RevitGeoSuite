@@ -132,6 +132,38 @@ public sealed class ExportAuditTests
     }
 
     [Fact]
+    public void ASharedLevelIdIsFixedByClearingItOnAllButTheFirstLevel()
+    {
+        GisAuditFinding levels = Audit(levelIds: new[] { new AuditIdValue(1, "l1"), new AuditIdValue(2, "l1"), new AuditIdValue(3, "l1") })
+            .Single(finding => finding.Severity == GisAuditSeverity.Error);
+
+        GisFix fix = levels.Fix!;
+        Assert.Equal((GisFixKind.Write, "levelid:l1"), (fix.Kind, fix.Id));
+        Assert.Equal(
+            new[] { (2L, "1FL", "level_id", "l1", ""), (3L, "2FL", "level_id", "l1", "") },
+            fix.Writes.Select(write => (write.ElementId, write.ElementName, write.Parameter, write.OldValue, write.NewValue)));
+        Assert.Equal(new[] { "B1FL keeps level_id l1." }, fix.Notes);
+    }
+
+    [Fact]
+    public void ALevelWithoutFloorsThatConnectorsEndOnIsFixedByAddingItsPlan()
+    {
+        GisAuditFinding finding = Assert.Single(Audit(stairs: new[] { new AuditStair(201, 3, 4) }));
+
+        Assert.Equal((GisFixKind.AddPlan, 4L), (finding.Fix!.Kind, finding.Fix.LevelId));
+        // The fix shows the plan it adds, as Set up model words its own lines.
+        Assert.Contains(finding.Fix.Notes, note => note.StartsWith("Create plan GIS_", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ATemplateChangedInWhatTheExportReadsIsFixedBySetUpModel()
+    {
+        List<GisAuditFinding> views = Audit(views: Views(withTemplate: false)).Where(finding => finding.Topic == "views").ToList();
+        Assert.NotEmpty(views);
+        Assert.All(views, finding => Assert.Same(GisFix.SetUp, finding.Fix));
+    }
+
+    [Fact]
     public void AConnectorEndingOnALevelWithNoGisPlanIsReportedPerLevel()
     {
         IReadOnlyList<GisAuditFinding> findings = Audit(
