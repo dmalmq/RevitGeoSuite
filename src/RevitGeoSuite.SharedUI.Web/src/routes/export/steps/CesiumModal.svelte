@@ -24,6 +24,19 @@
     runCesiumExport: () => void
   }
 
+  const datumChoices = $derived([
+    {
+      value: 'TP',
+      label: $t('Export.Cesium.HeightDatum.Yes', 'Yes, it was set from T.P.'),
+      consequence: $t('Export.Cesium.HeightDatum.TpConsequence', "Kanizu applies the heights of this model's levels to the floors paired with them, and may use a height to suggest a level's floor. If the elevation was not set from T.P., every floor height in Kanizu will be wrong.")
+    },
+    {
+      value: 'notTp',
+      label: $t('Export.Cesium.HeightDatum.NotTp', 'No, or I have not checked'),
+      consequence: $t('Export.Cesium.HeightDatum.NotTpConsequence', "Kanizu shows the heights but never applies them, and does not use them to find a level's floor. Floor heights stay as set in Kanizu.")
+    }
+  ])
+
   let { open = $bindable(), cesiumError, cesiumHeightDatum = $bindable(), cesiumKeepVersions = $bindable(), cesiumLod = $bindable(), cesiumOutputFolder = $bindable(), cesiumPreciseCrs = $bindable(), cesiumProfile = $bindable(), cesiumProgress, cesiumPush = $bindable(), cesiumResult, cesiumRunning, cesiumState, cesiumViewerUrl = $bindable(), closeCesiumExport, pickCesiumOutputFolder, runCesiumExport }: Props = $props()
 </script>
 
@@ -74,21 +87,38 @@
       <Checkbox class="pb-1.5" bind:checked={cesiumPreciseCrs} disabled={cesiumRunning} label={$t('Export.Cesium.PreciseCrs', 'Precise CRS')} />
     </div>
 
-    <Field
-      label={$t('Export.Cesium.HeightDatum', 'Survey point elevation is')}
-      id="cesiumHeightDatumSelect"
-      hint={$t('Export.Cesium.HeightDatum.Hint', 'Choose T.P. only when the survey point elevation was set from T.P. Kanizu then trusts the floor heights in this package.')}
-    >
-      <Select
-        id="cesiumHeightDatumSelect"
-        bind:value={cesiumHeightDatum}
-        disabled={cesiumRunning}
-        options={[
-          { value: 'unknown', label: $t('Export.Cesium.HeightDatum.Unknown', 'Not checked') },
-          { value: 'TP', label: $t('Export.Cesium.HeightDatum.Tp', 'Tokyo Peil (T.P.)') }
-        ]}
-      />
-    </Field>
+    <!-- A required choice: the wrong answer shifts every floor height in Kanizu. Nothing is picked
+         until the model has been answered once; the model remembers the answer. Native radios, so
+         arrow keys, focus and the group's name come from the browser. -->
+    <fieldset class="flex flex-col gap-1.5" disabled={cesiumRunning}>
+      <legend class="mb-1.5 text-small font-medium text-foreground">
+        {$t('Export.Cesium.HeightDatum.Question', 'Was the survey point elevation set from T.P. (Tokyo Peil)?')}
+      </legend>
+      {#each datumChoices as choice (choice.value)}
+        {@const selected = cesiumHeightDatum === choice.value}
+        <label
+          class="flex cursor-pointer items-start gap-2 rounded-control border px-3 py-2 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-55 {selected ? 'border-primary/40 bg-accent' : 'border-input bg-card hover:bg-accent'}"
+        >
+          <input
+            type="radio"
+            name="cesium-height-datum"
+            required
+            value={choice.value}
+            bind:group={cesiumHeightDatum}
+            aria-labelledby="cesium-datum-{choice.value}-label"
+            aria-describedby="cesium-datum-{choice.value}"
+            class="mt-1 h-3.5 w-3.5 shrink-0 cursor-[inherit] accent-primary"
+          />
+          <span class="min-w-0">
+            <span id="cesium-datum-{choice.value}-label" class="block text-body font-medium {selected ? 'text-primary-text' : 'text-foreground'}">{choice.label}</span>
+            <span id="cesium-datum-{choice.value}" class="block text-small text-muted-foreground">{choice.consequence}</span>
+          </span>
+        </label>
+      {/each}
+      {#if !cesiumHeightDatum}
+        <p id="cesium-datum-required" class="text-small text-warning-foreground">{$t('Export.Cesium.HeightDatum.Required', 'Answer this before you export.')}</p>
+      {/if}
+    </fieldset>
 
     <Field label={$t('Export.Cesium.ViewerUrl', 'Cesium viewer URL')} id="cesiumViewerUrlInput">
       <Input id="cesiumViewerUrlInput" mono bind:value={cesiumViewerUrl} disabled={cesiumRunning} placeholder="http://localhost:3001" />
@@ -137,6 +167,6 @@
 
   {#snippet footer()}
     <Button onclick={closeCesiumExport} disabled={cesiumRunning}>{$t('Common.Close', 'Close')}</Button>
-    <Button variant="primary" icon="download" onclick={runCesiumExport} disabled={cesiumRunning || cesiumState?.firstRun}>{$t('Export.Cesium.Run', 'Export')}</Button>
+    <Button variant="primary" icon="download" onclick={runCesiumExport} disabled={cesiumRunning || cesiumState?.firstRun || !cesiumHeightDatum} aria-describedby={cesiumHeightDatum ? undefined : 'cesium-datum-required'}>{$t('Export.Cesium.Run', 'Export')}</Button>
   {/snippet}
 </Dialog>

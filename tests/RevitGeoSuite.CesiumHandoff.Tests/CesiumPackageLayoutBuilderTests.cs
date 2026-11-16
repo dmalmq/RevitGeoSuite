@@ -235,14 +235,49 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
     }
 
     [Theory]
+    [InlineData("notTp")]
+    [InlineData("unknown")]
+    [InlineData("")]
+    public void WriteManifest_SaysUnknownForEveryAnswerButTp(string answer)
+    {
+        // The model remembers "notTp" so the dialog knows it was answered; Kanizu reads only TP or
+        // unknown, and must never apply a height that was not set from T.P.
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
+        CesiumPackageBuildInputs inputs = CreateInputs();
+        inputs.HeightDatum = answer;
+
+        builder.WriteManifest(layout, inputs);
+
+        CesiumPackageManifest reloaded = CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(layout.ManifestPath));
+        Assert.Equal(CesiumHeightDatums.Unknown, reloaded.Anchor!.HeightDatum);
+        Assert.DoesNotContain("notTp", File.ReadAllText(layout.ManifestPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
     [InlineData("TP", "TP")]
     [InlineData(" tp ", "TP")]
     [InlineData("unknown", "unknown")]
     [InlineData("ellipsoidal", "unknown")]
     [InlineData(null, "unknown")]
+    [InlineData("notTp", "unknown")]
     public void HeightDatums_NormalizeMapsRequestValues(string? value, string expected)
     {
         Assert.Equal(expected, CesiumHeightDatums.Normalize(value));
+    }
+
+    [Theory]
+    [InlineData(" tp ", "TP")]
+    [InlineData("notTp", "notTp")]
+    [InlineData("NOTTP", "notTp")]
+    [InlineData("unknown", "unknown")]
+    [InlineData(null, "unknown")]
+    [InlineData("", "unknown")]
+    [InlineData("ellipsoidal", "unknown")]
+    public void HeightDatums_AnswerKeepsWhetherTheQuestionWasAnswered(string? value, string expected)
+    {
+        Assert.Equal(expected, CesiumHeightDatums.Answer(value));
     }
 
     [Fact]

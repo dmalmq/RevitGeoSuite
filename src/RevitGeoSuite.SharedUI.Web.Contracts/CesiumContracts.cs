@@ -22,7 +22,10 @@ public sealed class CesiumExportStateResponse
     /// <summary>True when no floor-plan profile exists yet — the UI walks through first-run setup.</summary>
     public bool FirstRun { get; set; }
 
-    /// <summary>The height datum chosen on the last export of this model: "TP" or "unknown".</summary>
+    /// <summary>
+    /// The model's answer to the survey point question on its last export: "TP", "notTp", or
+    /// "unknown" when it was never answered, which the dialog then asks for before it exports.
+    /// </summary>
     public string LastHeightDatum { get; set; } = "unknown";
 
     /// <summary>Whether the last export of this model wrote a new version into a station folder.</summary>
@@ -49,8 +52,9 @@ public sealed class CesiumExportRunRequest
     public double? GeoidOffset { get; set; }
 
     /// <summary>
-    /// What the model's elevations are measured from: "TP" (Tokyo Peil) or "unknown". Written to
-    /// the manifest so Kanizu knows whether it may take floor heights from Revit.
+    /// What the model's elevations are measured from: "TP" (Tokyo Peil), or "notTp" when the user
+    /// said they are not from T.P. or not checked. The manifest gets "TP" or "unknown", so Kanizu
+    /// knows whether it may take floor heights from Revit; the model remembers the answer.
     /// </summary>
     public string HeightDatum { get; set; } = "unknown";
 

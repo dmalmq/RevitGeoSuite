@@ -15,6 +15,7 @@ using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.FloorPlanExport.UI;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.Storage;
+using RevitGeoSuite.SharedUI.Localization;
 using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Web.Contracts;
 using RevitGeoSuite.Tiles3DExport;
@@ -98,7 +99,7 @@ public sealed class CesiumExportStateHandler : IRpcHandler
                 ViewerUrl = viewerSettings.ViewerUrl,
                 HasToken = !string.IsNullOrEmpty(viewerSettings.Token),
                 FirstRun = profiles.Count == 0,
-                LastHeightDatum = CesiumHeightDatums.Normalize(tilesState?.LastHeightDatum),
+                LastHeightDatum = CesiumHeightDatums.Answer(tilesState?.LastHeightDatum),
                 LastKeepVersions = tilesState?.LastKeepVersions ?? false,
             };
         });
@@ -134,6 +135,13 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         if (string.IsNullOrWhiteSpace(request.FloorPlanProfileName))
         {
             return Task.FromResult<object?>(new { error = "Floor plan profile is required" });
+        }
+
+        // The survey point question has no default: a wrong "T.P." shifts every floor height in
+        // Kanizu, so an export without an answer is refused, whoever calls it.
+        if (CesiumHeightDatums.Answer(request.HeightDatum) == CesiumHeightDatums.Unknown)
+        {
+            return Task.FromResult<object?>(new { error = UiLocalizer.Instance.Get("Export.Cesium.HeightDatum.Required") });
         }
 
         string jobId = jobs.Start(async (ct, progress) =>
@@ -317,7 +325,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
 
         warnings.AddRange(Tiles3DExportSupport.ScopeWarnings(request.Scope));
         warnings.AddRange(prep.Warnings);
-        exportResult.UpdatedState.LastHeightDatum = CesiumHeightDatums.Normalize(request.HeightDatum);
+        exportResult.UpdatedState.LastHeightDatum = CesiumHeightDatums.Answer(request.HeightDatum);
         exportResult.UpdatedState.LastKeepVersions = request.KeepVersions;
         string? modelId = new ModelIdentityService().GetOrCreate(document, warnings);
 

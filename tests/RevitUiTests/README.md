@@ -86,7 +86,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `r3-existing` or `undo-probe`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `r3-existing`, `r7-datum` or `undo-probe`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -388,3 +388,16 @@ The test host runs code in an API context only while Revit is idle. While a file
 - R3.2 clicks Save. It expects "Metadata saved", Save settled as Saved, and the stored CRS equal to the picked one. The commits must include Apply Georeference and nothing but Apply Georeference and Save Primary Mesh Code. The test host's project position must be unchanged, and the page's project position, Survey Point and Project Base Point must be present and unchanged.
 - R3.3 clicks "Set up new coordinates". It expects "Step 1 of 6", the CRS step's select, no "Metadata saved", and Confirm CRS moving on to step 2 with no transaction.
 - R3.4 is reported as not run: the runner cannot open the copy read-only. A web test covers Save being off in a read-only model.
+
+## The r7-datum scenario
+
+`--scenario r7-datum --model <file>` checks the survey point question in Export to Cesium. Everything it writes goes to `station/` in the run folder.
+
+- R7.G records the copy's georeference, as the other Cesium scenarios do.
+- R7.1 saves a floor plan export profile first when the PC has none, as the other Cesium scenarios do. It then opens Export to Cesium from `#/export`. A copy that remembers `TP` or `notTp` must show that answer picked. Any other copy, an old `unknown` included, must show neither picked, Export off, and "Answer this before you export."
+- R7.2 calls `cesium.export.run` with `unknown`, an empty answer and `ellipsoidal`. Each must be refused with that sentence and no job, and nothing may be written to `station/`.
+- R7.3 exports from the dialog the way a person does: it picks "No, or I have not checked", types `station/` as the package folder, picks coarse, ticks a new version each time, clears the push, and clicks Export. Export first saves the viewer URL to `%APPDATA%\RevitGeoSuite\CesiumHandoff\viewer-settings.json`; the run turns that one call into the read-only `cesium.settings.get` inside the page, so the real settings are never written. The step fails if it cannot install that redirect. It expects `anchor.heightDatum` `unknown` in the manifest and `lastHeightDatum` `notTp` in the export state.
+- R7.4 reloads the page and opens the dialog again. It expects "No, or I have not checked" picked and Export on.
+- R7.5 exports with `TP` through the bridge, which stores that answer. It expects `anchor.heightDatum` `TP` in the manifest, and after a reload, "Yes, it was set from T.P." picked and Export on.
+
+No step can store an old `unknown`: the export refuses it now, and the test host does not write RevitGeoSuite's storage. `cesium.export.getState` passes every stored answer through `CesiumHeightDatums.Answer`, so a stored `unknown` reads the same as no answer, which R7.1 sees on a copy that was never answered. R7.1 says which case the copy was. A send to Kanizu after `notTp` builds its manifest through the same builder, which a CesiumHandoff test checks writes `unknown`.

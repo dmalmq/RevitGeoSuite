@@ -130,10 +130,28 @@ public static class CesiumHeightDatums
 
     public const string Unknown = "unknown";
 
+    /// <summary>
+    /// The user's answer "not from T.P., or not checked". Stored in the model's export state only, so
+    /// the dialog can tell an answered model from a new one; a manifest says <see cref="Unknown"/>.
+    /// </summary>
+    public const string NotTp = "notTp";
+
     /// <summary>Maps a request value ("tp", "TP", anything else) to a manifest value.</summary>
     public static string Normalize(string? value)
     {
         return string.Equals(value?.Trim(), Tp, StringComparison.OrdinalIgnoreCase) ? Tp : Unknown;
+    }
+
+    /// <summary>The answer the model remembers: <see cref="Tp"/>, <see cref="NotTp"/>, or <see cref="Unknown"/> before any answer.</summary>
+    public static string Answer(string? value)
+    {
+        string trimmed = value?.Trim() ?? string.Empty;
+        if (string.Equals(trimmed, Tp, StringComparison.OrdinalIgnoreCase))
+        {
+            return Tp;
+        }
+
+        return string.Equals(trimmed, NotTp, StringComparison.OrdinalIgnoreCase) ? NotTp : Unknown;
     }
 }
 
