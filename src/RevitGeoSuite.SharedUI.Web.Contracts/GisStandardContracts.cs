@@ -53,6 +53,19 @@ public sealed class GisAuditFindingItem
     public string Message { get; set; } = string.Empty;
 
     public long[] ElementIds { get; set; } = Array.Empty<long>();
+
+    /// <summary>The one-click repair: empty, or resetFloorType (write the standard type's values back).</summary>
+    public string Fix { get; set; } = string.Empty;
+
+    /// <summary>The element the repair changes, such as the floor type to reset; 0 without one.</summary>
+    public long FixTargetId { get; set; }
+}
+
+/// <summary>Payload of <c>gisStandard.resetFloorType</c>: the floor type with a standard name to reset.</summary>
+[TsExport]
+public sealed class GisResetFloorTypeRequest
+{
+    public long FloorTypeId { get; set; }
 }
 
 /// <summary>Fix floor types' proposal: give a floor type the category of the standard type it matches.</summary>

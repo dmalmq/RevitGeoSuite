@@ -32,6 +32,7 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new GisStandardInspectHandler());
         bridge.RegisterHandler(new GisStandardSetupHandler());
         bridge.RegisterHandler(new GisFixFloorTypesHandler());
+        bridge.RegisterHandler(new GisResetFloorTypeHandler());
         bridge.RegisterHandler(new GisSelectElementsHandler());
         bridge.RegisterHandler(new GisParametersWriteHandler());
         bridge.RegisterHandler(new GisParametersReadHandler());

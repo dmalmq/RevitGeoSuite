@@ -74,6 +74,35 @@ public sealed class GisFixFloorTypesHandler : IRpcHandler
     }
 }
 
+/// <summary>
+/// Resets one floor type with a standard name to its standard type (the audit's one-click repair),
+/// planned again from the model as it is now, in one transaction.
+/// </summary>
+public sealed class GisResetFloorTypeHandler : IRpcHandler
+{
+    public string Method => "gisStandard.resetFloorType";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        GisResetFloorTypeRequest request = (payload as JObject)?.ToObject<GisResetFloorTypeRequest>() ?? new GisResetFloorTypeRequest();
+        return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+        {
+            GisStandardWork.RequireEditable(doc);
+            ModelSnapshot snapshot = ModelSnapshotReader.Read(doc);
+            GisToolStandard standard = GisToolStandard.LoadEmbedded();
+            FloorTypeSetupStep? step = SetupPlanner.ResetStep(snapshot, standard, request.FloorTypeId);
+            if (step is null)
+            {
+                return (object?)new GisStandardApplyResponse { Skipped = new[] { SetupPlanner.NothingToReset(snapshot, standard, request.FloorTypeId) } };
+            }
+
+            IReadOnlyList<string> log = GisStandardWriter.ResetFloorType(doc, step);
+            GisStandardNotifier.Instance.Refresh(doc, force: true);
+            return (object?)new GisStandardApplyResponse { Log = log.ToArray() };
+        });
+    }
+}
+
 /// <summary>Selects the given elements in Revit and zooms the active view to them.</summary>
 public sealed class GisSelectElementsHandler : IRpcHandler
 {
@@ -133,6 +162,8 @@ internal static class GisStandardWork
                     Topic = finding.Topic,
                     Message = finding.Message,
                     ElementIds = finding.ElementIds.ToArray(),
+                    Fix = finding.Fix?.Kind == GisAuditFixKind.ResetFloorType ? "resetFloorType" : string.Empty,
+                    FixTargetId = finding.Fix?.TargetId ?? 0,
                 })
                 .ToArray(),
             SetupLines = (plan.IsEmpty ? Array.Empty<string>() : SetupPlanner.Describe(plan)).Concat(ExportViewPlanner.Describe(views)).ToArray(),

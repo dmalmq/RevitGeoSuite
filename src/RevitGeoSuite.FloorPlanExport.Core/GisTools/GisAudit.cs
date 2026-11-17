@@ -14,16 +14,41 @@ public enum GisAuditSeverity
     Info = 2,
 }
 
+/// <summary>What the page can do about a finding in one click.</summary>
+public enum GisAuditFixKind
+{
+    /// <summary>Write the standard type's gis_category, gis_restriction and material back onto the floor type.</summary>
+    ResetFloorType,
+}
+
+/// <summary>A one-click repair of a finding: what to do and to which element.</summary>
+public sealed class GisAuditFix
+{
+    public GisAuditFix(GisAuditFixKind kind, long targetId)
+    {
+        Kind = kind;
+        TargetId = targetId;
+    }
+
+    public GisAuditFixKind Kind { get; }
+
+    public long TargetId { get; }
+}
+
 /// <summary>One thing that would need fixing by hand after a GDB export.</summary>
 public sealed class GisAuditFinding
 {
-    public GisAuditFinding(GisAuditSeverity severity, string topic, string message, IEnumerable<long>? elementIds = null)
+    public GisAuditFinding(GisAuditSeverity severity, string topic, string message, IEnumerable<long>? elementIds = null, GisAuditFix? fix = null)
     {
         Severity = severity;
         Topic = topic;
         Message = message;
         ElementIds = (elementIds ?? Array.Empty<long>()).ToList();
+        Fix = fix;
     }
+
+    /// <summary>The one-click repair, or null when the finding is fixed by hand or by another tool.</summary>
+    public GisAuditFix? Fix { get; }
 
     public GisAuditSeverity Severity { get; }
 
@@ -189,6 +214,12 @@ public static class GisAudit
     {
         foreach (FloorTypeInfo floorType in snapshot.FloorTypes)
         {
+            if (StandardTypeChanged(floorType, standard) is { } changed)
+            {
+                yield return changed;
+                continue;
+            }
+
             if (floorType.FloorIds.Count == 0)
             {
                 continue;
@@ -235,6 +266,45 @@ public static class GisAudit
             }
         }
     }
+
+    /// <summary>
+    /// A floor type with one of the 21 standard names whose gis_category or gis_restriction is not
+    /// the standard's: its floors export as something the name does not say. An error when floors use
+    /// it, a warning when none does yet (the next floor drawn with it would be wrong). Case and
+    /// surrounding spaces do not count; a material change alone is Set up model's to repair.
+    /// </summary>
+    private static GisAuditFinding? StandardTypeChanged(FloorTypeInfo floorType, GisToolStandard standard)
+    {
+        StandardFloorType? standardType = standard.FloorType(floorType.Name);
+        if (standardType is null)
+        {
+            return null;
+        }
+
+        List<FloorTypeFieldChange> changed = SetupPlanner.StandardTypeChanges(floorType, standardType)
+            .Where(change => change.Field != "material" &&
+                !string.Equals(GisToolStandard.Normalize(change.OldValue), GisToolStandard.Normalize(change.NewValue), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (changed.Count == 0)
+        {
+            return null;
+        }
+
+        string what = string.Join(" and ", changed.Select(change => $"{change.Field} {Quoted(change.OldValue)}"));
+        string standardSays = string.Join(", ", changed.Select(change => Quoted(change.NewValue)));
+        bool inUse = floorType.FloorIds.Count > 0;
+        string consequence = inUse
+            ? (floorType.FloorIds.Count == 1 ? "Its 1 floor exports as " : $"Its {floorType.FloorIds.Count} floors export as ") + $"{Quoted(GisToolStandard.Normalize(floorType.GisCategory))}, not as the name says."
+            : "No floor uses it yet; the next one drawn with it would export wrong.";
+        return new GisAuditFinding(
+            inUse ? GisAuditSeverity.Error : GisAuditSeverity.Warning,
+            "floor types",
+            $"Floor type {floorType.Name} is a standard type, but its {what} {(changed.Count == 1 ? "differs" : "differ")} from the standard ({standardSays}). {consequence} Reset it to the standard.",
+            floorType.FloorIds,
+            new GisAuditFix(GisAuditFixKind.ResetFloorType, floorType.ElementId));
+    }
+
+    private static string Quoted(string value) => value.Length == 0 ? "(empty)" : "'" + value + "'";
 
     // One floor type can cover floors on both sides of the gates; the rename moves them all.
     private static string OneChoiceForAllFloors(FloorTypeInfo floorType, IReadOnlyList<string> renames) =>
