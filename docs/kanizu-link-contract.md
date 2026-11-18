@@ -1,4 +1,31 @@
 # Kanizu link contract
+## Round-trip state
+
+Both apps say where each model stands in the round trip with the same five words, read from the station folder alone, so they agree on the same folder. RevitGeoSuite shows the station's state on the GIS standard ribbon button and Kanizu beside its window title.
+
+Per model, take the model's newest export under `revit/`: versions are grouped by `source.modelId` in lower case; a version without one belongs to the model id seen in its model folder (from that folder's newest version that has one), else to its folder; the newest is the one with the latest `createdUtc` (then the version folder's path). Then read the model's drift file, `gis-drift/<model>.gis-drift.json`, named by that version's model id in lower case, or its `source.documentKey` without one.
+
+| Newest export applied | Drift `rows` or `shapes` | State |
+|---|---|---|
+| yes | none | In sync |
+| no, or no drift file, or empty `appliedVersion` | none | Revit ahead |
+| yes | some | GDB ahead |
+| no | some | Both changed |
+
+"Applied" means the drift file's `appliedVersion` equals the newest export's version folder relative to the station (`revit/<model folder>/<version folder>`). `notPlaced` does not count as waiting. A model is **Blocked** when its drift file cannot be read, has a `version` newer than the reader knows, or names an `appliedVersion` folder that is not in the station folder. A station whose `revit/` folder cannot be listed is Blocked.
+
+A station's state is its models' worst: Blocked if any model is; else Both changed if a model is Both changed, or one model is Revit ahead while another is GDB ahead; else Revit ahead or GDB ahead if a model is; else In sync. A station with no export has no state.
+
+| State | 日本語 |
+|---|---|
+| In sync | 同期済み |
+| Revit ahead | Revit が先行 |
+| GDB ahead | GDB が先行 |
+| Both changed | 両方で変更あり |
+| Blocked | 停止中 |
+
+Kanizu's own new-export notice judges a pending export against the GDB, so it can say Revit ahead where the folder still says Both changed (the export already agrees with the GDB's edits); the folder state above is the one both apps show.
+
 
 RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This file is the one description of what each side writes and reads. The sample station folder in `tests/Fixtures/Conformance/station/` is written by RevitGeoSuite's real writers (`StationFolderConformanceTests`), and Kanizu's tests read a copy of it (`crates/kanizu-3d/tests/fixtures/revit/station/` in Kanizu, by `crates/kanizu-core/tests/revit_station.rs`). When either side changes what it writes or reads, it changes this file, the fixture and both test suites together.
 

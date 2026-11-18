@@ -18,6 +18,11 @@ using RevitGeoSuite.RevitInterop.Storage;
 using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Web.Contracts;
 using RevitGeoSuite.Tiles3DExport;
+using RevitGeoSuite.Shell.Standards;
+                if (request.KeepVersions)
+                {
+                    GisStandardNotifier.Instance.NoteExportPublished();
+                }
 
 namespace RevitGeoSuite.Shell.Handlers;
 

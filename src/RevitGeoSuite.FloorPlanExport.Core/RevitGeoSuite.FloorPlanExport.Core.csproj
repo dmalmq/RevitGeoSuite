@@ -4,6 +4,10 @@
     <RootNamespace>RevitGeoSuite.FloorPlanExport.Core</RootNamespace>
     <AssemblyName>RevitGeoSuite.FloorPlanExport.Core</AssemblyName>
   </PropertyGroup>
+    <ProjectReference Include="..\RevitGeoSuite.CesiumHandoff\RevitGeoSuite.CesiumHandoff.csproj" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+
+  <ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="7.0.20" />
