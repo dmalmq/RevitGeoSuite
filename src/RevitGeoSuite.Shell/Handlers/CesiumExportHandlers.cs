@@ -19,10 +19,6 @@ using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Web.Contracts;
 using RevitGeoSuite.Tiles3DExport;
 using RevitGeoSuite.Shell.Standards;
-                if (request.KeepVersions)
-                {
-                    GisStandardNotifier.Instance.NoteExportPublished();
-                }
 
 namespace RevitGeoSuite.Shell.Handlers;
 
@@ -197,6 +193,10 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 layout = request.KeepVersions
                     ? CesiumStationFolder.Publish(layout, request.OutputFolder, manifest)
                     : builder.PublishLayout(layout, request.OutputFolder);
+                if (request.KeepVersions)
+                {
+                    GisStandardNotifier.Instance.NoteExportPublished();
+                }
                 tiles.TilesetPath = RebasePackagePath(tiles.TilesetPath, stagedRoot, layout.RootDirectory);
                 gis.ArtifactPaths = gis.ArtifactPaths
                     .Select(path => RebasePackagePath(path, stagedRoot, layout.RootDirectory))

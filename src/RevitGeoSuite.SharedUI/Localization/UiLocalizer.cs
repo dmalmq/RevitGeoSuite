@@ -1472,7 +1472,17 @@ public sealed class UiLocalizer : INotifyPropertyChanged
                 ["Mesh.Overlay.PrimaryMesh"] = "Primary Mesh",
                 ["Mesh.Overlay.Neighbors"] = "Neighbors",
                 ["Mesh.Overlay.Unavailable.Title"] = "Mesh overlay requires complete setup",
-                ["Mesh.Overlay.Unavailable.Hint"] = "Complete the georeference setup to see the mesh overlay."
+                ["Mesh.Overlay.Unavailable.Hint"] = "Complete the georeference setup to see the mesh overlay.",
+                ["RoundTrip.InSync"] = "In sync",
+                ["RoundTrip.RevitAhead"] = "Revit ahead",
+                ["RoundTrip.GdbAhead"] = "GDB ahead",
+                ["RoundTrip.BothChanged"] = "Both changed",
+                ["RoundTrip.Blocked"] = "Blocked",
+                ["RoundTrip.InSync.Hint"] = "The GDB holds the newest export and no edit waits for Revit.",
+                ["RoundTrip.RevitAhead.Hint"] = "Revit exported since the GDB last took an export in, and the GDB has nothing waiting.",
+                ["RoundTrip.GdbAhead.Hint"] = "The GDB holds edits of Revit's values or shapes that Revit has not taken in.",
+                ["RoundTrip.BothChanged.Hint"] = "A new export waits for the GDB, and GDB edits wait for Revit.",
+                ["RoundTrip.Blocked.Hint"] = "The round-trip state cannot be read, so neither side can go on until the folder is put right."
             },
             [UiLanguage.Japanese] = new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -2855,7 +2865,17 @@ public sealed class UiLocalizer : INotifyPropertyChanged
                 ["Mesh.Overlay.PrimaryMesh"] = "主メッシュ",
                 ["Mesh.Overlay.Neighbors"] = "隣接メッシュ",
                 ["Mesh.Overlay.Unavailable.Title"] = "メッシュオーバーレイは完全セットアップ後に表示されます",
-                ["Mesh.Overlay.Unavailable.Hint"] = "地理参照のセットアップを完了するとメッシュオーバーレイが表示されます。"
+                ["Mesh.Overlay.Unavailable.Hint"] = "地理参照のセットアップを完了するとメッシュオーバーレイが表示されます。",
+                ["RoundTrip.InSync"] = "同期済み",
+                ["RoundTrip.RevitAhead"] = "Revit が先行",
+                ["RoundTrip.GdbAhead"] = "GDB が先行",
+                ["RoundTrip.BothChanged"] = "両方で変更あり",
+                ["RoundTrip.Blocked"] = "停止中",
+                ["RoundTrip.InSync.Hint"] = "GDBは最新の書き出しを保持しており、Revitへ戻す編集はありません。",
+                ["RoundTrip.RevitAhead.Hint"] = "RevitがGDBの取り込みより新しい書き出しを持ち、GDB側に待つ編集はありません。",
+                ["RoundTrip.GdbAhead.Hint"] = "GDBに、Revitがまだ取り込んでいない値または形状の編集があります。",
+                ["RoundTrip.BothChanged.Hint"] = "新しい書き出しがGDBを待ち、GDBの編集がRevitを待っています。",
+                ["RoundTrip.Blocked.Hint"] = "往復の状態を読めないため、フォルダーを直すまでどちらも先に進めません。"
             }
         };
     }
