@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 
 namespace RevitGeoSuite.CesiumHandoff;
 
@@ -88,6 +90,184 @@ public static class CesiumStationFolder
         idPart = idPart.Length > 8 ? idPart.Substring(0, 8) : idPart;
         string slug = CesiumBuildingIdentity.Slugify(manifest.Building?.Name);
         return slug.Length > 0 ? $"{slug}-{idPart.ToLowerInvariant()}" : idPart.ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// The newest other version in <paramref name="versionDirectory"/>'s model folder that has a
+    /// <c>gis/</c> folder, by the manifest's <c>createdUtc</c>, or null. Versions older than the
+    /// given one only, so a send compares with what was there before it. A folder that is hidden,
+    /// has no manifest or whose manifest cannot be read is skipped, as Kanizu skips it.
+    /// </summary>
+    public static string? PreviousVersion(string versionDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(versionDirectory))
+        {
+            throw new ArgumentException("A version folder is required.", nameof(versionDirectory));
+        }
+
+        string self = Path.GetFullPath(versionDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string? modelDirectory = Path.GetDirectoryName(self);
+        DateTime? selfCreated = ReadCreatedUtc(self);
+        if (modelDirectory is null || !Directory.Exists(modelDirectory) || selfCreated is null)
+        {
+            return null;
+        }
+
+        string? best = null;
+        DateTime bestCreated = DateTime.MinValue;
+        foreach (string candidate in Directory.GetDirectories(modelDirectory))
+        {
+            string name = Path.GetFileName(candidate);
+            if (name.StartsWith(".", StringComparison.Ordinal)
+                || string.Equals(Path.GetFullPath(candidate).TrimEnd(Path.DirectorySeparatorChar), self, StringComparison.OrdinalIgnoreCase)
+                || !Directory.Exists(Path.Combine(candidate, "gis")))
+            {
+                continue;
+            }
+
+            DateTime? created = ReadCreatedUtc(candidate);
+            if (created is null || created.Value > selfCreated.Value)
+            {
+                continue;
+            }
+
+            if (best is null || created.Value > bestCreated
+                || (created.Value == bestCreated && string.CompareOrdinal(name, Path.GetFileName(best)) > 0))
+            {
+                best = candidate;
+                bestCreated = created.Value;
+            }
+        }
+
+        return best;
+    }
+
+    private static DateTime? ReadCreatedUtc(string versionDirectory)
+    {
+        return TryReadManifest(versionDirectory)?.CreatedUtc.ToUniversalTime();
+    }
+
+    /// <summary>What a folder is to Send to Kanizu before the first send into it.</summary>
+    public enum FolderKind
+    {
+        /// <summary>No such folder: a mistyped or unplugged share.</summary>
+        Missing,
+
+        /// <summary>The folder exists but holds no <c>revit/</c> versions yet; a send makes it a station folder.</summary>
+        New,
+
+        /// <summary>It already holds <c>revit/</c> versions.</summary>
+        Station,
+    }
+
+    /// <summary>
+    /// A folder is a station folder when <c>revit/</c> holds at least one version with a manifest;
+    /// a project folder that merely has a <c>revit</c> directory is new. Hidden folders (staging,
+    /// set aside) do not count. IO errors and a path that is not valid read as missing.
+    /// </summary>
+    public static FolderKind Classify(string? stationFolder)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(stationFolder) || !Directory.Exists(stationFolder))
+            {
+                return FolderKind.Missing;
+            }
+
+            string revit = Path.Combine(stationFolder, RevitDirectoryName);
+            bool hasVersion = Directory.Exists(revit) && Directory.EnumerateDirectories(revit)
+                .Where(model => !Path.GetFileName(model).StartsWith(".", StringComparison.Ordinal))
+                .SelectMany(Directory.EnumerateDirectories)
+                .Where(version => !Path.GetFileName(version).StartsWith(".", StringComparison.Ordinal))
+                .Any(version => File.Exists(Path.Combine(version, "cesium-package.json")));
+            return hasVersion ? FolderKind.Station : FolderKind.New;
+        }
+        catch (Exception ex) when (IsPathError(ex))
+        {
+            return FolderKind.Missing;
+        }
+    }
+
+    /// <summary>
+    /// The source of the newest version of the model <paramref name="modelId"/> in the station
+    /// folder, by <c>createdUtc</c>, or null. Only that model's folders are read (their names end
+    /// with the start of the model id, see <see cref="ModelFolderName"/>). Its <c>documentKey</c>
+    /// hashes the file path the version was written from, so a Save As copy of the model, which
+    /// keeps the model id, can tell that the last version came from another file.
+    /// </summary>
+    public static CesiumPackageSource? LatestSource(string stationFolder, string modelId)
+    {
+        if (string.IsNullOrWhiteSpace(stationFolder) || string.IsNullOrWhiteSpace(modelId))
+        {
+            return null;
+        }
+
+        string idPart = modelId.Replace("-", string.Empty);
+        idPart = (idPart.Length > 8 ? idPart.Substring(0, 8) : idPart).ToLowerInvariant();
+        try
+        {
+            string revit = Path.Combine(stationFolder, RevitDirectoryName);
+            if (!Directory.Exists(revit))
+            {
+                return null;
+            }
+
+            CesiumPackageSource? best = null;
+            DateTime bestCreated = DateTime.MinValue;
+            IEnumerable<string> versions = Directory.EnumerateDirectories(revit)
+                .Where(model =>
+                {
+                    string name = Path.GetFileName(model).ToLowerInvariant();
+                    return name == idPart || name.EndsWith("-" + idPart, StringComparison.Ordinal);
+                })
+                .SelectMany(Directory.EnumerateDirectories)
+                .Where(version => !Path.GetFileName(version).StartsWith(".", StringComparison.Ordinal));
+            foreach (string version in versions)
+            {
+                CesiumPackageManifest? manifest = TryReadManifest(version);
+                if (manifest?.Source is null || !string.Equals(manifest.Source.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                DateTime created = manifest.CreatedUtc.ToUniversalTime();
+                if (best is null || created > bestCreated)
+                {
+                    best = manifest.Source;
+                    bestCreated = created;
+                }
+            }
+
+            return best;
+        }
+        catch (Exception ex) when (IsPathError(ex))
+        {
+            return null;
+        }
+    }
+
+    // A typed folder can hold characters .NET Framework rejects (ArgumentException, NotSupportedException
+    // for a stray colon) besides the usual IO and access errors.
+    private static bool IsPathError(Exception ex) =>
+        ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is NotSupportedException;
+
+    /// <summary>A version's manifest, or null when it is missing or cannot be read.</summary>
+    public static CesiumPackageManifest? TryReadManifest(string versionDirectory)
+    {
+        string manifestPath = Path.Combine(versionDirectory, "cesium-package.json");
+        if (!File.Exists(manifestPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath));
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is Newtonsoft.Json.JsonException || ex is InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     /// <summary>UTC time first so names sort by age, then the content hash prefix.</summary>

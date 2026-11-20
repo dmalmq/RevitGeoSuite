@@ -14,6 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RevitGeoSuite.CesiumHandoff\RevitGeoSuite.CesiumHandoff.csproj" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The Kanizu GIS standard, shipped inside the assembly. See standards/README.md. -->
     <EmbeddedResource Include="..\..\standards\color_theme.json" LogicalName="RevitGeoSuite.Standards.color_theme.json" />
     <EmbeddedResource Include="..\..\standards\floor-types.json" LogicalName="RevitGeoSuite.Standards.floor-types.json" />

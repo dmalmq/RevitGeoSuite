@@ -588,6 +588,7 @@ export function responses(scenario: MockScenario): Record<string, unknown | ((pa
     'tiles3d.exportOptions': tiles3dOptions,
     'gis.exportOptions': gisOptions,
     'cesium.export.getState': cesiumState,
+    'station.send.getState': { stationFolder: '\\\\share\\JRTokyoSta', profileName: 'station', documentKey: 'tokyo-station-1a2b3c4d', folderKind: 'station', lastSentFromAnotherFile: false },
     'cesium.settings.save': (payload: any) => ({ hasToken: false, viewerUrl: payload?.viewerUrl ?? '' }),
     'tiles3d.export.prepare': { crs: 'JGD2011 / Japan Plane Rectangular CS IX (EPSG:6677)', elementCount: 4_812, triangleCount: 1_284_330, geoidOffsetMeters: 36.71, warnings: ['3 elements have no geometry in the 3D view and are skipped.'] },
     'citygml.export.prepare': { crs: 'JGD2011 / Japan Plane Rectangular CS IX (EPSG:6677)', featureCount: 1_206, warnings: [] },
@@ -639,6 +640,22 @@ export const jobResults: Record<string, unknown> = {
     warnings: []
   },
   'cesium.push': { message: 'Sent to the Cesium viewer.', pushed: true },
+  'station.send.run': {
+    versionFolder: '\\\\share\\JRTokyoSta\\revit\\tokyo-station-8d7f3c1e\\20261116T013000Z-0dd17673',
+    hasPrevious: true,
+    changesCounted: true,
+    rulesDiffer: false,
+    elementsAdded: 3,
+    elementsRemoved: 1,
+    elementsEdited: 8,
+    elementsChanged: 12,
+    layers: [
+      { layer: 'detail', added: 4, removed: 0, edited: 2 },
+      { layer: 'unit', added: 3, removed: 1, edited: 7 }
+    ],
+    seconds: 4.2,
+    warnings: []
+  },
   'gis.export': {
     outputs: [{ dxfPath: 'C:\\Exports\\DXF\\concourse_units.dxf' }],
     summary: '1 file, 412 features, 4 layers',

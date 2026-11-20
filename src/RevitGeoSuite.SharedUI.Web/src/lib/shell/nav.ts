@@ -23,7 +23,8 @@ export const NAV: NavGroup[] = [
     fallback: 'Export',
     entries: [
       { route: '/export', labelKey: 'Nav.ExportData', fallback: 'Export data', icon: 'upload' },
-      { route: '/export/geopackage', labelKey: 'Exporter.Title', fallback: 'GeoPackage Export', icon: 'layers' }
+      { route: '/export/geopackage', labelKey: 'Exporter.Title', fallback: 'GeoPackage Export', icon: 'layers' },
+      { route: '/send', labelKey: 'Nav.Send', fallback: 'Send to Kanizu', icon: 'send' }
     ]
   }
 ]

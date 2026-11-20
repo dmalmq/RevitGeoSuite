@@ -86,7 +86,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g7-reset` or `undo-probe`. `--script` is the same option. |
+| `--scenario <name>` | `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g7-reset`, `f1-send` or `undo-probe`. `--script` is the same option. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
 | `--out <folder>` | The run folder. The default is `C:\dev\revit-test\auto\<date-time>`. |
@@ -362,6 +362,17 @@ It writes `model-facts.md` and `model-facts.json` into the run folder as well as
 ## The g7-reset scenario
 
 `--scenario g7-reset --model <file>` runs Set up model (G7.1), sets the `gis_category` of `j ホーム_床` to `walkway` in the fixture transaction and expects an audit finding with a Reset to standard button (G7.2), clicks it and expects one `Kanizu GIS: Reset floor type` commit with `platform` back and the finding gone (G7.3), then undoes it and expects `walkway` and the finding again (G7.4). G7.4 needs an unlocked desktop for the typed Ctrl+Z.
+
+## The f1-send scenario
+
+`--scenario f1-send --model <file>` checks Send to Kanizu. Everything it writes goes to `station/` in the run folder, which the copy records as its station folder. Run it with `-FloorPlanDataSandbox`: a send reads the per-PC profile store and commits an export baseline there.
+
+- F1.1 runs Set up model when the copy needs it, then a coarse Cesium export into `station/`. That version is the one the first send compares with, and its time is noted.
+- F1.2 reads `station.send.getState` for `station/` (a station folder, and the document key the run must send back), then sends through `station.send.run`. It expects the changes counted, a new version with a GeoPackage, `tiles/levels.json` and `tiles/rooms.json`, and no tileset or GLB. It expects a manifest without `tiles.tileset` or `export`, the Cesium export's model id, and nothing changed. Every `levelMap` level must be in `levels.json` with the same UniqueId and the same height above TP as in the Cesium export, within 1 cm, and at least one level must be compared.
+- F1.3 opens `#/send/now`, as the ribbon button does. It expects the page to send without stopping (the copy has no audit errors after Set up model), one new version, "Nothing changed since the last send." and the address back at `#/send`.
+- F1.4 sets `j ホーム_床` to `walkway`. It expects that to be an audit error, and the page to stop with no new version. After Send anyway, it expects only edited elements and a single changed layer, Units.
+- F1.5 sends with another model's document key and expects "Another model is active now" and no version. It then starts a send, waits for its staging folder (`revit/.tmp-*`) to show, and asks for a second send, which must be refused as busy; exactly one new version results.
+- F1.6 puts a file where this model's folder goes in a new folder `station-broken/`, and sends there with the new folder confirmed. The send records the new folder, exports, and cannot publish. It expects the send to fail without a restore error, the model to point at `station/` again, and nothing left in `station-broken/revit/` but the file.
 
 ## The georef-read scenario
 

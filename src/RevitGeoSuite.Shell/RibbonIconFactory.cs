@@ -7,7 +7,7 @@ namespace RevitGeoSuite.Shell;
 /// <summary>
 /// Draws the ribbon buttons as a pine tile (Kanizu's Framed sheet primary, #1D5E51) with a white
 /// Lucide glyph, the same glyphs the web UI uses for each workflow (src/lib/kit/icons.ts):
-/// map-pin for Georeference, download for Import, upload for Export.
+/// map-pin for Georeference, download for Import, upload for Export, send for Send to Kanizu.
 /// </summary>
 internal static class RibbonIconFactory
 {
@@ -38,7 +38,7 @@ internal static class RibbonIconFactory
 
         using (DrawingContext context = drawing.Open())
         {
-            bool known = iconKind is RibbonIconKind.WebGeoreference or RibbonIconKind.WebImport or RibbonIconKind.WebExport;
+            bool known = iconKind is RibbonIconKind.WebGeoreference or RibbonIconKind.WebImport or RibbonIconKind.WebExport or RibbonIconKind.WebSend;
             context.DrawRoundedRectangle(CreateBrush(known ? Pine : Slate), null, new Rect(1d, 1d, 30d, 30d), 7d, 7d);
 
             TransformGroup glyphTransform = new TransformGroup();
@@ -88,6 +88,13 @@ internal static class RibbonIconFactory
                     Parse("M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"),
                     Parse("M17 8L12 3L7 8"),
                     Parse("M12 3V15")
+                };
+            case RibbonIconKind.WebSend:
+                // send
+                return new[]
+                {
+                    Parse("M14.536 21.686a0.5 0.5 0 0 0 0.937 -0.024l6.5 -19a0.496 0.496 0 0 0 -0.635 -0.635l-19 6.5a0.5 0.5 0 0 0 -0.024 0.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"),
+                    Parse("M21.854 2.147l-10.94 10.939")
                 };
             default:
                 // x

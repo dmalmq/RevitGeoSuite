@@ -20,6 +20,7 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
       <yyyyMMddTHHmmssZ>-<hash8>/   one version per export
         cesium-package.json         the manifest
         tiles/  tileset.json, content.glb, levels.json, elements.json, rooms.json
+                (a Send to Kanizu version has levels.json and rooms.json only)
         gis/    floor plans (GeoPackage), gis-fields.json
 ```
 
@@ -44,9 +45,18 @@ Every file has one writer, so two people on the share never overwrite each other
 | `building.id`, `building.name` | The building's id (hashes the path) and name, for display. |
 | `crs.projectEpsg` | The project CRS of every plane-grid coordinate in the package. |
 | `anchor` | Where the tileset's east-north-up frame sits: `lat`, `lon`, `elevationMeters` (ellipsoidal), `geoidOffsetMeters`, `geoidModel` (`EGM2008` or `typed`), `orthometricHeightMeters`, `heightDatum` (`TP` or `unknown`), and the plane `easting`, `northing`. A reader places the model from these source numbers, with its own geoid if it has a better one, rather than trusting the tileset's transform. |
+| `tiles.tileset` | `tiles/tileset.json`. Absent on a Send to Kanizu version, which has no 3D Tiles (below). |
 | `tiles.levels`, `tiles.elements`, `tiles.rooms` | Paths of the index files below, relative to the version folder. Absent when the export did not write them. A path never leaves the version folder. |
 | `gis.rules` | Which category rules and profile the floor plan export used, below. Absent when the package has no `gis` section. |
 | `export` | What the 3D Tiles export covered and how, below. Absent on packages from before it was written, and on packages that "Send to Cesium viewer" (`cesium.push`) wraps around an existing export folder later, because that step cannot know which settings made the folder. A reader treats a missing `export` as unknown settings. |
+
+### Send to Kanizu versions
+
+Send to Kanizu writes the GIS package without 3D Tiles, so a model's weekly send takes seconds. Its version has `gis/`, `tiles/levels.json` and `tiles/rooms.json`, and no `tileset.json`, GLB or `elements.json`. Its manifest has `tiles` without `tileset` and no `export`. Its `source`, `crs`, `levelMap` and `gis` are the same as a Cesium export of the model would write; `anchor` differs as below.
+
+- `levels.json` lists the host model's levels that carry a GIS `level_id`, under `linkLevels[""]` and `levels`. `elementCount` is the number of GIS features on the level, and `minZMeters` and `maxZMeters` equal `levelElevationMeters`.
+- `anchor` is the georeference origin, not moved to the building's centroid as a precise-CRS tiles export moves it. A level's height above the anchor's orthometric height is therefore a different number from a Cesium export's, but the sum is the same height.
+- A reader orders a send among the model's versions like any other and pairs and compares its levels and GIS as usual. Kanizu's Revit element change list compares `elements.json` files, so when either version is a send it says there is nothing to list and the GIS compares as usual. Kanizu has no 3D view of Revit tiles today, so nothing else reads `tileset.json`.
 
 ### `export`
 
@@ -221,6 +231,33 @@ Kanizu writes the whole file again each time it saves the network: when Save wri
 | `notShown` | `links`, `connectors`, `findings` that Kanizu left out because their floor is paired with no level of this model. |
 
 Each point sits at its level's `Level.ProjectElevation`, found by the level's `level_id` parameter, lifted 100 mm so the floor's top face does not hide it. Items on a `levelId` no level of the model has are counted, not drawn. In a host model only the host's own file is read; drawing linked models' files through the link transforms is not built yet.
+
+## Round-trip state
+
+Both apps say where each model stands in the round trip with the same five words, read from the station folder alone, so they agree on the same folder. RevitGeoSuite shows the station's state on the GIS standard ribbon button and Kanizu beside its window title.
+
+Per model, take the model's newest export under `revit/`: versions are grouped by `source.modelId` in lower case; a version without one belongs to the model id seen in its model folder (from that folder's newest version that has one), else to its folder; the newest is the one with the latest `createdUtc` (then the version folder's path). Then read the model's drift file, `gis-drift/<model>.gis-drift.json`, named by that version's model id in lower case, or its `source.documentKey` without one.
+
+| Newest export applied | Drift `rows` or `shapes` | State |
+|---|---|---|
+| yes | none | In sync |
+| no, or no drift file, or empty `appliedVersion` | none | Revit ahead |
+| yes | some | GDB ahead |
+| no | some | Both changed |
+
+"Applied" means the drift file's `appliedVersion` equals the newest export's version folder relative to the station (`revit/<model folder>/<version folder>`). `notPlaced` does not count as waiting. A model is **Blocked** when its drift file cannot be read, has a `version` newer than the reader knows, or names an `appliedVersion` folder that is not in the station folder. A station whose `revit/` folder cannot be listed is Blocked.
+
+A station's state is its models' worst: Blocked if any model is; else Both changed if a model is Both changed, or one model is Revit ahead while another is GDB ahead; else Revit ahead or GDB ahead if a model is; else In sync. A station with no export has no state.
+
+| State | 日本語 |
+|---|---|
+| In sync | 同期済み |
+| Revit ahead | Revit が先行 |
+| GDB ahead | GDB が先行 |
+| Both changed | 両方で変更あり |
+| Blocked | 停止中 |
+
+Kanizu's own new-export notice judges a pending export against the GDB, so it can say Revit ahead where the folder still says Both changed (the export already agrees with the GDB's edits); the folder state above is the one both apps show.
 
 ## Versions
 
