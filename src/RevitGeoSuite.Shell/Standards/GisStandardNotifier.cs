@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using Autodesk.Revit.DB;
@@ -7,11 +8,13 @@ using Autodesk.Revit.DB.Events;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Events;
 using RevitGeoSuite.Core.ProjectMetadata;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.Storage;
 using RevitGeoSuite.FloorPlanExport.GisTools;
+using RevitGeoSuite.SharedUI.Localization;
 using RevitGeoSuite.Shell.Commands;
 using RevitGeoSuite.Shell.Handlers;
 
@@ -20,8 +23,10 @@ namespace RevitGeoSuite.Shell.Standards;
 /// <summary>
 /// The standards check outside the export: one notice per model per Revit session when a GIS model
 /// opens behind the standard, and the state on the ribbon's GIS standard button, with the count of
-/// GDB edits from Kanizu that wait for the model. The count follows the drift file: it is read
-/// again when the file changes on disk, and after Review GDB edits applies.
+/// GDB edits from Kanizu that wait for the model and where the station stands in the round trip.
+/// The count follows the drift file, and the round-trip word follows a new export: both are read
+/// again when the file changes on disk, after Review GDB edits applies, and after a station export
+/// is published.
 /// </summary>
 internal sealed class GisStandardNotifier
 {
@@ -38,12 +43,16 @@ internal sealed class GisStandardNotifier
     private DateTime _driftWritten;
     private DateTime _nextDriftPoll;
     private bool _modelChanged;
+    private volatile bool _forceRefresh;
+    private string? _versionStamp;
+    private const int MaxSecondLine = 32;
 
     public static GisStandardNotifier Instance { get; } = new();
 
     public void Attach(UIControlledApplication application, PushButton? button)
     {
         _button = button;
+        UiLocalizer.Instance.PropertyChanged += OnLanguageChanged;
         application.ControlledApplication.DocumentOpened += OnDocumentOpened;
         application.ControlledApplication.DocumentSaved += OnDocumentChanged;
         application.ControlledApplication.DocumentChanged += OnModelChanged;
@@ -54,12 +63,24 @@ internal sealed class GisStandardNotifier
 
     public void Detach(UIControlledApplication application)
     {
+        UiLocalizer.Instance.PropertyChanged -= OnLanguageChanged;
         application.ControlledApplication.DocumentOpened -= OnDocumentOpened;
         application.ControlledApplication.DocumentSaved -= OnDocumentChanged;
         application.ControlledApplication.DocumentChanged -= OnModelChanged;
         application.ControlledApplication.DocumentClosed -= OnDocumentClosed;
         application.ViewActivated -= OnViewActivated;
         application.Idling -= OnIdling;
+    }
+
+    /// <summary>A station export was published, or the UI language changed: the button reads again on the next idle.</summary>
+    internal void NoteExportPublished() => _forceRefresh = true;
+
+    private void OnLanguageChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(UiLocalizer.CurrentLanguage))
+        {
+            _forceRefresh = true;
+        }
     }
 
     private void OnDocumentOpened(object sender, DocumentOpenedEventArgs e)
@@ -126,13 +147,20 @@ internal sealed class GisStandardNotifier
             }
         }
 
+        Document? active = (sender as UIApplication)?.ActiveUIDocument?.Document;
+        if (_forceRefresh && active != null)
+        {
+            _forceRefresh = false;
+            Refresh(active, force: true);
+        }
+
         if (DateTime.UtcNow >= _nextDriftPoll)
         {
             _nextDriftPoll = DateTime.UtcNow + DriftPollInterval;
-            if (_modelChanged || DriftFileChanged())
+            if (_modelChanged || DriftFileChanged() || VersionFoldersChanged(active))
             {
                 _modelChanged = false;
-                Refresh((sender as UIApplication)?.ActiveUIDocument?.Document, force: true);
+                Refresh(active, force: true);
             }
         }
     }
@@ -175,12 +203,28 @@ internal sealed class GisStandardNotifier
         {
             GisStandardStatus status = GisStandardStateReader.Check(document);
             (int waiting, string path) = WaitingIn(document);
-            _driftPath = path.Length > 0 ? path : GisDriftSource.Locate(document).ExpectedPath;
+            (_, string station, string expected) = GisDriftSource.Locate(document);
+            _driftPath = path.Length > 0 ? path : expected;
             _driftWritten = WrittenAt(_driftPath);
-            _button.ItemText = "GIS standard\n" + status.ShortLabel + (waiting > 0 ? " · " + WaitingLabel(waiting) : string.Empty);
-            _button.ToolTip = waiting > 0
-                ? $"{status.Summary}\n{WaitingLabel(waiting)} from Kanizu {(waiting == 1 ? "waits" : "wait")} for this model. Open GIS standard, then GDB edits, to review them."
-                : status.Summary;
+            _versionStamp = station.Length == 0 ? string.Empty : RoundTrip.VersionStamp(station);
+            RoundTripState? roundTrip = station.Length == 0 ? null : RoundTrip.Station(RoundTrip.Models(station));
+            string? stateWord = roundTrip is RoundTripState state ? UiLocalizer.Instance.Get(StateKey(state)) : null;
+            string second = status.ShortLabel + (stateWord == null ? string.Empty : " · " + stateWord);
+            string withCount = waiting > 0 ? second + " · " + WaitingLabel(waiting) : second;
+            bool countOnButton = stateWord == null || withCount.Length <= MaxSecondLine;
+            _button.ItemText = "GIS standard\n" + (countOnButton ? withCount : second);
+            string tooltip = status.Summary;
+            if (roundTrip is RoundTripState shown)
+            {
+                tooltip += "\n" + UiLocalizer.Instance.Get(StateKey(shown) + ".Hint");
+            }
+
+            if (waiting > 0)
+            {
+                tooltip += "\n" + WaitingLabel(waiting) + " from Kanizu " + (waiting == 1 ? "waits" : "wait") + " for this model. Open GIS standard, then GDB edits, to review them.";
+            }
+
+            _button.ToolTip = tooltip;
             _buttonDocumentKey = key;
         }
         catch (Exception ex)
@@ -204,6 +248,34 @@ internal sealed class GisStandardNotifier
     }
 
     internal static string WaitingLabel(int count) => count == 1 ? "1 GDB edit" : $"{count} GDB edits";
+    private static string StateKey(RoundTripState state) => state switch
+    {
+        RoundTripState.InSync => "RoundTrip.InSync",
+        RoundTripState.RevitAhead => "RoundTrip.RevitAhead",
+        RoundTripState.GdbAhead => "RoundTrip.GdbAhead",
+        RoundTripState.BothChanged => "RoundTrip.BothChanged",
+        _ => "RoundTrip.Blocked",
+    };
+
+    /// <summary>Whether a new export appeared under the station's <c>revit/</c> since the button was labelled.</summary>
+    private bool VersionFoldersChanged(Document? document)
+    {
+        if (document == null || _buttonDocumentKey == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            string station = GisDriftSource.Locate(document).StationFolder;
+            string? stamp = station.Length == 0 ? string.Empty : RoundTrip.VersionStamp(station);
+            return stamp != _versionStamp;
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
 
     private void MaybeNotify(Document document, IntPtr owner)
     {
