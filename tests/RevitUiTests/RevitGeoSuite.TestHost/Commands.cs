@@ -49,6 +49,7 @@ internal sealed class Commands
                 "floorTypes" => api.Run(FloorTypes, Quick),
                 "views" => api.Run(app => ViewCommands.Views(app, request), Quick),
                 "levels" => api.Run(ViewCommands.Levels, Quick),
+                "rooms" => api.Run(ModelCommands.Rooms, TimeSpan.FromMinutes(5)),
                 "views3d" => api.Run(ViewCommands.Views3D, Quick),
                 "ribbonItems" => api.Run(app => RibbonItems(app, Text(request, "tab")), Quick),
                 "bindings" => api.Run(app => ModelCommands.Bindings(app, Strings(request, "names")), Quick),

@@ -32,11 +32,11 @@ public sealed class CesiumStationFolderTests : IDisposable
         }
     }
 
-    private static CesiumPackageBuildInputs Inputs(string? modelId, string documentKey = "doc-key", string buildingName = "Tokyo Station")
+    private static CesiumPackageBuildInputs Inputs(string? modelId, string documentKey = "doc-key", string buildingName = "Tokyo Station", string buildingId = "tokyo-station-1a2b3c4d")
     {
         return new CesiumPackageBuildInputs
         {
-            BuildingId = "tokyo-station-1a2b3c4d",
+            BuildingId = buildingId,
             BuildingName = buildingName,
             SourceModel = "Tokyo.rvt",
             DocumentKey = documentKey,
@@ -99,7 +99,7 @@ public sealed class CesiumStationFolderTests : IDisposable
         Assert.Equal(2, Directory.GetDirectories(Path.GetDirectoryName(firstPublished.RootDirectory)!).Length);
     }
 
-    private CesiumPackageLayout PublishGis(string modelId, DateTime createdUtc, bool withGis = true, string documentKey = "doc-key", string buildingName = "Tokyo Station")
+    private CesiumPackageLayout PublishGis(string? modelId, DateTime createdUtc, bool withGis = true, string documentKey = "doc-key", string buildingName = "Tokyo Station", string buildingId = "tokyo-station-1a2b3c4d")
     {
         CesiumPackageLayout staging = CesiumStationFolder.CreateStagingLayout(_station);
         if (withGis)
@@ -112,7 +112,7 @@ public sealed class CesiumStationFolderTests : IDisposable
             File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "{}");
         }
 
-        CesiumPackageManifest manifest = new CesiumPackageLayoutBuilder().WriteManifest(staging, Inputs(modelId, documentKey, buildingName));
+        CesiumPackageManifest manifest = new CesiumPackageLayoutBuilder().WriteManifest(staging, Inputs(modelId, documentKey, buildingName, buildingId));
         manifest.CreatedUtc = createdUtc;
         File.WriteAllText(staging.ManifestPath, CesiumPackageManifestSerializer.Serialize(manifest));
         return CesiumStationFolder.Publish(staging, _station, manifest);
@@ -143,6 +143,29 @@ public sealed class CesiumStationFolderTests : IDisposable
 
         Assert.NotEqual(Path.GetDirectoryName(before.RootDirectory), Path.GetDirectoryName(after.RootDirectory));
         Assert.Equal(before.RootDirectory, CesiumStationFolder.PreviousVersion(after.RootDirectory));
+    }
+
+    [Fact]
+    public void Previous_version_never_takes_another_model_folders_version_without_the_same_model_id()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        // Another model whose id starts like this one's, so its folder ends in the same id part.
+        CesiumPackageLayout other = PublishGis("abcdefgh-2222", start, buildingName: "Other Station");
+        PublishGis(null, start.AddHours(1), buildingName: "No Id Station", buildingId: "no-id-station-abcdefgh");
+        CesiumPackageLayout mine = PublishGis("abcdefgh-1111", start.AddHours(2), buildingName: "Tokyo Station");
+
+        Assert.EndsWith("-abcdefgh", Path.GetFileName(Path.GetDirectoryName(other.RootDirectory)));
+        Assert.Null(CesiumStationFolder.PreviousVersion(mine.RootDirectory));
+    }
+
+    [Fact]
+    public void Previous_version_without_a_model_id_stays_in_its_own_folder()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        PublishGis(null, start, buildingName: "Tokyo Station", buildingId: "tokyo-station-22222222");
+        CesiumPackageLayout mine = PublishGis(null, start.AddHours(1), buildingName: "Tokyo Station", buildingId: "tokyo-station-33333333");
+
+        Assert.Null(CesiumStationFolder.PreviousVersion(mine.RootDirectory));
     }
 
     [Fact]

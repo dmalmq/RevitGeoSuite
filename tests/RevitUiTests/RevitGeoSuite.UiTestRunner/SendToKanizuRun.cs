@@ -19,6 +19,8 @@ internal sealed partial class GisStandardRun
         string station = Path.Combine(options.OutputFolder, "station");
         string? cesiumVersion = null;
         string? firstSend = null;
+        await Step("F1.0", "A first send that fails after recording its folder leaves the model with no station folder", FailedFirstSend);
+
         await Step("F1.1", "Set up model and export to Cesium into a station folder in the run folder: the version a send compares with", async step =>
         {
             if ((await Inspect()).SetupLines.Length > 0)
@@ -229,6 +231,139 @@ internal sealed partial class GisStandardRun
             string[] left = Directory.GetDirectories(brokenRevit);
             step.Check(left.Length == 0, $"No version or staging folder was left in the failed folder ({string.Join(", ", left.Select(Path.GetFileName))}).");
         });
+
+        await Step("F1.7", "rooms.json holds every placed room of the host and of the linked models the GIS export took", step =>
+        {
+            if (firstSend == null)
+            {
+                step.NotRun("No send to read rooms.json from.");
+                return Task.CompletedTask;
+            }
+
+            CheckRoomIndex(step, firstSend, station);
+            return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>
+    /// F1.0: on a copy that records no station folder, a send into a new folder is cancelled once it
+    /// has recorded that folder (or fails on its own after it). The model must record no folder
+    /// afterwards, the new folder must hold no version, and one Undo takes back only the clearing.
+    /// </summary>
+    private async Task FailedFirstSend(StepResult step)
+    {
+        JsonNode? state = await Shell.RpcAsync("station.send.getState", new { });
+        string remembered = state?["stationFolder"]?.GetValue<string>() ?? string.Empty;
+        if (remembered.Length > 0)
+        {
+            step.NotRun($"The copy already records a station folder ({remembered}), so a send into a new folder is not its first.");
+            return;
+        }
+
+        string first = Path.Combine(options.OutputFolder, "station-first");
+        Directory.CreateDirectory(first);
+        int seq = host.LastEvent();
+        string handle = await Shell.StartJobAsync("station.send.run", new { stationFolder = first, documentKey = state?["documentKey"]?.GetValue<string>() ?? string.Empty, confirmNewFolder = true });
+        bool recorded = false;
+        bool cancelSent = false;
+        JsonNode? job = null;
+        for (DateTime end = DateTime.UtcNow + CesiumWait; DateTime.UtcNow < end; await Shell.Page.WaitForTimeoutAsync(200))
+        {
+            job = await Shell.JobStateAsync(handle);
+            string jobState = job?["state"]?.GetValue<string>() ?? string.Empty;
+            if (jobState is "completed" or "failed")
+            {
+                break;
+            }
+
+            recorded = recorded || host.EventsAfter(seq).Any(item => item.Kind == "commit" && item.Names.Contains(StationFolderTransaction));
+            string? jobId = job?["jobId"]?.GetValue<string>();
+            if (recorded && !cancelSent && jobId != null)
+            {
+                await Shell.RpcAsync("job.cancel", new { jobId });
+                cancelSent = true;
+                step.Note("The send recorded the folder; the run cancelled it.");
+            }
+        }
+
+        List<RevitEvent> commits = host.EventsAfter(seq).Where(item => item.Kind == "commit").ToList();
+        recorded = commits.Any(item => item.Names.Contains(StationFolderTransaction));
+        step.Note($"Job: {job?.ToJsonString()}");
+        step.Note($"Transactions: {string.Join(" / ", commits)}.");
+        string jobEnd = job?["state"]?.GetValue<string>() ?? "no end";
+        if (jobEnd == "completed")
+        {
+            step.NotRun("The send finished before the cancel landed, so nothing failed; the model now records station-first, and F1.1 records its own folder.");
+            return;
+        }
+
+        if (!recorded)
+        {
+            step.NotRun($"The send ended ({jobEnd}: {job?["error"]}) before it recorded the folder, so there was nothing to clear.");
+            return;
+        }
+
+        step.Check(jobEnd == "failed", $"The send failed or was cancelled ({job?["error"]}).");
+        step.Check(job?["error"]?.ToString().Contains("still points at", StringComparison.Ordinal) != true, "It did not say the folder could not be cleared.");
+        string now = (await Shell.RpcAsync("station.send.getState", new { }))?["stationFolder"]?.GetValue<string>() ?? string.Empty;
+        step.Check(now.Length == 0, $"The model records no station folder again ({(now.Length == 0 ? "none" : now)}).");
+        step.Check(Versions(first).Length == 0, $"The new folder holds no version ({string.Join(", ", Versions(first).Select(Path.GetFileName))}).");
+        int folderCommits = commits.Count(item => item.Names.Contains(StationFolderTransaction));
+        step.Check(folderCommits == 2, $"Two '{StationFolderTransaction}' transactions: the record and the clearing ({folderCommits}).");
+
+        // One Undo takes back the clearing only, so the model points at the failed folder again; Redo clears it.
+        if (UndoOrRedo(step, "undo", StationFolderTransaction))
+        {
+            string afterUndo = (await Shell.RpcAsync("station.send.getState", new { }))?["stationFolder"]?.GetValue<string>() ?? string.Empty;
+            step.Check(SamePath(afterUndo, first), $"After one Undo the model records the folder the send had recorded ({afterUndo}).");
+            UndoOrRedo(step, "redo", StationFolderTransaction);
+            string afterRedo = (await Shell.RpcAsync("station.send.getState", new { }))?["stationFolder"]?.GetValue<string>() ?? string.Empty;
+            step.Check(afterRedo.Length == 0, $"After Redo it records none again ({(afterRedo.Length == 0 ? "none" : afterRedo)}).");
+        }
+    }
+
+    private const string StationFolderTransaction = "Save Station Folder";
+
+    /// <summary>
+    /// F1.7: rooms.json against the test host's count of placed rooms with a boundary, the host's and
+    /// each link's the GIS export took (the links its gis-model.json lists). With no loaded link, the
+    /// link part is NOT RUN and says so.
+    /// </summary>
+    private void CheckRoomIndex(StepResult step, string send, string station)
+    {
+        JsonArray rooms = JsonNode.Parse(File.ReadAllText(Path.Combine(send, "tiles", "rooms.json")))!["rooms"]!.AsArray();
+        Dictionary<string, int> byLink = rooms
+            .GroupBy(room => room!["sourceLinkInstanceUniqueId"]?.GetValue<string>() ?? string.Empty)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        JsonObject model = host.Call("rooms", new { });
+        int hostRooms = model["host"]!.GetValue<int>();
+        step.Check(byLink.GetValueOrDefault(string.Empty) == hostRooms, $"Host rooms: {byLink.GetValueOrDefault(string.Empty)} in rooms.json, {hostRooms} placed in the model.");
+
+        JsonArray links = model["links"]?.AsArray() ?? new JsonArray();
+        string[] modelFiles = Directory.Exists(Path.Combine(station, "gis-models")) ? Directory.GetFiles(Path.Combine(station, "gis-models"), "*.gis-model.json") : Array.Empty<string>();
+        JsonArray? listed = modelFiles.Length == 1 ? JsonNode.Parse(File.ReadAllText(modelFiles[0]))?["links"]?.AsArray() : null;
+        HashSet<string> taken = new((listed ?? new JsonArray()).Select(link => link?["uniqueId"]?.GetValue<string>() ?? string.Empty), StringComparer.OrdinalIgnoreCase);
+        step.Note($"Links in the model: {links.ToJsonString()}; gis-model.json ({modelFiles.Length} file(s)) lists {(listed == null ? "none" : listed.ToJsonString())}.");
+        if (!links.Any(link => link?["loaded"]?.GetValue<bool>() == true))
+        {
+            step.Note("Linked rooms: NOT RUN. The copy has no loaded linked model.");
+            step.Check(byLink.Keys.All(key => key.Length == 0), "rooms.json has no linked rooms either.");
+            return;
+        }
+
+        if (listed == null)
+        {
+            step.Note("Linked rooms: NOT RUN. gis-model.json lists no links, so the export took the profile's own link choice, which the run cannot read.");
+            return;
+        }
+
+        foreach (JsonNode? link in links)
+        {
+            string uniqueId = link!["uniqueId"]!.GetValue<string>();
+            int expected = taken.Contains(uniqueId) && link["loaded"]!.GetValue<bool>() ? link["rooms"]!.GetValue<int>() : 0;
+            step.Check(byLink.GetValueOrDefault(uniqueId) == expected,
+                $"{link["name"]}: {byLink.GetValueOrDefault(uniqueId)} room(s) in rooms.json, {expected} expected ({(taken.Contains(uniqueId) ? "the GIS export took it" : "not taken")}).");
+        }
     }
 
     /// <summary>Opens #/send/now as the ribbon does; true when the page stopped on audit errors.</summary>

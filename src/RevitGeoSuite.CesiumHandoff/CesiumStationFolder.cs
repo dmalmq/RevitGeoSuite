@@ -86,10 +86,16 @@ public static class CesiumStationFolder
             return string.IsNullOrWhiteSpace(buildingId) ? "model" : buildingId;
         }
 
-        string idPart = modelId!.Replace("-", string.Empty);
-        idPart = idPart.Length > 8 ? idPart.Substring(0, 8) : idPart;
+        string idPart = ModelIdPart(modelId!);
         string slug = CesiumBuildingIdentity.Slugify(manifest.Building?.Name);
-        return slug.Length > 0 ? $"{slug}-{idPart.ToLowerInvariant()}" : idPart.ToLowerInvariant();
+        return slug.Length > 0 ? $"{slug}-{idPart}" : idPart;
+    }
+
+    /// <summary>The model id's part of a model folder name: its first 8 characters without dashes, lower case.</summary>
+    private static string ModelIdPart(string modelId)
+    {
+        string idPart = modelId.Trim().Replace("-", string.Empty);
+        return (idPart.Length > 8 ? idPart.Substring(0, 8) : idPart).ToLowerInvariant();
     }
 
     /// <summary>
@@ -97,8 +103,10 @@ public static class CesiumStationFolder
     /// <c>createdUtc</c>, or null. Versions older than the given one only, so a send compares with
     /// what was there before it. The same model is the version's own model folder, plus any other
     /// model folder under <c>revit/</c> whose versions carry the same <c>source.modelId</c>: a Save
-    /// As or a renamed building changes the folder's slug but not the model id. A folder that is
-    /// hidden, has no manifest or whose manifest cannot be read is skipped, as Kanizu skips it.
+    /// As or a renamed building changes the folder's slug but not the model id. Only the other model
+    /// folders whose name ends in the model id's part are opened, and of their versions only the
+    /// manifest is read. A folder that is hidden, has no manifest or whose manifest cannot be read is
+    /// skipped, as Kanizu skips it.
     /// </summary>
     public static string? PreviousVersion(string versionDirectory)
     {
@@ -122,9 +130,12 @@ public static class CesiumStationFolder
         string? revitDirectory = Path.GetDirectoryName(modelDirectory);
         if (!string.IsNullOrEmpty(modelId) && revitDirectory is not null && Directory.Exists(revitDirectory))
         {
+            string idPart = ModelIdPart(modelId!);
             foreach (string otherModel in Directory.GetDirectories(revitDirectory))
             {
-                if (!Path.GetFileName(otherModel).StartsWith(".", StringComparison.Ordinal)
+                string otherName = Path.GetFileName(otherModel);
+                if (!otherName.StartsWith(".", StringComparison.Ordinal)
+                    && (string.Equals(otherName, idPart, StringComparison.OrdinalIgnoreCase) || otherName.EndsWith("-" + idPart, StringComparison.OrdinalIgnoreCase))
                     && !string.Equals(Path.GetFullPath(otherModel).TrimEnd(Path.DirectorySeparatorChar), modelDirectory, StringComparison.OrdinalIgnoreCase))
                 {
                     candidates.AddRange(Directory.GetDirectories(otherModel).Select(folder => (folder, false)));
