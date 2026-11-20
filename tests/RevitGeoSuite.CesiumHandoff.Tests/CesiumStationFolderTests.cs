@@ -32,12 +32,12 @@ public sealed class CesiumStationFolderTests : IDisposable
         }
     }
 
-    private static CesiumPackageBuildInputs Inputs(string? modelId, string documentKey = "doc-key")
+    private static CesiumPackageBuildInputs Inputs(string? modelId, string documentKey = "doc-key", string buildingName = "Tokyo Station")
     {
         return new CesiumPackageBuildInputs
         {
             BuildingId = "tokyo-station-1a2b3c4d",
-            BuildingName = "Tokyo Station",
+            BuildingName = buildingName,
             SourceModel = "Tokyo.rvt",
             DocumentKey = documentKey,
             GeneratorVersion = "1.0.0",
@@ -99,7 +99,7 @@ public sealed class CesiumStationFolderTests : IDisposable
         Assert.Equal(2, Directory.GetDirectories(Path.GetDirectoryName(firstPublished.RootDirectory)!).Length);
     }
 
-    private CesiumPackageLayout PublishGis(string modelId, DateTime createdUtc, bool withGis = true, string documentKey = "doc-key")
+    private CesiumPackageLayout PublishGis(string modelId, DateTime createdUtc, bool withGis = true, string documentKey = "doc-key", string buildingName = "Tokyo Station")
     {
         CesiumPackageLayout staging = CesiumStationFolder.CreateStagingLayout(_station);
         if (withGis)
@@ -112,7 +112,7 @@ public sealed class CesiumStationFolderTests : IDisposable
             File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "{}");
         }
 
-        CesiumPackageManifest manifest = new CesiumPackageLayoutBuilder().WriteManifest(staging, Inputs(modelId, documentKey));
+        CesiumPackageManifest manifest = new CesiumPackageLayoutBuilder().WriteManifest(staging, Inputs(modelId, documentKey, buildingName));
         manifest.CreatedUtc = createdUtc;
         File.WriteAllText(staging.ManifestPath, CesiumPackageManifestSerializer.Serialize(manifest));
         return CesiumStationFolder.Publish(staging, _station, manifest);
@@ -131,6 +131,18 @@ public sealed class CesiumStationFolderTests : IDisposable
         Assert.Equal(middle.RootDirectory, CesiumStationFolder.PreviousVersion(newest.RootDirectory));
         Assert.Equal(oldest.RootDirectory, CesiumStationFolder.PreviousVersion(middle.RootDirectory));
         Assert.Null(CesiumStationFolder.PreviousVersion(oldest.RootDirectory));
+    }
+
+    [Fact]
+    public void Previous_version_follows_the_model_id_into_the_folder_a_Save_As_left()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        CesiumPackageLayout before = PublishGis("model-a", start, buildingName: "Tokyo Station");
+        PublishGis("model-b", start.AddHours(1), buildingName: "Tokyo Station Copy");
+        CesiumPackageLayout after = PublishGis("model-a", start.AddHours(2), buildingName: "Tokyo Station Copy");
+
+        Assert.NotEqual(Path.GetDirectoryName(before.RootDirectory), Path.GetDirectoryName(after.RootDirectory));
+        Assert.Equal(before.RootDirectory, CesiumStationFolder.PreviousVersion(after.RootDirectory));
     }
 
     [Fact]

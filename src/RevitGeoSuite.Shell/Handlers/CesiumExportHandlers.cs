@@ -34,6 +34,9 @@ internal sealed class GisStepResult
     public List<CesiumPackageLevelMapEntry> LevelMap = new();
     public FloorGeoPackageExportResult ExportResult = new();
     public CesiumPackageGisRules? Rules;
+
+    /// <summary>The link instances whose elements the GIS export took, so the room index can take the same.</summary>
+    public List<long> LinkInstanceIds = new();
 }
 
 internal static class CesiumExportSupport
@@ -81,6 +84,10 @@ internal static class CesiumExportSupport
         ExportProfile profile = FindProfile(document, profileName);
 
         ModelCoordinateInfo coordinateInfo = new ModelCoordinateInfoReader().Read(document);
+        ExportDialogSettings settings = profile.ToSettings();
+        // The links as the export resolves them, read before it runs: it records its links in
+        // gis-model.json. Its own warning for a listed link that is gone is enough.
+        LinkExportOptions links = GisModelSettings.ApplyRecordedLinks(document, settings.LinkExportOptions, new List<string>());
         var exporter = new FloorPlanHeadlessExporter(document, uiDocument: null);
         FloorGeoPackageExportResult result = exporter.Export(
             profile,
@@ -94,7 +101,6 @@ internal static class CesiumExportSupport
             persistBaseline: false);
         warnings.AddRange(result.Warnings);
 
-        ExportDialogSettings settings = profile.ToSettings();
         return new GisStepResult
         {
             ProjectKey = projectKey,
@@ -110,6 +116,9 @@ internal static class CesiumExportSupport
             Rules = result.GisRules == null
                 ? null
                 : new CesiumPackageGisRules { Source = result.GisRules.Source, Profile = result.GisRules.Profile, Hash = result.GisRules.Hash },
+            LinkInstanceIds = links.IncludeLinkedModels
+                ? links.SelectedLinkInstanceIds.Distinct().ToList()
+                : new List<long>(),
         };
     }
 

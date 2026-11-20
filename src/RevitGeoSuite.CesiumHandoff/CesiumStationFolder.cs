@@ -93,10 +93,12 @@ public static class CesiumStationFolder
     }
 
     /// <summary>
-    /// The newest other version in <paramref name="versionDirectory"/>'s model folder that has a
-    /// <c>gis/</c> folder, by the manifest's <c>createdUtc</c>, or null. Versions older than the
-    /// given one only, so a send compares with what was there before it. A folder that is hidden,
-    /// has no manifest or whose manifest cannot be read is skipped, as Kanizu skips it.
+    /// The newest other version of the same model that has a <c>gis/</c> folder, by the manifest's
+    /// <c>createdUtc</c>, or null. Versions older than the given one only, so a send compares with
+    /// what was there before it. The same model is the version's own model folder, plus any other
+    /// model folder under <c>revit/</c> whose versions carry the same <c>source.modelId</c>: a Save
+    /// As or a renamed building changes the folder's slug but not the model id. A folder that is
+    /// hidden, has no manifest or whose manifest cannot be read is skipped, as Kanizu skips it.
     /// </summary>
     public static string? PreviousVersion(string versionDirectory)
     {
@@ -107,15 +109,32 @@ public static class CesiumStationFolder
 
         string self = Path.GetFullPath(versionDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         string? modelDirectory = Path.GetDirectoryName(self);
-        DateTime? selfCreated = ReadCreatedUtc(self);
-        if (modelDirectory is null || !Directory.Exists(modelDirectory) || selfCreated is null)
+        CesiumPackageManifest? selfManifest = TryReadManifest(self);
+        if (modelDirectory is null || !Directory.Exists(modelDirectory) || selfManifest is null)
         {
             return null;
         }
 
+        DateTime selfCreated = selfManifest.CreatedUtc.ToUniversalTime();
+        string? modelId = selfManifest.Source?.ModelId?.Trim();
+        var candidates = new List<(string Folder, bool SameFolder)>();
+        candidates.AddRange(Directory.GetDirectories(modelDirectory).Select(folder => (folder, true)));
+        string? revitDirectory = Path.GetDirectoryName(modelDirectory);
+        if (!string.IsNullOrEmpty(modelId) && revitDirectory is not null && Directory.Exists(revitDirectory))
+        {
+            foreach (string otherModel in Directory.GetDirectories(revitDirectory))
+            {
+                if (!Path.GetFileName(otherModel).StartsWith(".", StringComparison.Ordinal)
+                    && !string.Equals(Path.GetFullPath(otherModel).TrimEnd(Path.DirectorySeparatorChar), modelDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    candidates.AddRange(Directory.GetDirectories(otherModel).Select(folder => (folder, false)));
+                }
+            }
+        }
+
         string? best = null;
         DateTime bestCreated = DateTime.MinValue;
-        foreach (string candidate in Directory.GetDirectories(modelDirectory))
+        foreach ((string candidate, bool sameFolder) in candidates)
         {
             string name = Path.GetFileName(candidate);
             if (name.StartsWith(".", StringComparison.Ordinal)
@@ -125,26 +144,28 @@ public static class CesiumStationFolder
                 continue;
             }
 
-            DateTime? created = ReadCreatedUtc(candidate);
-            if (created is null || created.Value > selfCreated.Value)
+            CesiumPackageManifest? manifest = TryReadManifest(candidate);
+            if (manifest is null
+                || (!sameFolder && !string.Equals(manifest.Source?.ModelId?.Trim(), modelId, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
 
-            if (best is null || created.Value > bestCreated
-                || (created.Value == bestCreated && string.CompareOrdinal(name, Path.GetFileName(best)) > 0))
+            DateTime created = manifest.CreatedUtc.ToUniversalTime();
+            if (created > selfCreated)
+            {
+                continue;
+            }
+
+            if (best is null || created > bestCreated
+                || (created == bestCreated && string.CompareOrdinal(name, Path.GetFileName(best)) > 0))
             {
                 best = candidate;
-                bestCreated = created.Value;
+                bestCreated = created;
             }
         }
 
         return best;
-    }
-
-    private static DateTime? ReadCreatedUtc(string versionDirectory)
-    {
-        return TryReadManifest(versionDirectory)?.CreatedUtc.ToUniversalTime();
     }
 
     /// <summary>What a folder is to Send to Kanizu before the first send into it.</summary>

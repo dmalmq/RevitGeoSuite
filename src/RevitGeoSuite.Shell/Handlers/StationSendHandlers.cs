@@ -125,28 +125,32 @@ public sealed class StationSendRunHandler : IRpcHandler
     private static string Text(string key) => UiLocalizer.Instance.Get(key);
 
     /// <summary>
-    /// Puts the model's station folder back after a failed send. Null when that worked or nothing
-    /// had changed; otherwise a sentence for the error, so the user knows the model now points at
-    /// the new folder. Never throws.
+    /// Puts the model's station folder back after a failed send: the folder it had, or none when
+    /// this was its first send. Null when that worked or nothing had changed; otherwise a sentence
+    /// for the error, so the user knows the model now points at the new folder. Never throws.
     /// </summary>
     private static async Task<string?> RestoreFolderAsync(string documentKey, string? before, string attempted)
     {
-        if (string.IsNullOrWhiteSpace(before) || string.Equals(before!.Trim(), attempted, StringComparison.OrdinalIgnoreCase))
+        string? previous = string.IsNullOrWhiteSpace(before) ? null : before!.Trim();
+        if (previous is not null && string.Equals(previous, attempted, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
+        // With no folder before, the failure names the folder the model is still left pointing at.
+        string message = previous is null ? Text("Send.Error.ForgetFailed") : Text("Send.Error.RestoreFailed");
+        string shown = previous ?? attempted;
         try
         {
             var restoreWarnings = new List<string>();
             bool restored = await RevitContext.Instance
-                .InvokeWithDocumentAsync(document => StationSend.Restore(document, documentKey, before!, restoreWarnings))
+                .InvokeWithDocumentAsync(document => StationSend.Restore(document, documentKey, previous, restoreWarnings))
                 .ConfigureAwait(false);
-            return restored ? null : string.Format(Text("Send.Error.RestoreFailed"), before, string.Join(" ", restoreWarnings));
+            return restored ? null : string.Format(message, shown, string.Join(" ", restoreWarnings));
         }
         catch (Exception ex)
         {
-            return string.Format(Text("Send.Error.RestoreFailed"), before, ex.Message);
+            return string.Format(message, shown, ex.Message);
         }
     }
 
@@ -286,11 +290,12 @@ internal static class StationSend
     }
 
     /// <summary>
-    /// Records <paramref name="folder"/> again. RecordStationFolder opens its own transaction, is a
-    /// no-op when the folder is already recorded, and writes only the model's GeoSuite record (not
-    /// gis-model.json). False, with its warning, when the model is no longer active or is read-only.
+    /// Records <paramref name="folder"/> again, or clears the folder when it is null (the model had
+    /// none). Both open their own transaction, are a no-op when nothing would change, and write only
+    /// the model's GeoSuite record (not gis-model.json). False, with its warning, when the model is no
+    /// longer active or is read-only.
     /// </summary>
-    public static bool Restore(Document document, string documentKey, string folder, List<string> warnings)
+    public static bool Restore(Document document, string documentKey, string? folder, List<string> warnings)
     {
         if (!string.Equals(DocumentProjectKeyBuilder.Create(document), documentKey, StringComparison.Ordinal))
         {
@@ -298,7 +303,10 @@ internal static class StationSend
             return false;
         }
 
-        return new ModelIdentityService().RecordStationFolder(document, folder, warnings);
+        var identity = new ModelIdentityService();
+        return folder is null
+            ? identity.ForgetStationFolder(document, warnings)
+            : identity.RecordStationFolder(document, folder, warnings);
     }
 
     /// <summary>How far a send got on Revit's side: whether the model now records the new folder.</summary>
@@ -341,7 +349,7 @@ internal static class StationSend
             .ToDictionary(level => level.UniqueId, level => level.LevelId!, StringComparer.Ordinal);
         IReadOnlyDictionary<string, int> features = GisPackageChanges.FeaturesPerLevel(staging.GisDirectory);
 
-        Tiles3DIndexPackage indexes = coordinator.PrepareIndexes(handle, reference, levelIdByUniqueId.Keys.ToList(), geoidHeightOffsetMeters: null, warnings);
+        Tiles3DIndexPackage indexes = coordinator.PrepareIndexes(handle, reference, levelIdByUniqueId.Keys.ToList(), gis.LinkInstanceIds, geoidHeightOffsetMeters: null, warnings);
         foreach (Tiles3DLevelGroup level in indexes.Levels)
         {
             level.ElementCount = level.LevelUniqueIds
