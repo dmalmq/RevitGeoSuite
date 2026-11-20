@@ -9,6 +9,7 @@ using Autodesk.Revit.DB;
 using RevitGeoSuite.CesiumHandoff;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.FloorPlanExport.Core;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.FloorPlanExport.UI;
@@ -266,6 +267,18 @@ internal static class StationSend
             .FirstOrDefault()?.Name ?? string.Empty;
     }
 
+    /// <summary>
+    /// The profile <paramref name="stationFolder"/> would give the model, read without recording the
+    /// folder: the same rules the send reads once the folder is recorded.
+    /// </summary>
+    public static string ProfileName(Document document, string stationFolder)
+    {
+        string projectKey = DocumentProjectKeyBuilder.Create(document);
+        return new ExportProfileStore(rules: GisRulesSource.Resolve(stationFolder, projectKey))
+            .LoadWithDiagnostics(projectKey).Value
+            .FirstOrDefault()?.Name ?? string.Empty;
+    }
+
     public static string KindName(CesiumStationFolder.FolderKind kind) => kind switch
     {
         CesiumStationFolder.FolderKind.Missing => "missing",
@@ -322,6 +335,12 @@ internal static class StationSend
         var (handle, currentState, info) = ExportHandlerSupport.ReadContext(document);
         // Resolve first: a model without a georeference fails here, before anything is written.
         var (coordinator, reference, _) = Tiles3DExportSupport.Resolve(document, handle, currentState, info, "whole", null);
+
+        // A station with no profile for this model fails before the model gets an id or records it.
+        if (ProfileName(document, stationFolder).Length == 0)
+        {
+            throw new InvalidOperationException(UiLocalizer.Instance.Get("Send.NoProfile"));
+        }
 
         // The station's gis-rules.json and gis-model.json apply only to a model that has both a station
         // folder and a model id, so a model sending for the first time gets its id before the export.
