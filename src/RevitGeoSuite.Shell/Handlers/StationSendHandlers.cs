@@ -319,12 +319,6 @@ internal static class StationSend
     {
         RequireDocument(document, documentKey);
 
-        string profileName = ProfileName(document);
-        if (profileName.Length == 0)
-        {
-            throw new InvalidOperationException(UiLocalizer.Instance.Get("Send.NoProfile"));
-        }
-
         var (handle, currentState, info) = ExportHandlerSupport.ReadContext(document);
         // Resolve first: a model without a georeference fails here, before anything is written.
         var (coordinator, reference, _) = Tiles3DExportSupport.Resolve(document, handle, currentState, info, "whole", null);
@@ -342,6 +336,15 @@ internal static class StationSend
         }
 
         attempt.Recorded = true;
+
+        // The profile comes from the station just recorded: a model moving to another station uses
+        // that station's profiles. With none, the send fails here and the old folder is put back.
+        string profileName = ProfileName(document);
+        if (profileName.Length == 0)
+        {
+            throw new InvalidOperationException(UiLocalizer.Instance.Get("Send.NoProfile"));
+        }
+
         GisStepResult gis = CesiumExportSupport.RunGisExport(document, profileName, staging.GisDirectory, "station", warnings, ct);
 
         // The levels the GIS export used, by UniqueId, each with its count of features.
