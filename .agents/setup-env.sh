@@ -8,18 +8,13 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-ensure_bashrc_line() {
-  local line="$1"
-  touch "$HOME/.bashrc"
-  grep -qxF "$line" "$HOME/.bashrc" || printf '%s\n' "$line" >> "$HOME/.bashrc"
-}
+# 1. Ensure .NET 8.0 SDK is available (install into ~/.dotnet if not already present)
+if [ -x "$HOME/.dotnet/dotnet" ]; then
+  export DOTNET_ROOT="$HOME/.dotnet"
+  export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$PATH"
+fi
 
-# Strip any non-interactive early-return guard from ~/.bashrc so non-interactive
-# subshells sourcing ~/.bashrc via BASH_ENV pick up PATH and env exports.
-sed -i '/case \$- in/,/esac/d' "$HOME/.bashrc" 2>/dev/null || true
-
-# 1. Install .NET 8.0 SDK into ~/.dotnet
-if [ ! -x "$HOME/.dotnet/dotnet" ] || ! "$HOME/.dotnet/dotnet" --list-sdks 2>/dev/null | grep -q '^8\.'; then
+if ! command -v dotnet >/dev/null 2>&1 || ! dotnet --list-sdks 2>/dev/null | grep -q '^8\.'; then
   tmp_dotnet_install="$(mktemp /tmp/dotnet-install.XXXXXX.sh)"
   trap 'rm -f "$tmp_dotnet_install"' EXIT
   curl -fsSL "https://dot.net/v1/dotnet-install.sh" -o "$tmp_dotnet_install"
@@ -55,36 +50,71 @@ if [ ! -x "$HOME/.local/mono/bin/mono" ]; then
   "$HOME/.local/bin/micromamba" create -y -p "$HOME/.local/mono" -c conda-forge mono
 fi
 
-# Map libdl for SQLitePCLRaw / GeoPackage tests under Debian 12+ (glibc 2.36+)
+# Map libdl for SQLitePCLRaw / GeoPackage tests under Debian 12+ / Ubuntu 22.04+ (glibc 2.36+)
 MONO_CONFIG="$HOME/.local/mono/etc/mono/config"
 if [ -f "$MONO_CONFIG" ] && ! grep -q 'dll="dl"' "$MONO_CONFIG"; then
   sed -i 's|</configuration>|\t<dllmap dll="dl" target="libdl.so.2" os="!windows"/>\n</configuration>|' "$MONO_CONFIG"
 fi
 
-# Export environment for current shell and persist idempotently in ~/.bashrc
-export DOTNET_ROOT="$HOME/.dotnet"
-export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$HOME/.local/bin:$HOME/.local/mono/bin:$PATH"
+# Persist environment exports at the top of shell rc files so they run BEFORE any
+# non-interactive early-return guards (such as `[ -z "$PS1" ] && return` on Ubuntu
+# or `case $- in *i*) ;; *) return;; esac` on Debian).
+ENV_BLOCK="$(cat <<'EOF'
+# >>> revitgeosuite-env >>>
+if [ -x "$HOME/.dotnet/dotnet" ]; then
+  export DOTNET_ROOT="$HOME/.dotnet"
+fi
+for _rgs_dir in "$HOME/.local/mono/bin" "$HOME/.local/bin" "$HOME/.dotnet/tools" "$HOME/.dotnet"; do
+  if [ -d "$_rgs_dir" ]; then
+    case ":$PATH:" in
+      *":$_rgs_dir:"*) ;;
+      *) PATH="$_rgs_dir:$PATH" ;;
+    esac
+  fi
+done
+unset _rgs_dir
+export PATH
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
-export RevitInstallDir="$REVIT_API_DIR"
-export RevitApiDir="$REVIT_API_DIR"
-export MONO_PATH="$REVIT_API_DIR"
+export RevitInstallDir="$HOME/.local/share/revit-api-2024/lib/NET480"
+export RevitApiDir="$HOME/.local/share/revit-api-2024/lib/NET480"
+export MONO_PATH="$HOME/.local/share/revit-api-2024/lib/NET480"
 export TEMP="${TEMP:-/tmp}"
-
-ensure_bashrc_line 'export DOTNET_ROOT="$HOME/.dotnet"'
-ensure_bashrc_line 'export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$HOME/.local/bin:$HOME/.local/mono/bin:$PATH"'
-ensure_bashrc_line 'export DOTNET_CLI_TELEMETRY_OPTOUT=1'
-ensure_bashrc_line 'export RevitInstallDir="$HOME/.local/share/revit-api-2024/lib/NET480"'
-ensure_bashrc_line 'export RevitApiDir="$HOME/.local/share/revit-api-2024/lib/NET480"'
-ensure_bashrc_line 'export MONO_PATH="$HOME/.local/share/revit-api-2024/lib/NET480"'
-ensure_bashrc_line 'export TEMP="${TEMP:-/tmp}"'
-
 if [ -x /usr/bin/chromium ]; then
   export REVITGEOSUITE_TEST_CHROMIUM="/usr/bin/chromium"
-  ensure_bashrc_line 'export REVITGEOSUITE_TEST_CHROMIUM="/usr/bin/chromium"'
+fi
+# <<< revitgeosuite-env <<<
+EOF
+)"
+
+upsert_env_block() {
+  local rc_file="$1"
+  local tmp_file
+  touch "$rc_file"
+  tmp_file="$(mktemp "${rc_file}.XXXXXX")"
+  {
+    printf '%s\n' "$ENV_BLOCK"
+    awk '
+      /^# >>> revitgeosuite-env >>>$/ { skip = 1; next }
+      /^# <<< revitgeosuite-env <<<$/ { skip = 0; next }
+      !skip { print }
+    ' "$rc_file"
+  } > "$tmp_file"
+  cat "$tmp_file" > "$rc_file"
+  rm -f "$tmp_file"
+}
+
+upsert_env_block "$HOME/.bashrc"
+upsert_env_block "$HOME/.profile"
+if [ -f "$HOME/.bash_profile" ]; then
+  upsert_env_block "$HOME/.bash_profile"
 fi
 
+# Apply the same environment block to the current shell for the remaining steps
+mkdir -p "$HOME/.dotnet/tools"
+eval "$ENV_BLOCK"
+
 # 4. Install PowerShell 7.4 LTS global tool for tools/VerifyContracts.ps1
-if [ ! -x "$HOME/.dotnet/tools/pwsh" ]; then
+if ! command -v pwsh >/dev/null 2>&1; then
   dotnet tool install -g PowerShell --version 7.4.7
 fi
 
