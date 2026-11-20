@@ -329,6 +329,10 @@ internal static class StationSend
         // Resolve first: a model without a georeference fails here, before anything is written.
         var (coordinator, reference, _) = Tiles3DExportSupport.Resolve(document, handle, currentState, info, "whole", null);
 
+        // The station's gis-rules.json and gis-model.json apply only to a model that has both a station
+        // folder and a model id, so a model sending for the first time gets its id before the export.
+        string? modelId = new ModelIdentityService().GetOrCreate(document, warnings);
+
         // The export reads gis-model.json from the recorded folder; if the model cannot record this
         // one (read-only, busy), it would export with the old folder's settings into the new folder.
         var recordWarnings = new List<string>();
@@ -382,7 +386,7 @@ internal static class StationSend
                 HeightDatum = tilesState?.LastHeightDatum,
                 AnchorEasting = context.AnchorProjectedCoordinate.Easting,
                 AnchorNorthing = context.AnchorProjectedCoordinate.Northing,
-                ModelId = new ModelIdentityService().GetOrCreate(document, warnings),
+                ModelId = modelId,
                 LevelMap = gis.LevelMap,
                 GisLayers = new List<string> { "unit", "detail", "opening", "fixture", "level" },
                 GisRules = gis.Rules,
