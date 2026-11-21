@@ -105,6 +105,49 @@ internal sealed class ShellPage : IAsyncDisposable
         return JsonNode.Parse(json);
     }
 
+    /// <summary>
+    /// Starts a bridge job without waiting for it; returns a handle for <see cref="JobStateAsync"/>.
+    /// The page keeps the job's state in window.__uitestJobs until it is reloaded.
+    /// </summary>
+    public async Task<string> StartJobAsync(string method, object payload)
+    {
+        const string script = @"([method, payloadJson]) => {
+            const payload = JSON.parse(payloadJson);
+            const id = 'uitest_' + Math.random().toString(36).slice(2);
+            const jobs = (window.__uitestJobs = window.__uitestJobs || {});
+            const job = (jobs[id] = { state: 'starting', jobId: null, result: null, error: null });
+            const onMessage = (event) => {
+                const envelope = event.data;
+                if (!envelope) return;
+                if (envelope.kind === 'res' && envelope.id === id) {
+                    if (envelope.error || !envelope.payload?.jobId) {
+                        job.state = 'failed';
+                        job.error = envelope.error ? envelope.error.code + ': ' + envelope.error.message : 'no job';
+                        window.chrome.webview.removeEventListener('message', onMessage);
+                        return;
+                    }
+                    job.jobId = envelope.payload.jobId;
+                    if (job.state === 'starting') job.state = 'running';
+                } else if (envelope.kind === 'evt' && job.jobId && envelope.payload?.jobId === job.jobId) {
+                    if (envelope.method === 'job.completed') { job.state = 'completed'; job.result = envelope.payload.result ?? null; }
+                    if (envelope.method === 'job.failed') { job.state = 'failed'; job.error = envelope.payload.error; }
+                    if (job.state !== 'running') window.chrome.webview.removeEventListener('message', onMessage);
+                }
+            };
+            window.chrome.webview.addEventListener('message', onMessage);
+            window.chrome.webview.postMessage({ kind: 'req', id, method, payload });
+            return id;
+        }";
+        return await Page.EvaluateAsync<string>(script, new object?[] { method, PayloadJson(payload) });
+    }
+
+    /// <summary>The state of a job <see cref="StartJobAsync"/> started: state (starting, running, completed, failed), jobId, result, error.</summary>
+    public async Task<JsonNode?> JobStateAsync(string handle)
+    {
+        string json = await Page.EvaluateAsync<string>("id => JSON.stringify((window.__uitestJobs || {})[id] ?? null)", handle);
+        return JsonNode.Parse(json);
+    }
+
     // Playwright copies a .NET argument by walking its properties, so a JsonNode arrives with its Parent
     // links and WebView2's postMessage rejects it as circular. Send the payload as JSON text instead.
     private static string PayloadJson(object? payload) => JsonSerializer.Serialize(payload ?? new { });

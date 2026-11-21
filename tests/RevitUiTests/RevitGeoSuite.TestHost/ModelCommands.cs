@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.UI;
 
 namespace RevitGeoSuite.TestHost;
@@ -272,6 +273,39 @@ internal static class ModelCommands
             FamilyInstance => "familyInstances",
             _ => "other",
         };
+    }
+
+    /// <summary>
+    /// Placed rooms with a boundary, as the room index takes them (a location, an area and at least
+    /// one finish-face loop): the host's count, and each link instance's, by its UniqueId.
+    /// </summary>
+    public static Dictionary<string, object?> Rooms(UIApplication app)
+    {
+        Document document = Active(app);
+        var links = new List<Dictionary<string, object?>>();
+        foreach (RevitLinkInstance link in new FilteredElementCollector(document).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+        {
+            Document? linked = link.GetLinkDocument();
+            links.Add(new Dictionary<string, object?>
+            {
+                ["uniqueId"] = link.UniqueId,
+                ["name"] = link.Name,
+                ["loaded"] = linked != null,
+                ["rooms"] = linked == null ? 0 : PlacedRooms(linked),
+            });
+        }
+
+        return new Dictionary<string, object?> { ["host"] = PlacedRooms(document), ["links"] = links };
+    }
+
+    private static int PlacedRooms(Document document)
+    {
+        var options = new SpatialElementBoundaryOptions { SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish };
+        return new FilteredElementCollector(document)
+            .OfCategory(BuiltInCategory.OST_Rooms)
+            .WhereElementIsNotElementType()
+            .OfType<Room>()
+            .Count(room => room.Location != null && room.Area > 0d && room.GetBoundarySegments(options) is { Count: > 0 });
     }
 
     private static Document Active(UIApplication app) => app.ActiveUIDocument?.Document ?? throw new InvalidOperationException("No active document.");

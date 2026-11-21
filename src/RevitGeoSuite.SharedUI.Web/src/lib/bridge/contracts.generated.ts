@@ -628,6 +628,10 @@ export interface GisStandardApplyResponse {
 export interface GisStandardEmptyRequest {
 }
 
+export interface GisStandardInspectRequest {
+  stationFolder: string
+}
+
 export interface GisStandardInspectResponse {
   documentTitle: string
   exportBlockers: string[]
@@ -1143,6 +1147,45 @@ export interface ReadinessStatusResponse {
   statusMessage: string
 }
 
+export interface StationSendLayerChange {
+  added: number
+  edited: number
+  layer: string
+  removed: number
+}
+
+export interface StationSendRunRequest {
+  confirmNewFolder: boolean
+  documentKey: string
+  stationFolder: string
+}
+
+export interface StationSendRunResponse {
+  changesCounted: boolean
+  elementsAdded: number
+  elementsChanged: number
+  elementsEdited: number
+  elementsRemoved: number
+  hasPrevious: boolean
+  layers: StationSendLayerChange[]
+  rulesDiffer: boolean
+  seconds: number
+  versionFolder: string
+  warnings: string[]
+}
+
+export interface StationSendStateRequest {
+  stationFolder?: string
+}
+
+export interface StationSendStateResponse {
+  documentKey: string
+  folderKind: string
+  lastSentFromAnotherFile: boolean
+  profileName: string
+  stationFolder: string
+}
+
 export interface Tiles3DExportOptions {
   geoidOffset?: number
   geometryMode: string
@@ -1314,7 +1357,7 @@ export interface RpcMethods {
   'gisParameters.read': { request: GisStandardEmptyRequest; response: GisParametersReadResponse }
   'gisParameters.write': { request: GisStandardEmptyRequest; response: GisParametersWriteResponse }
   'gisStandard.fixFloorTypes': { request: GisFixFloorTypesRequest; response: GisStandardApplyResponse }
-  'gisStandard.inspect': { request: GisStandardEmptyRequest; response: GisStandardInspectResponse }
+  'gisStandard.inspect': { request: GisStandardInspectRequest; response: GisStandardInspectResponse }
   'gisStandard.resetFloorType': { request: GisResetFloorTypeRequest; response: GisStandardApplyResponse }
   'gisStandard.select': { request: GisSelectElementsRequest; response: GisSelectElementsResponse }
   'gisStandard.setup': { request: GisStandardEmptyRequest; response: GisStandardApplyResponse }
@@ -1332,6 +1375,8 @@ export interface RpcMethods {
   'plateau.onlineImport': { request: PlateauOnlineImportRequest; response: JobStarted }
   'plateau.scanFolder': { request: PlateauScanRequest; response: JobStarted }
   'readiness.getStatus': { request: ReadinessStatusRequest; response: ReadinessStatusResponse }
+  'station.send.getState': { request: StationSendStateRequest; response: StationSendStateResponse }
+  'station.send.run': { request: StationSendRunRequest; response: JobStarted }
   'tiles3d.export': { request: Tiles3DExportRequest; response: JobStarted }
   'tiles3d.export.prepare': { request: Tiles3DExportPrepareRequest; response: Tiles3DExportPrepareResponse }
   'tiles3d.exportOptions': { request: Tiles3DExportOptionsRequest; response: Tiles3DExportOptionsResponse }

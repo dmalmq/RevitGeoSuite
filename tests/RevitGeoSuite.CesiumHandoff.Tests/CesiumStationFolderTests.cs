@@ -32,14 +32,14 @@ public sealed class CesiumStationFolderTests : IDisposable
         }
     }
 
-    private static CesiumPackageBuildInputs Inputs(string? modelId)
+    private static CesiumPackageBuildInputs Inputs(string? modelId, string documentKey = "doc-key", string buildingName = "Tokyo Station", string buildingId = "tokyo-station-1a2b3c4d")
     {
         return new CesiumPackageBuildInputs
         {
-            BuildingId = "tokyo-station-1a2b3c4d",
-            BuildingName = "Tokyo Station",
+            BuildingId = buildingId,
+            BuildingName = buildingName,
             SourceModel = "Tokyo.rvt",
-            DocumentKey = "doc-key",
+            DocumentKey = documentKey,
             GeneratorVersion = "1.0.0",
             ModelId = modelId,
         };
@@ -97,6 +97,136 @@ public sealed class CesiumStationFolderTests : IDisposable
         Assert.EndsWith("-2", secondPublished.RootDirectory);
         Assert.True(File.Exists(firstPublished.ManifestPath));
         Assert.Equal(2, Directory.GetDirectories(Path.GetDirectoryName(firstPublished.RootDirectory)!).Length);
+    }
+
+    private CesiumPackageLayout PublishGis(string? modelId, DateTime createdUtc, bool withGis = true, string documentKey = "doc-key", string buildingName = "Tokyo Station", string buildingId = "tokyo-station-1a2b3c4d")
+    {
+        CesiumPackageLayout staging = CesiumStationFolder.CreateStagingLayout(_station);
+        if (withGis)
+        {
+            File.WriteAllText(Path.Combine(staging.GisDirectory, "station.gpkg"), createdUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            Directory.Delete(staging.GisDirectory);
+            File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "{}");
+        }
+
+        CesiumPackageManifest manifest = new CesiumPackageLayoutBuilder().WriteManifest(staging, Inputs(modelId, documentKey, buildingName, buildingId));
+        manifest.CreatedUtc = createdUtc;
+        File.WriteAllText(staging.ManifestPath, CesiumPackageManifestSerializer.Serialize(manifest));
+        return CesiumStationFolder.Publish(staging, _station, manifest);
+    }
+
+    [Fact]
+    public void Previous_version_is_the_newest_older_one_with_gis()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        CesiumPackageLayout oldest = PublishGis("model-a", start);
+        CesiumPackageLayout middle = PublishGis("model-a", start.AddHours(1));
+        PublishGis("model-a", start.AddHours(2), withGis: false);
+        CesiumPackageLayout newest = PublishGis("model-a", start.AddHours(3));
+        Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(newest.RootDirectory)!, ".tmp-x", "gis"));
+
+        Assert.Equal(middle.RootDirectory, CesiumStationFolder.PreviousVersion(newest.RootDirectory));
+        Assert.Equal(oldest.RootDirectory, CesiumStationFolder.PreviousVersion(middle.RootDirectory));
+        Assert.Null(CesiumStationFolder.PreviousVersion(oldest.RootDirectory));
+    }
+
+    [Fact]
+    public void Previous_version_follows_the_model_id_into_the_folder_a_Save_As_left()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        CesiumPackageLayout before = PublishGis("model-a", start, buildingName: "Tokyo Station");
+        PublishGis("model-b", start.AddHours(1), buildingName: "Tokyo Station Copy");
+        CesiumPackageLayout after = PublishGis("model-a", start.AddHours(2), buildingName: "Tokyo Station Copy");
+
+        Assert.NotEqual(Path.GetDirectoryName(before.RootDirectory), Path.GetDirectoryName(after.RootDirectory));
+        Assert.Equal(before.RootDirectory, CesiumStationFolder.PreviousVersion(after.RootDirectory));
+    }
+
+    [Fact]
+    public void Previous_version_never_takes_another_model_folders_version_without_the_same_model_id()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        // Another model whose id starts like this one's, so its folder ends in the same id part.
+        CesiumPackageLayout other = PublishGis("abcdefgh-2222", start, buildingName: "Other Station");
+        PublishGis(null, start.AddHours(1), buildingName: "No Id Station", buildingId: "no-id-station-abcdefgh");
+        CesiumPackageLayout mine = PublishGis("abcdefgh-1111", start.AddHours(2), buildingName: "Tokyo Station");
+
+        Assert.EndsWith("-abcdefgh", Path.GetFileName(Path.GetDirectoryName(other.RootDirectory)));
+        Assert.Null(CesiumStationFolder.PreviousVersion(mine.RootDirectory));
+    }
+
+    [Fact]
+    public void Previous_version_without_a_model_id_stays_in_its_own_folder()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        PublishGis(null, start, buildingName: "Tokyo Station", buildingId: "tokyo-station-22222222");
+        CesiumPackageLayout mine = PublishGis(null, start.AddHours(1), buildingName: "Tokyo Station", buildingId: "tokyo-station-33333333");
+
+        Assert.Null(CesiumStationFolder.PreviousVersion(mine.RootDirectory));
+    }
+
+    [Fact]
+    public void Previous_version_skips_a_folder_without_a_readable_manifest()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        CesiumPackageLayout first = PublishGis("model-a", start);
+        CesiumPackageLayout second = PublishGis("model-a", start.AddHours(1));
+        string stray = Path.Combine(Path.GetDirectoryName(first.RootDirectory)!, "20990101T000000Z-copy");
+        Directory.CreateDirectory(Path.Combine(stray, "gis"));
+        File.WriteAllText(Path.Combine(stray, "cesium-package.json"), "not json");
+        string empty = Path.Combine(Path.GetDirectoryName(first.RootDirectory)!, "20990101T000000Z-null");
+        Directory.CreateDirectory(Path.Combine(empty, "gis"));
+        File.WriteAllText(Path.Combine(empty, "cesium-package.json"), "null");
+
+        Assert.Equal(first.RootDirectory, CesiumStationFolder.PreviousVersion(second.RootDirectory));
+    }
+
+    [Fact]
+    public void A_folder_is_missing_new_or_a_station_folder()
+    {
+        Assert.Equal(CesiumStationFolder.FolderKind.Missing, CesiumStationFolder.Classify(Path.Combine(_station, "nowhere")));
+        Assert.Equal(CesiumStationFolder.FolderKind.Missing, CesiumStationFolder.Classify(" "));
+        Directory.CreateDirectory(_station);
+        Assert.Equal(CesiumStationFolder.FolderKind.New, CesiumStationFolder.Classify(_station));
+        Directory.CreateDirectory(Path.Combine(_station, "revit", "some-project-files"));
+        Assert.Equal(CesiumStationFolder.FolderKind.New, CesiumStationFolder.Classify(_station));
+        // A version set aside (hidden) is not a version Kanizu reads.
+        string hidden = Path.Combine(_station, "revit", "some-model", ".set-aside");
+        Directory.CreateDirectory(hidden);
+        File.WriteAllText(Path.Combine(hidden, "cesium-package.json"), "{}");
+        Assert.Equal(CesiumStationFolder.FolderKind.New, CesiumStationFolder.Classify(_station));
+        PublishGis("model-a", new DateTime(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc));
+        Assert.Equal(CesiumStationFolder.FolderKind.Station, CesiumStationFolder.Classify(_station));
+    }
+
+    [Fact]
+    public void Latest_source_is_the_newest_version_of_that_model()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        Assert.Null(CesiumStationFolder.LatestSource(_station, "model-a"));
+        PublishGis("model-a", start.AddHours(2), documentKey: "path:B");
+        PublishGis("model-a", start, documentKey: "path:A");
+        PublishGis("model-b", start.AddHours(3), documentKey: "path:C");
+
+        CesiumPackageSource? latest = CesiumStationFolder.LatestSource(_station, "model-a");
+        Assert.NotNull(latest);
+        Assert.Equal(("model-a", "path:B"), (latest!.ModelId, latest.DocumentKey));
+        Assert.Null(CesiumStationFolder.LatestSource(_station, "model-c"));
+    }
+
+    [Fact]
+    public void Rules_differ_on_hash_or_profile_and_never_without_a_hash()
+    {
+        CesiumPackageGisRules Rules(string hash, string profile) => new() { Source = "station", Hash = hash, Profile = profile };
+
+        Assert.False(CesiumPackageGisRules.Differ(Rules("h1", "station"), Rules("H1", "station")));
+        Assert.True(CesiumPackageGisRules.Differ(Rules("h1", "station"), Rules("h2", "station")));
+        Assert.True(CesiumPackageGisRules.Differ(Rules("h1", "station"), Rules("h1", "concourse")));
+        Assert.False(CesiumPackageGisRules.Differ(Rules("", "station"), Rules("h2", "other")));
+        Assert.False(CesiumPackageGisRules.Differ(null, Rules("h2", "station")));
     }
 
     [Fact]

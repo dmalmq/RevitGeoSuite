@@ -48,6 +48,29 @@ public sealed class Tiles3DLevelManifestWriter
         return JsonConvert.SerializeObject(document, Formatting.Indented);
     }
 
+    /// <summary>
+    /// <c>levels.json</c> for a package without tiles (Send to Kanizu): the host model's levels only,
+    /// with no <c>tileset</c> or <c>content</c>. Same version and level fields as a tiles package.
+    /// </summary>
+    public string BuildLevelsOnlyJson(IReadOnlyList<Tiles3DLevelGroup> hostLevels)
+    {
+        if (hostLevels is null)
+        {
+            throw new ArgumentNullException(nameof(hostLevels));
+        }
+
+        object[] levels = hostLevels.Select(BuildLevelEntry).ToArray();
+        object document = new
+        {
+            version = 2,
+            generator = "RevitGeoSuite.Tiles3DExport",
+            linkLevels = new Dictionary<string, object> { [string.Empty] = levels },
+            levels,
+        };
+
+        return JsonConvert.SerializeObject(document, Formatting.Indented);
+    }
+
     private static object BuildLevelEntry(Tiles3DLevelGroup group) => new
     {
         levelKey = group.LevelKey,

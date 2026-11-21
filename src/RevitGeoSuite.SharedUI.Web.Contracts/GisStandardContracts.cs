@@ -2,10 +2,17 @@ using System;
 
 namespace RevitGeoSuite.SharedUI.Web.Contracts;
 
-/// <summary>Payload of <c>gisStandard.inspect</c> and <c>gisStandard.setup</c>: nothing to choose.</summary>
+/// <summary>Payload of a GIS standard call with nothing to choose.</summary>
 [TsExport]
 public sealed class GisStandardEmptyRequest
 {
+}
+
+/// <summary>The audit. With a station folder, the station-specific rules are read from it instead of the folder the model records, as a send to that folder will export with them.</summary>
+[TsExport]
+public sealed class GisStandardInspectRequest
+{
+    public string StationFolder { get; set; } = string.Empty;
 }
 
 /// <summary>Where the active model stands against the Kanizu GIS standard, and what the tools would change.</summary>

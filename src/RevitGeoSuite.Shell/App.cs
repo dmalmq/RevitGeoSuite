@@ -30,9 +30,9 @@ public sealed class App : IExternalApplication
         return Result.Succeeded;
     }
 
-    // Adds the three web-shell entry points to a single panel in the order Georeference,
-    // Import, Export, then the GIS standard state button, the same order as the web UI's sidebar groups. Each opens the shared
-    // WebView2 shell on its route; icons are the sidebar's Lucide glyphs.
+    // Adds the web-shell entry points to a single panel: Georeference, Import, Export and Send to
+    // Kanizu, then the GIS standard button last, because its label shows the model's state. Each
+    // opens the shared WebView2 shell on its route; icons are the sidebar's Lucide glyphs.
     // Returns the GIS standard button, whose label shows the active model's state.
     private static PushButton? AddWebShellButtons(UIControlledApplication application)
     {
@@ -67,6 +67,13 @@ public sealed class App : IExternalApplication
                 typeof(ExportCommand),
                 RibbonIconKind.WebExport,
                 "Open the export workflow"));
+
+            panel.AddItem(CreateButton(
+                "SendToKanizu",
+                "Send to\nKanizu",
+                typeof(SendToKanizuCommand),
+                RibbonIconKind.WebSend,
+                "Audit the model and write its GIS package to the station folder for Kanizu, without 3D Tiles"));
 
             panel.AddSeparator();
 

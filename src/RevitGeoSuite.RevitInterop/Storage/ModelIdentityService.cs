@@ -97,15 +97,34 @@ public sealed class ModelIdentityService
             return false;
         }
 
-        string folder = stationFolder.Trim();
+        return SaveStationFolder(document, stationFolder.Trim(), warnings);
+    }
+
+    /// <summary>
+    /// Clears the model's station folder, for a first send that failed: the model had none before it.
+    /// True when the model now records none. Returns false, with a warning, when it could not be saved.
+    /// </summary>
+    public bool ForgetStationFolder(Document document, ICollection<string> warnings)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        return SaveStationFolder(document, null, warnings);
+    }
+
+    private bool SaveStationFolder(Document document, string? folder, ICollection<string> warnings)
+    {
         var handle = new RevitDocumentHandle(document);
         GeoProjectInfo? info = storage.Load(handle);
         if (info is null)
         {
-            return false;
+            // A model with no GeoSuite record records no folder either.
+            return folder is null;
         }
 
-        if (string.Equals(info.GisStationFolder, folder, StringComparison.OrdinalIgnoreCase))
+        if (folder is null ? string.IsNullOrWhiteSpace(info.GisStationFolder) : string.Equals(info.GisStationFolder, folder, StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
