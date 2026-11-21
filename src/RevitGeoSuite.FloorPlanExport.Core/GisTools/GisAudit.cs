@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
@@ -12,16 +14,41 @@ public enum GisAuditSeverity
     Info = 2,
 }
 
+/// <summary>What the page can do about a finding in one click.</summary>
+public enum GisAuditFixKind
+{
+    /// <summary>Write the standard type's gis_category, gis_restriction and material back onto the floor type.</summary>
+    ResetFloorType,
+}
+
+/// <summary>A one-click repair of a finding: what to do and to which element.</summary>
+public sealed class GisAuditFix
+{
+    public GisAuditFix(GisAuditFixKind kind, long targetId)
+    {
+        Kind = kind;
+        TargetId = targetId;
+    }
+
+    public GisAuditFixKind Kind { get; }
+
+    public long TargetId { get; }
+}
+
 /// <summary>One thing that would need fixing by hand after a GDB export.</summary>
 public sealed class GisAuditFinding
 {
-    public GisAuditFinding(GisAuditSeverity severity, string topic, string message, IEnumerable<long>? elementIds = null)
+    public GisAuditFinding(GisAuditSeverity severity, string topic, string message, IEnumerable<long>? elementIds = null, GisAuditFix? fix = null)
     {
         Severity = severity;
         Topic = topic;
         Message = message;
         ElementIds = (elementIds ?? Array.Empty<long>()).ToList();
+        Fix = fix;
     }
+
+    /// <summary>The one-click repair, or null when the finding is fixed by hand or by another tool.</summary>
+    public GisAuditFix? Fix { get; }
 
     public GisAuditSeverity Severity { get; }
 
@@ -171,6 +198,15 @@ public static class GisAudit
                     "parameters",
                     $"Parameter {parameter.Name} is bound as a {BindingText(bound.Binding)} parameter; the standard binds it as {BindingText(parameter.Binding)}.");
             }
+            else if (parameter.Categories.Except(bound.Categories, StringComparer.Ordinal).ToList() is { Count: > 0 } missing)
+            {
+                // A standard that binds a parameter to one more category (gis_kind to Mechanical
+                // Equipment) reaches a model set up before it here, without raising the version.
+                yield return new GisAuditFinding(
+                    GisAuditSeverity.Warning,
+                    "parameters",
+                    $"Parameter {parameter.Name} is not bound to {string.Join(", ", missing.Select(CategoryText))}, so those elements cannot hold it. Run Set up model.");
+            }
         }
     }
 
@@ -178,6 +214,12 @@ public static class GisAudit
     {
         foreach (FloorTypeInfo floorType in snapshot.FloorTypes)
         {
+            if (StandardTypeChanged(floorType, standard) is { } changed)
+            {
+                yield return changed;
+                continue;
+            }
+
             if (floorType.FloorIds.Count == 0)
             {
                 continue;
@@ -224,6 +266,45 @@ public static class GisAudit
             }
         }
     }
+
+    /// <summary>
+    /// A floor type with one of the 21 standard names whose gis_category or gis_restriction is not
+    /// the standard's: its floors export as something the name does not say. An error when floors use
+    /// it, a warning when none does yet (the next floor drawn with it would be wrong). Case and
+    /// surrounding spaces do not count; a material change alone is Set up model's to repair.
+    /// </summary>
+    private static GisAuditFinding? StandardTypeChanged(FloorTypeInfo floorType, GisToolStandard standard)
+    {
+        StandardFloorType? standardType = standard.FloorType(floorType.Name);
+        if (standardType is null)
+        {
+            return null;
+        }
+
+        List<FloorTypeFieldChange> changed = SetupPlanner.StandardTypeChanges(floorType, standardType)
+            .Where(change => change.Field != "material" &&
+                !string.Equals(GisToolStandard.Normalize(change.OldValue), GisToolStandard.Normalize(change.NewValue), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (changed.Count == 0)
+        {
+            return null;
+        }
+
+        string what = string.Join(" and ", changed.Select(change => $"{change.Field} {Quoted(change.OldValue)}"));
+        string standardSays = string.Join(", ", changed.Select(change => Quoted(change.NewValue)));
+        bool inUse = floorType.FloorIds.Count > 0;
+        string consequence = inUse
+            ? (floorType.FloorIds.Count == 1 ? "Its 1 floor exports as " : $"Its {floorType.FloorIds.Count} floors export as ") + $"{Quoted(GisToolStandard.Normalize(floorType.GisCategory))}, not as the name says."
+            : "No floor uses it yet; the next one drawn with it would export wrong.";
+        return new GisAuditFinding(
+            inUse ? GisAuditSeverity.Error : GisAuditSeverity.Warning,
+            "floor types",
+            $"Floor type {floorType.Name} is a standard type, but its {what} {(changed.Count == 1 ? "differs" : "differ")} from the standard ({standardSays}). {consequence} Reset it to the standard.",
+            floorType.FloorIds,
+            new GisAuditFix(GisAuditFixKind.ResetFloorType, floorType.ElementId));
+    }
+
+    private static string Quoted(string value) => value.Length == 0 ? "(empty)" : "'" + value + "'";
 
     // One floor type can cover floors on both sides of the gates; the rename moves them all.
     private static string OneChoiceForAllFloors(FloorTypeInfo floorType, IReadOnlyList<string> renames) =>
@@ -293,17 +374,34 @@ public static class GisAudit
         {
             string kind = GisToolStandard.Normalize(familyType.GisKind).ToLowerInvariant();
             string name = familyType.FamilyName + " : " + familyType.TypeName;
-            if (kind.Length > 0)
+            if (kind.Length > 0 && !GisKinds.Contains(kind))
             {
-                if (!GisKinds.Contains(kind))
+                yield return new GisAuditFinding(
+                    GisAuditSeverity.Error,
+                    "families",
+                    $"{name} has gis_kind '{familyType.GisKind}'. Use one of {string.Join(", ", GisKinds)}.",
+                    familyType.InstanceIds);
+                continue;
+            }
+
+            StandardFamilyKind? listed = standard.Families.KindOf(familyType.FamilyName);
+            if (listed != null)
+            {
+                foreach (GisAuditFinding finding in AuditStandardFamily(familyType, name, kind, listed))
                 {
-                    yield return new GisAuditFinding(
-                        GisAuditSeverity.Error,
-                        "families",
-                        $"{name} has gis_kind '{familyType.GisKind}'. Use one of {string.Join(", ", GisKinds)}.",
-                        familyType.InstanceIds);
+                    yield return finding;
                 }
 
+                continue;
+            }
+
+            if (kind.Length > 0)
+            {
+                yield return new GisAuditFinding(
+                    GisAuditSeverity.Warning,
+                    "families",
+                    $"{name} has gis_kind {kind}, but {familyType.FamilyName} is not a standard {kind} family ({StandardNames(standard.Families.Kind(kind))}). Use a standard family, or add this one to standards/families.json.",
+                    familyType.InstanceIds);
                 continue;
             }
 
@@ -319,11 +417,49 @@ public static class GisAudit
                 yield return new GisAuditFinding(
                     GisAuditSeverity.Warning,
                     "families",
-                    $"{name} looks like {("aeiou".IndexOf(suggested[0]) >= 0 ? "an" : "a")} {suggested} but has no gis_kind, so it is found only by its family name, if at all.",
+                    $"{name} looks like {("aeiou".IndexOf(suggested[0]) >= 0 ? "an" : "a")} {suggested} but has no gis_kind and is not a standard family ({StandardNames(standard.Families.Kind(suggested))}), so the export skips it unless the export dialog maps the family by hand.",
                     familyType.InstanceIds);
             }
         }
     }
+
+    // A family on the list: its type must say the listed kind and fill the other required parameters.
+    private static IEnumerable<GisAuditFinding> AuditStandardFamily(FamilyTypeInfo familyType, string name, string kind, StandardFamilyKind listed)
+    {
+        if (kind.Length > 0 && !SameKind(kind, listed.Kind))
+        {
+            yield return new GisAuditFinding(
+                GisAuditSeverity.Error,
+                "families",
+                $"{name} is a standard {listed.Kind} family, but its gis_kind says {kind}. The export follows gis_kind. Set gis_kind to {listed.Kind} on the type.",
+                familyType.InstanceIds);
+            yield break;
+        }
+
+        List<string> missing = listed.RequiredTypeParameters
+            .Where(parameter => parameter == GisSharedParameters.GisKind
+                ? kind.Length == 0
+                : !familyType.TypeParameters.TryGetValue(parameter, out string? value) || value.Length == 0)
+            .ToList();
+        if (missing.Count > 0)
+        {
+            string fill = string.Join(", ", missing.Select(parameter => parameter == GisSharedParameters.GisKind ? $"gis_kind = {listed.Kind}" : parameter));
+            yield return new GisAuditFinding(
+                GisAuditSeverity.Warning,
+                "families",
+                $"{name} is a standard {listed.Kind} family, but its type has no {string.Join(" or ", missing)}. The export finds it by its family name; fill {fill} on the type.",
+                familyType.InstanceIds);
+        }
+    }
+
+    private static bool SameKind(string a, string b) =>
+        VerticalCirculation.TryMapGisKind(a, out string first) && VerticalCirculation.TryMapGisKind(b, out string second) && first == second;
+
+    private static string StandardNames(StandardFamilyKind? kind) =>
+        kind == null || kind.Families.Count == 0 ? "the standard lists none yet" : "standard: " + string.Join(", ", kind.Families);
+
+    private static string CategoryText(string category) =>
+        category.StartsWith("OST_", StringComparison.Ordinal) ? category.Substring(4) : category;
 
     internal static string GuidText(Guid? guid) => guid.HasValue ? guid.Value.ToString("D") : "(project parameter)";
 

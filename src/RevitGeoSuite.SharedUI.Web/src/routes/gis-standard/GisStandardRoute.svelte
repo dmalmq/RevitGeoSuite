@@ -23,7 +23,7 @@
 
   let model = $state<GisStandardInspectResponse | null>(null)
   let loading = $state(false)
-  let applying = $state<'setup' | 'fix' | null>(null)
+  let applying = $state<'setup' | 'fix' | 'reset' | null>(null)
   let error = $state<string | null>(null)
   let applied = $state<{ title: string; log: string[]; skipped: string[] } | null>(null)
   let ticked = $state<Set<string>>(new Set())
@@ -73,6 +73,29 @@
           kind === 'setup'
             ? $t('GisStandard.Setup.Done', 'Set up model applied')
             : format($t('GisStandard.Fix.Done', '{0} floor type(s) fixed'), accepted.length - response.skipped.length),
+        log: response.log,
+        skipped: response.skipped
+      }
+      void refreshReadiness()
+    } catch (err: any) {
+      error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
+    } finally {
+      applying = null
+    }
+    await inspect()
+  }
+
+  // The audit's one-click repair: writes the standard type's values back onto a floor type with a standard name.
+  async function resetFloorType(floorTypeId: number) {
+    applying = 'reset'
+    error = null
+    applied = null
+    try {
+      const response = await request('gisStandard.resetFloorType', { floorTypeId })
+      applied = {
+        title: response.log.length
+          ? $t('GisStandard.ResetFloorType.Done', 'Floor type reset to the standard')
+          : $t('GisStandard.ResetFloorType.Nothing', 'Nothing was reset'),
         log: response.log,
         skipped: response.skipped
       }
@@ -273,6 +296,11 @@
                 <li class="flex items-start gap-2 py-1.5 text-small">
                   <Chip tone={severity(finding).tone}>{$t(severity(finding).key, severity(finding).fallback)}</Chip>
                   <span class="min-w-0 flex-1"><span class="text-muted-foreground">{finding.topic}:</span> {finding.message}</span>
+                  {#if finding.fix === 'resetFloorType'}
+                    <Button size="sm" icon="rotate-ccw" onclick={() => resetFloorType(finding.fixTargetId)} disabled={busy} busy={applying === 'reset'}>
+                      {$t('GisStandard.ResetFloorType', 'Reset to standard')}
+                    </Button>
+                  {/if}
                   {#if finding.elementIds.length}
                     <Button size="sm" variant="ghost" icon="crosshair" onclick={() => select(finding.elementIds)}>
                       {format($t('GisStandard.SelectCount', 'Select {0}'), finding.elementIds.length)}

@@ -9,7 +9,7 @@ namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 /// <summary>
 /// The Kanizu GIS standard as the model tools (Set up model, Audit, Fix floor types, Parameters,
 /// Review GDB edits) read it: the version, the shared parameters, the theme materials, the
-/// standard floor types and the unit categories the export accepts. Everything comes from the
+/// standard floor types, the standard families and the unit categories the export accepts. Everything comes from the
 /// files embedded in this assembly, so the tools and the export can never disagree.
 /// </summary>
 public sealed class GisToolStandard
@@ -23,9 +23,11 @@ public sealed class GisToolStandard
         IReadOnlyList<StandardFloorType> floorTypes,
         IEnumerable<string> knownCategories,
         string outlineHex,
-        IReadOnlyList<FormerFloorTypeName>? formerNames = null)
+        IReadOnlyList<FormerFloorTypeName>? formerNames = null,
+        FamilyStandard? families = null)
     {
         FormerNames = formerNames ?? Array.Empty<FormerFloorTypeName>();
+        Families = families ?? FamilyStandard.Embedded;
         Version = version;
         Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
         Materials = materials ?? throw new ArgumentNullException(nameof(materials));
@@ -47,6 +49,9 @@ public sealed class GisToolStandard
     public string OutlineHex { get; }
 
     public IReadOnlyList<FormerFloorTypeName> FormerNames { get; }
+
+    /// <summary>The closed list of escalator, moving walkway, elevator and ticket gate families.</summary>
+    public FamilyStandard Families { get; }
 
     /// <summary>The standard this build ships.</summary>
     public static GisToolStandard LoadEmbedded()

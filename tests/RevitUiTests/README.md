@@ -88,7 +88,7 @@ The report is at `C:\dev\revit-test\auto\<date-time>\report.md`. The run folder 
 
 | Option | Meaning |
 |---|---|
-| `--scenario <names>` | One scenario, several comma-separated, or `all`: `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts` or `undo-probe`. `--script` is the same option. |
+| `--scenario <names>` | One scenario, several comma-separated, or `all`: `gis-standard` (the default), `floor-types`, `b1`, `b2a`, `c3a-reshape`, `c3b-split`, `c3c-merge`, `c3d-hand-drawn`, `a3-fields`, `c4-waiting`, `c8-network`, `b9-groups`, `georef-read`, `h4-shared-rules`, `model-facts`, `audit-counts`, `g7-reset` or `undo-probe`. `--script` is the same option. |
 | `--export-settings <file>` | The export page's `settings.json` that `Run-UiTests.ps1` emptied for the run; the runner empties it again before each scenario after the first. `Run-UiTests.ps1 -StartRevit` passes it. |
 | `--drift <file>` | `c3a-reshape` only: the drift file to reshape from. It must be under the test folder. Without it, the scenario writes one from its own export. |
 | `--model <path>` | The pristine copy. Required. It must be under the test folder. |
@@ -357,6 +357,14 @@ Each of these steps also fails if Revit raised or showed a dialog, or if the jou
 The step lists two kinds of group types that hold exported categories. With one instance, an export write raises the warning "A group has been changed outside group edit mode". With two or more, the write is an error, or the value goes to every copy, so `id` values repeat.
 
 It writes `model-facts.md` and `model-facts.json` into the run folder as well as the report. It needs `Install-TestHost.ps1` for the test host's `groups` command and the new level field. Like every scenario it opens RevitGeoSuite's page first, so pass `-RgsBuild` as for any run.
+
+## The audit-counts scenario
+
+`--scenario audit-counts --model <file>` reads the GIS standard page's audit on a copy of the model (AC.1), applies Set up model (AC.2), and reads it again (AC.3). The report notes the counts by topic and severity and every family and floor type finding in full. The run folder gets `audit-counts.md` (counts and messages) and `audit-findings.json` (with element ids). It gives the real numbers of an audit rule before the rule decides anything, such as the standard family list (G2) and the standard floor type check (G7).
+
+## The g7-reset scenario
+
+`--scenario g7-reset --model <file>` runs Set up model (G7.1), sets the `gis_category` of `j ホーム_床` to `walkway` in the fixture transaction and expects an audit finding with a Reset to standard button (G7.2), clicks it and expects one `Kanizu GIS: Reset floor type` commit with `platform` back and the finding gone (G7.3), then undoes it and expects `walkway` and the finding again (G7.4). G7.4 needs an unlocked desktop for the typed Ctrl+Z.
 
 ## The georef-read scenario
 

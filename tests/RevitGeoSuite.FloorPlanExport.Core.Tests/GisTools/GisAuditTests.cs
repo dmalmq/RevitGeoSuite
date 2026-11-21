@@ -100,9 +100,104 @@ public sealed class GisAuditTests
         Assert.Equal(
             new[] { (GisAuditSeverity.Error, 25L), (GisAuditSeverity.Warning, 21L), (GisAuditSeverity.Warning, 22L) },
             findings.Select(finding => (finding.Severity, finding.ElementIds.Single())));
-        Assert.Contains("looks like an escalator", findings[1].Message);
+        Assert.Contains("is a standard escalator family, but its type has no gis_kind", findings[1].Message);
         Assert.Contains("looks like a moving_walkway", findings[2].Message);
     }
+
+    [Fact]
+    public void AModelSetUpBeforeGisKindReachedMechanicalEquipmentIsToldToRunSetUp()
+    {
+        List<BoundParameterInfo> bound = BoundAsStandard()
+            .Select(parameter => parameter.Name == GisSharedParameters.GisKind
+                ? new BoundParameterInfo(parameter.Name, parameter.Guid, parameter.Binding, new[] { "OST_GenericModel", "OST_SpecialityEquipment" })
+                : parameter)
+            .ToList();
+
+        GisAuditFinding finding = Assert.Single(Audit(ModelOnStandard(bound)));
+
+        Assert.Equal((GisAuditSeverity.Warning, "parameters"), (finding.Severity, finding.Topic));
+        Assert.Equal("Parameter gis_kind is not bound to MechanicalEquipment, so those elements cannot hold it. Run Set up model.", finding.Message);
+    }
+
+    [Fact]
+    public void AStandardFamilyWithItsKindIsCleanAlsoInADuplicatedType()
+    {
+        Assert.Empty(Audit(ModelOnStandard(familyTypes: new[]
+        {
+            new FamilyTypeInfo(1, "j EV", "j EV", "elevator", new long[] { 21 }),
+            new FamilyTypeInfo(2, "j EV", "j EV 15人乗り", "elevator", new long[] { 22 }),
+            new FamilyTypeInfo(3, "j 自動改札", "通常", "ticket_gate", new long[] { 23 }),
+        })));
+    }
+
+    [Fact]
+    public void JEvWithoutGisKindIsNamedThoughNoKindWordMatchesIt()
+    {
+        // "j EV" has none of the kind words, so before the family list the audit said nothing about it.
+        Assert.Null(GisAudit.SuggestKind("j EV j EV"));
+
+        GisAuditFinding finding = Assert.Single(Audit(ModelOnStandard(familyTypes: new[]
+        {
+            new FamilyTypeInfo(1, "j EV", "j EV", "", new long[] { 21, 22 }),
+        })));
+
+        Assert.Equal((GisAuditSeverity.Warning, "families"), (finding.Severity, finding.Topic));
+        Assert.Equal(new long[] { 21, 22 }, finding.ElementIds);
+        Assert.Equal("j EV : j EV is a standard elevator family, but its type has no gis_kind. The export finds it by its family name; fill gis_kind = elevator on the type.", finding.Message);
+    }
+
+    [Fact]
+    public void AFamilyOffTheListIsReportedWithTheStandardNames()
+    {
+        GisAuditFinding finding = Assert.Single(Audit(ModelOnStandard(familyTypes: new[]
+        {
+            new FamilyTypeInfo(1, "Lift", "A", "elevator", new long[] { 21 }),
+        })));
+
+        Assert.Equal(GisAuditSeverity.Warning, finding.Severity);
+        Assert.Equal("Lift : A has gis_kind elevator, but Lift is not a standard elevator family (standard: j EV). Use a standard family, or add this one to standards/families.json.", finding.Message);
+    }
+
+    [Fact]
+    public void AStandardFamilyMarkedAsAnotherKindIsAnError()
+    {
+        GisAuditFinding finding = Assert.Single(Audit(ModelOnStandard(familyTypes: new[]
+        {
+            new FamilyTypeInfo(1, "j 自動改札", "通常", "escalator", new long[] { 21 }),
+        })));
+
+        Assert.Equal(GisAuditSeverity.Error, finding.Severity);
+        Assert.Contains("is a standard ticket_gate family, but its gis_kind says escalator", finding.Message);
+    }
+
+    [Fact]
+    public void ARequiredTypeParameterOtherThanTheKindIsCheckedToo()
+    {
+        GisToolStandard standard = WithFamilies(new StandardFamilyKind("elevator", new[] { "j EV" }, new[] { "gis_kind", "gis_access_con" }));
+
+        IReadOnlyList<GisAuditFinding> findings = GisAudit.Run(
+            ModelOnStandard(familyTypes: new[]
+            {
+                new FamilyTypeInfo(1, "j EV", "A", "elevator", new long[] { 21 }),
+                new FamilyTypeInfo(2, "j EV", "B", "elevator", new long[] { 22 }, typeParameters: new Dictionary<string, string> { ["gis_access_con"] = "" }),
+                new FamilyTypeInfo(3, "j EV", "C", "elevator", new long[] { 23 }, typeParameters: new Dictionary<string, string> { ["gis_access_con"] = "wheelchair" }),
+            }),
+            standard);
+
+        Assert.Equal(new[] { 21L, 22L }, findings.Select(finding => finding.ElementIds.Single()));
+        Assert.All(findings, finding => Assert.Contains("has no gis_access_con", finding.Message));
+    }
+
+    private static GisToolStandard WithFamilies(params StandardFamilyKind[] kinds) =>
+        new(
+            Standard.Version,
+            Standard.Parameters,
+            Standard.Materials,
+            Standard.FloorTypes,
+            FloorTypeStandard.KnownCategories,
+            Standard.OutlineHex,
+            Standard.FormerNames,
+            new FamilyStandard(kinds));
 
     [Fact]
     public void OnlyErrorsBlockAndTheSummaryCountsEachSeverity()

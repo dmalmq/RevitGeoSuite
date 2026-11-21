@@ -105,6 +105,8 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         new("georef-read", "reads RevitGeoSuite's georeference record and Revit's coordinates from a copy of the model; changes nothing.", run => run.Step("G.R", "Read the georeference record and coordinates", run.ReadGeoreference)),
         new("c4-waiting", "GDB edits waiting in the station's drift file show on the GIS standard button and the export page, and go once applied (C4).", run => run.WaitingSteps()),
         new("c8-network", "the Network tab shows Kanizu's walking network in Revit without a transaction (C8).", run => run.NetworkSteps()),
+        new("audit-counts", "the audit's findings on a copy before and after Set up model, counted by topic, with every family and floor type finding (audit-counts.md); for G2 and G7.", run => run.AuditCountsSteps()),
+        new("g7-reset", "a standard floor type with a changed gis_category is an audit error, Reset to standard puts it back in one transaction, and Undo takes the reset back (G7).", run => run.StandardTypeResetSteps()),
         new("h4-shared-rules", "every PC exports the same GIS package from the station's gis-rules.json (H4); needs Run-UiTests.ps1 -FloorPlanDataSandbox.", run => run.SharedRulesSteps()),
     };
 

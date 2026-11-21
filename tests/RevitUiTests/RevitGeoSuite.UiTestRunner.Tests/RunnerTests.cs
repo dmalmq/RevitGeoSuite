@@ -156,7 +156,7 @@ public class RunOptionsTests
 
         Assert.Equal(RunOptions.AllScenarios, options.ScenarioNames);
         Assert.All(options.ScenarioNames, name => Assert.Contains(GisStandardRun.Scenarios, scenario => scenario.Name == name));
-        Assert.Equal("h4-shared-rules", options.ScenarioNames[^1]);
+        Assert.Equal("g7-reset", options.ScenarioNames[^1]);
         Assert.DoesNotContain("undo-probe", options.ScenarioNames);
     }
 
