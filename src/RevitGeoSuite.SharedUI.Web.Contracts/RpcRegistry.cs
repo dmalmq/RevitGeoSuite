@@ -62,7 +62,7 @@ using RevitGeoSuite.SharedUI.Web.Contracts;
 [assembly: RpcMethod("georeference.hasUndoSnapshot", typeof(GeoreferenceRevertRequest), typeof(GeoreferenceHasUndoResponse))]
 [assembly: RpcMethod("localization.getAll", typeof(LocalizationGetAllRequest), typeof(LocalizationStrings))]
 [assembly: RpcMethod("localization.setLanguage", typeof(LocalizationSetLanguageRequest), typeof(LocalizationSetLanguageResponse))]
-[assembly: RpcMethod("gisStandard.inspect", typeof(GisStandardEmptyRequest), typeof(GisStandardInspectResponse))]
+[assembly: RpcMethod("gisStandard.inspect", typeof(GisStandardInspectRequest), typeof(GisStandardInspectResponse))]
 [assembly: RpcMethod("gisStandard.setup", typeof(GisStandardEmptyRequest), typeof(GisStandardApplyResponse))]
 [assembly: RpcMethod("gisStandard.fixFloorTypes", typeof(GisFixFloorTypesRequest), typeof(GisStandardApplyResponse))]
 [assembly: RpcMethod("gisStandard.resetFloorType", typeof(GisResetFloorTypeRequest), typeof(GisStandardApplyResponse))]

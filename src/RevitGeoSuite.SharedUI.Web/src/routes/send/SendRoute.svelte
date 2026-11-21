@@ -70,7 +70,8 @@
       const picks = await request<StationSendStateResponse>('station.send.getState', { stationFolder: picked.path })
       folder = picks.stationFolder
       folderKind = picks.folderKind
-      if (sendState) sendState = { ...sendState, lastSentFromAnotherFile: picks.lastSentFromAnotherFile }
+      // The picked station's profile is the one the send will use.
+      if (sendState) sendState = { ...sendState, lastSentFromAnotherFile: picks.lastSentFromAnotherFile, profileName: picks.profileName }
     } catch (err: any) {
       failure = err?.message ?? $t('Send.Error.Read', 'Could not read the model.')
     }
@@ -83,7 +84,8 @@
     if (!anyway) {
       phase = 'auditing'
       try {
-        const audit = await request<GisStandardInspectResponse>('gisStandard.inspect', {})
+        // The audit reads the rules of the folder this send goes to, which the export will use.
+        const audit = await request<GisStandardInspectResponse>('gisStandard.inspect', { stationFolder: folder })
         errorFindings = audit.findings.filter((finding) => finding.severity === 'error')
         errors = audit.exportBlockers
         if (errors.length > 0 || errorFindings.length > 0) {

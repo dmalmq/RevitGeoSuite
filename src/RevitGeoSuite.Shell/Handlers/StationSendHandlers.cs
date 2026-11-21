@@ -41,11 +41,12 @@ public sealed class StationSendStateHandler : IRpcHandler
                 Remembered: info?.GisStationFolder?.Trim() ?? string.Empty,
                 ModelId: info?.ModelId,
                 DocumentKey: DocumentProjectKeyBuilder.Create(document),
-                IsWorkshared: document.IsWorkshared,
-                ProfileName: StationSend.ProfileName(document));
+                IsWorkshared: document.IsWorkshared);
         }).ConfigureAwait(false);
 
         string folder = string.IsNullOrWhiteSpace(request.StationFolder) ? model.Remembered : request.StationFolder!.Trim();
+        // The profile the send will use: the one of the folder it sends to, read off Revit's thread.
+        string profileName = StationSend.ProfileName(folder, model.DocumentKey);
         // A workshared model's document key hashes each user's local copy, so every colleague's
         // send would look like another file; Save As there makes a new central, which is rare.
         CesiumPackageSource? last = folder.Length == 0 || model.IsWorkshared || string.IsNullOrWhiteSpace(model.ModelId)
@@ -54,7 +55,7 @@ public sealed class StationSendStateHandler : IRpcHandler
         return new StationSendStateResponse
         {
             StationFolder = folder,
-            ProfileName = model.ProfileName,
+            ProfileName = profileName,
             DocumentKey = model.DocumentKey,
             FolderKind = folder.Length == 0 ? string.Empty : StationSend.KindName(CesiumStationFolder.Classify(folder)),
             LastSentFromAnotherFile = last is not null && last.DocumentKey.Length > 0
@@ -268,12 +269,12 @@ internal static class StationSend
     }
 
     /// <summary>
-    /// The profile <paramref name="stationFolder"/> would give the model, read without recording the
-    /// folder: the same rules the send reads once the folder is recorded.
+    /// The profile <paramref name="stationFolder"/> gives the model with <paramref name="projectKey"/>,
+    /// read without the model and without recording the folder: the same rules the send reads once
+    /// the folder is recorded. It touches no Revit API, so it can run off Revit's thread.
     /// </summary>
-    public static string ProfileName(Document document, string stationFolder)
+    public static string ProfileName(string stationFolder, string projectKey)
     {
-        string projectKey = DocumentProjectKeyBuilder.Create(document);
         return new ExportProfileStore(rules: GisRulesSource.Resolve(stationFolder, projectKey))
             .LoadWithDiagnostics(projectKey).Value
             .FirstOrDefault()?.Name ?? string.Empty;
@@ -337,7 +338,7 @@ internal static class StationSend
         var (coordinator, reference, _) = Tiles3DExportSupport.Resolve(document, handle, currentState, info, "whole", null);
 
         // A station with no profile for this model fails before the model gets an id or records it.
-        if (ProfileName(document, stationFolder).Length == 0)
+        if (ProfileName(stationFolder, DocumentProjectKeyBuilder.Create(document)).Length == 0)
         {
             throw new InvalidOperationException(UiLocalizer.Instance.Get("Send.NoProfile"));
         }

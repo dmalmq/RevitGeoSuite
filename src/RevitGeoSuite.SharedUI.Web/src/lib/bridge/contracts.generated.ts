@@ -628,6 +628,10 @@ export interface GisStandardApplyResponse {
 export interface GisStandardEmptyRequest {
 }
 
+export interface GisStandardInspectRequest {
+  stationFolder: string
+}
+
 export interface GisStandardInspectResponse {
   documentTitle: string
   exportBlockers: string[]
@@ -1353,7 +1357,7 @@ export interface RpcMethods {
   'gisParameters.read': { request: GisStandardEmptyRequest; response: GisParametersReadResponse }
   'gisParameters.write': { request: GisStandardEmptyRequest; response: GisParametersWriteResponse }
   'gisStandard.fixFloorTypes': { request: GisFixFloorTypesRequest; response: GisStandardApplyResponse }
-  'gisStandard.inspect': { request: GisStandardEmptyRequest; response: GisStandardInspectResponse }
+  'gisStandard.inspect': { request: GisStandardInspectRequest; response: GisStandardInspectResponse }
   'gisStandard.resetFloorType': { request: GisResetFloorTypeRequest; response: GisStandardApplyResponse }
   'gisStandard.select': { request: GisSelectElementsRequest; response: GisSelectElementsResponse }
   'gisStandard.setup': { request: GisStandardEmptyRequest; response: GisStandardApplyResponse }

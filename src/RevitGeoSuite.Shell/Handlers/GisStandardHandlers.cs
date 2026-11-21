@@ -20,8 +20,15 @@ public sealed class GisStandardInspectHandler : IRpcHandler
 {
     public string Method => "gisStandard.inspect";
 
-    public Task<object?> HandleAsync(object? payload) =>
-        RevitContext.Instance.InvokeWithDocumentAsync(doc => (object?)GisStandardWork.Inspect(doc));
+    public Task<object?> HandleAsync(object? payload)
+    {
+        string stationFolder = ((payload as JObject)?.ToObject<GisStandardInspectRequest>()?.StationFolder ?? string.Empty).Trim();
+        return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+        {
+            using IDisposable? scope = stationFolder.Length > 0 ? GisRulesSourceFactory.ReadFrom(stationFolder) : null;
+            return (object?)GisStandardWork.Inspect(doc);
+        });
+    }
 }
 
 /// <summary>Set up model: plans again from the model as it is now and applies the plan in one transaction.</summary>

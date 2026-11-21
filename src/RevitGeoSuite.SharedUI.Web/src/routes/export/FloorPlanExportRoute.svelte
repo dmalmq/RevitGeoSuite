@@ -592,7 +592,7 @@
     if (!validate()) return
     let errors: GisAuditFindingItem[] = []
     try {
-      const inspect = await request<GisStandardInspectResponse>('gisStandard.inspect', {})
+      const inspect = await request<GisStandardInspectResponse>('gisStandard.inspect', { stationFolder: '' })
       errors = inspect.findings.filter((finding) => finding.severity === 'error')
     } catch {
       errors = []

@@ -50,7 +50,7 @@
     loading = true
     error = null
     try {
-      model = await request('gisStandard.inspect', {})
+      model = await request('gisStandard.inspect', { stationFolder: '' })
       ticked = initiallyTicked(model.proposals)
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
