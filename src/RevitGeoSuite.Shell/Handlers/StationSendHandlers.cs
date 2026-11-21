@@ -80,11 +80,14 @@ public sealed class StationSendRunHandler : IRpcHandler
 
     public string Method => "station.send.run";
 
-    public Task<object?> HandleAsync(object? payload)
+    public async Task<object?> HandleAsync(object? payload)
     {
         StationSendRunRequest request = CesiumExportSupport.ReadPayload<StationSendRunRequest>(payload);
         string stationFolder = request.StationFolder?.Trim() ?? string.Empty;
-        switch (CesiumStationFolder.Classify(stationFolder))
+        // The RPC arrives on the UI thread; a slow or unreachable share is checked off it. The await
+        // comes back to the UI thread on purpose: JobManager.Start captures its context for events.
+        CesiumStationFolder.FolderKind kind = await Task.Run(() => CesiumStationFolder.Classify(stationFolder));
+        switch (kind)
         {
             case CesiumStationFolder.FolderKind.Missing:
                 throw new ArgumentException(stationFolder.Length == 0
@@ -113,7 +116,7 @@ public sealed class StationSendRunHandler : IRpcHandler
                     Interlocked.Exchange(ref running, 0);
                 }
             });
-            return Task.FromResult<object?>(new JobStarted { JobId = jobId });
+            return new JobStarted { JobId = jobId };
         }
         catch
         {
