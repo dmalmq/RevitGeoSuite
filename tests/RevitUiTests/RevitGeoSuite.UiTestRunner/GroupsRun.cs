@@ -15,7 +15,7 @@ internal sealed partial class GisStandardRun
     private static readonly double[] GroupOffsetsM = { 5, 10, 20, 40, 80 };
     private static readonly string[] AtomMarkers = { "Disallowed Atom Touch", "AtomViolation" };
 
-    private readonly DateTime groupsStartedUtc = DateTime.UtcNow;
+    private readonly JournalMark groupsStarted = JournalScan.Mark(JournalScan.DefaultFolder(options.RevitYear));
     private long[] groupFloors = Array.Empty<long>();
     private string[] groupUniqueIds = Array.Empty<string>();
     private string[] groupIds = Array.Empty<string>();
@@ -267,7 +267,7 @@ internal sealed partial class GisStandardRun
         moved.Min![0] + dxFt < other.Max![0] && moved.Max![0] + dxFt > other.Min![0] && moved.Min[1] < other.Max[1] && moved.Max![1] > other.Min![1];
 
     private List<string> AtomLines() =>
-        JournalScan.LinesSince(JournalScan.DefaultFolder(options.RevitYear), groupsStartedUtc.AddMinutes(-1))
+        groupsStarted.LinesAfter().Lines
             .Where(line => AtomMarkers.Any(marker => line.Contains(marker, StringComparison.Ordinal)))
             .ToList();
 

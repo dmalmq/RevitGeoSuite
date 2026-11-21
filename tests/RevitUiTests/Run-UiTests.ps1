@@ -10,6 +10,11 @@
 
   .\Run-UiTests.ps1 -StartRevit --model C:\dev\revit-test\auto\lumine-pristine.rvt --export-view 1F --excel
 
+  Several scenarios share one Revit start: -FloorPlanDataSandbox --scenario b1,b2a,c3a-reshape (or --scenario
+  all) runs them one after another, each on a fresh copy of the model in <out>\<scenario>, and writes
+  <out>\summary.md with each scenario's result and minutes. A list needs -FloorPlanDataSandbox: the runner
+  resets the export page's settings and profiles between scenarios, and only ever in the run's own copy.
+
   Nothing of the tests stays where Revit or a roaming profile looks. -StartRevit copies the test
   host's manifest (from Install-TestHost.ps1's folder) into %APPDATA%\Autodesk\Revit\Addins\<year>,
   starts Revit, and deletes the manifest again as soon as the test host's pipe is up, or when Revit
@@ -58,10 +63,14 @@ param(
     [string]$PyRevitExtension = '',
     [switch]$FloorPlanDataSandbox,
     [int]$StartMinutes = 5,
+    # The runner's --out, named here: under powershell -File, PowerShell would read "--out" as an ambiguous
+    # -Out* common parameter (-OutVariable, -OutBuffer) and refuse the call. -Out and --out both land here.
+    [string]$Out = '',
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$RunnerArgs
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Out) { $RunnerArgs = @($RunnerArgs | Where-Object { $null -ne $_ }) + @('--out', $Out) }
 if ($RevitYear -notmatch '^\d{4}$') { throw "-RevitYear must be a year such as 2024 (got '$RevitYear'). Pass runner options such as --scenario after the script's own -Options." }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $addins = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear"
@@ -89,6 +98,17 @@ function Write-FolderSnapshot([string]$Folder, [string]$Path) {
     }
     [IO.File]::WriteAllText($Path, $(if ($lines.Count -eq 0) { '' } else { ($lines -join "`n") + "`n" }), [Text.UTF8Encoding]::new($false))
     return $lines
+}
+
+# Several scenarios: the runner rewrites the export page's settings.json and profiles.json between them, so they run only
+# against the run's sandbox copy of the store, never the roaming %APPDATA% one. Refuse before anything is touched.
+$scenarioValue = $null
+$given = @($RunnerArgs | Where-Object { $null -ne $_ })
+for ($i = 0; $i -lt $given.Count - 1; $i++) { if ($given[$i] -in '--scenario', '--script') { $scenarioValue = $given[$i + 1] } }
+if ($scenarioValue) {
+    if (($scenarioValue -match ',' -or $scenarioValue -eq 'all') -and -not $FloorPlanDataSandbox) {
+        throw "Several scenarios ('$scenarioValue') need -FloorPlanDataSandbox: between scenarios the runner resets the export page's settings and profiles, which may only be the run's own copy."
+    }
 }
 
 if ($FloorPlanDataSandbox) {
@@ -311,7 +331,9 @@ try {
             & $dotnet build (Join-Path $PSScriptRoot 'RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.csproj') -c Release
             if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE)." }
 
-            & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @RunnerArgs
+            # The runner empties the same file again between scenarios, so each one starts from the page's defaults.
+            $settingsArgs = if ($StartRevit) { @('--export-settings', $runSettings) } else { @() }
+            & $dotnet (Join-Path $repo 'bin\Tests\RevitGeoSuite.UiTestRunner\RevitGeoSuite.UiTestRunner.dll') --revit-year $RevitYear @settingsArgs @RunnerArgs
             $exitCode = $LASTEXITCODE
         }
     }
@@ -323,7 +345,8 @@ try {
             $changes = @($realAfter | Where-Object { $realBefore -notcontains $_ } | ForEach-Object { "after: $_" }) +
                 @($realBefore | Where-Object { $realAfter -notcontains $_ } | ForEach-Object { "before: $_" })
             if ($changes.Count -gt 0) {
-                $reportPath = if ($startFailure) { $startFailure } else { Join-Path $runFolder 'report.md' }
+                # Several scenarios write summary.md beside their folders; one writes report.md.
+                $reportPath = if ($startFailure) { $startFailure } elseif (Test-Path (Join-Path $runFolder 'summary.md')) { Join-Path $runFolder 'summary.md' } else { Join-Path $runFolder 'report.md' }
                 $text = if (Test-Path $reportPath) { [IO.File]::ReadAllText($reportPath) } else { "# RevitGeoSuite UI test run`n" }
                 $text = $text -replace '(?m)^\*\*PASS\*\*', '**FAIL**'
                 $text += "`n## REAL. The real floor plan folder is unchanged: **FAIL**`n`n- FAILED: $realStore differs from the record in real-folder-before.txt.`n" + (($changes | ForEach-Object { "  - ``$_``" }) -join "`n") + "`n"
