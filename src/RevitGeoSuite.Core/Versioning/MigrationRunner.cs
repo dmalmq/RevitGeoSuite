@@ -1,4 +1,5 @@
 using System;
+using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
 
 namespace RevitGeoSuite.Core.Versioning;
@@ -20,6 +21,11 @@ public static class MigrationRunner
         if (legacyInfo.SchemaVersion <= 0)
         {
             legacyInfo.SchemaVersion = 1;
+        }
+
+        if (legacyInfo.ProjectCrs is not null)
+        {
+            legacyInfo.ProjectCrs = JapanCrsPresets.MigrateLegacyReference(legacyInfo.ProjectCrs);
         }
 
         return legacyInfo;

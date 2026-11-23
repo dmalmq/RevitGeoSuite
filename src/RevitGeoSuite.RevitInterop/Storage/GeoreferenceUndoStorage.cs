@@ -2,13 +2,14 @@ using System;
 using Autodesk.Revit.DB.ExtensibleStorage;
 using Newtonsoft.Json;
 using RevitGeoSuite.Core.ProjectMetadata;
+using RevitGeoSuite.Core.Storage;
 
 namespace RevitGeoSuite.RevitInterop.Storage;
 
 public sealed class GeoreferenceUndoStorage
 {
-    private static readonly Guid SchemaGuid = new("A7E3B2C1-5D94-4F8A-B1E6-3C8A9D2F7E04");
-    private const string PayloadJsonFieldName = "PayloadJson";
+    private static readonly Guid SchemaGuid = new(RevitStorageContract.GeoreferenceUndoSchemaGuid);
+    private const string PayloadJsonFieldName = RevitStorageContract.PayloadJsonFieldName;
 
     public void Save(RevitDocumentHandle handle, GeoreferenceUndoSnapshot snapshot)
     {
