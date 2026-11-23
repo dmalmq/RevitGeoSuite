@@ -54,6 +54,7 @@ public sealed class GeoreferenceUndoSnapshotTests
                 },
                 LastUpdatedUtc = capturedAt
             },
+            HasPreviousModuleStateSnapshot = true,
             Summary = "Before applying JGD2011 / Japan Plane Rectangular CS IX"
         };
 
@@ -62,7 +63,9 @@ public sealed class GeoreferenceUndoSnapshotTests
 
         Assert.True(parsed);
         Assert.NotNull(restored);
-        Assert.Equal(original.CapturedAtUtc, restored!.CapturedAtUtc);
+        Assert.True(restored!.HasPreviousModuleStateSnapshot);
+        Assert.Equal(GeoreferenceModuleStateRevertAction.Restore, GeoreferenceUndoStorage.ResolveModuleStateRevertAction(restored));
+        Assert.Equal(original.CapturedAtUtc, restored.CapturedAtUtc);
         Assert.Equal(original.SiteLatitudeRadians, restored.SiteLatitudeRadians, 12);
         Assert.Equal(original.SiteLongitudeRadians, restored.SiteLongitudeRadians, 12);
         Assert.Equal(original.EastWestFeet, restored.EastWestFeet, 10);
@@ -98,11 +101,38 @@ public sealed class GeoreferenceUndoSnapshotTests
         Assert.True(parsed);
         Assert.NotNull(restored);
         Assert.False(restored!.HasSurveyPointPosition());
+        Assert.False(restored.HasPreviousModuleStateSnapshot);
         Assert.Null(restored.PreviousGeoInfo);
         Assert.Null(restored.PreviousModuleState);
+        Assert.Equal(
+            GeoreferenceModuleStateRevertAction.LeaveUnchanged,
+            GeoreferenceUndoStorage.ResolveModuleStateRevertAction(restored));
         Assert.Equal(10.0, restored.EastWestFeet);
         Assert.Equal("Legacy snapshot", restored.Summary);
         GeoreferenceUndoStorage.ValidateForRestore(restored);
+    }
+
+    [Fact]
+    public void Snapshot_captured_with_absent_module_state_removes_module_state_on_revert()
+    {
+        GeoreferenceUndoSnapshot capturedWithoutModuleState = new GeoreferenceUndoSnapshot
+        {
+            CapturedAtUtc = DateTime.UtcNow,
+            HasPreviousModuleStateSnapshot = true,
+            PreviousModuleState = null,
+            Summary = "Fresh model before first georeference"
+        };
+
+        string json = GeoreferenceUndoSnapshotSerializer.Serialize(capturedWithoutModuleState);
+        bool parsed = GeoreferenceUndoSnapshotSerializer.TryDeserialize(json, out GeoreferenceUndoSnapshot? restored);
+
+        Assert.True(parsed);
+        Assert.NotNull(restored);
+        Assert.True(restored!.HasPreviousModuleStateSnapshot);
+        Assert.Null(restored.PreviousModuleState);
+        Assert.Equal(
+            GeoreferenceModuleStateRevertAction.Remove,
+            GeoreferenceUndoStorage.ResolveModuleStateRevertAction(restored));
     }
 
     [Fact]

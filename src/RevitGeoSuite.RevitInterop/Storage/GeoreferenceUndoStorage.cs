@@ -95,6 +95,11 @@ public sealed class GeoreferenceUndoStorage
         return GeoreferenceUndoSnapshotSerializer.NormalizeAngleRadians(angleRadians);
     }
 
+    public static GeoreferenceModuleStateRevertAction ResolveModuleStateRevertAction(GeoreferenceUndoSnapshot snapshot)
+    {
+        return GeoreferenceUndoSnapshotSerializer.ResolveModuleStateRevertAction(snapshot);
+    }
+
     private static Schema GetOrCreateSchema()
     {
         Schema? schema = Schema.Lookup(SchemaGuid);
@@ -107,6 +112,13 @@ public sealed class GeoreferenceUndoStorage
         builder.AddSimpleField(PayloadJsonFieldName, typeof(string));
         return builder.Finish();
     }
+}
+
+public enum GeoreferenceModuleStateRevertAction
+{
+    LeaveUnchanged = 0,
+    Restore = 1,
+    Remove = 2
 }
 
 internal static class GeoreferenceUndoSnapshotSerializer
@@ -200,6 +212,23 @@ internal static class GeoreferenceUndoSnapshotSerializer
         }
 
         return Math.Atan2(Math.Sin(angleRadians), Math.Cos(angleRadians));
+    }
+
+    public static GeoreferenceModuleStateRevertAction ResolveModuleStateRevertAction(GeoreferenceUndoSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        if (snapshot.PreviousModuleState is not null)
+        {
+            return GeoreferenceModuleStateRevertAction.Restore;
+        }
+
+        return snapshot.HasPreviousModuleStateSnapshot
+            ? GeoreferenceModuleStateRevertAction.Remove
+            : GeoreferenceModuleStateRevertAction.LeaveUnchanged;
     }
 
     private static void RequireFinite(double value, string fieldName)

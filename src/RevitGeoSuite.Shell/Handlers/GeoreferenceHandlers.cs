@@ -489,6 +489,7 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
             SurveyPointPinned = surveyPoint.Pinned,
             PreviousGeoInfo = previousInfo,
             PreviousModuleState = previousModuleState,
+            HasPreviousModuleStateSnapshot = true,
             Summary = summary
         };
     }
@@ -587,11 +588,13 @@ public sealed class GeoreferenceRevertHandler : IRpcHandler
                 }
 
                 var moduleStateStore = new ModuleStateStorage();
-                if (snapshot.PreviousModuleState is not null)
+                GeoreferenceModuleStateRevertAction moduleStateAction =
+                    GeoreferenceUndoStorage.ResolveModuleStateRevertAction(snapshot);
+                if (moduleStateAction == GeoreferenceModuleStateRevertAction.Restore)
                 {
-                    moduleStateStore.Save(handle, ModuleStateIds.Georeference, snapshot.PreviousModuleState);
+                    moduleStateStore.Save(handle, ModuleStateIds.Georeference, snapshot.PreviousModuleState!);
                 }
-                else
+                else if (moduleStateAction == GeoreferenceModuleStateRevertAction.Remove)
                 {
                     moduleStateStore.Remove(handle, ModuleStateIds.Georeference);
                 }
@@ -604,14 +607,19 @@ public sealed class GeoreferenceRevertHandler : IRpcHandler
                     throw new InvalidOperationException("Revit did not commit the georeference revert transaction.");
                 }
 
+                string legacyNote = !snapshot.HasSurveyPointPosition()
+                    ? " Note: this legacy snapshot did not record the prior Survey Point local position, so the Survey Point was left in place."
+                    : string.Empty;
+
                 return new GeoreferenceRevertResponse
                 {
                     Success = true,
                     Summary = string.Format(
                         CultureInfo.InvariantCulture,
-                        "Reverted to state from {0:yyyy-MM-dd HH:mm} UTC. {1}",
+                        "Reverted to state from {0:yyyy-MM-dd HH:mm} UTC. {1}{2}",
                         snapshot.CapturedAtUtc,
-                        snapshot.Summary)
+                        snapshot.Summary,
+                        legacyNote)
                 };
             }
             catch

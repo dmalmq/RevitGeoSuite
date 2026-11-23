@@ -68,11 +68,42 @@ public sealed class CrsPresetCatalogTests
     [InlineData("JGD2024 / Japan Plane Rectangular CS IX", 6677)]
     [InlineData("JGD2024-09", 6677)]
     [InlineData("JGD 2024 Zone 1", 6669)]
+    [InlineData("JGD2024 Zone 10", 6678)]
+    [InlineData("JGD2024 / Japan Plane Rectangular CS 12", 6680)]
+    [InlineData("JGD2011-19", 6687)]
     [InlineData("JGD2011 / Japan Plane Rectangular CS XIX", 6687)]
     public void JapanPlaneRectangular_TryResolveEpsg_recognizes_jgd2024_and_jgd2011_names(string text, int expectedEpsg)
     {
         Assert.True(JapanPlaneRectangular.TryResolveEpsg(text, out int epsg));
         Assert.Equal(expectedEpsg, epsg);
+    }
+
+    [Fact]
+    public void JapanPlaneRectangular_TryResolveEpsg_resolves_all_19_zones_for_jgd2011_and_jgd2024()
+    {
+        foreach (JapanPlaneRectangularZoneDefinition zone in JapanPlaneRectangular.AllZones)
+        {
+            foreach (string datum in new[] { "JGD2011", "JGD2024" })
+            {
+                string[] labels =
+                {
+                    $"{datum}-{zone.ZoneNumber:00}",
+                    $"{datum} Zone {zone.ZoneNumber}",
+                    $"{datum} / Japan Plane Rectangular CS {zone.ZoneNumber}",
+                    $"{datum} / Japan Plane Rectangular CS {zone.RomanZone}",
+                };
+
+                foreach (string label in labels)
+                {
+                    Assert.True(JapanPlaneRectangular.TryResolveEpsg(label, out int epsg), $"Failed to resolve '{label}'.");
+                    Assert.Equal(zone.Epsg, epsg);
+                }
+            }
+        }
+
+        Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2024 Zone 0", out _));
+        Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2024 Zone 20", out _));
+        Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2024 Zone 100", out _));
     }
 
     [Fact]

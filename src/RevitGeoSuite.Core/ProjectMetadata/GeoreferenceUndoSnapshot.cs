@@ -33,6 +33,13 @@ public sealed class GeoreferenceUndoSnapshot
 
     public GeoreferenceModuleState? PreviousModuleState { get; set; }
 
+    /// <summary>
+    /// True when this snapshot explicitly captured whether a <see cref="GeoreferenceModuleState"/>
+    /// existed prior to apply. Legacy snapshots deserialize with false so revert does not erase
+    /// an existing working Project Base Point when <see cref="PreviousModuleState"/> is null.
+    /// </summary>
+    public bool HasPreviousModuleStateSnapshot { get; set; }
+
     public string Summary { get; set; } = string.Empty;
 
     public bool HasSurveyPointPosition()

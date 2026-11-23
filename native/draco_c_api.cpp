@@ -87,7 +87,12 @@ int32_t CopyFloatAttribute(
             return -7;
         }
         float* const dst = raw + (static_cast<size_t>(i) * stride);
-        attr->ConvertValue<float>(mapped, dst);
+        for (int32_t c = 0; c < expected_components; ++c) {
+            dst[c] = 0.0f;
+        }
+        if (!attr->ConvertValue<float>(mapped, dst)) {
+            return -7;
+        }
         for (int32_t c = 0; c < expected_components; ++c) {
             if (!std::isfinite(dst[c])) {
                 return -7;
@@ -132,7 +137,11 @@ int32_t CopyUint32Attribute(
         if (static_cast<size_t>(mapped.value()) >= attr_size) {
             return -8;
         }
-        attr->ConvertValue<uint32_t>(mapped, raw + static_cast<size_t>(i));
+        uint32_t value = 0;
+        if (!attr->ConvertValue<uint32_t>(mapped, &value)) {
+            return -8;
+        }
+        raw[static_cast<size_t>(i)] = value;
     }
 
     *out_buffer = std::move(buffer);
