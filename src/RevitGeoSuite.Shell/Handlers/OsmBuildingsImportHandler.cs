@@ -68,7 +68,8 @@ public sealed class OsmBuildingsImportHandler : IRpcHandler
             CoordinateTransformer coordinateTransformer = new CoordinateTransformer(new CrsRegistry());
 
             progress.Report(new JobProgress { Phase = "preparing", Percent = 0, Message = "Resolving georeference…" });
-            PlateauImportReferenceContext referenceContext = await ResolveReferenceContextAsync(coordinateTransformer).ConfigureAwait(false);
+            (PlateauImportReferenceContext referenceContext, string capturedDocumentId, Document capturedDocument) =
+                await ResolveReferenceContextAsync(coordinateTransformer).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
 
             BoundingBoxDegrees bbox = ComputeBoundingBox(
@@ -119,27 +120,31 @@ public sealed class OsmBuildingsImportHandler : IRpcHandler
 
             if (mode == ImportModeDxf)
             {
-                return await ImportAsDxfAsync(buildings, referenceContext, progress, ct).ConfigureAwait(false);
+                return await ImportAsDxfAsync(buildings, referenceContext, capturedDocumentId, capturedDocument, progress, ct).ConfigureAwait(false);
             }
 
             progress.Report(new JobProgress { Phase = "importing", Percent = 85, Message = "Creating Revit geometry…" });
-            PlateauTilesImporterResult result = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
-            {
-                using Transaction tx = new Transaction(doc, "Import OSM Buildings");
-                tx.Start();
-                try
+            PlateauTilesImporterResult result = await RevitContext.Instance.InvokeWithExpectedDocumentAsync(
+                capturedDocumentId,
+                "OSM Buildings import",
+                doc =>
                 {
-                    PlateauTilesImporter importer = new PlateauTilesImporter();
-                    PlateauTilesImporterResult r = importer.Import(doc, buildings, PlateauOnlineGeometryMode.Lod2Untextured);
-                    tx.Commit();
-                    return r;
-                }
-                catch
-                {
-                    tx.RollBack();
-                    throw;
-                }
-            }).ConfigureAwait(false);
+                    using Transaction tx = new Transaction(doc, "Import OSM Buildings");
+                    tx.Start();
+                    try
+                    {
+                        PlateauTilesImporter importer = new PlateauTilesImporter();
+                        PlateauTilesImporterResult r = importer.Import(doc, buildings, PlateauOnlineGeometryMode.Lod2Untextured);
+                        tx.Commit();
+                        return r;
+                    }
+                    catch
+                    {
+                        tx.RollBack();
+                        throw;
+                    }
+                },
+                capturedDocument).ConfigureAwait(false);
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "OSM Buildings import complete" });
 
@@ -163,6 +168,8 @@ public sealed class OsmBuildingsImportHandler : IRpcHandler
     private static async Task<object?> ImportAsDxfAsync(
         PlateauTilesetModel buildings,
         PlateauImportReferenceContext referenceContext,
+        string expectedDocumentId,
+        Document expectedDocument,
         IProgress<JobProgress> progress,
         CancellationToken ct)
     {
@@ -197,7 +204,11 @@ public sealed class OsmBuildingsImportHandler : IRpcHandler
             }
 
             progress.Report(new JobProgress { Phase = "importing", Percent = 92, Message = "Importing DXF basemap…" });
-            await RevitContext.Instance.InvokeWithDocumentAsync(doc => importer.ImportDxf(doc, dxfPath)).ConfigureAwait(false);
+            await RevitContext.Instance.InvokeWithExpectedDocumentAsync(
+                expectedDocumentId,
+                "OSM Buildings basemap import",
+                doc => importer.ImportDxf(doc, dxfPath),
+                expectedDocument).ConfigureAwait(false);
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "OSM basemap import complete" });
 
@@ -226,24 +237,30 @@ public sealed class OsmBuildingsImportHandler : IRpcHandler
         }
     }
 
-    private static async Task<PlateauImportReferenceContext> ResolveReferenceContextAsync(CoordinateTransformer coordinateTransformer)
+    private static async Task<(PlateauImportReferenceContext ReferenceContext, string DocumentId, Document Document)> ResolveReferenceContextAsync(CoordinateTransformer coordinateTransformer)
     {
-        PlateauImportReferenceContext? referenceContext = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
-        {
-            GeoProjectInfoStorage geoStore = new GeoProjectInfoStorage();
-            ModuleStateStorage moduleStateStore = new ModuleStateStorage();
-            ProjectLocationReader reader = new ProjectLocationReader(geoStore, moduleStateStore: moduleStateStore);
-            CurrentProjectStateSummary currentState = reader.Read(doc);
-            RevitDocumentHandle handle = new RevitDocumentHandle(doc);
-            GeoProjectInfo? info = geoStore.Load(handle);
-            PlateauImportReferenceResolver resolver = new PlateauImportReferenceResolver(
-                coordinateTransformer,
-                new RevitPlateauImportLocalBasisProvider(doc));
-            return resolver.Resolve(currentState, info, PlateauImportReferenceSource.CanonicalOrigin);
-        }).ConfigureAwait(false);
+        (PlateauImportReferenceContext? referenceContext, string documentId, Document document) =
+            await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+            {
+                GeoProjectInfoStorage geoStore = new GeoProjectInfoStorage();
+                ModuleStateStorage moduleStateStore = new ModuleStateStorage();
+                ProjectLocationReader reader = new ProjectLocationReader(geoStore, moduleStateStore: moduleStateStore);
+                CurrentProjectStateSummary currentState = reader.Read(doc);
+                RevitDocumentHandle handle = new RevitDocumentHandle(doc);
+                GeoProjectInfo? info = geoStore.Load(handle);
+                PlateauImportReferenceResolver resolver = new PlateauImportReferenceResolver(
+                    coordinateTransformer,
+                    new RevitPlateauImportLocalBasisProvider(doc));
+                return (resolver.Resolve(currentState, info, PlateauImportReferenceSource.CanonicalOrigin), DocumentIdentity.Create(doc), doc);
+            }).ConfigureAwait(false);
 
-        return referenceContext ?? throw new InvalidOperationException(
-            "This project isn't georeferenced yet. Complete Georeference Setup before importing OSM Buildings.");
+        if (referenceContext is null)
+        {
+            throw new InvalidOperationException(
+                "This project isn't georeferenced yet. Complete Georeference Setup before importing OSM Buildings.");
+        }
+
+        return (referenceContext, documentId, document);
     }
 
     private static EcefToProjectTransformer CreateEcefTransformer(

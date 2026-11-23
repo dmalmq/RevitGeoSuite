@@ -207,7 +207,8 @@
 
   onMount(async () => {
     const lastFormat = localStorage.getItem('export.lastFormat')
-    if (lastFormat === 'plateau' || lastFormat === 'tiles3d' || lastFormat === 'citygml') {
+    // CityGML is hidden in Kanizu Revit v1, so do not restore it from legacy localStorage state.
+    if (lastFormat === 'plateau' || lastFormat === 'tiles3d') {
       format = lastFormat
     }
     if (format === 'tiles3d') {

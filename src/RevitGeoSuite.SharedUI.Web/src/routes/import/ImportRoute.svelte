@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { request } from '$lib/bridge/rpc'
+  import { on, request } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
   import { onDestroy, onMount, tick } from 'svelte'
   import { t } from '$lib/i18n'
@@ -11,6 +11,7 @@
   import UnitFloorsTool from './unitfloors/UnitFloorsTool.svelte'
   import type { UnitFloorsPhase } from './unitfloors/types'
   import type {
+    GeoreferenceCurrentStateResponse,
     PlateauOnlineArea,
     PlateauOnlineAreaGridSelection,
     PlateauOnlineCatalogResponse,
@@ -113,14 +114,32 @@
   let ckanCatalogCancel = $state<(() => void) | null>(null)
   let ckanDownloadCancel = $state<(() => void) | null>(null)
 
+  let activeDocumentId = $state<string | null>(null)
+  let catalogDocumentId = $state<string | null>(null)
+
   let mapRef = $state<LeafletMap | null>(null)
 
-  onMount(async () => {
+  onMount(() => {
     const lastSource = localStorage.getItem('import.lastSource')
     if (lastSource === 'local' || lastSource === 'online' || lastSource === 'osm' || lastSource === 'gis' || lastSource === 'unitfloors') {
       source = lastSource
     }
     ckanDownloadFolder = localStorage.getItem('import.ckanDownloadFolder') ?? ''
+
+    const offDocumentChanged = on('document.changed', (evt) => {
+      activeDocumentId = evt?.documentId || null
+    })
+    void request<GeoreferenceCurrentStateResponse>('georeference.getCurrentState', {})
+      .then((state) => {
+        activeDocumentId = state.documentId ?? null
+      })
+      .catch(() => {
+        // Status bar handles unavailable state; backend still binds the job to its captured document.
+      })
+
+    return () => {
+      offDocumentChanged()
+    }
   })
 
   function selectSource(type: SourceType) {
@@ -267,7 +286,8 @@
     const job = startJob<{ tilesImported: number; importedElements?: number; groups?: number; mode?: string; summary?: string; warnings?: string[] }>('plateau.importTiles', {
       path: folderPath,
       tileIds: Array.from(selectedTiles),
-      mode: geometryMode
+      mode: geometryMode,
+      ...(activeDocumentId ? { documentId: activeDocumentId } : {})
     }, {
       onProgress: (p) => { importProgress = p }
     })
@@ -345,14 +365,21 @@
           source: 'online',
           radiusMeters: groundRadiusMeters,
           gridSpacingMeters: groundSpacingMeters,
-          geoidOffsetMeters: groundGeoidOffsetMeters
+          geoidOffsetMeters: groundGeoidOffsetMeters,
+          ...(osmIonToken.trim() ? { ionToken: osmIonToken.trim() } : {}),
+          ...((catalogDocumentId ?? activeDocumentId) ? { documentId: catalogDocumentId ?? activeDocumentId } : {})
         }
       : {
           source: 'local',
           path: folderPath,
           tileIds: Array.from(selectedTiles),
-          gridSpacingMeters: groundSpacingMeters
+          gridSpacingMeters: groundSpacingMeters,
+          ...(activeDocumentId ? { documentId: activeDocumentId } : {})
         }
+
+    if (source === 'online' && osmIonToken.trim()) {
+      localStorage.setItem('import.osm.ionToken', osmIonToken.trim())
+    }
 
     const job = startJob<{ surfaceId?: number; pointCount?: number; replaced?: number; spacingMeters?: number; summary?: string; warnings?: string[] }>('plateau.importGround', payload, {
       onProgress: (p) => { importProgress = p }
@@ -390,6 +417,7 @@
       const result = await job.result
       onlineAreas = result.areas || []
       onlineSuggestion = result.suggestion ?? null
+      catalogDocumentId = result.documentId ?? activeDocumentId
       suggestionToLoad = onlineSuggestion
       selectedOnlineAreaCodes = new Set()
       onlineDracoAvailable = result.dracoAvailable
@@ -518,7 +546,8 @@
         gridIds: Array.from(selectedTiles),
         areaSelections,
         mode: geometryMode,
-        categories: geometryMode === 'dxf' ? Array.from(onlineBasemapCategories) : ['buildings']
+        categories: geometryMode === 'dxf' ? Array.from(onlineBasemapCategories) : ['buildings'],
+        ...((catalogDocumentId ?? activeDocumentId) ? { documentId: catalogDocumentId ?? activeDocumentId } : {})
       },
       { onProgress: (p) => { importProgress = p } }
     )
@@ -1144,6 +1173,7 @@
       bind:groundGeoidOffsetMeters
       bind:groundRadiusMeters
       bind:groundSpacingMeters
+      bind:ionToken={osmIonToken}
       {onlineBasemapCategories}
       {onlineBasemapCategoryOptions}
       {removeOnlineArea}

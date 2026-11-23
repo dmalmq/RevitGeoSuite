@@ -127,4 +127,40 @@ describe('startJob', () => {
     emit({ kind: 'evt', method: 'job.failed', payload: { jobId: 'job-9', error: 'Cancelled', cancelled: true } })
     await expect(job.result).rejects.toThrow('Cancelled')
   })
+
+  it('immediately rejects when the start reply lacks a valid jobId (e.g. legacy { error } payload)', async () => {
+    const { startJob } = await import('../jobs')
+
+    const job = startJob('tiles3d.export', { outputFolder: '' })
+    const sent = postedMessages[0]
+
+    emit({ kind: 'res', id: sent.id, method: 'tiles3d.export', payload: { error: 'Output folder is required' } })
+
+    await expect(job.result).rejects.toThrow('Output folder is required')
+  })
+
+  it('immediately rejects when the start reply has an empty or missing jobId without an error field', async () => {
+    const { startJob } = await import('../jobs')
+
+    const job = startJob('plateau.scanFolder', { path: '' })
+    const sent = postedMessages[0]
+
+    emit({ kind: 'res', id: sent.id, method: 'plateau.scanFolder', payload: { jobId: '   ' } })
+
+    await expect(job.result).rejects.toThrow(/valid jobId/)
+  })
+
+  it('rejects with JobCancelledError when job.failed sets cancelled=true', async () => {
+    const { startJob, JobCancelledError } = await import('../jobs')
+
+    const job = startJob('plateau.importTiles', { path: 'x', tileIds: ['a'] })
+    const sent = postedMessages[0]
+
+    emit({ kind: 'res', id: sent.id, method: 'plateau.importTiles', payload: { jobId: 'job-cancel-1' } })
+    await flush()
+
+    emit({ kind: 'evt', method: 'job.failed', payload: { jobId: 'job-cancel-1', error: 'Cancelled', cancelled: true } })
+
+    await expect(job.result).rejects.toBeInstanceOf(JobCancelledError)
+  })
 })

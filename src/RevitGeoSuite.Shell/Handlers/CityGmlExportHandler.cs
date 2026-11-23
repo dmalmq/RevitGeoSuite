@@ -130,7 +130,7 @@ public sealed class CityGmlExportHandler : IRpcHandler
         var outputFolder = jobj?.Value<string>("outputFolder");
         if (string.IsNullOrWhiteSpace(outputFolder))
         {
-            return Task.FromResult<object?>(new { error = "Output folder is required" });
+            throw new InvalidOperationException("Output folder is required.");
         }
 
         (string schemaVersion, Dictionary<string, string>? categoryOverrides, Dictionary<string, string>? codelistOverrides) =

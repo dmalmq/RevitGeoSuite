@@ -77,6 +77,7 @@ using RevitGeoSuite.SharedUI.Web.Contracts;
 [assembly: RpcMethod("gisNetwork.inspect", typeof(GisStandardEmptyRequest), typeof(GisNetworkResponse))]
 [assembly: RpcMethod("gisNetwork.show", typeof(GisNetworkShowRequest), typeof(GisNetworkResponse))]
 
+[assembly: RpcEvent("document.changed", typeof(DocumentChangedEvent))]
 [assembly: RpcEvent("navigate", typeof(NavigateEvent))]
 [assembly: RpcEvent("job.progress", typeof(JobProgress))]
 [assembly: RpcEvent("job.completed", typeof(JobCompleted))]

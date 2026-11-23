@@ -36,23 +36,25 @@ public sealed class PlateauImportTilesHandler : IRpcHandler
         var tileIds = jobj?.Value<JArray>("tileIds")?.Select(t => t.ToString()).ToList();
         // "solids" (default) builds 3D DirectShapes; "dxf" imports a lightweight 2D CAD basemap.
         var mode = jobj?.Value<string>("mode");
+        var requestedDocumentId = jobj?.Value<string>("documentId")?.Trim();
 
         if (string.IsNullOrWhiteSpace(path))
         {
-            return Task.FromResult<object?>(new { error = "Path is required" });
+            throw new InvalidOperationException("Path is required.");
         }
         if (tileIds == null || tileIds.Count == 0)
         {
-            return Task.FromResult<object?>(new { error = "At least one tile ID is required" });
+            throw new InvalidOperationException("At least one tile ID is required.");
         }
 
         string jobId = jobs.Start(async (ct, progress) =>
         {
             var transformer = new CoordinateTransformer(new CrsRegistry());
 
-            // 1) Resolve the georeference anchor + existing import state on the Revit API thread.
+            // 1) Resolve the georeference anchor + existing import state on the Revit API thread
+            //    and bind the job to this document identity.
             progress.Report(new JobProgress { Phase = "preparing", Percent = 0, Message = "Resolving georeference…" });
-            ImportPrep prep = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+            ImportPrep prep = await RevitContext.Instance.InvokeWithExpectedDocumentAsync(requestedDocumentId, "PLATEAU import", doc =>
             {
                 var geoStore = new GeoProjectInfoStorage();
                 var moduleStateStore = new ModuleStateStorage();
@@ -63,7 +65,7 @@ public sealed class PlateauImportTilesHandler : IRpcHandler
                 var resolver = new PlateauImportReferenceResolver(transformer, new RevitPlateauImportLocalBasisProvider(doc));
                 var referenceContext = resolver.Resolve(currentState, info, PlateauImportReferenceSource.WorkingProjectBasePoint);
                 var existingState = new PlateauImportStateService(moduleStateStore).Load(handle);
-                return new ImportPrep(referenceContext, existingState);
+                return new ImportPrep(referenceContext, existingState, DocumentIdentity.Create(doc), doc);
             }).ConfigureAwait(false);
 
             if (prep.ReferenceContext is null)
@@ -110,34 +112,36 @@ public sealed class PlateauImportTilesHandler : IRpcHandler
             // single flat 2D CAD basemap instead of 3D solids.
             if (string.Equals(mode, "dxf", StringComparison.OrdinalIgnoreCase))
             {
-                return await ImportAsDxfBasemapAsync(plan, tileIds!, progress, ct).ConfigureAwait(false);
+                return await ImportAsDxfBasemapAsync(plan, tileIds!, prep.DocumentId, prep.Document, progress, ct).ConfigureAwait(false);
             }
 
-            // 3) Create the Revit geometry on the Revit API thread. The coordinator imports one tile
-            //    per transaction (inside a TransactionGroup) so Revit can release memory between tiles
-            //    instead of crashing on large selections; report each committed tile as progress.
+            // 3) Create the Revit geometry on the Revit API thread (bound to the captured document).
             progress.Report(new JobProgress { Phase = "importing", Percent = 80, Message = "Creating Revit geometry…" });
-            PlateauImportResult result = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
-            {
-                var handle = new RevitDocumentHandle(doc);
-                var coordinator = new PlateauImportCoordinator(
-                    new PlateauContextImporter(),
-                    new PlateauImportStateService(new ModuleStateStorage()));
-                return coordinator.Import(
-                    handle,
-                    plan,
-                    PlateauImportReferenceSource.WorkingProjectBasePoint,
-                    prep.ExistingState,
-                    onProgress: (current, total, message) => progress.Report(new JobProgress
-                    {
-                        Phase = "importing",
-                        Current = current,
-                        Total = total,
-                        Percent = 80 + (int)Math.Round(current / (double)Math.Max(1, total) * 20), // 80–100%
-                        Message = message
-                    }),
-                    ct: ct);
-            }).ConfigureAwait(false);
+            PlateauImportResult result = await RevitContext.Instance.InvokeWithExpectedDocumentAsync(
+                prep.DocumentId,
+                "PLATEAU import",
+                doc =>
+                {
+                    var handle = new RevitDocumentHandle(doc);
+                    var coordinator = new PlateauImportCoordinator(
+                        new PlateauContextImporter(),
+                        new PlateauImportStateService(new ModuleStateStorage()));
+                    return coordinator.Import(
+                        handle,
+                        plan,
+                        PlateauImportReferenceSource.WorkingProjectBasePoint,
+                        prep.ExistingState,
+                        onProgress: (current, total, message) => progress.Report(new JobProgress
+                        {
+                            Phase = "importing",
+                            Current = current,
+                            Total = total,
+                            Percent = 80 + (int)Math.Round(current / (double)Math.Max(1, total) * 20), // 80–100%
+                            Message = message
+                        }),
+                        ct: ct);
+                },
+                prep.Document).ConfigureAwait(false);
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "Import complete" });
 
@@ -165,6 +169,8 @@ public sealed class PlateauImportTilesHandler : IRpcHandler
     private static async Task<object?> ImportAsDxfBasemapAsync(
         ContextImportPlan plan,
         IReadOnlyList<string> tileIds,
+        string expectedDocumentId,
+        Document expectedDocument,
         IProgress<JobProgress> progress,
         CancellationToken ct)
     {
@@ -221,8 +227,11 @@ public sealed class PlateauImportTilesHandler : IRpcHandler
             // 2) Import each grid in its own transaction on the Revit thread, then group them.
             //    One thread hop keeps file IO off the UI thread; per-grid transactions inside a
             //    TransactionGroup give incremental commits plus a single undo step.
-            DxfImportOutcome outcome = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
-                ImportPreparedGrids(doc, importer, prepared, progress, ct)).ConfigureAwait(false);
+            DxfImportOutcome outcome = await RevitContext.Instance.InvokeWithExpectedDocumentAsync(
+                expectedDocumentId,
+                "PLATEAU 2D basemap import",
+                doc => ImportPreparedGrids(doc, importer, prepared, progress, ct),
+                expectedDocument).ConfigureAwait(false);
 
             warnings.AddRange(outcome.Warnings);
 
@@ -440,14 +449,20 @@ public sealed class PlateauImportTilesHandler : IRpcHandler
 
     private sealed class ImportPrep
     {
-        public ImportPrep(PlateauImportReferenceContext? referenceContext, PlateauImportState? existingState)
+        public ImportPrep(PlateauImportReferenceContext? referenceContext, PlateauImportState? existingState, string documentId, Document document)
         {
             ReferenceContext = referenceContext;
             ExistingState = existingState;
+            DocumentId = documentId;
+            Document = document;
         }
 
         public PlateauImportReferenceContext? ReferenceContext { get; }
 
         public PlateauImportState? ExistingState { get; }
+
+        public string DocumentId { get; }
+
+        public Document Document { get; }
     }
 }

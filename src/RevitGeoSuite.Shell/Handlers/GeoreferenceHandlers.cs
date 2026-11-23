@@ -258,10 +258,17 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
     {
         var obj = payload as JObject;
         string? crsCode = obj?.Value<string>("crsCode");
+        string? expectedDocumentId = obj?.Value<string>("documentId")?.Trim();
         string[] meshCodes = obj?["selectedMeshCodes"]?.ToObject<string[]>() ?? Array.Empty<string>();
         GeoreferenceManualProjectBasePoint? manualProjectBasePoint =
             obj?["manualProjectBasePoint"]?.ToObject<GeoreferenceManualProjectBasePoint>();
         bool confirmExistingSetup = obj?.Value<bool?>("confirmExistingSetup") ?? false;
+
+        if (string.IsNullOrWhiteSpace(expectedDocumentId))
+        {
+            throw new InvalidOperationException(
+                "Document identity is required before applying georeference changes. Reload the Georeference page to review the active model first.");
+        }
 
         var registry = new CrsRegistry();
         CrsDefinition definition = GeoreferenceHandlerSupport.ResolveCrs(registry, crsCode);
@@ -269,7 +276,7 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
 
         if (confirmExistingSetup)
         {
-            return ApplyConfirmExistingSetupAsync(definition, registry);
+            return ApplyConfirmExistingSetupAsync(definition, registry, expectedDocumentId!);
         }
 
         GeographicCoordinate surveyOrigin = transformer.Unproject(new ProjectedCoordinate(0d, 0d), definition.ToReference());
@@ -325,31 +332,36 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
             };
         }
 
-        var intent = new SplitSurveyProjectBasePointIntent
-        {
-            SelectedCrs = definition.ToReference(),
-            SharedSurveyOrigin = new ProjectOrigin
-            {
-                Latitude = surveyOrigin.Latitude,
-                Longitude = surveyOrigin.Longitude,
-                ElevationMeters = 0d
-            },
-            SharedSurveyProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
-            LocalProjectBasePoint = localProjectBasePoint,
-            Confidence = GeoConfidenceLevel.Verified,
-            SetupSource = setupSource,
-            ApplyMode = PlacementApplyMode.ProjectLocation
-        };
-
         // The suite ties the canonical primary mesh code to the survey origin (CoordinateValidator
         // recomputes Calculate(origin) to detect staleness). ApplyCanonicalLocation clears it, so we
         // recompute the same value and persist it below — there is no Mesh Inspector in the web shell.
         MeshCode canonicalPrimaryMesh = new JapanMeshCalculator().Calculate(
             surveyOrigin.Latitude, surveyOrigin.Longitude, JapanMeshLevel.Tertiary);
 
-        // Apply runs on the Revit API thread against the *current* active document (transaction-legal).
-        return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
+        // Apply runs on the Revit API thread only if the active document still matches the reviewed model.
+        return RevitContext.Instance.InvokeWithExpectedDocumentAsync<object?>(expectedDocumentId, "georeference setup", document =>
         {
+            // Preserve the model's existing shared elevations instead of resetting them to 0.
+            double preservedProjectBasePointElevationMeters = ReadSharedElevationMeters(document, BasePoint.GetProjectBasePoint(document));
+            double preservedSurveyElevationMeters = ReadSharedElevationMeters(document, BasePoint.GetSurveyPoint(document));
+            localProjectBasePoint.Origin!.ElevationMeters = preservedProjectBasePointElevationMeters;
+
+            var intent = new SplitSurveyProjectBasePointIntent
+            {
+                SelectedCrs = definition.ToReference(),
+                SharedSurveyOrigin = new ProjectOrigin
+                {
+                    Latitude = surveyOrigin.Latitude,
+                    Longitude = surveyOrigin.Longitude,
+                    ElevationMeters = preservedSurveyElevationMeters
+                },
+                SharedSurveyProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
+                LocalProjectBasePoint = localProjectBasePoint,
+                Confidence = GeoConfidenceLevel.Verified,
+                SetupSource = setupSource,
+                ApplyMode = PlacementApplyMode.ProjectLocation
+            };
+
             var handle = new RevitDocumentHandle(document);
             CaptureUndoSnapshot(handle, $"Before applying {definition.Name}");
 
@@ -371,13 +383,13 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
         });
     }
 
-    private static Task<object?> ApplyConfirmExistingSetupAsync(CrsDefinition definition, CrsRegistry registry)
+    private static Task<object?> ApplyConfirmExistingSetupAsync(CrsDefinition definition, CrsRegistry registry, string expectedDocumentId)
     {
         // Read the live document so we can reuse the same ProjectLocationReader the WPF view uses.
         // ProjectLocationWriter short-circuits in MetadataOnly mode, so Revit project location values
         // are preserved exactly while only the shared metadata (GeoProjectInfo + working PBP) is
         // persisted. This is the equivalent of the WPF BuildExistingSetupMetadataIntent path.
-        return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
+        return RevitContext.Instance.InvokeWithExpectedDocumentAsync<object?>(expectedDocumentId, "confirming existing georeference setup", document =>
         {
             var reader = new ProjectLocationReader(new GeoProjectInfoStorage(), crsOverride: definition.ToReference());
             CurrentProjectStateSummary state = reader.Read(document);
@@ -389,6 +401,13 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
                     "Set a Site Location in Revit or click an area on the map before confirming.");
             }
 
+            double surveyElevationMeters = state.SurveyPoint.SharedElevationFeet.HasValue
+                ? state.SurveyPoint.SharedElevationFeet.Value * FeetToMeters
+                : ReadSharedElevationMeters(document, BasePoint.GetSurveyPoint(document));
+            double projectBasePointElevationMeters = state.ProjectBasePoint.SharedElevationFeet.HasValue
+                ? state.ProjectBasePoint.SharedElevationFeet.Value * FeetToMeters
+                : ReadSharedElevationMeters(document, BasePoint.GetProjectBasePoint(document));
+
             const string setupSource = "Web georeference — confirm existing setup";
 
             var intent = new PlacementIntent
@@ -398,7 +417,7 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
                 {
                     Latitude = state.SurveyPoint.EstimatedLatitudeDegrees!.Value,
                     Longitude = state.SurveyPoint.EstimatedLongitudeDegrees!.Value,
-                    ElevationMeters = 0d
+                    ElevationMeters = surveyElevationMeters
                 },
                 SelectedProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
                 Confidence = GeoConfidenceLevel.Verified,
@@ -412,7 +431,7 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
                     {
                         Latitude = state.ProjectBasePoint.EstimatedLatitudeDegrees!.Value,
                         Longitude = state.ProjectBasePoint.EstimatedLongitudeDegrees!.Value,
-                        ElevationMeters = 0d
+                        ElevationMeters = projectBasePointElevationMeters
                     },
                     ProjectedCoordinate = new ProjectedCoordinate(
                         (state.ProjectBasePoint.SharedEastWestFeet ?? 0d) * FeetToMeters,
@@ -444,6 +463,17 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
 
             return new { success = true, message = result.AuditSummary };
         });
+    }
+
+    private static double ReadSharedElevationMeters(Document document, BasePoint? basePoint)
+    {
+        if (basePoint is null || document.ActiveProjectLocation is null)
+        {
+            return 0d;
+        }
+
+        ProjectPosition? position = document.ActiveProjectLocation.GetProjectPosition(basePoint.Position);
+        return position is null ? 0d : position.Elevation * FeetToMeters;
     }
 
     private static void CaptureUndoSnapshot(RevitDocumentHandle handle, string summary)
@@ -482,7 +512,14 @@ public sealed class GeoreferenceRevertHandler : IRpcHandler
 
     public Task<object?> HandleAsync(object? payload)
     {
-        return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
+        string? expectedDocumentId = (payload as JObject)?.Value<string>("documentId")?.Trim();
+        if (string.IsNullOrWhiteSpace(expectedDocumentId))
+        {
+            throw new InvalidOperationException(
+                "Document identity is required before reverting georeference changes. Reload the Georeference page to review the active model first.");
+        }
+
+        return RevitContext.Instance.InvokeWithExpectedDocumentAsync<object?>(expectedDocumentId, "reverting georeference", document =>
         {
             var handle = new RevitDocumentHandle(document);
             var undoStorage = new GeoreferenceUndoStorage();
@@ -577,14 +614,15 @@ public sealed class GeoreferenceGetCurrentStateHandler : IRpcHandler
         {
             var reader = new ProjectLocationReader(new GeoProjectInfoStorage());
             CurrentProjectStateSummary state = reader.Read(document);
-            return MapToContract(state);
+            return MapToContract(state, DocumentIdentity.Create(document));
         });
     }
 
-    private static GeoreferenceCurrentStateResponse MapToContract(CurrentProjectStateSummary state)
+    private static GeoreferenceCurrentStateResponse MapToContract(CurrentProjectStateSummary state, string documentId)
     {
         return new GeoreferenceCurrentStateResponse
         {
+            DocumentId = documentId,
             DocumentTitle = state.DocumentTitle,
             IsSupportedDocument = state.IsSupportedDocument,
             IsReadOnly = state.IsReadOnly,

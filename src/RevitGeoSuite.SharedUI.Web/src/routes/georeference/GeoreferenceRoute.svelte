@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
   import { startJob } from '$lib/bridge/jobs'
-  import { request } from '$lib/bridge/rpc'
+  import { on, request } from '$lib/bridge/rpc'
   import { parseManualCoordinate } from '$lib/georeference/manualCoordinate'
   import type {
     GeoreferenceGridCandidate,
@@ -89,8 +89,12 @@
   const hasStoredCrs = $derived($readiness.loaded && !$readiness.findings.some((f) => f.code === 'missing-crs'))
 
   let currentState = $state<GeoreferenceCurrentStateResponse | null>(null)
+  let reviewedDocumentId = $state<string | null>(null)
   let currentStateError = $state<string | null>(null)
   let currentStateLoading = $state(false)
+  // Monotonic generation bumped on every reset / document switch so stale in-flight RPC responses
+  // from a previous Revit model are dropped instead of mutating the new model's wizard state.
+  let documentGeneration = 0
 
   // The user must explicitly opt into the new-setup flow when the model already has shared
   // coordinates; otherwise the web shell should default to confirming what Revit already says.
@@ -113,8 +117,43 @@
     crsGroups.flatMap(g => g.entries.map(e => ({ code: `EPSG:${e.epsgCode}`, name: e.name })))
   )
 
-  onMount(async () => {
-    await Promise.all([refreshReadiness(), loadCurrentState(), loadAvailableCrs(), loadUndoState()])
+  onMount(() => {
+    const offDocumentChanged = on('document.changed', (evt) => {
+      const nextId = evt?.documentId ?? ''
+      const currentId = reviewedDocumentId ?? currentState?.documentId ?? ''
+      if (currentId && nextId === currentId) {
+        // Same open document (e.g. title changed on Save / Save As): keep wizard state intact.
+        return
+      }
+
+      // Active Revit model switched, closed, or changed while initial load was still in flight:
+      // reset() bumps documentGeneration so every stale in-flight request is dropped.
+      const hadReviewedDocument = Boolean(currentId)
+      reset()
+      reviewedDocumentId = nextId || null
+      currentState = null
+      hasUndoSnapshot = false
+      undoSummary = ''
+      if (nextId) {
+        void Promise.all([refreshReadiness(), loadCurrentState(), loadUndoState()])
+      }
+      if (hadReviewedDocument) {
+        const title = evt?.documentTitle
+        error = title
+          ? $t(
+              'Georef.Wizard.Error.DocumentChanged',
+              `Active Revit model changed to '${title}'. Review the new model's setup before applying.`
+            )
+          : $t(
+              'Georef.Wizard.Error.DocumentClosed',
+              'The active Revit model was closed. Open a project to continue.'
+            )
+      }
+    })
+    void Promise.all([refreshReadiness(), loadCurrentState(), loadAvailableCrs(), loadUndoState()])
+    return () => {
+      offDocumentChanged()
+    }
   })
 
   async function loadAvailableCrs() {
@@ -130,44 +169,67 @@
   }
 
   async function loadUndoState() {
+    const gen = documentGeneration
     try {
       const result = await request<{ hasSnapshot: boolean; summary: string }>('georeference.hasUndoSnapshot', {})
+      if (gen !== documentGeneration) return
       hasUndoSnapshot = result.hasSnapshot
       undoSummary = result.summary ?? ''
     } catch {
+      if (gen !== documentGeneration) return
       hasUndoSnapshot = false
     }
   }
 
   async function revertGeoreference() {
     if (reverting) return
+    const gen = documentGeneration
     reverting = true
     error = null
     try {
-      const result = await request<{ success: boolean; summary: string }>('georeference.revert', {})
+      const result = await request<{ success: boolean; summary: string }>('georeference.revert', {
+        documentId: currentState?.documentId
+      })
+      if (gen !== documentGeneration) return
       if (result.success) {
         hasUndoSnapshot = false
         undoSummary = ''
         await Promise.all([refreshReadiness(), loadCurrentState()])
+        if (gen !== documentGeneration) return
         notifyProjectContextChanged()
       }
     } catch (err: any) {
+      if (gen !== documentGeneration) return
       error = err.message || $t('Georef.Revert.Error', 'Failed to revert georeference')
     } finally {
-      reverting = false
+      if (gen === documentGeneration) {
+        reverting = false
+      }
     }
   }
 
   async function loadCurrentState() {
+    const gen = documentGeneration
     currentStateLoading = true
     currentStateError = null
     try {
-      currentState = await request<GeoreferenceCurrentStateResponse>('georeference.getCurrentState', {})
+      const nextState = await request<GeoreferenceCurrentStateResponse>('georeference.getCurrentState', {})
+      if (gen !== documentGeneration) return
+      if (reviewedDocumentId && nextState.documentId && nextState.documentId !== reviewedDocumentId) {
+        // reset() drops the undo-state request that ran beside this one, so ask again.
+        reset()
+        void loadUndoState()
+      }
+      currentState = nextState
+      reviewedDocumentId = nextState.documentId ?? null
     } catch (err: any) {
+      if (gen !== documentGeneration) return
       currentStateError = err.message || $t('Georef.Wizard.Error.ReadState', 'Failed to read the current Revit project state')
       currentState = null
     } finally {
-      currentStateLoading = false
+      if (gen === documentGeneration) {
+        currentStateLoading = false
+      }
     }
   }
 
@@ -233,16 +295,22 @@
 
   async function confirmCrs() {
     if (confirmingCrs) return
+    const gen = documentGeneration
     confirmingCrs = true
     error = null
     try {
-      surveyOrigin = await request('georeference.getCrsOrigin', { crsCode: selectedCrs })
+      const origin = await request('georeference.getCrsOrigin', { crsCode: selectedCrs })
+      if (gen !== documentGeneration) return
+      surveyOrigin = origin
       markComplete('crs')
       currentStep = 'area'
     } catch (err: any) {
+      if (gen !== documentGeneration) return
       error = err.message || $t('Georef.Wizard.Error.CrsOrigin', 'Failed to resolve the CRS origin')
     } finally {
-      confirmingCrs = false
+      if (gen === documentGeneration) {
+        confirmingCrs = false
+      }
     }
   }
 
@@ -269,12 +337,15 @@
       return
     }
 
+    const gen = documentGeneration
     error = null
     try {
-      basePoint = await request('georeference.resolveManualBasePoint', {
+      const resolved = await request('georeference.resolveManualBasePoint', {
         crsCode: selectedCrs,
         projectBasePoint
       })
+      if (gen !== documentGeneration) return
+      basePoint = resolved
       basePointSource = 'manual'
       selectedGrids = new Set()
       candidates = []
@@ -287,6 +358,7 @@
       markComplete('preview')
       currentStep = 'preview'
     } catch (err: any) {
+      if (gen !== documentGeneration) return
       basePoint = null
       basePointSource = null
       error = err.message || $t('Georef.Wizard.Error.BasePoint', 'Failed to resolve the Project Base Point')
@@ -386,11 +458,13 @@
   }
 
   async function loadGrids(lat: number, lon: number) {
+    const gen = documentGeneration
     error = null
     basePoint = null
     basePointSource = null
     try {
       const result = await request('georeference.getGridCandidates', { lat, lon, crsCode: selectedCrs })
+      if (gen !== documentGeneration) return
       candidates = result.candidates ?? []
       gridGeoJson = JSON.parse(result.overlayGeoJson)
       selectedGrids = new Set()
@@ -399,6 +473,7 @@
       mapRef?.setView(lat, lon, 13)
       renderGrids(true)
     } catch (err: any) {
+      if (gen !== documentGeneration) return
       error = err.message || $t('Georef.Wizard.Error.GridCandidates', 'Failed to load grid candidates')
     }
   }
@@ -458,15 +533,19 @@
       basePointSource = null
       return
     }
+    const gen = documentGeneration
     try {
-      basePoint = await request('georeference.resolveGridBasePoint', {
+      const resolved = await request('georeference.resolveGridBasePoint', {
         selectedMeshCodes: Array.from(selectedGrids),
         crsCode: selectedCrs
       })
+      if (gen !== documentGeneration) return
+      basePoint = resolved
       basePointSource = 'grid'
       markComplete('grids')
       error = null
     } catch (err: any) {
+      if (gen !== documentGeneration) return
       basePoint = null
       basePointSource = null
       error = err.message || $t('Georef.Wizard.Error.BasePoint', 'Failed to resolve the Project Base Point')
@@ -481,30 +560,53 @@
   }
 
   async function applyGeoreference() {
+    const gen = documentGeneration
     applying = true
     error = null
     try {
       const manualProjectBasePoint = !isConfirmExistingSetupMode && basePointSource === 'manual' && basePoint
         ? { easting: basePoint.easting, northing: basePoint.northing }
         : null
-      applyResult = await request('georeference.apply', {
+      const result = await request('georeference.apply', {
         crsCode: selectedCrs,
+        documentId: currentState?.documentId,
         selectedMeshCodes: isConfirmExistingSetupMode || basePointSource === 'manual' ? [] : Array.from(selectedGrids),
         ...(manualProjectBasePoint ? { manualProjectBasePoint } : {}),
         confirmExistingSetup: isConfirmExistingSetupMode
       })
+      if (gen !== documentGeneration) return
+      applyResult = result
       markComplete('apply')
       await Promise.all([refreshReadiness(), loadCurrentState()])
+      if (gen !== documentGeneration) return
       notifyProjectContextChanged()
     } catch (err: any) {
+      if (gen !== documentGeneration) return
       error = err.message || $t('Georef.Wizard.Error.Apply', 'Failed to apply georeference')
     } finally {
-      applying = false
+      if (gen === documentGeneration) {
+        applying = false
+      }
     }
   }
 
+  // The Reset button. reset() drops every in-flight request, including a state load or the reload
+  // that follows an apply or revert, so the wizard reads the model again.
+  function resetWizard() {
+    reset()
+    void Promise.all([refreshReadiness(), loadCurrentState(), loadUndoState()])
+  }
+
   function reset() {
+    documentGeneration += 1
+    inputMode = 'map'
+    selectedCrs = 'EPSG:6677'
     surveyOrigin = null
+    confirmingCrs = false
+    applying = false
+    reverting = false
+    currentStateLoading = false
+    currentStateError = null
     gridGeoJson = null
     candidates = []
     selectedGrids = new Set()
@@ -762,7 +864,7 @@
             bind:currentStep
             {fmt}
             {isConfirmExistingSetupMode}
-            {reset}
+            reset={resetWizard}
             {selectedCrsName}
             {selectedMeshCodes}
             {surveyOrigin}
@@ -772,7 +874,7 @@
 
       {#if currentStep !== 'review' && currentStep !== 'apply'}
         <div class="shrink-0 border-t border-border px-5 py-2">
-          <Button variant="ghost" size="sm" icon="rotate-ccw" onclick={reset}>{$t('Georef.Wizard.Reset', 'Reset')}</Button>
+          <Button variant="ghost" size="sm" icon="rotate-ccw" onclick={resetWizard}>{$t('Georef.Wizard.Reset', 'Reset')}</Button>
         </div>
       {/if}
     </aside>
