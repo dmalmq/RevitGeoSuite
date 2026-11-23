@@ -76,6 +76,10 @@ public sealed class CrsPresetCatalogTests
     [InlineData("JGD2011 / Japan Plane Rectangular CS IX 2D", 6677)]
     [InlineData("JGD2011 / Japan Plane Rectangular CS XII v3", 6680)]
     [InlineData("EPSG unknown, JGD2024 Zone 9", 6677)]
+    [InlineData("JGD2011 平面直角座標系CS IX", 6677)]
+    [InlineData("JGD2011 Zone 9: Tokyo", 6677)]
+    [InlineData("JGD2011 CS IX-Tokyo", 6677)]
+    [InlineData("JGD2011_CS9", 6677)]
     public void JapanPlaneRectangular_TryResolveEpsg_recognizes_jgd2024_and_jgd2011_names(string text, int expectedEpsg)
     {
         Assert.True(JapanPlaneRectangular.TryResolveEpsg(text, out int epsg));

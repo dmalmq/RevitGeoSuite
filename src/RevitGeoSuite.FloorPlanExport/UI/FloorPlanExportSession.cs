@@ -273,7 +273,9 @@ public sealed class FloorPlanExportSession : IDisposable
         return new ExportDialogSettings
         {
             OutputDirectory = payload.OutputDirectory?.Trim() ?? string.Empty,
-            TargetEpsg = payload.TargetEpsg > 0 ? payload.TargetEpsg : ProjectInfo.DefaultTargetEpsg,
+            TargetEpsg = payload.TargetEpsg > 0
+                ? JapanPlaneRectangular.NormalizeEpsg(payload.TargetEpsg)
+                : ProjectInfo.DefaultTargetEpsg,
             FeatureTypes = ToFeatureTypes(payload),
             SelectedViewIds = payload.SelectedViewIds?.Distinct().ToList() ?? new List<long>(),
             IncrementalExportMode = payload.IncrementalExportMode == "changed"
@@ -908,7 +910,9 @@ public sealed class FloorPlanExportSession : IDisposable
         return new ExporterSettingsPayload
         {
             OutputDirectory = payload.OutputDirectory,
-            TargetEpsg = payload.TargetEpsg,
+            TargetEpsg = payload.TargetEpsg > 0
+                ? JapanPlaneRectangular.NormalizeEpsg(payload.TargetEpsg)
+                : payload.TargetEpsg,
             CoordinateMode = payload.CoordinateMode,
             OutputFormat = payload.OutputFormat,
             IncrementalExportMode = payload.IncrementalExportMode,

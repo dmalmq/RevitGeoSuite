@@ -59,7 +59,9 @@ public static class CesiumPackageFolderComposer
         }
 
         CesiumPackageManifest? previous = ReadPreviousManifestOfSameModel(root, inputs);
-        string? modelId = string.IsNullOrWhiteSpace(inputs.ModelId) ? previous?.Source?.ModelId : inputs.ModelId;
+        string? modelId = !string.IsNullOrWhiteSpace(previous?.Source?.ModelId)
+            ? previous!.Source!.ModelId
+            : inputs.ModelId;
         var manifest = new CesiumPackageManifest
         {
             PackageId = Guid.NewGuid().ToString(),

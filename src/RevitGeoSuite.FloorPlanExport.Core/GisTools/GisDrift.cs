@@ -559,10 +559,15 @@ public static class GisDrift
         return (changes, skipped);
     }
 
-    private static bool Same(string parameter, string old, string value)
+    public static bool Same(string parameter, string old, string value)
     {
         if (ParameterTable.IntegerColumns.Contains(parameter))
         {
+            if (string.IsNullOrWhiteSpace(old) && string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
             return int.TryParse(old.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int left) &&
                    int.TryParse(value.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int right) &&
                    left == right;

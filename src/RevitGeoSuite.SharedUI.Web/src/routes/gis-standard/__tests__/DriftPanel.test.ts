@@ -102,7 +102,7 @@ describe('DriftPanel keep wiring', () => {
     vi.restoreAllMocks()
   })
 
-  it('invokes gisDrift.keep for ticked rows, shows keep confirmation, and refreshes on success', async () => {
+  async function mountPanel(driftOverrides: Record<string, unknown> = {}) {
     const { flushSync, mount, unmount } = await import('svelte')
     const { default: DriftPanel } = await import('../DriftPanel.svelte')
 
@@ -119,8 +119,14 @@ describe('DriftPanel keep wiring', () => {
     flushSync()
 
     const initialInspect = postedMessages.find((m) => m.method === 'gisDrift.inspect')!
-    reply(initialInspect, sampleDrift())
+    reply(initialInspect, sampleDrift(driftOverrides))
     await flush()
+
+    return { target, flush }
+  }
+
+  it('requires inline confirmation noting uncontested vs conflict counts before calling gisDrift.keep, and refreshes on success', async () => {
+    const { target, flush } = await mountPanel()
 
     // Non-conflict row starts ticked, conflict row starts unticked -> count is 1.
     const keepButton = Array.from(target.querySelectorAll('button')).find((b) => /Keep Revit's \(1\)/.test(b.textContent ?? ''))
@@ -128,6 +134,28 @@ describe('DriftPanel keep wiring', () => {
     expect(keepButton!.disabled).toBe(false)
 
     keepButton!.click()
+    await flush()
+
+    // No RPC sent before explicit confirmation.
+    expect(postedMessages.find((m) => m.method === 'gisDrift.keep')).toBeUndefined()
+
+    const confirmBox = target.querySelector('[data-testid="drift-keep-confirm"]')
+    expect(confirmBox).not.toBeNull()
+    expect(confirmBox!.textContent).toContain("Keep Revit's value for 1 ticked row(s)?")
+    expect(confirmBox!.textContent).toContain('1 uncontested GDB edit(s) and 0 conflict(s)')
+
+    // Cancel closes the confirmation without calling gisDrift.keep.
+    const cancelButton = Array.from(confirmBox!.querySelectorAll('button')).find((b) => /Cancel/.test(b.textContent ?? ''))!
+    cancelButton.click()
+    await flush()
+    expect(target.querySelector('[data-testid="drift-keep-confirm"]')).toBeNull()
+    expect(postedMessages.find((m) => m.method === 'gisDrift.keep')).toBeUndefined()
+
+    // Re-open and confirm keep.
+    keepButton!.click()
+    await flush()
+    const confirmButton = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-testid="drift-keep-confirm"] button')).find((b) => /Confirm keep/.test(b.textContent ?? ''))!
+    confirmButton.click()
     await flush()
 
     const keepReq = postedMessages.find((m) => m.method === 'gisDrift.keep')
@@ -151,31 +179,45 @@ describe('DriftPanel keep wiring', () => {
     await flush()
 
     expect(target.textContent).toContain('1 Revit value(s) kept.')
-    expect(target.textContent).toContain('Nothing changed in Revit.')
+    expect(target.textContent).toContain('Nothing changed in Revit. The answer is saved beside the station drift file.')
   })
 
-  it('shows an error without refreshing when gisDrift.keep fails', async () => {
-    const { flushSync, mount, unmount } = await import('svelte')
-    const { default: DriftPanel } = await import('../DriftPanel.svelte')
-
-    const flush = async () => {
-      await Promise.resolve()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      flushSync()
-    }
-
-    const target = document.createElement('div')
-    document.body.appendChild(target)
-    const instance = mount(DriftPanel, { target })
-    cleanupInstance = () => unmount(instance)
-    flushSync()
-
-    const initialInspect = postedMessages.find((m) => m.method === 'gisDrift.inspect')!
-    reply(initialInspect, sampleDrift())
-    await flush()
+  it('shows honest no-values-kept copy when every ticked row is skipped', async () => {
+    const { target, flush } = await mountPanel()
 
     const keepButton = Array.from(target.querySelectorAll('button')).find((b) => /Keep Revit's/.test(b.textContent ?? ''))!
     keepButton.click()
+    await flush()
+    const confirmButton = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-testid="drift-keep-confirm"] button')).find((b) => /Confirm keep/.test(b.textContent ?? ''))!
+    confirmButton.click()
+    await flush()
+
+    const keepReq = postedMessages.find((m) => m.method === 'gisDrift.keep')!
+    reply(keepReq, {
+      log: [],
+      skipped: ["unit 北改札 name: Revit changed since the last export — export again before keeping Revit's value."]
+    })
+    await flush()
+
+    const inspectCalls = postedMessages.filter((m) => m.method === 'gisDrift.inspect')
+    expect(inspectCalls).toHaveLength(2)
+    reply(inspectCalls[1], sampleDrift())
+    await flush()
+
+    expect(target.textContent).toContain('No Revit values were kept.')
+    expect(target.textContent).toContain('No keep file was written.')
+    expect(target.textContent).not.toContain('saved beside the station drift file')
+    expect(target.textContent).toContain('Revit changed since the last export')
+  })
+
+  it('shows an error without refreshing when gisDrift.keep fails', async () => {
+    const { target, flush } = await mountPanel()
+
+    const keepButton = Array.from(target.querySelectorAll('button')).find((b) => /Keep Revit's/.test(b.textContent ?? ''))!
+    keepButton.click()
+    await flush()
+    const confirmButton = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-testid="drift-keep-confirm"] button')).find((b) => /Confirm keep/.test(b.textContent ?? ''))!
+    confirmButton.click()
     await flush()
 
     const keepReq = postedMessages.find((m) => m.method === 'gisDrift.keep')!
@@ -188,24 +230,7 @@ describe('DriftPanel keep wiring', () => {
   })
 
   it('disables Keep Revit button for a hand-picked drift file', async () => {
-    const { flushSync, mount, unmount } = await import('svelte')
-    const { default: DriftPanel } = await import('../DriftPanel.svelte')
-
-    const flush = async () => {
-      await Promise.resolve()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      flushSync()
-    }
-
-    const target = document.createElement('div')
-    document.body.appendChild(target)
-    const instance = mount(DriftPanel, { target })
-    cleanupInstance = () => unmount(instance)
-    flushSync()
-
-    const initialInspect = postedMessages.find((m) => m.method === 'gisDrift.inspect')!
-    reply(initialInspect, sampleDrift({ source: 'picked', path: 'C:\\Temp\\picked.gis-drift.json' }))
-    await flush()
+    const { target } = await mountPanel({ source: 'picked', path: 'C:\\Temp\\picked.gis-drift.json' })
 
     const keepButton = Array.from(target.querySelectorAll('button')).find((b) => /Keep Revit's/.test(b.textContent ?? ''))
     expect(keepButton).toBeDefined()

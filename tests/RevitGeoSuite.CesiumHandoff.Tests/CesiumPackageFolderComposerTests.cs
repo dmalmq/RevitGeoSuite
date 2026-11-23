@@ -293,6 +293,19 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
         Assert.Null(manifest.Export);
     }
 
+    [Fact]
+    public void ComposeFromFolder_PreservesExistingManifestModelIdOverIncomingInput()
+    {
+        WriteExportedPackage(documentKey: "doc-key");
+        CesiumPackageBuildInputs inputs = Inputs();
+        inputs.DocumentKey = "doc-key";
+        inputs.ModelId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+        CesiumPackageManifest manifest = CesiumPackageFolderComposer.ComposeFromFolder(_root, inputs);
+
+        Assert.Equal("8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a", manifest.Source!.ModelId);
+    }
+
     /// <summary>A package as the combined export leaves it in an ordinary folder: tiles/, gis/ and a full manifest.</summary>
     private void WriteExportedPackage(string documentKey)
     {

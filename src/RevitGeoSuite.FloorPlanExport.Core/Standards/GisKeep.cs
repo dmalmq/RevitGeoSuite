@@ -111,6 +111,35 @@ public static class GisKeep
     }
 
     /// <summary>
+    /// The entries that answer the ticked planned <paramref name="changes"/> with Revit's value,
+    /// skipping any row whose live Revit value (<see cref="GisDriftChange.OldValue"/>) no longer
+    /// matches the exported value the drift file holds (<see cref="GisDriftRow.Revit"/>).
+    /// </summary>
+    public static (IReadOnlyList<GisKeepEntry> Entries, IReadOnlyList<string> Skipped) EntriesFor(
+        IEnumerable<GisDriftChange> changes,
+        string keptUtc)
+    {
+        List<GisDriftRow> matchingRows = new();
+        List<string> skipped = new();
+        foreach (GisDriftChange change in changes ?? Enumerable.Empty<GisDriftChange>())
+        {
+            foreach (GisDriftRow row in change.Rows)
+            {
+                if (!GisDrift.Same(change.Parameter, change.OldValue, row.Revit))
+                {
+                    skipped.Add($"{row.Describe()}: Revit changed since the last export — export again before keeping Revit's value.");
+                    continue;
+                }
+
+                matchingRows.Add(row);
+            }
+        }
+
+        (IReadOnlyList<GisKeepEntry> entries, IReadOnlyList<string> notKept) = EntriesFor(matchingRows, keptUtc);
+        return (entries, skipped.Concat(notKept).ToList());
+    }
+
+    /// <summary>
     /// The entries that answer <paramref name="rows"/> with Revit's value, and one line for each
     /// row that cannot be answered. A row is answered with the values the drift file lists, the
     /// ones Kanizu compares at its next apply.

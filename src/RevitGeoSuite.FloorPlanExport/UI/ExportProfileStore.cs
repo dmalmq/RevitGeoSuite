@@ -219,11 +219,33 @@ public sealed class ExportProfileStore
 
     private ExportProfileDocument LoadDocument()
     {
-        return JsonFileLoadHelper.Load(
+        ExportProfileDocument document = JsonFileLoadHelper.Load(
             ResolveLoadPath(),
             createDefaultValue: () => new ExportProfileDocument(),
             deserialize: json => JsonConvert.DeserializeObject<ExportProfileDocument>(json),
             documentLabel: "Export profiles").Value;
+        NormalizeDocument(document);
+        return document;
+    }
+
+    private static void NormalizeDocument(ExportProfileDocument document)
+    {
+        document.GlobalProfiles = (document.GlobalProfiles ?? new List<ExportProfile>())
+            .Where(profile => profile != null)
+            .Select(NormalizeProfile)
+            .Where(profile => profile.Name.Length > 0)
+            .ToList();
+        if (document.ProjectProfiles != null)
+        {
+            foreach (string key in document.ProjectProfiles.Keys.ToList())
+            {
+                document.ProjectProfiles[key] = (document.ProjectProfiles[key] ?? new List<ExportProfile>())
+                    .Where(profile => profile != null)
+                    .Select(NormalizeProfile)
+                    .Where(profile => profile.Name.Length > 0)
+                    .ToList();
+            }
+        }
     }
 
     private void SaveDocument(ExportProfileDocument document)
