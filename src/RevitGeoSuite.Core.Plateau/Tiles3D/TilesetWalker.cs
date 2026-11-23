@@ -115,72 +115,291 @@ public readonly struct TilesetLeaf
 
 public sealed class TilesetWalker
 {
+    public const int DefaultMaxDepth = 64;
+    public const int DefaultMaxLeaves = 10_000;
+
     private readonly IPlateauHttpClient httpClient;
+    private readonly int maxDepth;
+    private readonly int maxLeaves;
 
     public TilesetWalker(IPlateauHttpClient httpClient)
+        : this(httpClient, DefaultMaxDepth, DefaultMaxLeaves)
+    {
+    }
+
+    public TilesetWalker(IPlateauHttpClient httpClient, int maxDepth, int maxLeaves)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        if (maxDepth < 1) throw new ArgumentOutOfRangeException(nameof(maxDepth), maxDepth, "Max depth must be at least 1.");
+        if (maxLeaves < 1) throw new ArgumentOutOfRangeException(nameof(maxLeaves), maxLeaves, "Max leaves must be at least 1.");
+        this.maxDepth = maxDepth;
+        this.maxLeaves = maxLeaves;
     }
 
-    public async Task<IReadOnlyList<TilesetLeaf>> WalkAsync(Uri tilesetUrl, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<TilesetLeaf>> WalkAsync(Uri tilesetUrl, CancellationToken cancellationToken)
+    {
+        return WalkAsync(tilesetUrl, regionFilter: null, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<TilesetLeaf>> WalkAsync(
+        Uri tilesetUrl,
+        Func<TilesetRegion, bool>? regionFilter,
+        CancellationToken cancellationToken)
     {
         if (tilesetUrl is null) throw new ArgumentNullException(nameof(tilesetUrl));
-        List<TilesetLeaf> leaves = new List<TilesetLeaf>();
-        await WalkTilesetAsync(tilesetUrl, Matrix4x4d.Identity, inheritedRegion: null, leaves, cancellationToken).ConfigureAwait(false);
-        return leaves;
+
+        WalkContext context = new WalkContext(regionFilter, maxDepth, maxLeaves);
+        await WalkTilesetAsync(
+            tilesetUrl,
+            Matrix4x4d.Identity,
+            inheritedRegion: null,
+            inheritedRefine: TileRefine.Replace,
+            depth: 0,
+            context,
+            cancellationToken).ConfigureAwait(false);
+        return context.Leaves;
     }
 
-    private async Task WalkTilesetAsync(
+    private async Task<WalkResult> WalkTilesetAsync(
         Uri tilesetUrl,
         Matrix4x4d parentTransform,
         TilesetRegion? inheritedRegion,
-        List<TilesetLeaf> leaves,
+        TileRefine inheritedRefine,
+        int depth,
+        WalkContext context,
         CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+        if (depth > context.MaxDepth || context.Leaves.Count >= context.MaxLeaves)
+        {
+            return WalkResult.Empty;
+        }
+
+        // Prevent infinite recursion on cyclic or self-referential tileset graphs.
+        if (!context.VisitedTilesets.Add(tilesetUrl.AbsoluteUri))
+        {
+            return WalkResult.Empty;
+        }
+
         string body = await httpClient.GetStringAsync(tilesetUrl, ct).ConfigureAwait(false);
         TilesetJson? tileset = JsonConvert.DeserializeObject<TilesetJson>(body);
-        if (tileset?.Root is null) return;
-        await WalkTileAsync(tileset.Root, parentTransform, inheritedRegion, tilesetUrl, leaves, ct).ConfigureAwait(false);
+        if (tileset?.Root is null)
+        {
+            return WalkResult.Empty;
+        }
+
+        return await WalkTileAsync(
+            tileset.Root,
+            parentTransform,
+            inheritedRegion,
+            inheritedRefine,
+            tilesetUrl,
+            depth,
+            context,
+            ct).ConfigureAwait(false);
     }
 
-    private async Task WalkTileAsync(
+    private async Task<WalkResult> WalkTileAsync(
         TilesetTile tile,
         Matrix4x4d parentTransform,
         TilesetRegion? inheritedRegion,
+        TileRefine inheritedRefine,
         Uri baseUrl,
-        List<TilesetLeaf> leaves,
+        int depth,
+        WalkContext context,
         CancellationToken ct)
     {
-        Matrix4x4d local = tile.Transform is null ? Matrix4x4d.Identity : Matrix4x4d.FromColumnMajor(tile.Transform);
-        Matrix4x4d world = Matrix4x4d.Multiply(parentTransform, local);
-        TilesetRegion? tileRegion = TilesetRegion.TryCreate(tile.BoundingVolume?.Region, out TilesetRegion parsedRegion)
-            ? parsedRegion
-            : inheritedRegion;
-
-        string? uri = tile.Content?.ResolvedUri;
-        if (!string.IsNullOrEmpty(uri))
+        ct.ThrowIfCancellationRequested();
+        if (depth > context.MaxDepth || context.Leaves.Count >= context.MaxLeaves)
         {
-            Uri resolved = new Uri(baseUrl, uri);
-            if (LooksLikeTileset(resolved))
-            {
-                await WalkTilesetAsync(resolved, world, tileRegion, leaves, ct).ConfigureAwait(false);
-            }
-            else if (LooksLikeB3dm(resolved))
-            {
-                leaves.Add(new TilesetLeaf(resolved, world, tileRegion));
-            }
+            return WalkResult.Empty;
         }
 
-        if (tile.Children is not null)
+        Matrix4x4d local = tile.Transform is null ? Matrix4x4d.Identity : Matrix4x4d.FromColumnMajor(tile.Transform);
+        Matrix4x4d world = Matrix4x4d.Multiply(parentTransform, local);
+
+        bool hasOwnRegion = TilesetRegion.TryCreate(tile.BoundingVolume?.Region, out TilesetRegion parsedRegion);
+        if (hasOwnRegion && context.RegionFilter is not null && !context.RegionFilter(parsedRegion))
+        {
+            return new WalkResult(emittedLeaves: false, prunedByRegion: true);
+        }
+
+        TilesetRegion? tileRegion = hasOwnRegion ? parsedRegion : inheritedRegion;
+        TileRefine effectiveRefine = ParseRefine(tile.Refine, inheritedRefine);
+
+        Uri? contentUri = null;
+        string? rawUri = tile.Content?.ResolvedUri;
+        if (!string.IsNullOrEmpty(rawUri) && Uri.TryCreate(baseUrl, rawUri, out Uri? parsedUri))
+        {
+            contentUri = parsedUri;
+        }
+
+        if (effectiveRefine == TileRefine.Replace)
+        {
+            bool childEmitted = false;
+            bool childPruned = false;
+            if (tile.Children is not null && tile.Children.Count > 0)
+            {
+                foreach (TilesetTile child in tile.Children)
+                {
+                    if (context.Leaves.Count >= context.MaxLeaves)
+                    {
+                        break;
+                    }
+
+                    WalkResult childResult = await WalkTileAsync(
+                        child,
+                        world,
+                        tileRegion,
+                        effectiveRefine,
+                        baseUrl,
+                        depth + 1,
+                        context,
+                        ct).ConfigureAwait(false);
+                    childEmitted |= childResult.EmittedLeaves;
+                    childPruned |= childResult.PrunedByRegion;
+                }
+            }
+
+            // Under REPLACE semantics, qualifying children supersede the parent tile's own content
+            // so coarse parent LOD geometry is never emitted alongside its finer child LODs.
+            if (childEmitted || childPruned)
+            {
+                return new WalkResult(childEmitted, childPruned);
+            }
+
+            return await WalkContentAsync(contentUri, world, tileRegion, effectiveRefine, depth, context, ct).ConfigureAwait(false);
+        }
+
+        // Under ADD semantics, both the parent's content and its children contribute geometry.
+        WalkResult contentResult = await WalkContentAsync(contentUri, world, tileRegion, effectiveRefine, depth, context, ct).ConfigureAwait(false);
+        bool emitted = contentResult.EmittedLeaves;
+        bool pruned = contentResult.PrunedByRegion;
+
+        if (tile.Children is not null && tile.Children.Count > 0)
         {
             foreach (TilesetTile child in tile.Children)
             {
-                await WalkTileAsync(child, world, tileRegion, baseUrl, leaves, ct).ConfigureAwait(false);
+                if (context.Leaves.Count >= context.MaxLeaves)
+                {
+                    break;
+                }
+
+                WalkResult childResult = await WalkTileAsync(
+                    child,
+                    world,
+                    tileRegion,
+                    effectiveRefine,
+                    baseUrl,
+                    depth + 1,
+                    context,
+                    ct).ConfigureAwait(false);
+                emitted |= childResult.EmittedLeaves;
+                pruned |= childResult.PrunedByRegion;
             }
         }
+
+        return new WalkResult(emitted, pruned);
     }
 
-    private static bool LooksLikeTileset(Uri uri) => uri.AbsoluteUri.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+    private async Task<WalkResult> WalkContentAsync(
+        Uri? contentUri,
+        Matrix4x4d world,
+        TilesetRegion? tileRegion,
+        TileRefine effectiveRefine,
+        int depth,
+        WalkContext context,
+        CancellationToken ct)
+    {
+        if (contentUri is null || context.Leaves.Count >= context.MaxLeaves)
+        {
+            return WalkResult.Empty;
+        }
 
-    private static bool LooksLikeB3dm(Uri uri) => uri.AbsoluteUri.EndsWith(".b3dm", StringComparison.OrdinalIgnoreCase);
+        if (LooksLikeTileset(contentUri))
+        {
+            return await WalkTilesetAsync(
+                contentUri,
+                world,
+                tileRegion,
+                effectiveRefine,
+                depth + 1,
+                context,
+                ct).ConfigureAwait(false);
+        }
+
+        if (LooksLikeB3dm(contentUri))
+        {
+            context.Leaves.Add(new TilesetLeaf(contentUri, world, tileRegion));
+            return new WalkResult(emittedLeaves: true, prunedByRegion: false);
+        }
+
+        return WalkResult.Empty;
+    }
+
+    private static TileRefine ParseRefine(string? refine, TileRefine inherited)
+    {
+        if (string.IsNullOrWhiteSpace(refine))
+        {
+            return inherited;
+        }
+
+        string normalized = refine!.Trim();
+        if (string.Equals(normalized, "ADD", StringComparison.OrdinalIgnoreCase))
+        {
+            return TileRefine.Add;
+        }
+
+        if (string.Equals(normalized, "REPLACE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TileRefine.Replace;
+        }
+
+        return inherited;
+    }
+
+    private static bool LooksLikeTileset(Uri uri) => uri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeB3dm(Uri uri) => uri.AbsolutePath.EndsWith(".b3dm", StringComparison.OrdinalIgnoreCase);
+
+    private enum TileRefine
+    {
+        Replace = 0,
+        Add = 1
+    }
+
+    private readonly struct WalkResult
+    {
+        public static WalkResult Empty => default;
+
+        public WalkResult(bool emittedLeaves, bool prunedByRegion)
+        {
+            EmittedLeaves = emittedLeaves;
+            PrunedByRegion = prunedByRegion;
+        }
+
+        public bool EmittedLeaves { get; }
+
+        public bool PrunedByRegion { get; }
+    }
+
+    private sealed class WalkContext
+    {
+        public WalkContext(Func<TilesetRegion, bool>? regionFilter, int maxDepth, int maxLeaves)
+        {
+            RegionFilter = regionFilter;
+            MaxDepth = maxDepth;
+            MaxLeaves = maxLeaves;
+        }
+
+        public Func<TilesetRegion, bool>? RegionFilter { get; }
+
+        public int MaxDepth { get; }
+
+        public int MaxLeaves { get; }
+
+        public HashSet<string> VisitedTilesets { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        public List<TilesetLeaf> Leaves { get; } = new List<TilesetLeaf>();
+    }
 }

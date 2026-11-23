@@ -40,6 +40,37 @@ public sealed class GlbReaderTests
         Assert.Throws<InvalidOperationException>(() => GlbReader.Read(glb));
     }
 
+    [Theory]
+    [InlineData(-8)]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(int.MaxValue)]
+    public void Read_rejects_negative_zero_or_overflow_unknown_chunk_length_without_hanging(int badChunkLength)
+    {
+        byte[] glb = new byte[12 + 8 + 4];
+        Encoding.ASCII.GetBytes("glTF", 0, 4, glb, 0);
+        BitConverter.GetBytes(2).CopyTo(glb, 4);
+        BitConverter.GetBytes(glb.Length).CopyTo(glb, 8);
+        BitConverter.GetBytes(badChunkLength).CopyTo(glb, 12);
+        Encoding.ASCII.GetBytes("UNKN", 0, 4, glb, 16);
+
+        Assert.Throws<InvalidOperationException>(() => GlbReader.Read(glb));
+    }
+
+    [Theory]
+    [InlineData(-4)]
+    [InlineData(0)]
+    [InlineData(8)]
+    public void Read_rejects_negative_or_short_total_length(int badTotalLength)
+    {
+        byte[] glb = new byte[24];
+        Encoding.ASCII.GetBytes("glTF", 0, 4, glb, 0);
+        BitConverter.GetBytes(2).CopyTo(glb, 4);
+        BitConverter.GetBytes(badTotalLength).CopyTo(glb, 8);
+
+        Assert.Throws<InvalidOperationException>(() => GlbReader.Read(glb));
+    }
+
     private static byte[] BuildGlb(string json, byte[]? bin)
     {
         byte[] jsonBytes = Encoding.UTF8.GetBytes(PadTo4(json));

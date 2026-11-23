@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -23,7 +24,8 @@ public sealed class CityGmlParser
     };
     private static readonly Dictionary<XName, SupportedFeatureDescriptor> SupportedFeatureLookup = BuildSupportedFeatureLookup();
 
-    private readonly Dictionary<string, CodelistRegistry?> codelistCache = new Dictionary<string, CodelistRegistry?>(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, CodelistRegistry?> codelistCache =
+        new ConcurrentDictionary<string, CodelistRegistry?>(StringComparer.OrdinalIgnoreCase);
     private readonly CodelistReader codelistReader = new CodelistReader();
 
     public PlateauCityModel ParseFile(string filePath)
@@ -589,11 +591,7 @@ public sealed class CityGmlParser
             return string.Empty;
         }
 
-        if (!codelistCache.TryGetValue(absoluteCodelistPath, out CodelistRegistry? registry))
-        {
-            registry = TryLoadCodelist(absoluteCodelistPath);
-            codelistCache[absoluteCodelistPath] = registry;
-        }
+        CodelistRegistry? registry = codelistCache.GetOrAdd(absoluteCodelistPath, TryLoadCodelist);
 
         if (registry is null)
         {
@@ -623,25 +621,75 @@ public sealed class CityGmlParser
         }
     }
 
-    private static string? TryResolveCodelistPath(string sourcePath, string codeSpace)
+    internal static string? TryResolveCodelistPath(string sourcePath, string codeSpace)
     {
         try
         {
+            string trimmed = codeSpace.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return null;
+            }
+
+            // Reject rooted paths, drive-qualified paths, UNC paths, and URI schemes (http:, file:, etc.)
+            // so an untrusted CityGML file cannot coerce local or SMB file reads outside the package.
+            if (Path.IsPathRooted(trimmed)
+                || trimmed.StartsWith("\\\\", StringComparison.Ordinal)
+                || trimmed.StartsWith("//", StringComparison.Ordinal)
+                || trimmed.IndexOf("://", StringComparison.Ordinal) >= 0
+                || trimmed.IndexOf(':') >= 0)
+            {
+                return null;
+            }
+
             string? sourceDirectory = Path.GetDirectoryName(sourcePath);
             if (string.IsNullOrEmpty(sourceDirectory))
             {
                 return null;
             }
 
-            string combined = Path.IsPathRooted(codeSpace)
-                ? codeSpace
-                : Path.GetFullPath(Path.Combine(sourceDirectory, codeSpace));
-            return combined;
+            string fullSourceDirectory = Path.GetFullPath(sourceDirectory);
+            string confinementRoot = ResolveCodelistConfinementRoot(fullSourceDirectory);
+            string resolved = Path.GetFullPath(Path.Combine(fullSourceDirectory, trimmed));
+
+            if (!IsPathWithinDirectory(resolved, confinementRoot))
+            {
+                return null;
+            }
+
+            return resolved;
         }
         catch (Exception)
         {
             return null;
         }
+    }
+
+    private static string ResolveCodelistConfinementRoot(string fullSourceDirectory)
+    {
+        // Standard PLATEAU CityGML packages place tiles under <packageRoot>/udx/<theme>/*.gml
+        // and codelists under <packageRoot>/codelists/*.xml (referenced via ../../codelists/...).
+        // Confine relative traversal to <packageRoot> when inside a udx/ subtree, and otherwise
+        // to the GML file's own directory.
+        DirectoryInfo? current = new DirectoryInfo(fullSourceDirectory);
+        for (int depth = 0; depth <= 2 && current is not null; depth++)
+        {
+            if (string.Equals(current.Name, "udx", StringComparison.OrdinalIgnoreCase) && current.Parent is not null)
+            {
+                return current.Parent.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        return fullSourceDirectory;
+    }
+
+    private static bool IsPathWithinDirectory(string candidatePath, string rootDirectory)
+    {
+        string normalizedRoot = rootDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return candidatePath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ShouldPreserveAllTransportRings(PlateauFeatureType featureType)

@@ -137,6 +137,85 @@ public sealed class GltfMeshDecoderTests
         Assert.Equal(310.0, tri.A.Z, 6);
     }
 
+    [Fact]
+    public void Decode_rejects_out_of_range_triangle_indices()
+    {
+        float[] positions = { 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+        ushort[] batchIds = { 0, 0, 0 };
+        ushort[] indices = { 0, 1, 99 };
+
+        byte[] bin = ConcatLE(positions, indices, batchIds);
+        int bvPosLen = positions.Length * 4;
+        int bvIdxLen = indices.Length * 2;
+        int bvBatchLen = batchIds.Length * 2;
+
+        string json = "{" +
+            "\"asset\":{\"version\":\"2.0\"}," +
+            "\"buffers\":[{\"byteLength\":" + bin.Length + "}]," +
+            "\"bufferViews\":[" +
+                "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":" + bvPosLen + "}," +
+                "{\"buffer\":0,\"byteOffset\":" + bvPosLen + ",\"byteLength\":" + bvIdxLen + "}," +
+                "{\"buffer\":0,\"byteOffset\":" + (bvPosLen + bvIdxLen) + ",\"byteLength\":" + bvBatchLen + "}" +
+            "]," +
+            "\"accessors\":[" +
+                "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+                "{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}," +
+                "{\"bufferView\":2,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}" +
+            "]," +
+            "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"_BATCHID\":2},\"indices\":1,\"mode\":4}]}]" +
+        "}";
+
+        byte[] b3dm = BuildB3dm("{\"BATCH_LENGTH\":1}", "{\"gml_id\":[\"feature-bad\"]}", BuildGlb(json, bin));
+        GltfMeshDecoder decoder = new GltfMeshDecoder(new MissingDracoMeshDecoder());
+
+        Assert.Throws<InvalidOperationException>(() => decoder.Decode(B3dmParser.Parse(b3dm)));
+    }
+
+    [Fact]
+    public void Decode_respects_interleaved_buffer_view_byte_stride()
+    {
+        // Interleave VEC3 position (12 bytes) + 4 bytes of padding (byteStride = 16) for 3 vertices.
+        byte[] posInterleaved = new byte[3 * 16];
+        void WriteVertex(int idx, float x, float y, float z)
+        {
+            int o = idx * 16;
+            BitConverter.GetBytes(x).CopyTo(posInterleaved, o + 0);
+            BitConverter.GetBytes(y).CopyTo(posInterleaved, o + 4);
+            BitConverter.GetBytes(z).CopyTo(posInterleaved, o + 8);
+        }
+
+        WriteVertex(0, 0f, 0f, 0f);
+        WriteVertex(1, 2f, 0f, 0f);
+        WriteVertex(2, 0f, 5f, 0f);
+
+        ushort[] indices = { 0, 1, 2 };
+        byte[] bin = new byte[posInterleaved.Length + indices.Length * 2];
+        Buffer.BlockCopy(posInterleaved, 0, bin, 0, posInterleaved.Length);
+        Buffer.BlockCopy(indices, 0, bin, posInterleaved.Length, indices.Length * 2);
+
+        string json = "{" +
+            "\"asset\":{\"version\":\"2.0\"}," +
+            "\"buffers\":[{\"byteLength\":" + bin.Length + "}]," +
+            "\"bufferViews\":[" +
+                "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":" + posInterleaved.Length + ",\"byteStride\":16}," +
+                "{\"buffer\":0,\"byteOffset\":" + posInterleaved.Length + ",\"byteLength\":" + (indices.Length * 2) + "}" +
+            "]," +
+            "\"accessors\":[" +
+                "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+                "{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}" +
+            "]," +
+            "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}]" +
+        "}";
+
+        byte[] b3dm = BuildB3dm("{\"BATCH_LENGTH\":1}", "{\"gml_id\":[\"feature-strided\"]}", BuildGlb(json, bin));
+        GltfMeshDecoder decoder = new GltfMeshDecoder(new MissingDracoMeshDecoder());
+        IReadOnlyList<PlateauTilesetFeatureMesh> features = decoder.Decode(B3dmParser.Parse(b3dm));
+
+        PlateauTilesetTriangle tri = Assert.Single(Assert.Single(features).Triangles);
+        Assert.Equal(2.0, tri.B.X, 6);
+        Assert.Equal(5.0, tri.C.Z, 6);
+    }
+
     private sealed class FakeDracoDecoder : IDracoMeshDecoder
     {
         public bool DecodeWasCalled { get; private set; }
