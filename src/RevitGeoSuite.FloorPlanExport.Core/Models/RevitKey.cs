@@ -92,14 +92,14 @@ public static class RevitKey
     /// <summary>
     /// Whether the feature a key names belongs to the model <paramref name="hostModelKey"/> itself,
     /// not to a model linked into it or to another model. The model parts compare whole, so a
-    /// linked model's <c>model@LinkUniqueId</c> never matches its host. True when either side names
-    /// no model, since there is then nothing to tell them apart by.
+    /// linked model's <c>model@LinkUniqueId</c> never matches its host. False when either side
+    /// names no model: a key that cannot be checked is never taken for the host's.
     /// </summary>
     public static bool BelongsToModel(string? key, string? hostModelKey)
     {
         string model = ModelPartOf(key).Trim();
         string host = (hostModelKey ?? string.Empty).Trim();
-        return model.Length == 0 || host.Length == 0 || string.Equals(model, host, StringComparison.OrdinalIgnoreCase);
+        return model.Length > 0 && host.Length > 0 && string.Equals(model, host, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

@@ -22,16 +22,16 @@ public sealed class GisDriftHostScopeTests
     private static GisDriftRow Row(string revitKey, string uniqueId, string gdb) =>
         new(revitKey, uniqueId, "unit", "name", string.Empty, string.Empty, string.Empty, "改札", "改札", gdb, "改札", conflict: false);
 
-    private static GisDriftShape Shape(string revitKey, string uniqueId) =>
+    private static GisDriftShape Shape(string revitKey, string uniqueId, string edit = GisDrift.Deleted, string group = "", bool keeps = false) =>
         new(
-            GisDrift.Deleted,
+            edit,
             revitKey,
             uniqueId,
             "unit",
             "改札",
             string.Empty,
-            string.Empty,
-            keeps: false,
+            group,
+            keeps,
             Array.Empty<IReadOnlyList<IReadOnlyList<(double X, double Y)>>>());
 
     private static GisDriftFile File(IEnumerable<GisDriftRow> rows, IEnumerable<GisDriftShape>? shapes = null, string model = Host) =>
@@ -68,11 +68,14 @@ public sealed class GisDriftHostScopeTests
     }
 
     [Fact]
-    public void AKeyOrAHostWithoutAModelIsNotToldApart()
+    public void AKeyOrAHostWithoutAModelIsNeverTakenForTheHosts()
     {
-        Assert.True(RevitKey.BelongsToModel(string.Empty, Host));
-        Assert.True(RevitKey.BelongsToModel("u-1", Host));
-        Assert.True(RevitKey.BelongsToModel(LinkedKey("u-1"), string.Empty));
+        Assert.False(RevitKey.BelongsToModel(string.Empty, Host));
+        Assert.False(RevitKey.BelongsToModel(null, Host));
+        Assert.False(RevitKey.BelongsToModel("u-1", Host));
+        Assert.False(RevitKey.BelongsToModel("|u-1|0", Host));
+        Assert.False(RevitKey.BelongsToModel(HostKey("u-1"), string.Empty));
+        Assert.False(RevitKey.BelongsToModel(HostKey("u-1"), null));
     }
 
     [Fact]
@@ -137,29 +140,141 @@ public sealed class GisDriftHostScopeTests
     }
 
     [Fact]
-    public void AModelWithoutAnIdIsTakenToBeTheOneTheFileWasWrittenFor()
+    public void AModelWithoutAnIdIsScopedByItsDocumentKeyNotByTheFilesModel()
     {
-        const string document = @"doc:C:\MODELS\TOKYO.RVT";
+        // Kanizu files such a model under its bare document key; the export keys its features doc:<document key>.
+        const string documentKey = @"C:\MODELS\TOKYO.RVT";
+        string host = RevitKey.CreateModelKey(null, documentKey);
         GisDriftFile file = File(
             new[]
             {
-                Row(RevitKey.Create(document, "u-1")!, "u-1", "北改札"),
-                Row(RevitKey.Create(RevitKey.QualifyForLinkInstance(document, LinkInstance), "u-2")!, "u-2", "南改札"),
+                Row(RevitKey.Create(host, "u-1")!, "u-1", "北改札"),
+                Row(RevitKey.Create(RevitKey.QualifyForLinkInstance(host, LinkInstance), "u-2")!, "u-2", "南改札"),
+                Row(RevitKey.Create(@"doc:C:\MODELS\OTHER.RVT", "u-3")!, "u-3", "東改札"),
             },
-            model: document);
+            model: documentKey);
 
-        GisDriftHostScope scope = GisDriftHostScope.Of(file, string.Empty);
+        GisDriftHostScope scope = GisDriftHostScope.Of(file, host);
 
+        Assert.Equal(@"doc:C:\MODELS\TOKYO.RVT", host);
         Assert.Equal("u-1", Assert.Single(scope.File.Rows).UniqueId);
-        Assert.Single(scope.Problems);
+        Assert.Equal(2, scope.Problems.Count);
+        Assert.Contains("linked model", scope.Problems[0]);
+        Assert.Contains("OTHER.RVT", scope.Problems[1]);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData(null)]
+    public void WithoutAHostKeyNothingIsTakenForTheHosts(string? host)
+    {
+        // Not even when the file's own model matches the row: another model's picked file reads the same.
+        GisDriftFile file = File(
+            new[] { Row(HostKey("u-1"), "u-1", "北改札") },
+            new[] { Shape(HostKey("u-2"), "u-2"), Shape(string.Empty, string.Empty, GisDrift.HandDrawn) });
+
+        GisDriftHostScope scope = GisDriftHostScope.Of(file, host);
+
+        Assert.Empty(scope.File.Rows);
+        Assert.Empty(scope.File.Shapes);
+        Assert.Equal(3, scope.Problems.Count);
+        Assert.All(scope.Problems, problem => Assert.Contains("no key to compare", problem));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("u-1")]
+    [InlineData("|u-1|0")]
+    [InlineData("8d7f3c1e-0000-4000-8000-000000000001|u-1")]
+    public void ARowOrShapeWithoutAWholeKeyIsLeftOutEvenWithAUniqueId(string revitKey)
+    {
+        GisDriftFile file = File(
+            new[] { Row(revitKey, "u-1", "北改札") },
+            new[] { Shape(revitKey, "u-1"), Shape(revitKey, "u-1", GisDrift.Reshaped) });
+
+        GisDriftHostScope scope = GisDriftHostScope.Of(file, Host);
+        (IReadOnlyList<GisDriftChange> changes, _) = GisDrift.Plan(scope.File, Model("u-1"), Standard);
+
+        Assert.Empty(scope.File.Rows);
+        Assert.Empty(scope.File.Shapes);
+        Assert.Empty(changes);
+        Assert.Equal(3, scope.Problems.Count);
+        Assert.All(scope.Problems, problem => Assert.Contains("no element key", problem));
+    }
+
+    [Fact]
+    public void OnlyAUnitDrawnByHandMayHaveNoKey()
+    {
+        GisDriftFile file = File(
+            Array.Empty<GisDriftRow>(),
+            new[]
+            {
+                Shape(string.Empty, string.Empty, GisDrift.HandDrawn),
+                Shape(LinkedKey("u-9"), "u-9", GisDrift.HandDrawn),
+                Shape(string.Empty, "u-4", GisDrift.Deleted),
+            });
+
+        GisDriftHostScope scope = GisDriftHostScope.Of(file, Host);
+
+        Assert.Equal(GisDrift.HandDrawn, Assert.Single(scope.File.Shapes).Edit);
+        Assert.Equal(string.Empty, scope.File.Shapes[0].RevitKey);
+        Assert.Equal(2, scope.Problems.Count);
+    }
+
+    [Fact]
+    public void AMergeThatTakesInALinkedUnitIsLeftOutWhole()
+    {
+        string mixed = HostKey("u-1");
+        string hostOnly = HostKey("u-5");
+        GisDriftFile file = File(
+            Array.Empty<GisDriftRow>(),
+            new[]
+            {
+                Shape(mixed, "u-1", GisDrift.Merged, mixed, keeps: true),
+                Shape(HostKey("u-2"), "u-2", GisDrift.Merged, mixed),
+                Shape(LinkedKey("u-3"), "u-3", GisDrift.Merged, mixed),
+                Shape(hostOnly, "u-5", GisDrift.Merged, hostOnly, keeps: true),
+                Shape(HostKey("u-6"), "u-6", GisDrift.Merged, hostOnly),
+                Shape(HostKey("u-7"), "u-7", GisDrift.Reshaped),
+            });
+
+        GisDriftHostScope scope = GisDriftHostScope.Of(file, Host);
+
+        // The keeper would otherwise be redrawn to the merged outline, over the linked floor left in place.
+        Assert.Equal(new[] { "u-5", "u-6", "u-7" }, scope.File.Shapes.Select(shape => shape.UniqueId));
+        Assert.Equal(3, scope.Problems.Count);
+        Assert.Contains("whole edit is left out", scope.Problems[0]);
+        Assert.Contains("whole edit is left out", scope.Problems[1]);
+        Assert.Contains($"link instance {LinkInstance}", scope.Problems[2]);
+    }
+
+    [Fact]
+    public void ASplitWithAPieceOfAnotherModelIsLeftOutWhole()
+    {
+        string key = HostKey("u-1");
+        GisDriftFile file = File(
+            Array.Empty<GisDriftRow>(),
+            new[]
+            {
+                Shape(key, "u-1", GisDrift.Split, key, keeps: true),
+                Shape(RevitKey.Create(Linked, "u-1")!, "u-1", GisDrift.Split, key),
+                Shape(HostKey("u-8"), "u-8", GisDrift.Split, HostKey("u-8"), keeps: true),
+                Shape(HostKey("u-8"), "u-8", GisDrift.Split, HostKey("u-8")),
+            });
+
+        GisDriftHostScope scope = GisDriftHostScope.Of(file, Host);
+
+        Assert.Equal(new[] { "u-8", "u-8" }, scope.File.Shapes.Select(shape => shape.UniqueId));
+        Assert.Equal(2, scope.Problems.Count);
     }
 
     [Fact]
     public void AFileOfOnlyTheHostsRowsIsReturnedAsItIs()
     {
         GisDriftFile file = File(
-            new[] { Row(HostKey("u-1"), "u-1", "北改札"), Row(string.Empty, "u-3", "東改札") },
-            new[] { Shape(string.Empty, string.Empty) });
+            new[] { Row(HostKey("u-1"), "u-1", "北改札") },
+            new[] { Shape(HostKey("u-2"), "u-2"), Shape(string.Empty, string.Empty, GisDrift.HandDrawn) });
 
         GisDriftHostScope scope = GisDriftHostScope.Of(file, Host);
 

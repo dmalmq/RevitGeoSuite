@@ -67,7 +67,7 @@ public sealed class GisDriftInspectHandler : IRpcHandler
             }
 
             // Rows of linked models are listed, never looked up: their UniqueIds are not this model's.
-            GisDriftHostScope scope = GisDriftHostScope.Of(GisDriftWork.Read(path), modelKey);
+            GisDriftHostScope scope = GisDriftHostScope.Of(GisDriftWork.Read(path), GisDriftWork.HostKey(doc));
             GisDriftFile file = scope.File;
             (IReadOnlyList<GisDriftChange> changes, IReadOnlyList<string> problems) = GisDriftWork.Plan(doc, file);
             response.Source = string.Equals(path, expected, StringComparison.OrdinalIgnoreCase) ? "station" : "picked";
@@ -158,7 +158,7 @@ public sealed class GisDriftKeepHandler : IRpcHandler
                 throw new InvalidOperationException($"The drift file is for model {read.Model}, not the open model ({modelKey}).");
             }
 
-            (IReadOnlyList<GisDriftChange> planned, _) = GisDriftWork.Plan(doc, GisDriftHostScope.Of(read, modelKey).File);
+            (IReadOnlyList<GisDriftChange> planned, _) = GisDriftWork.Plan(doc, GisDriftHostScope.Of(read, GisDriftWork.HostKey(doc)).File);
             (IReadOnlyList<GisDriftChange> changes, IReadOnlyList<string> skipped) = GisDrift.Accept(
                 planned,
                 request.Changes.Select(item => (item.UniqueId, item.Parameter, item.Binding, item.NewValue, item.Label)));
@@ -381,7 +381,15 @@ internal static class GisDriftWork
     /// this, so a row of a linked model never reaches an element of the host that shares its UniqueId.
     /// </summary>
     public static GisDriftFile ReadFor(Document document, string path) =>
-        GisDriftHostScope.Of(Read(path), GisDriftSource.Locate(document).ModelKey).File;
+        GisDriftHostScope.Of(Read(path), HostKey(document)).File;
+
+    /// <summary>
+    /// The model part of the open model's own keys, as the export writes it into every
+    /// <c>revit_key</c>: its model id, or <c>doc:</c> plus the document key without one. Not the
+    /// name the drift file is filed under, which for a model without an id is the bare document key.
+    /// </summary>
+    public static string HostKey(Document document) =>
+        RevitGeoSuite.FloorPlanExport.Export.RevitModelKeyResolver.Resolve(document);
 
     /// <summary>
     /// The GDB edits in the model's own drift file (the station's, not a hand-picked one) that the
@@ -390,7 +398,7 @@ internal static class GisDriftWork
     /// </summary>
     public static (int Count, string Path) Waiting(Document document)
     {
-        (string modelKey, _, string expected) = GisDriftSource.Locate(document);
+        string expected = GisDriftSource.Locate(document).ExpectedPath;
         if (expected.Length == 0 || !File.Exists(expected))
         {
             return (0, string.Empty);
@@ -399,7 +407,7 @@ internal static class GisDriftWork
         GisDriftHostScope scope;
         try
         {
-            scope = GisDriftHostScope.Of(Read(expected), modelKey);
+            scope = GisDriftHostScope.Of(Read(expected), HostKey(document));
         }
         catch (InvalidOperationException)
         {

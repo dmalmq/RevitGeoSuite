@@ -248,9 +248,10 @@ public static class GisKeep
             byte[]? before = ReadBytes(path);
             string text = Merge(before == null ? null : Decode(before), model, entries);
             string temp = path + ".tmp-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            File.WriteAllText(temp, text, new UTF8Encoding(false));
             try
             {
+                // Inside the try: a write cut short must not leave its temporary file behind either.
+                File.WriteAllText(temp, text, new UTF8Encoding(false));
                 byte[]? now = ReadBytes(path);
                 if (!SameBytes(before, now))
                 {
@@ -270,10 +271,7 @@ public static class GisKeep
             }
             finally
             {
-                if (File.Exists(temp))
-                {
-                    File.Delete(temp);
-                }
+                DeleteQuietly(temp);
             }
         }
 
@@ -378,6 +376,21 @@ public static class GisKeep
         catch (ArgumentException error)
         {
             throw new FormatException($"The keep file is not UTF-8: {error.Message}", error);
+        }
+    }
+
+    /// <summary>Removes a temporary file without hiding the error that is already on its way out.</summary>
+    private static void DeleteQuietly(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
         }
     }
 
