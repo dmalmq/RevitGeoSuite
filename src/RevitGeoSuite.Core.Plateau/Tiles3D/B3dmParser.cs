@@ -65,16 +65,35 @@ public static class B3dmParser
         string magic = Encoding.ASCII.GetString(bytes, 0, 4);
         if (magic != "b3dm") throw new InvalidOperationException($"Unexpected b3dm magic '{magic}'.");
 
-        int version = BitConverter.ToInt32(bytes, 4);
-        if (version != 1) throw new InvalidOperationException($"Unsupported b3dm version {version}.");
+        uint version = BitConverter.ToUInt32(bytes, 4);
+        if (version != 1u) throw new InvalidOperationException($"Unsupported b3dm version {version}.");
 
-        int byteLength = BitConverter.ToInt32(bytes, 8);
-        if (byteLength > bytes.Length) throw new InvalidOperationException("b3dm byteLength exceeds available payload.");
+        uint byteLengthU32 = BitConverter.ToUInt32(bytes, 8);
+        if (byteLengthU32 < (uint)HeaderSize || byteLengthU32 > (uint)bytes.Length)
+        {
+            throw new InvalidOperationException("b3dm byteLength is out of range.");
+        }
 
-        int featureTableJsonLength = BitConverter.ToInt32(bytes, 12);
-        int featureTableBinaryLength = BitConverter.ToInt32(bytes, 16);
-        int batchTableJsonLength = BitConverter.ToInt32(bytes, 20);
-        int batchTableBinaryLength = BitConverter.ToInt32(bytes, 24);
+        uint featureTableJsonLengthU32 = BitConverter.ToUInt32(bytes, 12);
+        uint featureTableBinaryLengthU32 = BitConverter.ToUInt32(bytes, 16);
+        uint batchTableJsonLengthU32 = BitConverter.ToUInt32(bytes, 20);
+        uint batchTableBinaryLengthU32 = BitConverter.ToUInt32(bytes, 24);
+
+        long totalSectionBytes =
+            (long)featureTableJsonLengthU32
+            + featureTableBinaryLengthU32
+            + batchTableJsonLengthU32
+            + batchTableBinaryLengthU32;
+        if (HeaderSize + totalSectionBytes > byteLengthU32)
+        {
+            throw new InvalidOperationException("b3dm section lengths exceed declared byteLength.");
+        }
+
+        int byteLength = (int)byteLengthU32;
+        int featureTableJsonLength = (int)featureTableJsonLengthU32;
+        int featureTableBinaryLength = (int)featureTableBinaryLengthU32;
+        int batchTableJsonLength = (int)batchTableJsonLengthU32;
+        int batchTableBinaryLength = (int)batchTableBinaryLengthU32;
 
         int offset = HeaderSize;
 
@@ -91,7 +110,6 @@ public static class B3dmParser
         offset += batchTableBinaryLength;
 
         int gltfLength = byteLength - offset;
-        if (gltfLength < 0) throw new InvalidOperationException("Computed glTF length is negative; b3dm payload is malformed.");
         byte[] gltf = Slice(bytes, offset, gltfLength);
 
         return new B3dmContents(featureTableJson, featureTableBinary, batchTableJson, batchTableBinary, gltf);
@@ -99,7 +117,12 @@ public static class B3dmParser
 
     private static JObject ReadJsonChunk(byte[] bytes, int offset, int length)
     {
-        if (length <= 0) return new JObject();
+        if (length < 0 || offset < 0 || (long)offset + length > bytes.Length)
+        {
+            throw new InvalidOperationException("b3dm JSON chunk bounds are invalid.");
+        }
+
+        if (length == 0) return new JObject();
         string text = Encoding.UTF8.GetString(bytes, offset, length).TrimEnd();
         if (string.IsNullOrEmpty(text)) return new JObject();
         return JObject.Parse(text);
@@ -107,7 +130,12 @@ public static class B3dmParser
 
     private static byte[] Slice(byte[] source, int offset, int length)
     {
-        if (length <= 0) return Array.Empty<byte>();
+        if (length < 0 || offset < 0 || (long)offset + length > source.Length)
+        {
+            throw new InvalidOperationException("b3dm binary chunk bounds are invalid.");
+        }
+
+        if (length == 0) return Array.Empty<byte>();
         byte[] result = new byte[length];
         Buffer.BlockCopy(source, offset, result, 0, length);
         return result;

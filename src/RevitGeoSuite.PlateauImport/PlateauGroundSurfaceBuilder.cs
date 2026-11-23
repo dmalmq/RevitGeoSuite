@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RevitGeoSuite.Core.Plateau.Dem;
+using RevitGeoSuite.Core.Plateau.Tiles3D;
 
 namespace RevitGeoSuite.PlateauImport;
 
@@ -28,6 +29,26 @@ public sealed class PlateauGroundSurfaceBuilder
         }
 
         this.maxPoints = maxPoints;
+    }
+
+    /// <summary>
+    /// Builds a ground surface from an ellipsoidal DEM source (such as online Cesium/PLATEAU terrain)
+    /// using the same <see cref="IGeoidModel"/> vertical datum conversion as online 3D Tiles buildings,
+    /// evaluated at the project's georeference anchor.
+    /// </summary>
+    public GroundSurfaceResult Build(
+        DemSampler sampler,
+        PlateauImportReferenceContext referenceContext,
+        double gridSpacingMeters,
+        IGeoidModel geoidModel)
+    {
+        if (referenceContext is null) throw new ArgumentNullException(nameof(referenceContext));
+        if (geoidModel is null) throw new ArgumentNullException(nameof(geoidModel));
+
+        double geoidOffsetMeters = geoidModel.GetUndulationMeters(
+            referenceContext.AnchorLatitude,
+            referenceContext.AnchorLongitude);
+        return Build(sampler, referenceContext, gridSpacingMeters, geoidOffsetMeters);
     }
 
     public GroundSurfaceResult Build(

@@ -1388,4 +1388,33 @@ public sealed class CityGmlParserTests
             }
         }
     }
+
+    [Theory]
+    [InlineData(@"\\evil.example\share\codelist.xml")]
+    [InlineData("//evil.example/share/codelist.xml")]
+    [InlineData(@"C:\Windows\System32\drivers\etc\hosts")]
+    [InlineData("/etc/passwd")]
+    [InlineData("http://evil.example/codelist.xml")]
+    [InlineData("file:///C:/secret/codelist.xml")]
+    [InlineData("../../../outside-package/secret.xml")]
+    public void TryResolveCodelistPath_rejects_untrusted_external_unc_rooted_and_escaping_paths(string untrustedCodeSpace)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "RevitGeoSuiteCodelistConfinementTests", Guid.NewGuid().ToString("N"));
+        string gmlPath = Path.Combine(root, "udx", "tran", "533945_tran_6697_op.gml");
+
+        string? resolved = CityGmlParser.TryResolveCodelistPath(gmlPath, untrustedCodeSpace);
+
+        Assert.Null(resolved);
+    }
+
+    [Fact]
+    public void TryResolveCodelistPath_allows_relative_codelist_within_plateau_package_root()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "RevitGeoSuiteCodelistConfinementTests", Guid.NewGuid().ToString("N"));
+        string gmlPath = Path.Combine(root, "udx", "tran", "533945_tran_6697_op.gml");
+
+        string? resolved = CityGmlParser.TryResolveCodelistPath(gmlPath, "../../codelists/TrafficArea_function.xml");
+
+        Assert.Equal(Path.GetFullPath(Path.Combine(root, "codelists", "TrafficArea_function.xml")), resolved);
+    }
 }

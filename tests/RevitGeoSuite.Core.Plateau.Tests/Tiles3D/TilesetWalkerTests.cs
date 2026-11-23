@@ -65,12 +65,206 @@ public sealed class TilesetWalkerTests
         Assert.NotEqual(first.Id, second.Id);
     }
 
+    [Fact]
+    public async Task WalkAsync_with_REPLACE_refinement_emits_only_children_not_parent()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri rootUrl = new Uri("https://example.com/chiyoda/tileset.json");
+        fake.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"REPLACE\",\"content\":{\"uri\":\"data58.b3dm\"},\"children\":[" +
+            "{\"content\":{\"uri\":\"data58_c1.b3dm\"}}," +
+            "{\"content\":{\"uri\":\"data58_c2.b3dm\"}}," +
+            "{\"content\":{\"uri\":\"data58_c3.b3dm\"}}" +
+            "]}}";
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(rootUrl, CancellationToken.None);
+
+        Assert.Equal(3, leaves.Count);
+        Assert.DoesNotContain(leaves, leaf => leaf.B3dmUrl.AbsolutePath.EndsWith("data58.b3dm", StringComparison.Ordinal));
+        Assert.Contains(leaves, leaf => leaf.B3dmUrl.AbsolutePath.EndsWith("data58_c1.b3dm", StringComparison.Ordinal));
+        Assert.Contains(leaves, leaf => leaf.B3dmUrl.AbsolutePath.EndsWith("data58_c2.b3dm", StringComparison.Ordinal));
+        Assert.Contains(leaves, leaf => leaf.B3dmUrl.AbsolutePath.EndsWith("data58_c3.b3dm", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WalkAsync_inherits_REPLACE_across_nested_levels_and_emits_only_deepest_leaves()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri rootUrl = new Uri("https://example.com/chiyoda/tileset.json");
+        fake.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"REPLACE\",\"children\":[{" +
+            "\"content\":{\"uri\":\"lod1_parent.b3dm\"}," +
+            "\"children\":[{\"content\":{\"uri\":\"lod2_child.b3dm\"}}]" +
+            "}]}}";
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(rootUrl, CancellationToken.None);
+
+        TilesetLeaf leaf = Assert.Single(leaves);
+        Assert.EndsWith("lod2_child.b3dm", leaf.B3dmUrl.AbsolutePath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WalkAsync_with_ADD_refinement_emits_both_parent_and_children()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri rootUrl = new Uri("https://example.com/additive/tileset.json");
+        fake.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"ADD\",\"content\":{\"uri\":\"parent.b3dm\"},\"children\":[" +
+            "{\"content\":{\"uri\":\"child1.b3dm\"}}," +
+            "{\"content\":{\"uri\":\"child2.b3dm\"}}" +
+            "]}}";
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(rootUrl, CancellationToken.None);
+
+        Assert.Equal(3, leaves.Count);
+        Assert.Contains(leaves, leaf => leaf.B3dmUrl.AbsolutePath.EndsWith("parent.b3dm", StringComparison.Ordinal));
+        Assert.Contains(leaves, leaf => leaf.B3dmUrl.AbsolutePath.EndsWith("child1.b3dm", StringComparison.Ordinal));
+        Assert.Contains(leaves, leaf => leaf.B3dmUrl.AbsolutePath.EndsWith("child2.b3dm", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WalkAsync_terminates_cleanly_on_cyclic_tileset_references()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri urlA = new Uri("https://example.com/cycle/a.json");
+        Uri urlB = new Uri("https://example.com/cycle/b.json");
+        fake.StringResponses[urlA] =
+            "{\"root\":{\"refine\":\"ADD\",\"children\":[{\"content\":{\"uri\":\"b.json\"}}]}}";
+        fake.StringResponses[urlB] =
+            "{\"root\":{\"refine\":\"ADD\",\"children\":[{\"content\":{\"uri\":\"a.json\"}},{\"content\":{\"uri\":\"leaf.b3dm\"}}]}}";
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(urlA, CancellationToken.None);
+
+        TilesetLeaf leaf = Assert.Single(leaves);
+        Assert.EndsWith("leaf.b3dm", leaf.B3dmUrl.AbsolutePath, StringComparison.Ordinal);
+        Assert.Equal(2, fake.RequestedUrls.Count);
+    }
+
+    [Fact]
+    public async Task WalkAsync_allows_shared_sub_tileset_referenced_under_distinct_transforms()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri rootUrl = new Uri("https://example.com/dag/tileset.json");
+        Uri sharedUrl = new Uri("https://example.com/dag/shared.json");
+        fake.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"REPLACE\",\"children\":[" +
+            "{\"transform\":[1,0,0,0,0,1,0,0,0,0,1,0,10,0,0,1],\"content\":{\"uri\":\"shared.json\"}}," +
+            "{\"transform\":[1,0,0,0,0,1,0,0,0,0,1,0,20,0,0,1],\"content\":{\"uri\":\"shared.json\"}}" +
+            "]}}";
+        fake.StringResponses[sharedUrl] =
+            "{\"root\":{\"content\":{\"uri\":\"unit.b3dm\"}}}";
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(rootUrl, CancellationToken.None);
+
+        Assert.Equal(2, leaves.Count);
+        double[] xs = leaves.Select(l => l.Transform.TransformPoint(Vector3d.Zero).X).OrderBy(x => x).ToArray();
+        Assert.Equal(new[] { 10.0, 20.0 }, xs);
+        // Per-walk cache fetches the shared sub-tileset only once even though both transformed branches emit it.
+        Assert.Equal(1, fake.RequestedUrls.Count(u => u == sharedUrl));
+    }
+
+    [Fact]
+    public async Task WalkAsync_bounds_no_leaf_diamond_dag_fanout_with_cache_and_visit_budget()
+    {
+        // Build a 32-level no-leaf diamond DAG: each level references the next level twice (2^32 paths),
+        // fitting well inside DefaultMaxDepth (64) and never emitting a single leaf.
+        FakeHttpClient fake = new FakeHttpClient();
+        const int levels = 32;
+        for (int i = 0; i < levels; i++)
+        {
+            Uri url = new Uri($"https://example.com/diamond/d{i}.json");
+            if (i == levels - 1)
+            {
+                fake.StringResponses[url] = "{\"root\":{\"refine\":\"REPLACE\"}}";
+            }
+            else
+            {
+                string next = $"d{i + 1}.json";
+                fake.StringResponses[url] =
+                    "{\"root\":{\"refine\":\"REPLACE\",\"children\":[" +
+                    "{\"content\":{\"uri\":\"" + next + "\"}}," +
+                    "{\"content\":{\"uri\":\"" + next + "\"}}" +
+                    "]}}";
+            }
+        }
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            walker.WalkAsync(
+                new Uri("https://example.com/diamond/d0.json"),
+                CancellationToken.None));
+
+        // Fails closed once the visit budget is exceeded, while fetching each URL at most once.
+        Assert.InRange(fake.RequestedUrls.Count, 1, levels);
+    }
+
+    [Fact]
+    public async Task WalkAsync_enforces_max_depth_and_max_leaves_caps()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri rootUrl = new Uri("https://example.com/caps/tileset.json");
+        fake.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"ADD\",\"children\":[" +
+            "{\"content\":{\"uri\":\"a.b3dm\"}}," +
+            "{\"content\":{\"uri\":\"b.b3dm\"}}," +
+            "{\"content\":{\"uri\":\"c.b3dm\"}}," +
+            "{\"children\":[{\"children\":[{\"content\":{\"uri\":\"deep.b3dm\"}}]}]}" +
+            "]}}";
+
+        TilesetWalker leafCappedWalker = new TilesetWalker(fake, maxDepth: 64, maxLeaves: 2);
+        IReadOnlyList<TilesetLeaf> capped = await leafCappedWalker.WalkAsync(rootUrl, CancellationToken.None);
+        Assert.Equal(2, capped.Count);
+
+        TilesetWalker depthCappedWalker = new TilesetWalker(fake, maxDepth: 1, maxLeaves: 100);
+        IReadOnlyList<TilesetLeaf> shallow = await depthCappedWalker.WalkAsync(rootUrl, CancellationToken.None);
+        Assert.Equal(3, shallow.Count);
+        Assert.DoesNotContain(shallow, leaf => leaf.B3dmUrl.AbsolutePath.EndsWith("deep.b3dm", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WalkAsync_matches_query_string_uris_and_prunes_non_intersecting_subtrees()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri rootUrl = new Uri("https://example.com/area/tileset.json?v=1");
+        Uri keptSubUrl = new Uri("https://example.com/area/kept/sub.json?v=2");
+        Uri prunedSubUrl = new Uri("https://example.com/area/pruned/sub.json?v=2");
+
+        fake.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"REPLACE\",\"children\":[" +
+            "{\"boundingVolume\":{\"region\":[2.438,0.622,2.439,0.623,0,100]},\"content\":{\"uri\":\"kept/sub.json?v=2\"}}," +
+            "{\"boundingVolume\":{\"region\":[2.450,0.622,2.451,0.623,0,100]},\"content\":{\"uri\":\"pruned/sub.json?v=2\"}}" +
+            "]}}";
+        fake.StringResponses[keptSubUrl] =
+            "{\"root\":{\"content\":{\"uri\":\"leaf.b3dm?token=abc\"}}}";
+        fake.StringResponses[prunedSubUrl] =
+            "{\"root\":{\"content\":{\"uri\":\"should_not_fetch.b3dm\"}}}";
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(
+            rootUrl,
+            region => region.EastRadians > 2.4385 && region.WestRadians < 2.4388,
+            CancellationToken.None);
+
+        TilesetLeaf leaf = Assert.Single(leaves);
+        Assert.EndsWith("leaf.b3dm", leaf.B3dmUrl.AbsolutePath, StringComparison.Ordinal);
+        Assert.Contains(keptSubUrl, fake.RequestedUrls);
+        Assert.DoesNotContain(prunedSubUrl, fake.RequestedUrls);
+    }
+
     private sealed class FakeHttpClient : IPlateauHttpClient
     {
         public Dictionary<Uri, string> StringResponses { get; } = new();
 
+        public List<Uri> RequestedUrls { get; } = new();
+
         public Task<string> GetStringAsync(Uri url, CancellationToken cancellationToken)
         {
+            RequestedUrls.Add(url);
             if (StringResponses.TryGetValue(url, out string? body)) return Task.FromResult(body);
             throw new InvalidOperationException($"No response for {url}");
         }
