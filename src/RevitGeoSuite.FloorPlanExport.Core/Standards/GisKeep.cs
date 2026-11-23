@@ -7,6 +7,7 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
+using RevitGeoSuite.FloorPlanExport.Core.Models;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Standards;
 
@@ -125,7 +126,7 @@ public static class GisKeep
         {
             foreach (GisDriftRow row in change.Rows)
             {
-                if (!GisDrift.Same(change.Parameter, change.OldValue, row.Revit))
+                if (LiveValueChangedSinceExport(change, row))
                 {
                     skipped.Add($"{row.Describe()}: Revit changed since the last export — export again before keeping Revit's value.");
                     continue;
@@ -137,6 +138,32 @@ public static class GisKeep
 
         (IReadOnlyList<GisKeepEntry> entries, IReadOnlyList<string> notKept) = EntriesFor(matchingRows, keptUtc);
         return (entries, skipped.Concat(notKept).ToList());
+    }
+
+    private static bool LiveValueChangedSinceExport(GisDriftChange change, GisDriftRow row)
+    {
+        if (string.IsNullOrWhiteSpace(change.OldValue))
+        {
+            // A blank instance parameter can inherit from its type or be computed on export,
+            // so an empty live value beside a non-empty exported row.Revit is not a live override.
+            return false;
+        }
+
+        if (string.Equals(change.Parameter, "category", StringComparison.OrdinalIgnoreCase))
+        {
+            // Kanizu maps exported unit categories to station codes (e.g. ticketing -> "ticket office"),
+            // and RevitGeoSuite intentionally keeps no copy of that table.
+            return false;
+        }
+
+        if (string.Equals(change.Parameter, VerticalCirculation.GisDirectionParameterName, StringComparison.OrdinalIgnoreCase))
+        {
+            string live = VerticalCirculation.NormalizeDirection(change.OldValue) ?? GisToolStandard.Normalize(change.OldValue);
+            string exported = VerticalCirculation.NormalizeDirection(row.Revit) ?? GisToolStandard.Normalize(row.Revit);
+            return !string.Equals(live, exported, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return !GisDrift.Same(change.Parameter, change.OldValue, row.Revit);
     }
 
     /// <summary>

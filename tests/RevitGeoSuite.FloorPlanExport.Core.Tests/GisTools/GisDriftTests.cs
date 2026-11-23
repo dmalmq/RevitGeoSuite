@@ -483,4 +483,66 @@ public sealed class GisDriftTests
         string reason = Assert.Single(skipped);
         Assert.Contains("Revit changed since the last export", reason);
     }
+
+    [Fact]
+    public void KeepEntriesAllowStationCodedCategoriesInheritedBlanksAndNormalizedDirections()
+    {
+        JObject stationCodedCategory = Entry("category", "store", revit: "ticket office", conflict: true, uniqueId: "u-cat");
+        stationCodedCategory["gdbCategory"] = "retail";
+
+        JObject inheritedCategory = Entry("category", "walkway_sta", revit: "store_sta", conflict: true, uniqueId: "u-inh-cat");
+        inheritedCategory["gdbCategory"] = "walkway";
+
+        JObject inheritedOrdinal = Entry("ordinal", "2", layer: "level", revit: "1", conflict: false, uniqueId: "lvl-inh");
+        JObject inheritedDirection = Entry("direction", "down", revit: "up", conflict: false, uniqueId: "u-inh-dir");
+        JObject jpDirection = Entry("direction", "down", revit: "up", conflict: false, uniqueId: "u-dir-jp");
+        JObject upperDirection = Entry("direction", "down", revit: "up", conflict: false, uniqueId: "u-dir-up");
+        JObject editedDirection = Entry("direction", "both", revit: "up", conflict: false, uniqueId: "u-dir-edit", label: "");
+
+        var model = Model(new Dictionary<(string, string, string), string>
+        {
+            [("u-cat", "category", "instance")] = "ticketing",
+            [("u-inh-cat", "category", "instance")] = "",
+            [("lvl-inh", "ordinal", "instance")] = "",
+            [("u-inh-dir", "gis_direction", "instance")] = "",
+            [("u-dir-jp", "gis_direction", "instance")] = "上り",
+            [("u-dir-up", "gis_direction", "instance")] = "UP",
+            [("u-dir-edit", "gis_direction", "instance")] = "down",
+        });
+
+        GisDriftFile file = GisDrift.Parse(Text(new[]
+        {
+            stationCodedCategory,
+            inheritedCategory,
+            inheritedOrdinal,
+            inheritedDirection,
+            jpDirection,
+            upperDirection,
+            editedDirection,
+        }));
+        var (planned, problems) = GisDrift.Plan(file, model, Standard);
+
+        Assert.Empty(problems);
+        Assert.Equal(7, planned.Count);
+
+        (IReadOnlyList<GisKeepEntry> entries, IReadOnlyList<string> skipped) = GisKeep.EntriesFor(
+            planned,
+            "2026-11-21T09:30:00Z");
+
+        Assert.Equal(
+            new[]
+            {
+                ("model|u-cat|0", "ticket office", "store"),
+                ("model|u-inh-cat|0", "store_sta", "walkway_sta"),
+                ("model|lvl-inh|0", "1", "2"),
+                ("model|u-inh-dir|0", "up", "down"),
+                ("model|u-dir-jp|0", "up", "down"),
+                ("model|u-dir-up|0", "up", "down"),
+            },
+            entries.Select(entry => (entry.RevitKey, entry.Revit, entry.Gdb)));
+
+        string reason = Assert.Single(skipped);
+        Assert.Contains("u-dir-edit", reason);
+        Assert.Contains("Revit changed since the last export", reason);
+    }
 }
