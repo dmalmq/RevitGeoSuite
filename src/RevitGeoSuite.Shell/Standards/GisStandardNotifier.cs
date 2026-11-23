@@ -39,11 +39,12 @@ internal sealed class GisStandardNotifier
 
     private PushButton? _button;
     private string? _buttonDocumentKey;
+    private Document? _activeDocument;
     private string _driftPath = string.Empty;
     private DateTime _driftWritten;
     private DateTime _nextDriftPoll;
     private bool _modelChanged;
-    private bool _documentClosed;
+    private bool _syncActiveDocument;
     private volatile bool _forceRefresh;
     private string? _versionStamp;
     private const int MaxSecondLine = 32;
@@ -55,7 +56,8 @@ internal sealed class GisStandardNotifier
         _button = button;
         UiLocalizer.Instance.PropertyChanged += OnLanguageChanged;
         application.ControlledApplication.DocumentOpened += OnDocumentOpened;
-        application.ControlledApplication.DocumentSaved += OnDocumentChanged;
+        application.ControlledApplication.DocumentSaved += OnDocumentSaved;
+        application.ControlledApplication.DocumentSavedAs += OnDocumentSavedAs;
         application.ControlledApplication.DocumentChanged += OnModelChanged;
         application.ControlledApplication.DocumentClosed += OnDocumentClosed;
         application.ViewActivated += OnViewActivated;
@@ -66,11 +68,13 @@ internal sealed class GisStandardNotifier
     {
         UiLocalizer.Instance.PropertyChanged -= OnLanguageChanged;
         application.ControlledApplication.DocumentOpened -= OnDocumentOpened;
-        application.ControlledApplication.DocumentSaved -= OnDocumentChanged;
+        application.ControlledApplication.DocumentSaved -= OnDocumentSaved;
+        application.ControlledApplication.DocumentSavedAs -= OnDocumentSavedAs;
         application.ControlledApplication.DocumentChanged -= OnModelChanged;
         application.ControlledApplication.DocumentClosed -= OnDocumentClosed;
         application.ViewActivated -= OnViewActivated;
         application.Idling -= OnIdling;
+        _activeDocument = null;
     }
 
     /// <summary>A station export was published, or the UI language changed: the button reads again on the next idle.</summary>
@@ -96,9 +100,27 @@ internal sealed class GisStandardNotifier
         _pending.Enqueue(document);
     }
 
-    private void OnDocumentChanged(object sender, DocumentSavedEventArgs e)
+    private void OnDocumentSaved(object sender, DocumentSavedEventArgs e)
+    {
+        HandleDocumentSaved(e.Document);
+    }
+
+    private void OnDocumentSavedAs(object sender, DocumentSavedAsEventArgs e)
+    {
+        HandleDocumentSaved(e.Document);
+    }
+
+    private void HandleDocumentSaved(Document? document)
     {
         _buttonDocumentKey = null;
+        if (DocumentIdentity.IsSameDocument(_activeDocument, document))
+        {
+            WebShellWindowManager.Instance.NotifyActiveDocument(document);
+        }
+        else
+        {
+            _syncActiveDocument = true;
+        }
     }
 
     // Only floors, rooms, levels and family instances carry GDB edits: the drift rows' units, fixtures and
@@ -121,11 +143,12 @@ internal sealed class GisStandardNotifier
     private void OnDocumentClosed(object sender, DocumentClosedEventArgs e)
     {
         _buttonDocumentKey = null;
-        _documentClosed = true;
+        _syncActiveDocument = true;
     }
 
     private void OnViewActivated(object sender, ViewActivatedEventArgs e)
     {
+        _activeDocument = e.Document;
         Refresh(e.Document, force: false);
         GisNetworkWork.ReloadIfWritten(sender as UIApplication, e.Document);
         WebShellWindowManager.Instance.NotifyActiveDocument(e.Document);
@@ -151,9 +174,10 @@ internal sealed class GisStandardNotifier
         }
 
         Document? active = (sender as UIApplication)?.ActiveUIDocument?.Document;
-        if (_documentClosed)
+        _activeDocument = active;
+        if (_syncActiveDocument)
         {
-            _documentClosed = false;
+            _syncActiveDocument = false;
             WebShellWindowManager.Instance.NotifyActiveDocument(active);
         }
 
