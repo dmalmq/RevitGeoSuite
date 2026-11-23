@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -94,10 +95,117 @@ public sealed class JapanMeshCalculatorTests
     public void Japan_mesh_domain_validates_tertiary_mesh_codes()
     {
         Assert.True(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "53394611" }));
+        Assert.True(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "53397799" }));
         Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(null));
         Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = string.Empty }));
         Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "533946" }));
         Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "5339461A" }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "53398611" }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "53394811" }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "53399999" }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "-3394611" }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = " 3394611" }));
+        Assert.False(JapanMeshDomain.IsValidTertiaryMeshCode(new MeshCode { Value = "５３３９４６１１" }));
+    }
+
+    [Theory]
+    [InlineData("53394611")] // Tokyo Station (previously failed both lat & lon -> 53394600)
+    [InlineData("64414277")] // Sapporo (previously failed lat -> 64414267)
+    [InlineData("50303382")] // Fukuoka
+    [InlineData("39272544")] // Naha
+    [InlineData("53390000")] // Primary SW corner
+    [InlineData("53397799")] // Primary NE corner
+    [InlineData("53394600")] // Secondary SW corner
+    [InlineData("53394699")] // Secondary NE corner
+    public void Bounds_round_trip_exact_southwest_corner_center_and_interior_for_major_japan_cities(string code)
+    {
+        JapanMeshCalculator calculator = new JapanMeshCalculator();
+        MeshBounds bounds = calculator.GetBounds(new MeshCode { Value = code });
+
+        Assert.Equal(code, calculator.Calculate(bounds.SouthLatitude, bounds.WestLongitude, JapanMeshLevel.Tertiary).Value);
+        Assert.Equal(code, calculator.Calculate(bounds.CenterLatitude, bounds.CenterLongitude, JapanMeshLevel.Tertiary).Value);
+        Assert.Equal(code, calculator.Calculate(bounds.NorthLatitude - 1e-6, bounds.EastLongitude - 1e-6, JapanMeshLevel.Tertiary).Value);
+        Assert.Equal(code.Substring(0, 6), calculator.Calculate(bounds.SouthLatitude, bounds.WestLongitude, JapanMeshLevel.Secondary).Value);
+        Assert.Equal(code.Substring(0, 4), calculator.Calculate(bounds.SouthLatitude, bounds.WestLongitude, JapanMeshLevel.Primary).Value);
+    }
+
+    [Fact]
+    public void Primary_and_secondary_bounds_round_trip_at_southwest_corners()
+    {
+        JapanMeshCalculator calculator = new JapanMeshCalculator();
+
+        foreach (string primaryCode in new[] { "5339", "6441", "5030", "3927" })
+        {
+            MeshBounds bounds = calculator.GetBounds(new MeshCode { Value = primaryCode });
+            Assert.Equal(primaryCode, calculator.Calculate(bounds.SouthLatitude, bounds.WestLongitude, JapanMeshLevel.Primary).Value);
+            Assert.Equal(primaryCode, calculator.Calculate(bounds.CenterLatitude, bounds.CenterLongitude, JapanMeshLevel.Primary).Value);
+        }
+
+        foreach (string secondaryCode in new[] { "533946", "644142", "503033", "392725" })
+        {
+            MeshBounds bounds = calculator.GetBounds(new MeshCode { Value = secondaryCode });
+            Assert.Equal(secondaryCode, calculator.Calculate(bounds.SouthLatitude, bounds.WestLongitude, JapanMeshLevel.Secondary).Value);
+            Assert.Equal(secondaryCode, calculator.Calculate(bounds.CenterLatitude, bounds.CenterLongitude, JapanMeshLevel.Secondary).Value);
+        }
+    }
+
+    [Fact]
+    public void Every_japan_latitude_and_longitude_tertiary_band_round_trips_its_southwest_corner()
+    {
+        JapanMeshCalculator calculator = new JapanMeshCalculator();
+
+        // Sweep all 3,120 tertiary latitude bands across Japan [20 deg, 46 deg)
+        for (int latCell = 20 * 120; latCell < 46 * 120; latCell++)
+        {
+            int pLat = latCell / 80;
+            int rem = latCell % 80;
+            int sLat = rem / 10;
+            int tLat = rem % 10;
+            string code = $"{pLat:00}39{sLat}6{tLat}1";
+
+            MeshBounds bounds = calculator.GetBounds(new MeshCode { Value = code });
+            Assert.Equal(code, calculator.Calculate(bounds.SouthLatitude, bounds.WestLongitude, JapanMeshLevel.Tertiary).Value);
+        }
+
+        // Sweep all 2,560 tertiary longitude bands across Japan [122 deg, 154 deg)
+        for (int lonCell = 22 * 80; lonCell < 54 * 80; lonCell++)
+        {
+            int pLon = lonCell / 80;
+            int rem = lonCell % 80;
+            int sLon = rem / 10;
+            int tLon = rem % 10;
+            string code = $"53{pLon:00}4{sLon}1{tLon}";
+
+            MeshBounds bounds = calculator.GetBounds(new MeshCode { Value = code });
+            Assert.Equal(code, calculator.Calculate(bounds.SouthLatitude, bounds.WestLongitude, JapanMeshLevel.Tertiary).Value);
+        }
+    }
+
+    [Theory]
+    [InlineData("53398611")]
+    [InlineData("53394811")]
+    [InlineData("533999")]
+    [InlineData("-1234567")]
+    [InlineData("+1234567")]
+    [InlineData(" 3394611")]
+    [InlineData("５３３９４６１１")]
+    public void GetBounds_rejects_malformed_or_out_of_range_mesh_codes(string invalidCode)
+    {
+        JapanMeshCalculator calculator = new JapanMeshCalculator();
+
+        Assert.Throws<ArgumentException>(() => calculator.GetBounds(new MeshCode { Value = invalidCode }));
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 139.767125)]
+    [InlineData(35.681236, double.NaN)]
+    [InlineData(double.PositiveInfinity, 139.767125)]
+    [InlineData(35.681236, double.NegativeInfinity)]
+    public void Calculate_rejects_non_finite_coordinates(double latitude, double longitude)
+    {
+        JapanMeshCalculator calculator = new JapanMeshCalculator();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => calculator.Calculate(latitude, longitude, JapanMeshLevel.Tertiary));
     }
 
     private static List<MeshFixture> LoadFixtures()

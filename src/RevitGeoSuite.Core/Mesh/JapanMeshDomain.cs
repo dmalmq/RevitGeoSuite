@@ -1,5 +1,3 @@
-using System.Linq;
-
 namespace RevitGeoSuite.Core.Mesh;
 
 public static class JapanMeshDomain
@@ -21,10 +19,21 @@ public static class JapanMeshDomain
 
     public static bool IsValidTertiaryMeshCode(MeshCode? meshCode)
     {
-        return meshCode is not null
-            && !string.IsNullOrWhiteSpace(meshCode.Value)
-            && meshCode.Value.Length == (int)JapanMeshLevel.Tertiary
-            && meshCode.Value.All(char.IsDigit);
+        if (meshCode is null || string.IsNullOrEmpty(meshCode.Value) || meshCode.Value.Length != (int)JapanMeshLevel.Tertiary)
+        {
+            return false;
+        }
+
+        string value = meshCode.Value;
+        for (int i = 0; i < value.Length; i++)
+        {
+            if (value[i] < '0' || value[i] > '9')
+            {
+                return false;
+            }
+        }
+
+        return value[4] <= '7' && value[5] <= '7';
     }
 
     public static bool IsFinite(double value)
