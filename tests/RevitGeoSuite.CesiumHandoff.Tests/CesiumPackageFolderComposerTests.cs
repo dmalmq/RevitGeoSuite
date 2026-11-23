@@ -215,4 +215,108 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
     {
         Assert.Throws<InvalidOperationException>(() => CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()));
     }
+
+
+    [Fact]
+    public void ComposeFromFolder_DescribesTheElementAndRoomIndexesBesideTheTileset()
+    {
+        File.WriteAllText(Path.Combine(_root, "tileset.json"), "{}");
+        File.WriteAllText(Path.Combine(_root, "elements.json"), "{}");
+        File.WriteAllText(Path.Combine(_root, "rooms.json"), "{}");
+
+        CesiumPackageManifest manifest = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs());
+        File.WriteAllText(Path.Combine(_root, "rooms.json"), "{\"rooms\":[]}");
+        string? after = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+
+        Assert.Equal("elements.json", manifest.Tiles!.Elements);
+        Assert.Equal("rooms.json", manifest.Tiles!.Rooms);
+        Assert.Null(manifest.Tiles!.Levels);
+        Assert.NotEqual(manifest.ContentHash, after);
+    }
+
+    [Fact]
+    public void ComposeFromFolder_HashIncludesTheFieldListBesideTheGeoPackage()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "gis"));
+        File.WriteAllText(Path.Combine(_root, "gis", "tower.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(_root, "gis", "gis-fields.json"), "{}");
+
+        string? before = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+        File.WriteAllText(Path.Combine(_root, "gis", "gis-fields.json"), "{\"fields\":[]}");
+        string? after = CesiumPackageFolderComposer.ComposeFromFolder(_root, Inputs()).ContentHash;
+
+        Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void ComposeFromFolder_WritesTheModelIdItIsGiven()
+    {
+        File.WriteAllText(Path.Combine(_root, "tower.gpkg"), "gpkg");
+        CesiumPackageBuildInputs inputs = Inputs();
+        inputs.ModelId = "8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a";
+
+        CesiumPackageFolderComposer.ComposeFromFolder(_root, inputs);
+
+        CesiumPackageManifest written = CesiumPackageManifestSerializer.Deserialize(
+            File.ReadAllText(Path.Combine(_root, "cesium-package.json")));
+        Assert.Equal("8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a", written.Source!.ModelId);
+    }
+
+    [Fact]
+    public void ComposeFromFolder_KeepsTheModelIdAndExportOfTheSameModelsPackage()
+    {
+        WriteExportedPackage(documentKey: "doc-key");
+        CesiumPackageBuildInputs inputs = Inputs();
+        inputs.DocumentKey = "DOC-KEY";
+
+        CesiumPackageFolderComposer.ComposeFromFolder(_root, inputs);
+
+        CesiumPackageManifest written = CesiumPackageManifestSerializer.Deserialize(
+            File.ReadAllText(Path.Combine(_root, "cesium-package.json")));
+        Assert.Equal("8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a", written.Source!.ModelId);
+        Assert.Equal("fine", written.Export!.LevelOfDetail);
+        Assert.Equal("link-1", Assert.Single(written.Export!.Links).UniqueId);
+        Assert.Equal("tiles/elements.json", written.Tiles!.Elements);
+        Assert.Equal("tiles/rooms.json", written.Tiles!.Rooms);
+    }
+
+    [Fact]
+    public void ComposeFromFolder_TakesNothingFromAnotherModelsPackage()
+    {
+        WriteExportedPackage(documentKey: "another-model");
+        CesiumPackageBuildInputs inputs = Inputs();
+        inputs.DocumentKey = "doc-key";
+
+        CesiumPackageManifest manifest = CesiumPackageFolderComposer.ComposeFromFolder(_root, inputs);
+
+        Assert.Null(manifest.Source!.ModelId);
+        Assert.Null(manifest.Export);
+    }
+
+    /// <summary>A package as the combined export leaves it in an ordinary folder: tiles/, gis/ and a full manifest.</summary>
+    private void WriteExportedPackage(string documentKey)
+    {
+        var layout = new CesiumPackageLayout(_root);
+        Directory.CreateDirectory(layout.TilesDirectory);
+        Directory.CreateDirectory(layout.GisDirectory);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "elements.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "rooms.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.GisDirectory, "tower.gpkg"), "gpkg");
+        new CesiumPackageLayoutBuilder().WriteManifest(layout, new CesiumPackageBuildInputs
+        {
+            BuildingId = "tower-1234",
+            BuildingName = "Tower",
+            GeneratorVersion = "1.0.0",
+            DocumentKey = documentKey,
+            ModelId = "8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a",
+            Export = new CesiumPackageExport
+            {
+                Scope = CesiumExportScopes.Whole,
+                LevelOfDetail = "fine",
+                ExactPlacement = true,
+                Links = new() { new CesiumPackageExportItem { UniqueId = "link-1", Name = "Link.rvt : 1" } },
+            },
+        });
+    }
 }

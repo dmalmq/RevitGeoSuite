@@ -15,7 +15,7 @@ public sealed class RoundTripTests
 {
     private const string Model = "8d7f3c1e-0000-4000-8000-000000000001";
     private const string Folder = "tokyo-station-8d7f3c1e";
-    private const string First = "revit/tokyo-station-8d7f3c1e/20261108T120000Z-0dd17673";
+    private const string First = "revit/tokyo-station-8d7f3c1e/20261108T120000Z-130617a7";
     private const string Second = "revit/tokyo-station-8d7f3c1e/20261109T090000Z-11111111";
 
     private static void CopyDir(string from, string to)
