@@ -118,7 +118,8 @@ public sealed class FloorGeoPackageExporter
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
         bool keep3DTempViewsForDebug = false,
         IReadOnlyList<string>? unitCategories = null,
-        GisRulesSource? rulesSource = null)
+        GisRulesSource? rulesSource = null,
+        bool requireCompleteLinkCoverage = false)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -178,17 +179,29 @@ public sealed class FloorGeoPackageExporter
         SchemaProfile effectiveSchemaProfile = fieldList.ApplyTo(activeSchemaProfile);
         ValidationPolicyProfile effectiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
 
+        if (requireCompleteLinkCoverage)
+        {
+            LinkCoverage.ThrowIfIncomplete(contextProvider.FindLinkCoverageProblems(effectiveLinkExportOptions));
+        }
+
         using Temp3DViewScope? threeDViewScope = use3DSectionBoxExport
             ? new Temp3DViewScope(_document, exportViews, sectionBoxAboveFloorMeters, sectionBoxBelowFloorMeters, keep3DTempViewsForDebug)
             : null;
 
+        List<LinkCoverageProblem> linkReadFailures = new();
         IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
             exportViews,
             zoneCatalog,
             mappingRules.FamilyCategoryOverrides,
             mappingRules.AcceptedOpeningFamilies,
             effectiveLinkExportOptions,
-            threeDViewScope);
+            threeDViewScope,
+            linkReadFailures);
+        if (requireCompleteLinkCoverage)
+        {
+            LinkCoverage.ThrowIfIncomplete(linkReadFailures);
+        }
+
         EnsureSharedParameters(parameterManager, setupWarnings, fieldList.ExtraParameters());
         EnsureStableIds(parameterManager, contexts, setupWarnings);
         // Before any extractor reads the model key, and only here: the preview never writes the model.

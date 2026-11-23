@@ -366,7 +366,8 @@ public sealed class CesiumPackageLayoutBuilder
 
     private static List<string> ListRelative(CesiumPackageLayout layout, string pattern)
     {
-        return Directory.EnumerateFiles(layout.GisDirectory, pattern, SearchOption.AllDirectories)
+        // Top level only: a handoff-package-* subfolder holds copies of the same artifacts.
+        return Directory.EnumerateFiles(layout.GisDirectory, pattern, SearchOption.TopDirectoryOnly)
             .Select(path => ToRelativePackagePath(layout.RootDirectory, path))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();

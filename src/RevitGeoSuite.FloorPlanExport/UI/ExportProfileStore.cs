@@ -292,12 +292,19 @@ public sealed class ExportProfileStore
             UnitAttributeSource = profile.UnitAttributeSource,
             RoomCategoryParameterName = string.IsNullOrWhiteSpace(profile.RoomCategoryParameterName) ? "Name" : profile.RoomCategoryParameterName.Trim(),
             LinkExportOptions = profile.LinkExportOptions?.Clone() ?? new RevitGeoSuite.FloorPlanExport.Export.LinkExportOptions(),
+            SimplifyStairUnits = profile.SimplifyStairUnits,
+            SimplifyEscalatorUnits = profile.SimplifyEscalatorUnits,
             UnitCategories = (profile.UnitCategories ?? new List<string>())
                 .Where(category => !string.IsNullOrWhiteSpace(category))
                 .Select(category => category.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList(),
-            SchemaProfiles = SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
+            Use3DSectionBoxExport = profile.Use3DSectionBoxExport,
+            SectionBoxAboveFloorMeters = profile.SectionBoxAboveFloorMeters,
+            SectionBoxBelowFloorMeters = profile.SectionBoxBelowFloorMeters,
+            Keep3DTempViewsForDebug = profile.Keep3DTempViewsForDebug,
+            OutputFormat = profile.OutputFormat,
+            SchemaProfiles =SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(profile.SchemaProfiles, profile.ActiveSchemaProfileName),
             ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(profile.ValidationPolicyProfiles).Select(policy => policy.Clone()).ToList(),
             ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(profile.ValidationPolicyProfiles, profile.ActiveValidationPolicyProfileName),

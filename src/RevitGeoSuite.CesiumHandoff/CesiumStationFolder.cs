@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace RevitGeoSuite.CesiumHandoff;
 
@@ -21,6 +22,10 @@ public static class CesiumStationFolder
     public const string RevitDirectoryName = "revit";
 
     public const string StagingPrefix = ".tmp-";
+
+    private static readonly Regex VersionFolderNamePattern = new(
+        @"^\d{8}T\d{6}Z(-[0-9a-f]+)?(-\d+)?$",
+        RegexOptions.CultureInvariant);
 
     /// <summary>Starts a staging package on the same volume as the versions it will join.</summary>
     public static CesiumPackageLayout CreateStagingLayout(string stationFolder)
@@ -97,6 +102,22 @@ public static class CesiumStationFolder
         string hash = (contentHash ?? string.Empty).Trim();
         hash = hash.Length > 8 ? hash.Substring(0, 8) : hash;
         return hash.Length > 0 ? $"{time}-{hash.ToLowerInvariant()}" : time;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="folder"/> is a published version:
+    /// <c>revit/&lt;model&gt;/&lt;yyyyMMddTHHmmssZ&gt;-&lt;hash8&gt;</c>, with the suffix a same-second export gets.
+    /// </summary>
+    public static bool IsVersionFolder(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return false;
+        }
+
+        var version = new DirectoryInfo(Path.GetFullPath(folder.Trim()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return VersionFolderNamePattern.IsMatch(version.Name) &&
+               string.Equals(version.Parent?.Parent?.Name, RevitDirectoryName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string RevitRoot(string stationFolder)

@@ -128,6 +128,60 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
         Assert.Equal("tiles/tileset.json", manifest.Tiles!.Tileset);
     }
 
+    [Theory]
+    [InlineData("20260102T030405Z-abcdef12")]
+    [InlineData("20260102T030405Z-abcdef12-2")]
+    [InlineData("20260102T030405Z")]
+    public void ComposeFromFolder_LeavesStationVersionManifestUntouched(string versionName)
+    {
+        string version = Path.Combine(_root, "station", "revit", "tower-12345678", versionName);
+        Directory.CreateDirectory(Path.Combine(version, "gis"));
+        File.WriteAllText(Path.Combine(version, "gis", "tower.gpkg"), "gpkg");
+        string manifestPath = Path.Combine(version, "cesium-package.json");
+        string original = CesiumPackageManifestSerializer.Serialize(new CesiumPackageManifest
+        {
+            PackageId = "published",
+            Source = new CesiumPackageSource { ModelId = "model-1" },
+            Gis = new CesiumPackageGis
+            {
+                Format = "geopackage",
+                Artifacts = new() { new CesiumPackageGisArtifact { Path = "gis/tower.gpkg" } },
+            },
+        });
+        File.WriteAllText(manifestPath, original);
+
+        CesiumPackageManifest manifest = CesiumPackageFolderComposer.ComposeFromFolder(version, Inputs());
+
+        Assert.Equal("published", manifest.PackageId);
+        Assert.Equal("model-1", manifest.Source!.ModelId);
+        Assert.Equal(original, File.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public void ComposeFromFolder_RefusesStationVersionWithoutManifest()
+    {
+        string version = Path.Combine(_root, "station", "revit", "tower-12345678", "20260102T030405Z-abcdef12");
+        Directory.CreateDirectory(version);
+        File.WriteAllText(Path.Combine(version, "tower.gpkg"), "gpkg");
+
+        Assert.Throws<InvalidOperationException>(() => CesiumPackageFolderComposer.ComposeFromFolder(version, Inputs()));
+        Assert.False(File.Exists(Path.Combine(version, "cesium-package.json")));
+    }
+
+    [Fact]
+    public void ComposeFromFolder_RewritesTimestampNamedFolderOutsideStation()
+    {
+        string folder = Path.Combine(_root, "exports", "20260102T030405Z-abcdef12");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "tower.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(folder, "cesium-package.json"), "stale");
+
+        CesiumPackageManifest manifest = CesiumPackageFolderComposer.ComposeFromFolder(folder, Inputs());
+
+        Assert.Equal("tower.gpkg", Assert.Single(manifest.Gis!.Artifacts!).Path);
+        Assert.NotEqual("stale", File.ReadAllText(Path.Combine(folder, "cesium-package.json")));
+    }
+
     [Fact]
     public void ComposeFromFolder_EmptyFolderThrows()
     {
