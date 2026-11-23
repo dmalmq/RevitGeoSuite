@@ -164,6 +164,43 @@ public sealed class TilesetWalkerTests
         Assert.Equal(2, leaves.Count);
         double[] xs = leaves.Select(l => l.Transform.TransformPoint(Vector3d.Zero).X).OrderBy(x => x).ToArray();
         Assert.Equal(new[] { 10.0, 20.0 }, xs);
+        // Per-walk cache fetches the shared sub-tileset only once even though both transformed branches emit it.
+        Assert.Equal(1, fake.RequestedUrls.Count(u => u == sharedUrl));
+    }
+
+    [Fact]
+    public async Task WalkAsync_bounds_no_leaf_diamond_dag_fanout_with_cache_and_visit_budget()
+    {
+        // Build a 32-level no-leaf diamond DAG: each level references the next level twice (2^32 paths),
+        // fitting well inside DefaultMaxDepth (64) and never emitting a single leaf.
+        FakeHttpClient fake = new FakeHttpClient();
+        const int levels = 32;
+        for (int i = 0; i < levels; i++)
+        {
+            Uri url = new Uri($"https://example.com/diamond/d{i}.json");
+            if (i == levels - 1)
+            {
+                fake.StringResponses[url] = "{\"root\":{\"refine\":\"REPLACE\"}}";
+            }
+            else
+            {
+                string next = $"d{i + 1}.json";
+                fake.StringResponses[url] =
+                    "{\"root\":{\"refine\":\"REPLACE\",\"children\":[" +
+                    "{\"content\":{\"uri\":\"" + next + "\"}}," +
+                    "{\"content\":{\"uri\":\"" + next + "\"}}" +
+                    "]}}";
+            }
+        }
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(
+            new Uri("https://example.com/diamond/d0.json"),
+            CancellationToken.None);
+
+        Assert.Empty(leaves);
+        // Each tileset URL is fetched at most once (bounded by level count, never 2^32).
+        Assert.InRange(fake.RequestedUrls.Count, 1, levels);
     }
 
     [Fact]

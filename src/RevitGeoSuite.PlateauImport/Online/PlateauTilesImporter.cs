@@ -268,12 +268,18 @@ public sealed class PlateauTilesImporter
 
     /// <summary>
     /// Determines whether an existing online-imported DirectShape falls within the replacement scope
-    /// of <paramref name="incoming"/>: strictly matching <c>(area, dataset, LOD)</c>, and then matching
-    /// either (a) a legacy shape without <c>grid_id</c> (so pre-fix imports from <c>main</c> are cleanly
-    /// replaced instead of duplicated), (b) an incoming <c>gml_id</c> (so buildings straddling a grid
-    /// boundary are deduplicated without touching unrelated shapes in the neighboring grid), or
-    /// (c) an incoming <c>grid_id</c>. Null/empty <c>AreaCode</c> (e.g. OSM Buildings) matches
-    /// null/empty <c>AreaCode</c> instead of failing string-concatenation comparisons.
+    /// of <paramref name="incoming"/>:
+    /// <list type="bullet">
+    /// <item>For area-coded PLATEAU imports (<c>AreaCode</c> non-empty): strictly matches
+    /// <c>(area, dataset, LOD)</c>, and then matches (a) legacy shapes without <c>grid_id</c> (so old
+    /// floating imports from <c>main</c> are replaced instead of duplicated), (b) an incoming
+    /// <c>gml_id</c> (deduplicating buildings that straddle a grid boundary without touching unrelated
+    /// buildings in the neighboring grid), or (c) an incoming <c>grid_id</c>.</item>
+    /// <item>For bounding-box imports without a PLATEAU area code (<c>AreaCode == null</c>, e.g. OSM
+    /// Buildings): matches ONLY by incoming feature ID within the same <c>(source_url, dataset, LOD)</c>
+    /// scope so a smaller bounding-box re-import never deletes legacy or same-mesh buildings outside
+    /// the requested box.</item>
+    /// </list>
     /// </summary>
     internal static bool MatchesReplacementScope(
         PlateauOnlineImportMetadata existing,
@@ -293,9 +299,13 @@ public sealed class PlateauTilesImporter
             return false;
         }
 
-        // 2) Dataset (TypeEn). Legacy shapes written before "dataset" existed fall back to SourceUrl.
+        // 2) Dataset (TypeEn) and source URL. Legacy shapes without "dataset" fall back to SourceUrl;
+        //    non-area-coded (OSM) imports always require matching SourceUrl when both are present.
         string existingDataset = NormalizeScopeToken(existing.Dataset);
         string incomingDataset = NormalizeScopeToken(incoming.TypeEn);
+        string existingSourceUrl = NormalizeScopeToken(existing.SourceUrl);
+        string incomingSourceUrl = NormalizeScopeToken(incoming.SourceUrl);
+
         if (existingDataset.Length > 0)
         {
             if (!string.Equals(existingDataset, incomingDataset, StringComparison.OrdinalIgnoreCase))
@@ -303,16 +313,13 @@ public sealed class PlateauTilesImporter
                 return false;
             }
         }
-        else
+
+        if ((existingDataset.Length == 0 || incomingArea.Length == 0)
+            && existingSourceUrl.Length > 0
+            && incomingSourceUrl.Length > 0
+            && !string.Equals(existingSourceUrl, incomingSourceUrl, StringComparison.OrdinalIgnoreCase))
         {
-            string existingSourceUrl = NormalizeScopeToken(existing.SourceUrl);
-            string incomingSourceUrl = NormalizeScopeToken(incoming.SourceUrl);
-            if (existingSourceUrl.Length > 0
-                && incomingSourceUrl.Length > 0
-                && !string.Equals(existingSourceUrl, incomingSourceUrl, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
+            return false;
         }
 
         // 3) LOD.
@@ -323,7 +330,21 @@ public sealed class PlateauTilesImporter
             return false;
         }
 
-        // 4) Grid / legacy / cross-grid gml_id scope.
+        // 4) Non-area-coded (OSM / bounding-box) imports: replace ONLY exact matching feature IDs.
+        //    Never mass-delete by 1 km mesh GridId or legacy no-grid_id wildcard, since OSM imports
+        //    target an arbitrary radius rather than whole PLATEAU mesh grids.
+        if (incomingArea.Length == 0)
+        {
+            if (incomingFeatureIds is null || incomingFeatureIds.Count == 0)
+            {
+                return false;
+            }
+
+            string existingFeatureId = NormalizeScopeToken(existing.GmlId);
+            return existingFeatureId.Length > 0 && incomingFeatureIds.Contains(existingFeatureId);
+        }
+
+        // 5) Area-coded PLATEAU imports: grid / legacy / cross-grid gml_id scope.
         string existingGrid = NormalizeScopeToken(existing.GridId);
 
         // Legacy shapes written before grid_id existed (same area, dataset/source, and LOD) must be

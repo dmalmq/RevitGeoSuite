@@ -175,6 +175,72 @@ public sealed class PlateauTilesImporterScopeTests
     }
 
     [Fact]
+    public void MatchesReplacementScope_does_not_mass_delete_legacy_osm_buildings_outside_smaller_reimport()
+    {
+        const string legacyOsmFarJson =
+            "{\"gml_id\":\"osm-far\",\"feature_type\":\"bldg:Building\",\"source_url\":\"https://example.test/tileset.json\",\"area_code\":null,\"lod\":null,\"mode\":\"Lod2Untextured\"}";
+        const string legacyOsmNearJson =
+            "{\"gml_id\":\"osm-near\",\"feature_type\":\"bldg:Building\",\"source_url\":\"https://example.test/tileset.json\",\"area_code\":null,\"lod\":null,\"mode\":\"Lod2Untextured\"}";
+
+        Assert.True(PlateauTilesImporter.TryReadMetadata(legacyOsmFarJson, out PlateauTilesImporter.PlateauOnlineImportMetadata? legacyFar));
+        Assert.True(PlateauTilesImporter.TryReadMetadata(legacyOsmNearJson, out PlateauTilesImporter.PlateauOnlineImportMetadata? legacyNear));
+
+        PlateauTilesetModel smallReimport = BuildModel(areaCode: null, dataset: "OSM Buildings", lod: null, gridId: "53394536", featureId: "osm-near");
+        HashSet<string> grids = PlateauTilesImporter.CollectIncomingGridIds(smallReimport);
+        HashSet<string> features = PlateauTilesImporter.CollectIncomingFeatureIds(smallReimport);
+
+        // Legacy OSM building outside the smaller bounding box is preserved.
+        Assert.False(PlateauTilesImporter.MatchesReplacementScope(legacyFar!, smallReimport, grids, features));
+
+        // Legacy OSM building whose feature ID matches the incoming re-import IS replaced.
+        Assert.True(PlateauTilesImporter.MatchesReplacementScope(legacyNear!, smallReimport, grids, features));
+    }
+
+    [Fact]
+    public void MatchesReplacementScope_does_not_delete_other_osm_buildings_in_same_1km_mesh_on_partial_bbox_reimport()
+    {
+        PlateauTilesetModel existingMeshModel = new PlateauTilesetModel(
+            "https://example.test/tileset.json",
+            "OSM Buildings",
+            null,
+            false,
+            null,
+            new[]
+            {
+                BuildFeature("osm-outside-bbox", "53394536"),
+                BuildFeature("osm-inside-bbox", "53394536")
+            });
+
+        string storedOutsideJson = PlateauTilesImporter.SerializeMetadata(
+            existingMeshModel,
+            existingMeshModel.Features[0],
+            PlateauOnlineGeometryMode.Lod2Untextured);
+        string storedInsideJson = PlateauTilesImporter.SerializeMetadata(
+            existingMeshModel,
+            existingMeshModel.Features[1],
+            PlateauOnlineGeometryMode.Lod2Untextured);
+
+        Assert.True(PlateauTilesImporter.TryReadMetadata(storedOutsideJson, out PlateauTilesImporter.PlateauOnlineImportMetadata? existingOutside));
+        Assert.True(PlateauTilesImporter.TryReadMetadata(storedInsideJson, out PlateauTilesImporter.PlateauOnlineImportMetadata? existingInside));
+
+        // Partial-mesh OSM re-import covering only "osm-inside-bbox" within the same 1 km mesh "53394536".
+        PlateauTilesetModel partialReimport = BuildModel(
+            areaCode: null,
+            dataset: "OSM Buildings",
+            lod: null,
+            gridId: "53394536",
+            featureId: "osm-inside-bbox");
+        HashSet<string> grids = PlateauTilesImporter.CollectIncomingGridIds(partialReimport);
+        HashSet<string> features = PlateauTilesImporter.CollectIncomingFeatureIds(partialReimport);
+
+        // Other OSM building in the same 1 km mesh must NOT be deleted.
+        Assert.False(PlateauTilesImporter.MatchesReplacementScope(existingOutside!, partialReimport, grids, features));
+
+        // Exact matching OSM building IS replaced.
+        Assert.True(PlateauTilesImporter.MatchesReplacementScope(existingInside!, partialReimport, grids, features));
+    }
+
+    [Fact]
     public void PartitionIntoBatches_groups_by_grid_and_chunks_large_grids()
     {
         List<PlateauTilesetFeature> features = new List<PlateauTilesetFeature>();

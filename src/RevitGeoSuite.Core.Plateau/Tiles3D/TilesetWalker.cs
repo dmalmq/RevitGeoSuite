@@ -117,23 +117,32 @@ public sealed class TilesetWalker
 {
     public const int DefaultMaxDepth = 64;
     public const int DefaultMaxLeaves = 10_000;
+    public const int DefaultMaxTilesetVisits = 1_000;
 
     private readonly IPlateauHttpClient httpClient;
     private readonly int maxDepth;
     private readonly int maxLeaves;
+    private readonly int maxTilesetVisits;
 
     public TilesetWalker(IPlateauHttpClient httpClient)
-        : this(httpClient, DefaultMaxDepth, DefaultMaxLeaves)
+        : this(httpClient, DefaultMaxDepth, DefaultMaxLeaves, DefaultMaxTilesetVisits)
     {
     }
 
     public TilesetWalker(IPlateauHttpClient httpClient, int maxDepth, int maxLeaves)
+        : this(httpClient, maxDepth, maxLeaves, DefaultMaxTilesetVisits)
+    {
+    }
+
+    public TilesetWalker(IPlateauHttpClient httpClient, int maxDepth, int maxLeaves, int maxTilesetVisits)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         if (maxDepth < 1) throw new ArgumentOutOfRangeException(nameof(maxDepth), maxDepth, "Max depth must be at least 1.");
         if (maxLeaves < 1) throw new ArgumentOutOfRangeException(nameof(maxLeaves), maxLeaves, "Max leaves must be at least 1.");
+        if (maxTilesetVisits < 1) throw new ArgumentOutOfRangeException(nameof(maxTilesetVisits), maxTilesetVisits, "Max tileset visits must be at least 1.");
         this.maxDepth = maxDepth;
         this.maxLeaves = maxLeaves;
+        this.maxTilesetVisits = maxTilesetVisits;
     }
 
     public Task<IReadOnlyList<TilesetLeaf>> WalkAsync(Uri tilesetUrl, CancellationToken cancellationToken)
@@ -148,7 +157,7 @@ public sealed class TilesetWalker
     {
         if (tilesetUrl is null) throw new ArgumentNullException(nameof(tilesetUrl));
 
-        WalkContext context = new WalkContext(regionFilter, maxDepth, maxLeaves);
+        WalkContext context = new WalkContext(regionFilter, maxDepth, maxLeaves, maxTilesetVisits);
         await WalkTilesetAsync(
             tilesetUrl,
             Matrix4x4d.Identity,
@@ -170,7 +179,9 @@ public sealed class TilesetWalker
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (depth > context.MaxDepth || context.Leaves.Count >= context.MaxLeaves)
+        if (depth > context.MaxDepth
+            || context.Leaves.Count >= context.MaxLeaves
+            || context.TilesetVisits >= context.MaxTilesetVisits)
         {
             return WalkResult.Empty;
         }
@@ -183,10 +194,19 @@ public sealed class TilesetWalker
             return WalkResult.Empty;
         }
 
+        context.TilesetVisits++;
+
         try
         {
-            string body = await httpClient.GetStringAsync(tilesetUrl, ct).ConfigureAwait(false);
-            TilesetJson? tileset = JsonConvert.DeserializeObject<TilesetJson>(body);
+            // Fetch and parse each tileset URL at most once per walk; total visits are also bounded
+            // by MaxTilesetVisits so no-leaf diamond DAG fan-out cannot cause exponential work.
+            if (!context.ParsedTilesetCache.TryGetValue(tilesetKey, out TilesetJson? tileset))
+            {
+                string body = await httpClient.GetStringAsync(tilesetUrl, ct).ConfigureAwait(false);
+                tileset = JsonConvert.DeserializeObject<TilesetJson>(body);
+                context.ParsedTilesetCache[tilesetKey] = tileset;
+            }
+
             if (tileset?.Root is null)
             {
                 return WalkResult.Empty;
@@ -394,11 +414,12 @@ public sealed class TilesetWalker
 
     private sealed class WalkContext
     {
-        public WalkContext(Func<TilesetRegion, bool>? regionFilter, int maxDepth, int maxLeaves)
+        public WalkContext(Func<TilesetRegion, bool>? regionFilter, int maxDepth, int maxLeaves, int maxTilesetVisits)
         {
             RegionFilter = regionFilter;
             MaxDepth = maxDepth;
             MaxLeaves = maxLeaves;
+            MaxTilesetVisits = maxTilesetVisits;
         }
 
         public Func<TilesetRegion, bool>? RegionFilter { get; }
@@ -407,7 +428,13 @@ public sealed class TilesetWalker
 
         public int MaxLeaves { get; }
 
+        public int MaxTilesetVisits { get; }
+
+        public int TilesetVisits { get; set; }
+
         public HashSet<string> ActiveTilesets { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+        public Dictionary<string, TilesetJson?> ParsedTilesetCache { get; } = new Dictionary<string, TilesetJson?>(StringComparer.Ordinal);
 
         public List<TilesetLeaf> Leaves { get; } = new List<TilesetLeaf>();
     }
