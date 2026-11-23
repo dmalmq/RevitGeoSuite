@@ -73,6 +73,54 @@ public sealed class ExportProfileStoreRoundTripTests
         }
     }
 
+    [Fact]
+    public void LoadAndSave_NormalizesLegacyJgd2024EpsgCodes10267To10285()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "export-profile-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(directory, "profiles.json");
+            File.WriteAllText(
+                path,
+                @"{
+  ""GlobalProfiles"": [
+    { ""Name"": ""Legacy Global Zone 1"", ""Scope"": 0, ""TargetEpsg"": 10267 }
+  ],
+  ""ProjectProfiles"": {
+    ""project-a"": [
+      { ""Name"": ""Legacy Project Zone 9"", ""Scope"": 1, ""TargetEpsg"": 10275 },
+      { ""Name"": ""Legacy Project Zone 19"", ""Scope"": 1, ""TargetEpsg"": 10285 }
+    ]
+  }
+}");
+
+            ExportProfileStore store = new(path);
+            var loaded = store.LoadWithDiagnostics("project-a").Value;
+
+            Assert.Equal(6669, loaded.Single(profile => profile.Name == "Legacy Global Zone 1").TargetEpsg);
+            Assert.Equal(6677, loaded.Single(profile => profile.Name == "Legacy Project Zone 9").TargetEpsg);
+            Assert.Equal(6687, loaded.Single(profile => profile.Name == "Legacy Project Zone 19").TargetEpsg);
+
+            store.SaveProfile("project-a", new ExportProfile
+            {
+                Name = "Saved Legacy Zone 1",
+                Scope = ExportProfileScope.Project,
+                TargetEpsg = 10267,
+            });
+
+            Assert.Equal(6669, store.LoadWithDiagnostics("project-a").Value.Single(profile => profile.Name == "Saved Legacy Zone 1").TargetEpsg);
+            Assert.DoesNotContain("10267", File.ReadAllText(path));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
     private static object ChangedValue(Type type, object? current)
     {
         if (type.IsEnum)

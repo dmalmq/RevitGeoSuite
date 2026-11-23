@@ -163,7 +163,7 @@ public sealed class GisDriftKeepHandler : IRpcHandler
                 planned,
                 request.Changes.Select(item => (item.UniqueId, item.Parameter, item.Binding, item.NewValue, item.Label)));
             (IReadOnlyList<GisKeepEntry> entries, IReadOnlyList<string> notKept) = GisKeep.EntriesFor(
-                changes.Select(change => change.Row),
+                changes.SelectMany(change => change.Rows),
                 GisKeep.Timestamp(DateTime.UtcNow));
             if (entries.Count > 0)
             {

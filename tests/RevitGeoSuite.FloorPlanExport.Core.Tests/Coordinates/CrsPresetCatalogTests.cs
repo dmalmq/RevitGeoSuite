@@ -110,6 +110,11 @@ public sealed class CrsPresetCatalogTests
         Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2024 Zone 100", out _));
         Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2011 geographic 2D", out _));
         Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2024 1.5", out _));
+        Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2011 graphics V", out _));
+        Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2011 ozone 5", out _));
+        Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2011 2-D", out _));
+        Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2011 3-D", out _));
+        Assert.False(JapanPlaneRectangular.TryResolveEpsg("JGD2024 1:500", out _));
     }
 
     [Fact]

@@ -10,17 +10,17 @@
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Dialog, Table } from '$lib/kit'
   import { format } from '$lib/shell'
-  import { driftSource, initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked, initialShapeTypes } from '$lib/gisStandard/driftReview'
+  import { canKeepRevit, driftSource, initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked, initialShapeTypes } from '$lib/gisStandard/driftReview'
   import AppliedBanner from './AppliedBanner.svelte'
   import ProblemList from './ProblemList.svelte'
   import ShapeEditList from './ShapeEditList.svelte'
 
   let drift = $state<GisDriftInspectResponse | null>(null)
-  let working = $state<'read' | 'apply' | 'shapes' | null>(null)
+  let working = $state<'read' | 'apply' | 'keep' | 'shapes' | null>(null)
   let error = $state<string | null>(null)
   let unticked = $state<Set<number>>(new Set())
   let shapesUnticked = $state<Set<string>>(new Set())
-  let applied = $state<{ log: string[]; skipped: string[]; shapes?: boolean } | null>(null)
+  let applied = $state<{ log: string[]; skipped: string[]; kind: 'apply' | 'keep' | 'shapes' } | null>(null)
   let confirmOpen = $state(false)
   let confirmShapes = $state(false)
 
@@ -32,6 +32,7 @@
   const mismatch = $derived(drift ? modelMismatch(drift) : null)
   const otherModel = $derived(mismatch !== null)
   const needsConfirm = $derived(!!drift && confirmFirst(drift))
+  const keepAllowed = $derived(!!drift && canKeepRevit(drift))
   const source = $derived(drift ? driftSource(drift) : null)
 
   onMount(() => void inspect({ path: '', pick: false }))
@@ -75,7 +76,7 @@
       const types = tickedShapes
         .filter((shape) => shape.kind === 'create')
         .map((shape) => ({ uniqueId: shape.uniqueId, typeName: shapeTypes[shape.uniqueId] ?? '' }))
-      applied = { ...(await request('gisDrift.applyShapes', { path, uniqueIds: tickedShapes.map((shape) => shape.uniqueId), types })), shapes: true }
+      applied = { ...(await request('gisDrift.applyShapes', { path, uniqueIds: tickedShapes.map((shape) => shape.uniqueId), types })), kind: 'shapes' }
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
     } finally {
@@ -92,13 +93,33 @@
     const path = drift.path
     try {
       const response: GisStandardApplyResponse = await request('gisDrift.apply', { path, changes: ticked })
-      applied = response
+      applied = { ...response, kind: 'apply' }
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
     } finally {
       working = null
     }
     await inspect({ path, pick: false })
+  }
+
+  async function keep() {
+    if (!drift || !keepAllowed) return
+    working = 'keep'
+    error = null
+    const path = drift.path
+    let succeeded = false
+    try {
+      const response: GisStandardApplyResponse = await request('gisDrift.keep', { path, changes: ticked })
+      applied = { ...response, kind: 'keep' }
+      succeeded = true
+    } catch (err: any) {
+      error = err.message || $t('GisStandard.Drift.KeepError', 'Could not record the answer in the station keep file.')
+    } finally {
+      working = null
+    }
+    if (succeeded) {
+      await inspect({ path, pick: false })
+    }
   }
 
   function toggle(index: number, checked: boolean) {
@@ -123,15 +144,23 @@
   {#if error}<Banner tone="danger" onclose={() => (error = null)}>{error}</Banner>{/if}
   {#if applied}
     <AppliedBanner
-      title={applied.shapes
+      title={applied.kind === 'shapes'
         ? format($t('GisStandard.Shapes.Done', '{0} shape edit(s) applied, each one undo step. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)
-        : format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)}
+        : applied.kind === 'keep'
+          ? format($t('GisStandard.Drift.Kept', '{0} Revit value(s) kept. Kanizu will take them into the GDB at its next apply.'), applied.log.filter((line) => !line.startsWith(' ')).length)
+          : format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)}
       log={applied.log}
       skipped={applied.skipped}
-      undoHint={applied.shapes ? $t('GisStandard.Shapes.UndoHint', 'Each edit is its own undo step in Revit.') : undefined}
-      skippedTitle={applied.shapes
+      undoHint={applied.kind === 'shapes'
+        ? $t('GisStandard.Shapes.UndoHint', 'Each edit is its own undo step in Revit.')
+        : applied.kind === 'keep'
+          ? $t('GisStandard.Drift.KeepHint', 'Nothing changed in Revit. The answer is saved beside the station drift file.')
+          : undefined}
+      skippedTitle={applied.kind === 'shapes'
         ? format($t('GisStandard.Shapes.Skipped', '{0} ticked shape edit(s) were not applied:'), applied.skipped.length)
-        : format($t('GisStandard.Drift.Skipped', '{0} ticked change(s) were not written:'), applied.skipped.length)}
+        : applied.kind === 'keep'
+          ? format($t('GisStandard.Drift.KeepSkipped', '{0} ticked change(s) were not kept:'), applied.skipped.length)
+          : format($t('GisStandard.Drift.Skipped', '{0} ticked change(s) were not written:'), applied.skipped.length)}
       onclose={() => (applied = null)}
     />
   {/if}
@@ -233,6 +262,15 @@
         </Button>
       {/if}
       {#if drift && drift.changes.length > 0}
+        <Button
+          icon="pin"
+          onclick={keep}
+          disabled={working !== null || ticked.length === 0 || !keepAllowed}
+          busy={working === 'keep'}
+          title={!keepAllowed ? $t('GisStandard.Drift.KeepStationOnly', "Keep Revit's value is only available for this model's own station drift file.") : undefined}
+        >
+          {format($t('GisStandard.Drift.Keep', "Keep Revit's ({0})"), ticked.length)}
+        </Button>
         <Button variant="primary" icon="check" onclick={start} disabled={working !== null || ticked.length === 0} busy={working === 'apply'}>
           {applyLabel}
         </Button>

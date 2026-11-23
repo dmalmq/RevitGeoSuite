@@ -212,6 +212,7 @@ describe('rpc bridge', () => {
         'gisParameters.write',
         'gisParameters.read',
         'gisDrift.inspect',
+        'gisDrift.keep',
         'georeference.apply',
         'georeference.revert',
         'floorplan.run'

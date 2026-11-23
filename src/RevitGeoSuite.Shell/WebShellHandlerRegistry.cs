@@ -38,6 +38,7 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new GisDriftInspectHandler());
         bridge.RegisterHandler(new GisDriftWaitingHandler());
         bridge.RegisterHandler(new GisDriftApplyHandler());
+        bridge.RegisterHandler(new GisDriftKeepHandler());
         bridge.RegisterHandler(new GisShapeShowHandler());
         bridge.RegisterHandler(new GisShapeClearHandler());
         bridge.RegisterHandler(new GisShapeApplyHandler());

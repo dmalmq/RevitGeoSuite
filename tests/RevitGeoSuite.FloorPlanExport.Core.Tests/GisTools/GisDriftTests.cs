@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using Xunit;
 using static RevitGeoSuite.FloorPlanExport.Core.Tests.GisTools.GisToolsFixtures;
 
@@ -413,5 +414,44 @@ public sealed class GisDriftTests
 
         Assert.Equal(new[] { "u-1" }, changes.Select(change => change.UniqueId));
         Assert.Contains("Skipped b", Assert.Single(skipped));
+    }
+
+    [Fact]
+    public void SplitFeatureWithMultipleGdbValuesKeepsEveryConflictRowForKeepEntries()
+    {
+        JObject firstPiece = Entry("category", "walkway", revit: "retail", conflict: false, uniqueId: "u-2");
+        JObject secondPiece = Entry("category", "office", revit: "retail", conflict: true, uniqueId: "u-2");
+        var model = Model(new Dictionary<(string, string, string), string>
+        {
+            [("u-2", "category", "instance")] = "retail",
+        });
+
+        GisDriftFile file = GisDrift.Parse(Text(new[] { firstPiece, secondPiece }));
+        var (planned, problems) = GisDrift.Plan(file, model, Standard);
+
+        Assert.Empty(problems);
+        GisDriftChange collapsed = Assert.Single(planned);
+        Assert.True(collapsed.Conflict);
+        Assert.Equal("walkway", collapsed.NewValue);
+        Assert.Equal(new[] { "walkway", "office" }, collapsed.Rows.Select(row => row.Gdb));
+
+        var (accepted, skipped) = GisDrift.Accept(planned, new[]
+        {
+            (collapsed.UniqueId, collapsed.Parameter, collapsed.Binding, collapsed.NewValue, collapsed.Label()),
+        });
+
+        Assert.Empty(skipped);
+        (IReadOnlyList<GisKeepEntry> entries, IReadOnlyList<string> notKept) = GisKeep.EntriesFor(
+            accepted.SelectMany(change => change.Rows),
+            "2026-11-21T09:30:00Z");
+
+        Assert.Empty(notKept);
+        Assert.Equal(
+            new[]
+            {
+                new GisKeepEntry("model|u-2|0", "unit", "category", "retail", "walkway", "2026-11-21T09:30:00Z"),
+                new GisKeepEntry("model|u-2|0", "unit", "category", "retail", "office", "2026-11-21T09:30:00Z"),
+            },
+            entries);
     }
 }
