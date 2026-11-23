@@ -216,9 +216,14 @@ public sealed class TilesetWalkerTests
             "{\"children\":[{\"children\":[{\"content\":{\"uri\":\"deep.b3dm\"}}]}]}" +
             "]}}";
 
-        TilesetWalker leafCappedWalker = new TilesetWalker(fake, maxDepth: 64, maxLeaves: 2);
-        IReadOnlyList<TilesetLeaf> capped = await leafCappedWalker.WalkAsync(rootUrl, CancellationToken.None);
-        Assert.Equal(2, capped.Count);
+        TilesetWalker overflowingWalker = new TilesetWalker(fake, maxDepth: 64, maxLeaves: 3);
+        InvalidOperationException overflow = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            overflowingWalker.WalkAsync(rootUrl, CancellationToken.None));
+        Assert.Contains("maximum of 3 content tiles", overflow.Message, StringComparison.Ordinal);
+
+        TilesetWalker exactCapWalker = new TilesetWalker(fake, maxDepth: 64, maxLeaves: 4);
+        IReadOnlyList<TilesetLeaf> atCap = await exactCapWalker.WalkAsync(rootUrl, CancellationToken.None);
+        Assert.Equal(4, atCap.Count);
 
         TilesetWalker depthCappedWalker = new TilesetWalker(fake, maxDepth: 1, maxLeaves: 100);
         IReadOnlyList<TilesetLeaf> shallow = await depthCappedWalker.WalkAsync(rootUrl, CancellationToken.None);

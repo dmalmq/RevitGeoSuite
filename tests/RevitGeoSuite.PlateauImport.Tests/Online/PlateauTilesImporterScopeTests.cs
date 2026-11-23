@@ -273,6 +273,16 @@ public sealed class PlateauTilesImporterScopeTests
     }
 
     [Fact]
+    public void Partial_group_warning_names_the_group_and_both_counts()
+    {
+        string warning = PlateauTilesImporter.BuildPartialGroupWarning("PLATEAU Online 13101", 2, 5);
+
+        Assert.Contains("Dissolved group 'PLATEAU Online 13101'", warning, StringComparison.Ordinal);
+        Assert.Contains("replace 2 matched", warning, StringComparison.Ordinal);
+        Assert.Contains("other 5 building(s) were kept", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PartitionIntoBatches_groups_by_grid_and_chunks_large_grids()
     {
         List<PlateauTilesetFeature> features = new List<PlateauTilesetFeature>();
