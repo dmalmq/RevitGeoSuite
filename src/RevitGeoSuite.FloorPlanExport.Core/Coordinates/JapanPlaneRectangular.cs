@@ -11,9 +11,9 @@ public static class JapanPlaneRectangular
     private const int LegacyJgd2024LastCode = 10285;
     private const int OfficialFirstCode = 6669;
 
-    private static readonly Regex EpsgRegex = new(@"EPSG\D*(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex JgdZoneRegex = new(@"JGD\s*(?:2011|2024)\D*(1[0-9]|0?[1-9])(?!\d)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex ZoneRegex = new(@"(?:Zone|CS)\s*(\d{1,2}|XIX|XVIII|XVII|XVI|XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex EpsgRegex = new(@"EPSG[\s:_\-,""]*(\d+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex JgdZoneRegex = new(@"JGD\s*(?:2011|2024)[\s\-_]*(?:Zone\s*)?(1[0-9]|0?[1-9])\b(?!\.)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ZoneRegex = new(@"(?:Zone|CS)\s*(1[0-9]|0?[1-9]|XIX|XVIII|XVII|XVI|XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)\b(?!\.)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static readonly IReadOnlyList<JapanPlaneRectangularZoneDefinition> AllZones = new[]
     {
