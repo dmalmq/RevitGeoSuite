@@ -175,28 +175,37 @@ public sealed class TilesetWalker
             return WalkResult.Empty;
         }
 
-        // Prevent infinite recursion on cyclic or self-referential tileset graphs.
-        if (!context.VisitedTilesets.Add(tilesetUrl.AbsoluteUri))
+        // Track the active ancestor stack so cyclic/self-referential tileset graphs terminate
+        // cleanly while a shared sub-tileset referenced twice under different transforms is still walked.
+        string tilesetKey = tilesetUrl.AbsoluteUri;
+        if (!context.ActiveTilesets.Add(tilesetKey))
         {
             return WalkResult.Empty;
         }
 
-        string body = await httpClient.GetStringAsync(tilesetUrl, ct).ConfigureAwait(false);
-        TilesetJson? tileset = JsonConvert.DeserializeObject<TilesetJson>(body);
-        if (tileset?.Root is null)
+        try
         {
-            return WalkResult.Empty;
-        }
+            string body = await httpClient.GetStringAsync(tilesetUrl, ct).ConfigureAwait(false);
+            TilesetJson? tileset = JsonConvert.DeserializeObject<TilesetJson>(body);
+            if (tileset?.Root is null)
+            {
+                return WalkResult.Empty;
+            }
 
-        return await WalkTileAsync(
-            tileset.Root,
-            parentTransform,
-            inheritedRegion,
-            inheritedRefine,
-            tilesetUrl,
-            depth,
-            context,
-            ct).ConfigureAwait(false);
+            return await WalkTileAsync(
+                tileset.Root,
+                parentTransform,
+                inheritedRegion,
+                inheritedRefine,
+                tilesetUrl,
+                depth,
+                context,
+                ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            context.ActiveTilesets.Remove(tilesetKey);
+        }
     }
 
     private async Task<WalkResult> WalkTileAsync(
@@ -398,7 +407,7 @@ public sealed class TilesetWalker
 
         public int MaxLeaves { get; }
 
-        public HashSet<string> VisitedTilesets { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> ActiveTilesets { get; } = new HashSet<string>(StringComparer.Ordinal);
 
         public List<TilesetLeaf> Leaves { get; } = new List<TilesetLeaf>();
     }

@@ -216,6 +216,67 @@ public sealed class GltfMeshDecoderTests
         Assert.Equal(5.0, tri.C.Z, 6);
     }
 
+    [Fact]
+    public void Decode_treats_explicit_zero_byte_stride_as_tightly_packed()
+    {
+        float[] positions = { 0, 0, 0, 3, 0, 0, 0, 4, 0 };
+        ushort[] indices = { 0, 1, 2 };
+        byte[] bin = new byte[positions.Length * 4 + indices.Length * 2];
+        Buffer.BlockCopy(positions, 0, bin, 0, positions.Length * 4);
+        Buffer.BlockCopy(indices, 0, bin, positions.Length * 4, indices.Length * 2);
+
+        string json = "{" +
+            "\"asset\":{\"version\":\"2.0\"}," +
+            "\"buffers\":[{\"byteLength\":" + bin.Length + "}]," +
+            "\"bufferViews\":[" +
+                "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":" + (positions.Length * 4) + ",\"byteStride\":0}," +
+                "{\"buffer\":0,\"byteOffset\":" + (positions.Length * 4) + ",\"byteLength\":" + (indices.Length * 2) + "}" +
+            "]," +
+            "\"accessors\":[" +
+                "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+                "{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}" +
+            "]," +
+            "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}]" +
+        "}";
+
+        byte[] b3dm = BuildB3dm("{\"BATCH_LENGTH\":1}", "{\"gml_id\":[\"feature-zero-stride\"]}", BuildGlb(json, bin));
+        GltfMeshDecoder decoder = new GltfMeshDecoder(new MissingDracoMeshDecoder());
+        IReadOnlyList<PlateauTilesetFeatureMesh> features = decoder.Decode(B3dmParser.Parse(b3dm));
+
+        PlateauTilesetTriangle tri = Assert.Single(Assert.Single(features).Triangles);
+        Assert.Equal(3.0, tri.B.X, 6);
+        Assert.Equal(4.0, tri.C.Z, 6);
+    }
+
+    [Fact]
+    public void Decode_rejects_float_component_type_for_indices_accessor()
+    {
+        float[] positions = { 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+        float[] floatIndices = { 0f, 1f, 2f };
+        byte[] bin = new byte[(positions.Length + floatIndices.Length) * 4];
+        Buffer.BlockCopy(positions, 0, bin, 0, positions.Length * 4);
+        Buffer.BlockCopy(floatIndices, 0, bin, positions.Length * 4, floatIndices.Length * 4);
+
+        string json = "{" +
+            "\"asset\":{\"version\":\"2.0\"}," +
+            "\"buffers\":[{\"byteLength\":" + bin.Length + "}]," +
+            "\"bufferViews\":[" +
+                "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":" + (positions.Length * 4) + "}," +
+                "{\"buffer\":0,\"byteOffset\":" + (positions.Length * 4) + ",\"byteLength\":" + (floatIndices.Length * 4) + "}" +
+            "]," +
+            "\"accessors\":[" +
+                "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+                "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"SCALAR\"}" +
+            "]," +
+            "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}]" +
+        "}";
+
+        byte[] b3dm = BuildB3dm("{\"BATCH_LENGTH\":1}", "{\"gml_id\":[\"feature-float-idx\"]}", BuildGlb(json, bin));
+        GltfMeshDecoder decoder = new GltfMeshDecoder(new MissingDracoMeshDecoder());
+
+        Assert.Throws<InvalidOperationException>(() => decoder.Decode(B3dmParser.Parse(b3dm)));
+    }
+
     private sealed class FakeDracoDecoder : IDracoMeshDecoder
     {
         public bool DecodeWasCalled { get; private set; }

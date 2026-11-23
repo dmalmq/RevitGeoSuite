@@ -12,8 +12,8 @@ public sealed class PlateauTilesImporterScopeTests
     [Fact]
     public void MatchesReplacementScope_keeps_first_grid_when_importing_second_grid_in_same_area()
     {
-        PlateauTilesetModel gridAModel = BuildModel("13101", "bldg", "2", "53394536");
-        PlateauTilesetModel gridBModel = BuildModel("13101", "bldg", "2", "53394537");
+        PlateauTilesetModel gridAModel = BuildModel("13101", "bldg", "2", "53394536", "bldg-grid-a");
+        PlateauTilesetModel gridBModel = BuildModel("13101", "bldg", "2", "53394537", "bldg-grid-b");
 
         string storedJson = PlateauTilesImporter.SerializeMetadata(
             gridAModel,
@@ -29,8 +29,8 @@ public sealed class PlateauTilesImporterScopeTests
     [Fact]
     public void MatchesReplacementScope_replaces_exact_matching_area_dataset_lod_grid()
     {
-        PlateauTilesetModel gridAModel = BuildModel("13101", "bldg", "2", "53394536");
-        PlateauTilesetModel reimportGridA = BuildModel("13101", "bldg", "2", "53394536");
+        PlateauTilesetModel gridAModel = BuildModel("13101", "bldg", "2", "53394536", "bldg-grid-a");
+        PlateauTilesetModel reimportGridA = BuildModel("13101", "bldg", "2", "53394536", "bldg-grid-a-new");
 
         string storedJson = PlateauTilesImporter.SerializeMetadata(
             gridAModel,
@@ -44,18 +44,19 @@ public sealed class PlateauTilesImporterScopeTests
     }
 
     [Theory]
-    [InlineData("13102", "bldg", "2", "53394536")] // different area
-    [InlineData("13101", "brid", "2", "53394536")] // different dataset
-    [InlineData("13101", "bldg", "1", "53394536")] // different LOD
-    [InlineData("13101", "bldg", "2", "53394538")] // different grid
+    [InlineData("13102", "bldg", "2", "53394536", "bldg-1")] // different area
+    [InlineData("13101", "brid", "2", "53394536", "bldg-1")] // different dataset
+    [InlineData("13101", "bldg", "1", "53394536", "bldg-1")] // different LOD
+    [InlineData("13101", "bldg", "2", "53394538", "bldg-2")] // different grid & building
     public void MatchesReplacementScope_does_not_match_when_any_scope_dimension_differs(
         string incomingArea,
         string incomingDataset,
         string incomingLod,
-        string incomingGrid)
+        string incomingGrid,
+        string incomingFeatureId)
     {
-        PlateauTilesetModel existingModel = BuildModel("13101", "bldg", "2", "53394536");
-        PlateauTilesetModel incomingModel = BuildModel(incomingArea, incomingDataset, incomingLod, incomingGrid);
+        PlateauTilesetModel existingModel = BuildModel("13101", "bldg", "2", "53394536", "bldg-1");
+        PlateauTilesetModel incomingModel = BuildModel(incomingArea, incomingDataset, incomingLod, incomingGrid, incomingFeatureId);
 
         string storedJson = PlateauTilesImporter.SerializeMetadata(
             existingModel,
@@ -69,10 +70,88 @@ public sealed class PlateauTilesImporterScopeTests
     }
 
     [Fact]
+    public void MatchesReplacementScope_replaces_legacy_shapes_without_grid_id_in_matching_scope()
+    {
+        // Legacy DirectShape JSON written by main (no "dataset" and no "grid_id").
+        const string legacyJson =
+            "{\"gml_id\":\"bldg-old\",\"feature_type\":\"bldg:Building\",\"source_url\":\"https://example.test/tileset.json\",\"area_code\":\"13101\",\"lod\":\"2\",\"mode\":\"Lod2Untextured\"}";
+
+        Assert.True(PlateauTilesImporter.TryReadMetadata(legacyJson, out PlateauTilesImporter.PlateauOnlineImportMetadata? legacy));
+
+        PlateauTilesetModel sameScopeGridImport = BuildModel("13101", "bldg", "2", "53394536", "bldg-new");
+        Assert.True(PlateauTilesImporter.MatchesReplacementScope(
+            legacy!,
+            sameScopeGridImport,
+            PlateauTilesImporter.CollectIncomingGridIds(sameScopeGridImport)));
+
+        // Legacy shapes from a different area, LOD, or source URL are still preserved.
+        PlateauTilesetModel differentArea = BuildModel("13102", "bldg", "2", "53394536", "bldg-new");
+        Assert.False(PlateauTilesImporter.MatchesReplacementScope(
+            legacy!,
+            differentArea,
+            PlateauTilesImporter.CollectIncomingGridIds(differentArea)));
+
+        PlateauTilesetModel differentSource = new PlateauTilesetModel(
+            "https://example.test/other-dataset/tileset.json",
+            "brid",
+            "2",
+            false,
+            "13101",
+            new[] { BuildFeature("brid-1", "53394536") });
+        Assert.False(PlateauTilesImporter.MatchesReplacementScope(
+            legacy!,
+            differentSource,
+            PlateauTilesImporter.CollectIncomingGridIds(differentSource)));
+    }
+
+    [Fact]
+    public void MatchesReplacementScope_deduplicates_straddling_building_across_grids_without_deleting_unrelated_grid_a_buildings()
+    {
+        PlateauTilesetModel gridAModel = new PlateauTilesetModel(
+            "https://example.test/tileset.json",
+            "bldg",
+            "2",
+            false,
+            "13101",
+            new[]
+            {
+                BuildFeature("bldg-a-only", "53394536"),
+                BuildFeature("bldg-straddle", "53394536")
+            });
+
+        PlateauTilesetModel gridBModel = new PlateauTilesetModel(
+            "https://example.test/tileset.json",
+            "bldg",
+            "2",
+            false,
+            "13101",
+            new[]
+            {
+                BuildFeature("bldg-b-only", "53394537"),
+                BuildFeature("bldg-straddle", "53394537")
+            });
+
+        string storedAOnlyJson = PlateauTilesImporter.SerializeMetadata(gridAModel, gridAModel.Features[0], PlateauOnlineGeometryMode.Lod2Untextured);
+        string storedStraddleJson = PlateauTilesImporter.SerializeMetadata(gridAModel, gridAModel.Features[1], PlateauOnlineGeometryMode.Lod2Untextured);
+
+        Assert.True(PlateauTilesImporter.TryReadMetadata(storedAOnlyJson, out PlateauTilesImporter.PlateauOnlineImportMetadata? existingAOnly));
+        Assert.True(PlateauTilesImporter.TryReadMetadata(storedStraddleJson, out PlateauTilesImporter.PlateauOnlineImportMetadata? existingStraddle));
+
+        HashSet<string> gridBGrids = PlateauTilesImporter.CollectIncomingGridIds(gridBModel);
+        HashSet<string> gridBFeatures = PlateauTilesImporter.CollectIncomingFeatureIds(gridBModel);
+
+        // Straddling building stored under grid A must be replaced when grid B re-imports it.
+        Assert.True(PlateauTilesImporter.MatchesReplacementScope(existingStraddle!, gridBModel, gridBGrids, gridBFeatures));
+
+        // Unrelated buildings in grid A must remain untouched.
+        Assert.False(PlateauTilesImporter.MatchesReplacementScope(existingAOnly!, gridBModel, gridBGrids, gridBFeatures));
+    }
+
+    [Fact]
     public void MatchesReplacementScope_handles_null_area_code_for_osm_buildings()
     {
-        PlateauTilesetModel osmTile1 = BuildModel(areaCode: null, dataset: "OSM Buildings", lod: null, gridId: "tile-abc");
-        PlateauTilesetModel osmTile2 = BuildModel(areaCode: null, dataset: "OSM Buildings", lod: null, gridId: "tile-def");
+        PlateauTilesetModel osmTile1 = BuildModel(areaCode: null, dataset: "OSM Buildings", lod: null, gridId: "tile-abc", featureId: "osm-1");
+        PlateauTilesetModel osmTile2 = BuildModel(areaCode: null, dataset: "OSM Buildings", lod: null, gridId: "tile-def", featureId: "osm-2");
 
         string storedJson = PlateauTilesImporter.SerializeMetadata(
             osmTile1,
@@ -136,7 +215,12 @@ public sealed class PlateauTilesImporterScopeTests
         Assert.Equal(8, batches.Sum(b => b.Features.Count));
     }
 
-    private static PlateauTilesetModel BuildModel(string? areaCode, string dataset, string? lod, string? gridId)
+    private static PlateauTilesetModel BuildModel(
+        string? areaCode,
+        string dataset,
+        string? lod,
+        string? gridId,
+        string featureId = "bldg-1")
     {
         return new PlateauTilesetModel(
             "https://example.test/tileset.json",
@@ -144,7 +228,7 @@ public sealed class PlateauTilesImporterScopeTests
             lod,
             false,
             areaCode,
-            new[] { BuildFeature("bldg-1", gridId) });
+            new[] { BuildFeature(featureId, gridId) });
     }
 
     private static PlateauTilesetFeature BuildFeature(string id, string? gridId)

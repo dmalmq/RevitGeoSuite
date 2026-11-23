@@ -239,16 +239,47 @@ public sealed class PlateauTilesImporter
         return gridIds;
     }
 
-    /// <summary>
-    /// Determines whether an existing online-imported DirectShape falls within the replacement scope
-    /// of <paramref name="incoming"/>: strictly matching <c>(area, dataset, LOD, grid)</c>.
-    /// Null/empty <c>AreaCode</c> (e.g. OSM Buildings) matches null/empty <c>AreaCode</c> instead of
-    /// failing string-concatenation comparisons.
-    /// </summary>
+    internal static HashSet<string> CollectIncomingFeatureIds(PlateauTilesetModel buildings)
+    {
+        HashSet<string> featureIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (PlateauTilesetFeature feature in buildings.Features)
+        {
+            string normalized = NormalizeScopeToken(feature.Id);
+            if (normalized.Length > 0)
+            {
+                featureIds.Add(normalized);
+            }
+        }
+
+        return featureIds;
+    }
+
     internal static bool MatchesReplacementScope(
         PlateauOnlineImportMetadata existing,
         PlateauTilesetModel incoming,
         ISet<string> incomingGridIds)
+    {
+        return MatchesReplacementScope(
+            existing,
+            incoming,
+            incomingGridIds,
+            CollectIncomingFeatureIds(incoming));
+    }
+
+    /// <summary>
+    /// Determines whether an existing online-imported DirectShape falls within the replacement scope
+    /// of <paramref name="incoming"/>: strictly matching <c>(area, dataset, LOD)</c>, and then matching
+    /// either (a) a legacy shape without <c>grid_id</c> (so pre-fix imports from <c>main</c> are cleanly
+    /// replaced instead of duplicated), (b) an incoming <c>gml_id</c> (so buildings straddling a grid
+    /// boundary are deduplicated without touching unrelated shapes in the neighboring grid), or
+    /// (c) an incoming <c>grid_id</c>. Null/empty <c>AreaCode</c> (e.g. OSM Buildings) matches
+    /// null/empty <c>AreaCode</c> instead of failing string-concatenation comparisons.
+    /// </summary>
+    internal static bool MatchesReplacementScope(
+        PlateauOnlineImportMetadata existing,
+        PlateauTilesetModel incoming,
+        ISet<string> incomingGridIds,
+        ISet<string>? incomingFeatureIds)
     {
         if (existing is null) throw new ArgumentNullException(nameof(existing));
         if (incoming is null) throw new ArgumentNullException(nameof(incoming));
@@ -292,16 +323,30 @@ public sealed class PlateauTilesImporter
             return false;
         }
 
-        // 4) Grid / tile scope: importing grid B must NEVER delete grid A.
+        // 4) Grid / legacy / cross-grid gml_id scope.
         string existingGrid = NormalizeScopeToken(existing.GridId);
-        if (incomingGridIds.Count > 0)
+
+        // Legacy shapes written before grid_id existed (same area, dataset/source, and LOD) must be
+        // replaced on re-import so old floating imports from main are never left behind as duplicates.
+        if (existingGrid.Length == 0)
         {
-            return existingGrid.Length > 0 && incomingGridIds.Contains(existingGrid);
+            return true;
         }
 
-        // Incoming model has no grid IDs at all (e.g. synthetic or ungridded OSM model): only replace
-        // prior ungridded elements of the exact same (area, dataset, LOD) scope.
-        return existingGrid.Length == 0;
+        // Deduplicate buildings straddling a grid boundary: if the incoming import carries the same
+        // gml_id within the same (area, dataset, LOD), replace the prior copy regardless of which
+        // neighboring grid stored it, without deleting unrelated buildings in that neighboring grid.
+        if (incomingFeatureIds is not null && incomingFeatureIds.Count > 0)
+        {
+            string existingGmlId = NormalizeScopeToken(existing.GmlId);
+            if (existingGmlId.Length > 0 && incomingFeatureIds.Contains(existingGmlId))
+            {
+                return true;
+            }
+        }
+
+        // Importing grid B must NEVER delete unrelated buildings in grid A.
+        return incomingGridIds.Count > 0 && incomingGridIds.Contains(existingGrid);
     }
 
     internal static IReadOnlyList<OnlineImportBatch> PartitionIntoBatches(
@@ -387,6 +432,7 @@ public sealed class PlateauTilesImporter
     private static void DeleteMatchingExistingImports(Document document, PlateauTilesetModel buildings)
     {
         HashSet<string> incomingGridIds = CollectIncomingGridIds(buildings);
+        HashSet<string> incomingFeatureIds = CollectIncomingFeatureIds(buildings);
         Dictionary<long, HashSet<long>> matchedMembersByGroupId = new Dictionary<long, HashSet<long>>();
         HashSet<long> ungroupedIds = new HashSet<long>();
 
@@ -402,7 +448,7 @@ public sealed class PlateauTilesImporter
                 continue;
             }
 
-            if (!MatchesReplacementScope(metadata, buildings, incomingGridIds))
+            if (!MatchesReplacementScope(metadata, buildings, incomingGridIds, incomingFeatureIds))
             {
                 continue;
             }

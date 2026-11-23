@@ -118,7 +118,7 @@ public sealed class GltfMeshDecoder
         uint[]? batchIds = null;
         if (primitive.Attributes.TryGetValue("_BATCHID", out int batchAccessor))
         {
-            batchIds = ReadScalarUInt32Accessor(doc, bin, batchAccessor);
+            batchIds = ReadScalarUInt32Accessor(doc, bin, batchAccessor, allowFloat: true);
         }
         uint[] indices = primitive.Indices.HasValue
             ? ReadIndicesAccessor(doc, bin, primitive.Indices.Value)
@@ -194,7 +194,7 @@ public sealed class GltfMeshDecoder
         ArraySegment<byte> view = SliceBufferView(doc, bin, bufferViewIndex);
         GltfBufferView bufferView = doc.BufferViews![bufferViewIndex];
         const int elementSize = 3 * sizeof(float);
-        int stride = bufferView.ByteStride ?? elementSize;
+        int stride = (bufferView.ByteStride ?? 0) == 0 ? elementSize : bufferView.ByteStride!.Value;
         int accessorOffset = accessor.ByteOffset ?? 0;
         ValidateAccessorRange(accessorOffset, accessor.Count, elementSize, stride, view.Count);
 
@@ -218,10 +218,15 @@ public sealed class GltfMeshDecoder
         return result;
     }
 
-    private static uint[] ReadScalarUInt32Accessor(GltfDocument doc, byte[] bin, int accessorIndex)
+    private static uint[] ReadScalarUInt32Accessor(GltfDocument doc, byte[] bin, int accessorIndex, bool allowFloat)
     {
         GltfAccessor accessor = GetAccessor(doc, accessorIndex);
         if (accessor.Type != "SCALAR") throw new InvalidOperationException("Expected SCALAR accessor.");
+
+        if (!allowFloat && accessor.ComponentType == 5126)
+        {
+            throw new InvalidOperationException("Index accessor cannot use FLOAT component type (5126); expected UNSIGNED_BYTE, UNSIGNED_SHORT, or UNSIGNED_INT.");
+        }
 
         int bufferViewIndex = accessor.BufferView ?? throw new InvalidOperationException("Accessor missing bufferView.");
         ArraySegment<byte> view = SliceBufferView(doc, bin, bufferViewIndex);
@@ -234,7 +239,7 @@ public sealed class GltfMeshDecoder
             5126 => 4,
             _ => throw new InvalidOperationException($"Unsupported scalar component type {accessor.ComponentType}.")
         };
-        int stride = bufferView.ByteStride ?? elementSize;
+        int stride = (bufferView.ByteStride ?? 0) == 0 ? elementSize : bufferView.ByteStride!.Value;
         int accessorOffset = accessor.ByteOffset ?? 0;
         ValidateAccessorRange(accessorOffset, accessor.Count, elementSize, stride, view.Count);
 
@@ -259,7 +264,8 @@ public sealed class GltfMeshDecoder
         return result;
     }
 
-    private static uint[] ReadIndicesAccessor(GltfDocument doc, byte[] bin, int accessorIndex) => ReadScalarUInt32Accessor(doc, bin, accessorIndex);
+    private static uint[] ReadIndicesAccessor(GltfDocument doc, byte[] bin, int accessorIndex) =>
+        ReadScalarUInt32Accessor(doc, bin, accessorIndex, allowFloat: false);
 
     private static uint[] BuildSequentialIndices(int vertexCount)
     {

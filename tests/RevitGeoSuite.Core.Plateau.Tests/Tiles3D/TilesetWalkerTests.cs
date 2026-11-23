@@ -145,6 +145,28 @@ public sealed class TilesetWalkerTests
     }
 
     [Fact]
+    public async Task WalkAsync_allows_shared_sub_tileset_referenced_under_distinct_transforms()
+    {
+        FakeHttpClient fake = new FakeHttpClient();
+        Uri rootUrl = new Uri("https://example.com/dag/tileset.json");
+        Uri sharedUrl = new Uri("https://example.com/dag/shared.json");
+        fake.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"REPLACE\",\"children\":[" +
+            "{\"transform\":[1,0,0,0,0,1,0,0,0,0,1,0,10,0,0,1],\"content\":{\"uri\":\"shared.json\"}}," +
+            "{\"transform\":[1,0,0,0,0,1,0,0,0,0,1,0,20,0,0,1],\"content\":{\"uri\":\"shared.json\"}}" +
+            "]}}";
+        fake.StringResponses[sharedUrl] =
+            "{\"root\":{\"content\":{\"uri\":\"unit.b3dm\"}}}";
+
+        TilesetWalker walker = new TilesetWalker(fake);
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(rootUrl, CancellationToken.None);
+
+        Assert.Equal(2, leaves.Count);
+        double[] xs = leaves.Select(l => l.Transform.TransformPoint(Vector3d.Zero).X).OrderBy(x => x).ToArray();
+        Assert.Equal(new[] { 10.0, 20.0 }, xs);
+    }
+
+    [Fact]
     public async Task WalkAsync_enforces_max_depth_and_max_leaves_caps()
     {
         FakeHttpClient fake = new FakeHttpClient();

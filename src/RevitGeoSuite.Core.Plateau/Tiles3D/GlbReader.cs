@@ -51,7 +51,7 @@ public static class GlbReader
             int chunkStart = offset + 8;
             int remaining = totalLength - chunkStart;
 
-            if (chunkLengthU32 == 0u || chunkLengthU32 > (uint)remaining)
+            if (chunkLengthU32 > (uint)remaining)
             {
                 throw new InvalidOperationException("glTF chunk length is invalid or exceeds declared length.");
             }
@@ -61,11 +61,22 @@ public static class GlbReader
             switch (chunkType)
             {
                 case "JSON":
+                    if (chunkLength == 0)
+                    {
+                        throw new InvalidOperationException("glTF JSON chunk cannot be empty.");
+                    }
                     json = Encoding.UTF8.GetString(glb, chunkStart, chunkLength).TrimEnd();
                     break;
                 case "BIN\0":
-                    binary = new byte[chunkLength];
-                    Buffer.BlockCopy(glb, chunkStart, binary, 0, chunkLength);
+                    if (chunkLength == 0)
+                    {
+                        binary = Array.Empty<byte>();
+                    }
+                    else
+                    {
+                        binary = new byte[chunkLength];
+                        Buffer.BlockCopy(glb, chunkStart, binary, 0, chunkLength);
+                    }
                     break;
                 // Unknown chunks are skipped per the glTF spec.
             }

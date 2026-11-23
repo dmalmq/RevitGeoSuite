@@ -43,9 +43,8 @@ public sealed class GlbReaderTests
     [Theory]
     [InlineData(-8)]
     [InlineData(-1)]
-    [InlineData(0)]
     [InlineData(int.MaxValue)]
-    public void Read_rejects_negative_zero_or_overflow_unknown_chunk_length_without_hanging(int badChunkLength)
+    public void Read_rejects_negative_or_overflow_unknown_chunk_length_without_hanging(int badChunkLength)
     {
         byte[] glb = new byte[12 + 8 + 4];
         Encoding.ASCII.GetBytes("glTF", 0, 4, glb, 0);
@@ -55,6 +54,31 @@ public sealed class GlbReaderTests
         Encoding.ASCII.GetBytes("UNKN", 0, 4, glb, 16);
 
         Assert.Throws<InvalidOperationException>(() => GlbReader.Read(glb));
+    }
+
+    [Fact]
+    public void Read_rejects_zero_length_json_chunk()
+    {
+        byte[] glb = new byte[12 + 8];
+        Encoding.ASCII.GetBytes("glTF", 0, 4, glb, 0);
+        BitConverter.GetBytes(2).CopyTo(glb, 4);
+        BitConverter.GetBytes(glb.Length).CopyTo(glb, 8);
+        BitConverter.GetBytes(0).CopyTo(glb, 12);
+        Encoding.ASCII.GetBytes("JSON", 0, 4, glb, 16);
+
+        Assert.Throws<InvalidOperationException>(() => GlbReader.Read(glb));
+    }
+
+    [Fact]
+    public void Read_allows_zero_length_binary_chunk()
+    {
+        string json = "{\"asset\":{\"version\":\"2.0\"}}";
+        byte[] glb = BuildGlb(json, Array.Empty<byte>());
+
+        GlbContents contents = GlbReader.Read(glb);
+
+        Assert.Equal(json, contents.Json);
+        Assert.Empty(contents.Binary);
     }
 
     [Theory]
