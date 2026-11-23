@@ -512,7 +512,14 @@ public sealed class GeoreferenceRevertHandler : IRpcHandler
 
     public Task<object?> HandleAsync(object? payload)
     {
-        return RevitContext.Instance.InvokeWithDocumentAsync<object?>(document =>
+        string? expectedDocumentId = (payload as JObject)?.Value<string>("documentId")?.Trim();
+        if (string.IsNullOrWhiteSpace(expectedDocumentId))
+        {
+            throw new InvalidOperationException(
+                "Document identity is required before reverting georeference changes. Reload the Georeference page to review the active model first.");
+        }
+
+        return RevitContext.Instance.InvokeWithExpectedDocumentAsync<object?>(expectedDocumentId, "reverting georeference", document =>
         {
             var handle = new RevitDocumentHandle(document);
             var undoStorage = new GeoreferenceUndoStorage();

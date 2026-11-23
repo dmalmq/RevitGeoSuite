@@ -24,32 +24,58 @@ export class BridgeError extends Error {
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
-export const WRITE_REQUEST_TIMEOUT_MS = 60_000
 export const LONG_REQUEST_TIMEOUT_MS = 300_000
 
+// Never impose a client-side timeout on RPCs that open native OS file/folder pickers or commit
+// Revit transactions / synchronous exports: a client timer cannot cancel a queued ExternalEvent
+// or modal dialog, so timing out prematurely would leave the user in a picker or allow a retry
+// while the first write still lands later.
 const NO_TIMEOUT_METHODS = new Set<string>([
+  // Modal OS file/folder pickers
   'dialog.openFolder',
-  'dialog.openFile'
+  'dialog.openFile',
+  'gisParameters.write',
+  'gisParameters.read',
+  'gisDrift.inspect',
+  // Host-committed Revit writes, transactions, and synchronous exports
+  'georeference.apply',
+  'georeference.revert',
+  'floorplan.run',
+  'floorplan.preparePreview',
+  'floorplan.saveProfile',
+  'floorplan.deleteProfile',
+  'floorplan.preview.saveAssignments',
+  'floorplan.preview.discardAssignments',
+  'unitFloors.create',
+  'gisStandard.setup',
+  'gisStandard.fixFloorTypes',
+  'gisStandard.resetFloorType',
+  'gisParameters.apply',
+  'gisDrift.apply',
+  'gisDrift.applyShapes',
+  'gisDrift.showShape',
+  'gisDrift.clearShape',
+  'gisNetwork.show',
+  'cesium.settings.save',
+  'localization.setLanguage'
 ])
 
 function resolveTimeoutMs(method: string): number | null {
   if (NO_TIMEOUT_METHODS.has(method)) {
     return null
   }
-  if (method.startsWith('floorplan.') || method.endsWith('.prepare')) {
+  // Read-only model-wide scans and dry-run preparations can take longer on large models.
+  if (
+    method.endsWith('.prepare') ||
+    method.startsWith('floorplan.') ||
+    method.startsWith('unitFloors.') ||
+    method === 'gisStandard.inspect' ||
+    method === 'gisDrift.waiting' ||
+    method === 'gisNetwork.inspect'
+  ) {
     return LONG_REQUEST_TIMEOUT_MS
   }
-  if (
-    method === 'georeference.apply' ||
-    method === 'georeference.revert' ||
-    method.startsWith('unitFloors.') ||
-    method.startsWith('gisStandard.') ||
-    method.startsWith('gisDrift.') ||
-    method.startsWith('gisParameters.') ||
-    method.startsWith('gisNetwork.')
-  ) {
-    return WRITE_REQUEST_TIMEOUT_MS
-  }
+  // Fast queries and job-start RPCs (which return `{ jobId }` immediately) fail fast if hung.
   return DEFAULT_REQUEST_TIMEOUT_MS
 }
 

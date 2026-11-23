@@ -251,6 +251,8 @@ public sealed class AvailableCrsResponse
 [TsExport]
 public sealed class GeoreferenceRevertRequest
 {
+    /// <summary>Identity of the Revit document reviewed before reverting; rejects writes if the active model changed.</summary>
+    public string? DocumentId { get; set; }
 }
 
 /// <summary>Result of the <c>georeference.revert</c> request.</summary>

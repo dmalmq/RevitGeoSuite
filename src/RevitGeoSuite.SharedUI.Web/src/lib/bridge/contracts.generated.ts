@@ -422,6 +422,7 @@ export interface GeoreferenceResolveManualBasePointRequest {
 }
 
 export interface GeoreferenceRevertRequest {
+  documentId?: string
 }
 
 export interface GeoreferenceRevertResponse {

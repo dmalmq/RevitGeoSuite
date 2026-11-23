@@ -201,24 +201,59 @@ describe('rpc bridge', () => {
     }
   })
 
-  it('does not apply the default timeout to interactive OS file/folder pickers', async () => {
+  it('does not apply a client timeout to modal OS file/folder pickers or host-committed writes', async () => {
+    vi.useFakeTimers()
+    try {
+      const { request, LONG_REQUEST_TIMEOUT_MS } = await import('../rpc')
+
+      const exemptMethods = [
+        'dialog.openFolder',
+        'dialog.openFile',
+        'gisParameters.write',
+        'gisParameters.read',
+        'gisDrift.inspect',
+        'georeference.apply',
+        'georeference.revert',
+        'floorplan.run'
+      ]
+
+      const pending = exemptMethods.map((method) => ({
+        method,
+        promise: request(method, {})
+      }))
+      const sent = postedMessages.slice() as RpcEnvelope[]
+
+      await vi.advanceTimersByTimeAsync(LONG_REQUEST_TIMEOUT_MS * 2)
+
+      sent.forEach((envelope, idx) => {
+        simulateResponse({
+          kind: 'res',
+          id: envelope.id,
+          method: envelope.method,
+          payload: { ok: idx }
+        })
+      })
+
+      const results = await Promise.all(pending.map((item) => item.promise))
+      expect(results).toEqual(exemptMethods.map((_, idx) => ({ ok: idx })))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still times out hung job-start RPCs at the default timeout', async () => {
     vi.useFakeTimers()
     try {
       const { request, DEFAULT_REQUEST_TIMEOUT_MS } = await import('../rpc')
 
-      const promise = request('dialog.openFolder', { title: 'Pick folder' })
-      const sent = postedMessages[0] as RpcEnvelope
-
-      await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS * 3)
-
-      simulateResponse({
-        kind: 'res',
-        id: sent.id,
-        method: 'dialog.openFolder',
-        payload: { path: 'C:\\Data' }
+      const promise = request('plateau.onlineImport', {})
+      const assertion = expect(promise).rejects.toMatchObject({
+        name: 'BridgeError',
+        code: 'RPC_TIMEOUT'
       })
 
-      await expect(promise).resolves.toEqual({ path: 'C:\\Data' })
+      await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS + 10)
+      await assertion
     } finally {
       vi.useRealTimers()
     }

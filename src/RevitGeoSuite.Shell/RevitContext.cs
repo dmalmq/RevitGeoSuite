@@ -107,7 +107,7 @@ public sealed class RevitContext
         if (work == null) throw new ArgumentNullException(nameof(work));
         return InvokeWithDocumentAsync(doc =>
         {
-            if (expectedDocument != null && (!expectedDocument.IsValidObject || !ReferenceEquals(doc, expectedDocument)))
+            if (expectedDocument != null && !DocumentIdentity.IsSameDocument(doc, expectedDocument))
             {
                 string activeTitle = string.IsNullOrWhiteSpace(doc.Title) ? "another model" : doc.Title;
                 throw new InvalidOperationException(

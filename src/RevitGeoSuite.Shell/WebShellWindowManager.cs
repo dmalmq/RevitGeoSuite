@@ -14,6 +14,7 @@ public sealed class WebShellWindowManager
     private WebShellWindow? currentWindow;
     private WebShellOptions? currentOptions;
     private string? lastNotifiedDocumentId;
+    private string? lastNotifiedDocumentTitle;
 
     private WebShellWindowManager() { }
 
@@ -28,6 +29,7 @@ public sealed class WebShellWindowManager
 
         currentOptions = options;
         lastNotifiedDocumentId = null;
+        lastNotifiedDocumentTitle = null;
         currentWindow = new WebShellWindow(options);
         currentWindow.Closed += OnWindowClosed;
         return currentWindow;
@@ -48,15 +50,17 @@ public sealed class WebShellWindowManager
         string documentId = document != null && document.IsValidObject
             ? DocumentIdentity.Create(document)
             : string.Empty;
-        if (string.Equals(lastNotifiedDocumentId, documentId, StringComparison.Ordinal))
+        string documentTitle = document != null && document.IsValidObject
+            ? document.Title ?? string.Empty
+            : string.Empty;
+        if (string.Equals(lastNotifiedDocumentId, documentId, StringComparison.Ordinal) &&
+            string.Equals(lastNotifiedDocumentTitle, documentTitle, StringComparison.Ordinal))
         {
             return;
         }
 
         lastNotifiedDocumentId = documentId;
-        string documentTitle = document != null && document.IsValidObject
-            ? document.Title ?? string.Empty
-            : string.Empty;
+        lastNotifiedDocumentTitle = documentTitle;
 
         window.Bridge.SendEvent("document.changed", new DocumentChangedEvent
         {
@@ -73,5 +77,6 @@ public sealed class WebShellWindowManager
         }
         currentWindow = null;
         lastNotifiedDocumentId = null;
+        lastNotifiedDocumentTitle = null;
     }
 }

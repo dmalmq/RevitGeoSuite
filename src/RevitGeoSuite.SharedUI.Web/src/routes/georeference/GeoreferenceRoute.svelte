@@ -89,6 +89,7 @@
   const hasStoredCrs = $derived($readiness.loaded && !$readiness.findings.some((f) => f.code === 'missing-crs'))
 
   let currentState = $state<GeoreferenceCurrentStateResponse | null>(null)
+  let reviewedDocumentId = $state<string | null>(null)
   let currentStateError = $state<string | null>(null)
   let currentStateLoading = $state(false)
 
@@ -116,17 +117,29 @@
   onMount(() => {
     const offDocumentChanged = on('document.changed', (evt) => {
       const nextId = evt?.documentId ?? ''
-      if (currentState?.documentId && nextId && nextId !== currentState.documentId) {
-        if (currentStep === 'review' && !applying && !reverting) {
+      const currentId = reviewedDocumentId ?? currentState?.documentId ?? ''
+      if (currentId && nextId !== currentId) {
+        // Active Revit model changed (or closed): always reset wizard state so no CRS, grid
+        // selection, or Project Base Point chosen for the previous model can be applied to the new one.
+        reset()
+        reviewedDocumentId = nextId || null
+        currentState = null
+        hasUndoSnapshot = false
+        undoSummary = ''
+        if (nextId) {
           void Promise.all([refreshReadiness(), loadCurrentState(), loadUndoState()])
-        } else {
-          const title = evt?.documentTitle || 'another model'
-          error = $t(
-            'Georef.Wizard.Error.DocumentChanged',
-            `Active Revit model changed to '${title}'. Return to the original model or click Reset to review the current model before applying.`
-          )
         }
-      } else if (!currentState && !currentStateLoading) {
+        const title = evt?.documentTitle
+        error = title
+          ? $t(
+              'Georef.Wizard.Error.DocumentChanged',
+              `Active Revit model changed to '${title}'. Review the new model's setup before applying.`
+            )
+          : $t(
+              'Georef.Wizard.Error.DocumentClosed',
+              'The active Revit model was closed. Open a project to continue.'
+            )
+      } else if (!currentId && nextId && !currentStateLoading) {
         void Promise.all([refreshReadiness(), loadCurrentState(), loadUndoState()])
       }
     })
@@ -163,7 +176,9 @@
     reverting = true
     error = null
     try {
-      const result = await request<{ success: boolean; summary: string }>('georeference.revert', {})
+      const result = await request<{ success: boolean; summary: string }>('georeference.revert', {
+        documentId: currentState?.documentId
+      })
       if (result.success) {
         hasUndoSnapshot = false
         undoSummary = ''
@@ -181,7 +196,12 @@
     currentStateLoading = true
     currentStateError = null
     try {
-      currentState = await request<GeoreferenceCurrentStateResponse>('georeference.getCurrentState', {})
+      const nextState = await request<GeoreferenceCurrentStateResponse>('georeference.getCurrentState', {})
+      if (reviewedDocumentId && nextState.documentId && nextState.documentId !== reviewedDocumentId) {
+        reset()
+      }
+      currentState = nextState
+      reviewedDocumentId = nextState.documentId ?? null
     } catch (err: any) {
       currentStateError = err.message || $t('Georef.Wizard.Error.ReadState', 'Failed to read the current Revit project state')
       currentState = null
@@ -524,6 +544,8 @@
   }
 
   function reset() {
+    inputMode = 'map'
+    selectedCrs = 'EPSG:6677'
     surveyOrigin = null
     gridGeoJson = null
     candidates = []
