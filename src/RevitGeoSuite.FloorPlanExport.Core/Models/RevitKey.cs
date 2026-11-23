@@ -69,24 +69,53 @@ public static class RevitKey
     }
 
     /// <summary>
+    /// Reads a key strictly as <c>model|UniqueId|part</c>: exactly three parts, a model and a
+    /// UniqueId that are not blank, and a part that is a whole number written in digits only.
+    /// Anything else is not a key, so nothing can be read from it.
+    /// </summary>
+    public static bool TryParse(string? key, out string modelPart, out string uniqueId, out int partIndex)
+    {
+        modelPart = string.Empty;
+        uniqueId = string.Empty;
+        partIndex = 0;
+        if (string.IsNullOrEmpty(key))
+        {
+            return false;
+        }
+
+        string[] parts = key!.Split(Separator);
+        if (parts.Length != 3 ||
+            string.IsNullOrWhiteSpace(parts[0]) ||
+            string.IsNullOrWhiteSpace(parts[1]) ||
+            !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out int part))
+        {
+            return false;
+        }
+
+        modelPart = parts[0];
+        uniqueId = parts[1];
+        partIndex = part;
+        return true;
+    }
+
+    /// <summary>
     /// The model part of a key: everything before its UniqueId, so <c>model</c> or
-    /// <c>model@LinkUniqueId</c>. Empty when <paramref name="key"/> is not <c>model|UniqueId|part</c>.
+    /// <c>model@LinkUniqueId</c>. Empty when <paramref name="key"/> does not read as a key
+    /// (<see cref="TryParse"/>).
     /// </summary>
     public static string ModelPartOf(string? key)
     {
-        if (string.IsNullOrEmpty(key))
-        {
-            return string.Empty;
-        }
+        return TryParse(key, out string modelPart, out _, out _) ? modelPart : string.Empty;
+    }
 
-        int part = key!.LastIndexOf(Separator);
-        if (part <= 0)
-        {
-            return string.Empty;
-        }
-
-        int uniqueId = key.LastIndexOf(Separator, part - 1);
-        return uniqueId <= 0 ? string.Empty : key.Substring(0, uniqueId);
+    /// <summary>
+    /// The name Kanizu files a model's drift and keep files under, from the model part of its
+    /// keys: the model id as it is, or the document key without its <c>doc:</c> prefix.
+    /// </summary>
+    public static string FilingKeyOf(string? modelKey)
+    {
+        string key = (modelKey ?? string.Empty).Trim();
+        return IsDocumentModelKey(key) ? key.Substring(DocumentKeyPrefix.Length).Trim() : key;
     }
 
     /// <summary>

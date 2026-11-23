@@ -186,7 +186,15 @@ public sealed class GisDriftHostScopeTests
     [InlineData("")]
     [InlineData("u-1")]
     [InlineData("|u-1|0")]
-    [InlineData("8d7f3c1e-0000-4000-8000-000000000001|u-1")]
+    [InlineData(Host + "|u-1")]
+    [InlineData(Host + "||0")]
+    [InlineData(Host + "| |0")]
+    [InlineData(Host + "|u-1|x")]
+    [InlineData(Host + "|u-1|")]
+    [InlineData(Host + "|u-1|-1")]
+    [InlineData(Host + "|u-1|+1")]
+    [InlineData(Host + "|u-1|0|0")]
+    [InlineData(Host + "||u-1|0")]
     public void ARowOrShapeWithoutAWholeKeyIsLeftOutEvenWithAUniqueId(string revitKey)
     {
         GisDriftFile file = File(
@@ -201,6 +209,76 @@ public sealed class GisDriftHostScopeTests
         Assert.Empty(changes);
         Assert.Equal(3, scope.Problems.Count);
         Assert.All(scope.Problems, problem => Assert.Contains("no element key", problem));
+    }
+
+    [Fact]
+    public void AUniqueIdOtherThanTheOneTheKeyNamesIsLeftOut()
+    {
+        // The lookup goes by the explicit uniqueId: a key that names u-A must not let u-B be written.
+        GisDriftFile file = File(
+            new[] { Row(HostKey("u-A"), "u-B", "北改札"), Row(HostKey("u-C"), "u-C", "南改札") },
+            new[] { Shape(HostKey("u-A"), "u-B", GisDrift.Reshaped) });
+
+        GisDriftHostScope scope = GisDriftHostScope.Of(file, Host);
+        (IReadOnlyList<GisDriftChange> changes, _) = GisDrift.Plan(scope.File, Model("u-A", "u-B", "u-C"), Standard);
+
+        Assert.Equal("u-C", Assert.Single(changes).UniqueId);
+        Assert.Empty(scope.File.Shapes);
+        Assert.Equal(2, scope.Problems.Count);
+        Assert.All(scope.Problems, problem => Assert.Contains("uniqueId u-B is not the element its key names (u-A)", problem));
+    }
+
+    [Theory]
+    [InlineData("m|u|0", true, "m", "u", 0)]
+    [InlineData("m@link-1|u|12", true, "m@link-1", "u", 12)]
+    [InlineData("m||0", false, "", "", 0)]
+    [InlineData("|u|0", false, "", "", 0)]
+    [InlineData("m|u|x", false, "", "", 0)]
+    [InlineData("m|u|-1", false, "", "", 0)]
+    [InlineData("m|u|1 ", false, "", "", 0)]
+    [InlineData("m|u|0|0", false, "", "", 0)]
+    [InlineData("m|u", false, "", "", 0)]
+    [InlineData(null, false, "", "", 0)]
+    public void AKeyReadsOnlyAsModelUniqueIdAndPart(string? key, bool reads, string model, string uniqueId, int part)
+    {
+        Assert.Equal(reads, RevitKey.TryParse(key, out string parsedModel, out string parsedUniqueId, out int parsedPart));
+        Assert.Equal(model, parsedModel);
+        Assert.Equal(uniqueId, parsedUniqueId);
+        Assert.Equal(part, parsedPart);
+    }
+
+    [Fact]
+    public void AUnitDrawnByHandInAnotherModelsFileIsLeftOut()
+    {
+        // No key says whose it is, so a picked file of another model must not make a floor here.
+        GisDriftShape drawn = Shape(string.Empty, string.Empty, GisDrift.HandDrawn);
+
+        GisDriftHostScope foreign = GisDriftHostScope.Of(File(Array.Empty<GisDriftRow>(), new[] { drawn }, model: Linked), Host);
+        GisDriftHostScope unnamed = GisDriftHostScope.Of(File(Array.Empty<GisDriftRow>(), new[] { drawn }, model: " "), Host);
+        GisDriftHostScope own = GisDriftHostScope.Of(File(Array.Empty<GisDriftRow>(), new[] { drawn }, model: Host.ToUpperInvariant()), Host);
+
+        Assert.Empty(foreign.File.Shapes);
+        Assert.Contains(Linked, Assert.Single(foreign.Problems));
+        Assert.Empty(unnamed.File.Shapes);
+        Assert.Contains("does not say which model", Assert.Single(unnamed.Problems));
+        Assert.Single(own.File.Shapes);
+        Assert.Empty(own.Problems);
+    }
+
+    [Fact]
+    public void AUnitDrawnByHandForAModelWithoutAnIdGoesByItsBareDocumentKey()
+    {
+        const string documentKey = @"C:\MODELS\TOKYO.RVT";
+        string host = RevitKey.CreateModelKey(null, documentKey);
+        GisDriftShape drawn = Shape(string.Empty, string.Empty, GisDrift.HandDrawn);
+
+        GisDriftHostScope own = GisDriftHostScope.Of(File(Array.Empty<GisDriftRow>(), new[] { drawn }, model: documentKey), host);
+        GisDriftHostScope other = GisDriftHostScope.Of(File(Array.Empty<GisDriftRow>(), new[] { drawn }, model: @"C:\MODELS\OTHER.RVT"), host);
+
+        Assert.Equal(documentKey, RevitKey.FilingKeyOf(host));
+        Assert.Equal(Host, RevitKey.FilingKeyOf(Host));
+        Assert.Single(own.File.Shapes);
+        Assert.Empty(other.File.Shapes);
     }
 
     [Fact]

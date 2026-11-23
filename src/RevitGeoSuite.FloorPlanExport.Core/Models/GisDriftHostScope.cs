@@ -36,8 +36,9 @@ public sealed class GisDriftHostScope
     /// <remarks>
     /// Nothing passes unchecked. A row or shape is the open model's only when its key reads
     /// <c>model|UniqueId|part</c> and its model part is exactly the host's; without a host key, or
-    /// with a key that is blank or not a key, it is left out. Only a unit drawn by hand in the GDB
-    /// has no key, since no element made it. A split or merge is one edit: when any of its units is
+    /// with a key that is blank or not a key, or with a uniqueId other than the one its key names,
+    /// it is left out. Only a unit drawn by hand in the GDB has no key, since no element made it,
+    /// and it is taken only from a file written for the open model. A split or merge is one edit: when any of its units is
     /// left out, all of them are, so the host is never redrawn to an outline that takes in a floor
     /// of another model.
     /// </remarks>
@@ -53,7 +54,7 @@ public sealed class GisDriftHostScope
         List<GisDriftRow> rows = new();
         foreach (GisDriftRow row in file.Rows)
         {
-            string? whyNot = WhyNotTheHosts(row.RevitKey, host);
+            string? whyNot = WhyNotTheHosts(row.RevitKey, row.UniqueId, host);
             if (whyNot == null)
             {
                 rows.Add(row);
@@ -66,7 +67,9 @@ public sealed class GisDriftHostScope
 
         // Whether each shape alone is the host's, then whether its whole split or merge is.
         List<string?> whyNotShape = file.Shapes
-            .Select(shape => host.Length > 0 && IsDrawnByHand(shape) ? null : WhyNotTheHosts(shape.RevitKey, host))
+            .Select(shape => IsDrawnByHand(shape)
+                ? WhyNotDrawnForTheHost(file.Model, host)
+                : WhyNotTheHosts(shape.RevitKey, shape.UniqueId, host))
             .ToList();
         HashSet<string> brokenGroups = new(StringComparer.Ordinal);
         for (int index = 0; index < file.Shapes.Count; index++)
@@ -119,29 +122,59 @@ public sealed class GisDriftHostScope
         return group.Length > 0 ? shape.Edit + "\u001f" + group : string.Empty;
     }
 
-    /// <summary>Null when the key names the host model itself; otherwise why it is left out.</summary>
-    private static string? WhyNotTheHosts(string? revitKey, string host)
+    private const string Nothing = "Nothing is written here.";
+
+    /// <summary>
+    /// A unit drawn by hand has no key, so only the file says whose it is: null when the file was
+    /// written for the open model (filed under its model id, or under its bare document key
+    /// without one); otherwise why the unit is left out.
+    /// </summary>
+    private static string? WhyNotDrawnForTheHost(string? fileModel, string host)
     {
-        const string nothing = "Nothing is written here.";
         if (host.Length == 0)
         {
-            return $"the open model has no key to compare it with. {nothing}";
+            return $"the open model has no key to compare it with. {Nothing}";
         }
 
-        string model = RevitKey.ModelPartOf(revitKey).Trim();
+        string model = (fileModel ?? string.Empty).Trim();
         if (model.Length == 0)
         {
-            return $"it carries no element key (revitKey) that says which model it belongs to. {nothing}";
+            return $"it was drawn by hand and the drift file does not say which model it was written for. {Nothing}";
         }
 
-        if (string.Equals(model, host, StringComparison.OrdinalIgnoreCase))
+        return string.Equals(model, RevitKey.FilingKeyOf(host), StringComparison.OrdinalIgnoreCase)
+            ? null
+            : $"it was drawn by hand for the model {model}, not for the open model ({host}). {Nothing}";
+    }
+
+    /// <summary>
+    /// Null when the key names an element of the host model itself; otherwise why it is left out.
+    /// The lookup goes by <paramref name="uniqueId"/>, so it must be the one the key names.
+    /// </summary>
+    private static string? WhyNotTheHosts(string? revitKey, string? uniqueId, string host)
+    {
+        if (host.Length == 0)
         {
-            return null;
+            return $"the open model has no key to compare it with. {Nothing}";
         }
 
-        string link = RevitKey.LinkInstanceOf(model);
-        return link.Length > 0
-            ? $"it belongs to a linked model (link instance {link}), not to the open model; change it in the linked model. {nothing}"
-            : $"it belongs to the model {model}, not to the open model ({host}). {nothing}";
+        if (!RevitKey.TryParse(revitKey, out string model, out string keyUniqueId, out _))
+        {
+            return $"it carries no element key (revitKey) of the form model|UniqueId|part, so nothing says which model it belongs to. {Nothing}";
+        }
+
+        model = model.Trim();
+        if (!string.Equals(model, host, StringComparison.OrdinalIgnoreCase))
+        {
+            string link = RevitKey.LinkInstanceOf(model);
+            return link.Length > 0
+                ? $"it belongs to a linked model (link instance {link}), not to the open model; change it in the linked model. {Nothing}"
+                : $"it belongs to the model {model}, not to the open model ({host}). {Nothing}";
+        }
+
+        string named = (uniqueId ?? string.Empty).Trim();
+        return named.Length == 0 || string.Equals(named, keyUniqueId.Trim(), StringComparison.Ordinal)
+            ? null
+            : $"its uniqueId {named} is not the element its key names ({keyUniqueId.Trim()}). {Nothing}";
     }
 }
