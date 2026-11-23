@@ -3,6 +3,7 @@ using Autodesk.Revit.DB.ExtensibleStorage;
 using Newtonsoft.Json;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.Core.Storage;
+using RevitGeoSuite.Core.Versioning;
 
 namespace RevitGeoSuite.RevitInterop.Storage;
 
@@ -37,7 +38,8 @@ public sealed class GeoreferenceUndoStorage
         string payload = entity.Get<string>(schema.GetField(PayloadJsonFieldName));
         if (string.IsNullOrWhiteSpace(payload)) return null;
 
-        return JsonConvert.DeserializeObject<GeoreferenceUndoSnapshot>(payload);
+        GeoreferenceUndoSnapshot? snapshot = JsonConvert.DeserializeObject<GeoreferenceUndoSnapshot>(payload);
+        return snapshot is null ? null : MigrationRunner.Migrate(snapshot);
     }
 
     public bool HasSnapshot(RevitDocumentHandle handle)

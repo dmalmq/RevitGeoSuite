@@ -4,6 +4,8 @@ using System.Diagnostics;
 using Autodesk.Revit.DB.ExtensibleStorage;
 using Newtonsoft.Json;
 using RevitGeoSuite.Core.Storage;
+using RevitGeoSuite.Core.Versioning;
+using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop;
 
 namespace RevitGeoSuite.RevitInterop.Storage;
@@ -229,6 +231,11 @@ internal static class ModuleStateStorageSerializer
             {
                 reason = "payload deserialized to null";
                 return false;
+            }
+
+            if (state is GeoreferenceModuleState georeferenceState)
+            {
+                MigrationRunner.Migrate(georeferenceState);
             }
 
             reason = null;

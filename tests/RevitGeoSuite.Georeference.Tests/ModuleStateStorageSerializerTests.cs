@@ -1,4 +1,5 @@
 using RevitGeoSuite.Core.Storage;
+using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop.Storage;
 using Xunit;
 
@@ -120,6 +121,23 @@ public sealed class ModuleStateStorageSerializerTests
 
         Assert.True(result, reason);
         Assert.Equal("sample", state!.Name);
+    }
+
+    [Fact]
+    public void TryDeserializeState_migrates_legacy_crs_in_georeference_state()
+    {
+        StorageEnvelope<string> entry = new StorageEnvelope<string>
+        {
+            SchemaVersion = ModuleStateStorage.CurrentSchemaVersion,
+            PayloadType = ModuleStatePayloadTypes.Georeference,
+            Payload = "{\"WorkingProjectBasePoint\":{\"ProjectCrs\":{\"EpsgCode\":10275,\"NameSnapshot\":\"JGD2024 / Japan Plane Rectangular CS IX\"}}}"
+        };
+
+        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, ModuleStateIds.Georeference, out GeoreferenceModuleState? state, out string? reason);
+
+        Assert.True(result, reason);
+        Assert.Equal(6677, state!.WorkingProjectBasePoint!.ProjectCrs!.EpsgCode);
+        Assert.Equal("JGD2011 / Japan Plane Rectangular CS IX", state.WorkingProjectBasePoint.ProjectCrs.NameSnapshot);
     }
 
     private sealed class TestState

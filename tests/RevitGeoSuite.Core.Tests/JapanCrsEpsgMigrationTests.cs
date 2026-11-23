@@ -2,6 +2,7 @@ using System.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.Core.Versioning;
+using RevitGeoSuite.Core.Workflow;
 using Xunit;
 
 namespace RevitGeoSuite.Core.Tests;
@@ -40,6 +41,70 @@ public sealed class JapanCrsEpsgMigrationTests
             Assert.Equal(offset + 1, definition!.JapanZoneNumber);
             Assert.Equal(definition.Name, migrated.ProjectCrs.NameSnapshot);
         }
+    }
+
+    [Fact]
+    public void Every_legacy_code_in_the_working_project_base_point_migrates()
+    {
+        for (int offset = 0; offset < 19; offset++)
+        {
+            GeoreferenceModuleState state = new GeoreferenceModuleState
+            {
+                WorkingProjectBasePoint = new WorkingProjectBasePointReference
+                {
+                    ProjectCrs = new CrsReference { EpsgCode = 10267 + offset, NameSnapshot = "JGD2024" }
+                }
+            };
+
+            GeoreferenceModuleState migrated = MigrationRunner.Migrate(state);
+
+            Assert.Equal(6669 + offset, migrated.WorkingProjectBasePoint!.ProjectCrs!.EpsgCode);
+        }
+    }
+
+    [Fact]
+    public void Module_state_without_a_working_point_is_unchanged()
+    {
+        GeoreferenceModuleState state = new GeoreferenceModuleState();
+
+        Assert.Null(MigrationRunner.Migrate(state).WorkingProjectBasePoint);
+    }
+
+    [Fact]
+    public void Every_legacy_code_in_an_undo_snapshot_migrates()
+    {
+        for (int offset = 0; offset < 19; offset++)
+        {
+            GeoreferenceUndoSnapshot snapshot = new GeoreferenceUndoSnapshot
+            {
+                PreviousGeoInfo = new GeoProjectInfo
+                {
+                    ProjectCrs = new CrsReference { EpsgCode = 10267 + offset, NameSnapshot = "JGD2024" }
+                }
+            };
+
+            GeoreferenceUndoSnapshot migrated = MigrationRunner.Migrate(snapshot);
+
+            Assert.Equal(6669 + offset, migrated.PreviousGeoInfo!.ProjectCrs!.EpsgCode);
+        }
+    }
+
+    [Fact]
+    public void Undo_snapshot_from_a_newer_schema_still_loads()
+    {
+        GeoreferenceUndoSnapshot snapshot = new GeoreferenceUndoSnapshot
+        {
+            PreviousGeoInfo = new GeoProjectInfo
+            {
+                SchemaVersion = SchemaVersion.Current + 1,
+                ProjectCrs = new CrsReference { EpsgCode = 10275, NameSnapshot = "JGD2024" }
+            }
+        };
+
+        GeoreferenceUndoSnapshot migrated = MigrationRunner.Migrate(snapshot);
+
+        Assert.Equal(SchemaVersion.Current + 1, migrated.PreviousGeoInfo!.SchemaVersion);
+        Assert.Equal(6677, migrated.PreviousGeoInfo.ProjectCrs!.EpsgCode);
     }
 
     [Theory]
