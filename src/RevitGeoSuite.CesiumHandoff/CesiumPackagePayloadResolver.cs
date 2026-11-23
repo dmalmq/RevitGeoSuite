@@ -13,6 +13,15 @@ internal static class CesiumPackagePayloadResolver
         ".shp", ".shx", ".dbf", ".prj", ".cpg", ".qix", ".sbn", ".sbx", ".shp.xml",
     };
 
+    /// <summary>Written by the GIS export beside its GeoPackage; Kanizu reads it by this name.</summary>
+    private const string GisFieldListFileName = "gis-fields.json";
+
+    /// <summary>
+    /// Every file of the package but the manifest itself, relative to <paramref name="root"/>:
+    /// the tileset with what it references, the level, element and room indexes, the GIS
+    /// artifacts with their field list, and the handoff package's files. The same list feeds
+    /// <c>contentHash</c> and the viewer push, so both cover the whole package.
+    /// </summary>
     public static List<string> Resolve(string root, CesiumPackageManifest manifest)
     {
         string fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -22,6 +31,8 @@ internal static class CesiumPackagePayloadResolver
         {
             AddPath(fullRoot, paths, manifest.Tiles.Tileset);
             AddPath(fullRoot, paths, manifest.Tiles.Levels);
+            AddPath(fullRoot, paths, manifest.Tiles.Elements);
+            AddPath(fullRoot, paths, manifest.Tiles.Rooms);
             AddTilesetReferences(fullRoot, paths, manifest.Tiles.Tileset, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
@@ -30,6 +41,7 @@ internal static class CesiumPackagePayloadResolver
             foreach (CesiumPackageGisArtifact artifact in manifest.Gis.Artifacts ?? new List<CesiumPackageGisArtifact>())
             {
                 AddPath(fullRoot, paths, artifact.Path);
+                AddFieldList(fullRoot, paths, artifact.Path);
                 if (string.Equals(Path.GetExtension(artifact.Path), ".shp", StringComparison.OrdinalIgnoreCase))
                 {
                     AddShapefileComponents(fullRoot, paths, artifact.Path);
@@ -111,6 +123,26 @@ internal static class CesiumPackagePayloadResolver
                     AddShapefileComponents(root, paths, referencedPath);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// The field list a GIS export writes beside its artifact. The manifest does not name it, so
+    /// it is part of the payload only where the file is there.
+    /// </summary>
+    private static void AddFieldList(string root, HashSet<string> paths, string? artifactPath)
+    {
+        if (string.IsNullOrWhiteSpace(artifactPath))
+        {
+            return;
+        }
+
+        string normalized = NormalizeRelativePath(root, artifactPath!);
+        string directory = Path.GetDirectoryName(normalized) ?? string.Empty;
+        string fieldList = Path.Combine(directory, GisFieldListFileName);
+        if (File.Exists(ToFullPath(root, fieldList)))
+        {
+            paths.Add(NormalizeRelativePath(root, fieldList));
         }
     }
 
