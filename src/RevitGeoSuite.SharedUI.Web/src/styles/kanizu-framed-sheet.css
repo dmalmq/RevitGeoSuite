@@ -1,12 +1,12 @@
 /* Vendored from Kanizu, unchanged below this comment.
-   Source: github.com/dmalmq/kanizu, branch dev, commit 1997f73,
+   Source: github.com/dmalmq/kanizu, PR #559 (DS-1, Framed Sheet v2.1), commit 2e3a8e2,
    crates/kanizu/tests/fixtures/framed-sheet.css (a Kanizu test keeps it equal to wizard/theme.rs).
    Do not edit here: copy a new version from Kanizu and update the commit above and the hash in
    lib/__tests__/tokens.test.ts. Values are HSL triplets: use them as hsl(var(--name)). */
-/* Direction B, Framed sheet, chosen 2026-10-31. The design canvas's tokens.py as HSL. */
+/* Direction B, Framed sheet v2.1. Roles: base = fill, -foreground = label on fill, -text = text and marks on surface. */
   :root {
     color-scheme: light;
-    --background: 156 12.8% 92.4%;
+    --background: 160 14.3% 91.8%;
     --foreground: 160 7% 8.4%;
     --card: 0 0% 100%;
     --card-foreground: 160 7% 8.4%;
@@ -15,21 +15,23 @@
     --primary: 168 52.8% 24.1%;
     --primary-foreground: 0 0% 100%;
     --primary-text: 168 52.8% 24.1%;
-    --secondary: 160 13% 95.5%;
+    --secondary: 150 15.4% 94.9%;
     --secondary-foreground: 160 7% 8.4%;
-    --muted: 160 13% 95.5%;
-    --muted-foreground: 156 5.5% 35.7%;
+    --muted: 150 15.4% 94.9%;
+    --muted-foreground: 156 5.9% 33.3%;
     --accent: 160 27.3% 91.4%;
     --accent-foreground: 160 7% 8.4%;
     --destructive: 4.2 76.5% 40%;
     --destructive-foreground: 0 0% 100%;
     --destructive-text: 4.2 76.5% 40%;
     --destructive-muted: 8.6 84% 95.1%;
-    --border: 154.3 11.1% 87.6%;
-    --input: 153.3 9.1% 80.6%;
+    --border: 157.5 11.1% 85.9%;
+    --input: 154.3 6.3% 56.1%;
+    --input-frame: 154 6% 50%;
     --ring: 168 52.8% 24.1%;
-    --info: 212.2 58.8% 44.7%;
+    --info: 211.6 63.9% 40.2%;
     --info-foreground: 0 0% 100%;
+    --info-text: 211.6 63.9% 40.2%;
     --info-muted: 211.6 57.6% 93.5%;
     --artwork: 296.4 36.2% 36.3%;
     --artwork-foreground: 0 0% 100%;
@@ -38,8 +40,13 @@
     --success: 168 52.8% 24.1%;
     --success-text: 168 52.8% 24.1%;
     --warning: 37.6 72.8% 55.3%;
-    --warning-foreground: 34.4 100% 28%;
+    --warning-foreground: 160 7% 8.4%;
+    --warning-text: 34.4 100% 28%;
     --warning-surface: 37.5 84.2% 92.5%;
+    --scrim: 160 10% 4%;
+    --help-ring: 0 0% 100%;
+    --overlay-edited: 168 60% 30%;
+    --overlay-ambiguous: 34.4 100% 28%;
     --layer-1: 221 83% 53%;
     --layer-2: 192 91% 36%;
     --layer-3: 85 85% 35%;
@@ -47,30 +54,32 @@
   }
   .dark {
     color-scheme: dark;
-    --background: 160 7.7% 7.6%;
+    --background: 160 9.1% 6.5%;
     --foreground: 156 15.2% 93.5%;
-    --card: 165 6.9% 11.4%;
+    --card: 156 8.8% 11.2%;
     --card-foreground: 156 15.2% 93.5%;
-    --popover: 156 6.7% 14.7%;
+    --popover: 160 7.7% 15.3%;
     --popover-foreground: 156 15.2% 93.5%;
     --primary: 164.7 41.3% 59.2%;
     --primary-foreground: 161.5 31.7% 8%;
     --primary-text: 164.7 41.3% 59.2%;
-    --secondary: 156 6.7% 14.7%;
+    --secondary: 165 9.1% 8.6%;
     --secondary-foreground: 156 15.2% 93.5%;
-    --muted: 156 6.7% 14.7%;
-    --muted-foreground: 156 5.7% 65.9%;
+    --muted: 165 9.1% 8.6%;
+    --muted-foreground: 156 6% 67.1%;
     --accent: 167 27.7% 16.3%;
     --accent-foreground: 156 15.2% 93.5%;
     --destructive: 7.2 62% 47.5%;
     --destructive-foreground: 0 0% 100%;
     --destructive-text: 9.2 83.4% 69.2%;
     --destructive-muted: 8.6 43.2% 15.9%;
-    --border: 160 6.7% 17.6%;
-    --input: 157.5 6.5% 24.3%;
+    --border: 162.9 7.2% 19%;
+    --input: 155 5.8% 40.4%;
+    --input-frame: 155 5.8% 40.4%;
     --ring: 164.7 41.3% 59.2%;
     --info: 212.3 75.4% 72.9%;
     --info-foreground: 160 7.7% 7.6%;
+    --info-text: 212.3 75.4% 72.9%;
     --info-muted: 211.7 43.9% 16.1%;
     --artwork: 296.8 35.2% 42.4%;
     --artwork-foreground: 0 0% 100%;
@@ -79,8 +88,13 @@
     --success: 164.7 41.3% 59.2%;
     --success-text: 164.7 41.3% 59.2%;
     --warning: 37.2 77.9% 61%;
-    --warning-foreground: 37.2 77.9% 61%;
+    --warning-foreground: 160 9.1% 6.5%;
+    --warning-text: 37.2 77.9% 61%;
     --warning-surface: 37.7 49.3% 13.9%;
+    --scrim: 160 10% 2%;
+    --help-ring: 0 0% 100%;
+    --overlay-edited: 165 50% 62%;
+    --overlay-ambiguous: 37.2 77.9% 61%;
     --layer-1: 213 94% 68%;
     --layer-2: 188 86% 53%;
     --layer-3: 83 78% 55%;

@@ -14,18 +14,22 @@ The colours are Kanizu's, copied unchanged into `src/styles/kanizu-framed-sheet.
 
 | Role | Utility | Light | Dark | Usage |
 |---|---|---|---|---|
-| Frame | `bg-background` | #E9EEEC | #121514 | App background around sheets |
-| Sheet | `bg-card` | #FFFFFF | #1B1F1E | Panels, cards, fields |
-| Muted surface | `bg-muted` | #F2F5F4 | #232826 | Secondary areas, table heads |
+| Frame | `bg-background` | #E7EDEB | #0F1211 | App background around sheets |
+| Sheet | `bg-card` | #FFFFFF | #1A1F1D | Panels, cards, fields |
+| Muted surface | `bg-muted` | #F0F4F2 | #141817 | Secondary areas, table heads |
 | Selected / hover | `bg-accent` | #E3EFEB | #1E3530 | Hover rows, selected chips |
 | Text | `text-foreground` | #141716 | #ECF1EF | Main copy |
-| Secondary text | `text-muted-foreground` | #56605C | #A3ADA9 | Hints and labels |
-| Hairline | `border-border` | #DCE3E0 | #2A302E | Sheets and cards |
-| Field border | `border-input` | #C9D2CE | #3A423F | Inputs and buttons |
+| Secondary text | `text-muted-foreground` | #505A56 | #A6B0AC | Hints and labels |
+| Hairline | `border-border` | #D7DFDC | #2D3432 | Sheets and cards |
+| Field border | `border-input` | #889690 | #616D68 | Inputs and buttons |
+| Field frame | `border-input-frame` | #788781 | #616D68 | Strong field outline |
 | Pine | `bg-primary` / `text-primary` | #1D5E51 | #6CC2AC | Primary action, active state, focus ring |
 | Error | `destructive` | #B42318 | #C4402E | Validation and failures |
-| Warning | `warning` / `bg-warning-surface` | #E0A23A / #FCF0DC | #E9AE4E / #352812 | Warnings |
-| Info | `info` | #2F6DB5 | #86B6EE | Neutral notices |
+| Warning fill | `bg-warning` / `bg-warning-surface` | #E0A23A / #FCF0DC | #E9AE4E / #352812 | Warning marks and surfaces |
+| Warning label on fill | `text-warning-foreground` | #141716 | #0F1211 | Only on a `bg-warning` fill |
+| Warning text | `text-warning-text` | #8F5200 | #E9AE4E | Warning text and icons on any surface |
+| Info | `info` / `text-info-text` | #2563A8 | #86B6EE | Neutral notices |
+| Scrim | `bg-scrim` | #090B0B | #050605 | Behind dialogs |
 
 ### Rules
 
@@ -45,7 +49,7 @@ The colours are Kanizu's, copied unchanged into `src/styles/kanizu-framed-sheet.
 | H3 | 15px | 600 | 1.4 | Card and section headings |
 | Body | 14px | 400 | 1.5 | Default UI text |
 | Body/sm | 12px | 400-500 | 1.45 | Hints, chips, table cells |
-| Caption | 11px | 600 | 1.3 | Metadata labels |
+| Caption | 12px | 600 | 1.3 | Metadata labels |
 
 ### Font Stack
 
@@ -89,7 +93,7 @@ Screens build from the kit in `src/lib/kit` (import from `$lib/kit`), not from r
 |---|---:|---|
 | Control height | 28px (Button md, Input, Select) | Kanizu CONTROL |
 | Row height | 26px (Table, Checkbox) | Kanizu ROW |
-| Type | caption 11, small 12, body 13, title 15, heading 20 (`text-caption` ...) | Kanizu ui/tokens.rs |
+| Type | caption 12, small 12, body 13, title 15, heading 20 (`text-caption` ...) | Kanizu ui/tokens.rs |
 
 
 ### Disclosure
@@ -143,7 +147,8 @@ Mixed, but restrained: thin borders define tool panels, and tonal shifts define 
 | Border/default | 1px solid `border-border` | Sheets, cards, chips |
 | Radius/chip | 4px (`rounded-chip`) | Chips and badges |
 | Radius/control | 6px (`rounded-control`) | Fields, buttons, segmented controls |
-| Radius/card | 10px (`rounded-card`) | Cards and panels |
+| Radius/card | 8px (`rounded-card`) | Cards and panels |
+| Radius/floating | 10px (`rounded-floating`) | Menus, popovers, and other floating surfaces |
 | Radius/sheet | 14px (`rounded-sheet`) | The main sheet and dialogs |
 
 ### Rules

@@ -12,11 +12,11 @@ public static class WindowsAppTheme
 {
     private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
 
-    /// <summary>Framed sheet frame colour, light: #E9EEEC.</summary>
-    public static readonly (byte R, byte G, byte B) LightFrame = (0xE9, 0xEE, 0xEC);
+    /// <summary>Framed sheet frame colour, light: #E7EDEB.</summary>
+    public static readonly (byte R, byte G, byte B) LightFrame = (0xE7, 0xED, 0xEB);
 
-    /// <summary>Framed sheet frame colour, dark: #121514.</summary>
-    public static readonly (byte R, byte G, byte B) DarkFrame = (0x12, 0x15, 0x14);
+    /// <summary>Framed sheet frame colour, dark: #0F1211.</summary>
+    public static readonly (byte R, byte G, byte B) DarkFrame = (0x0F, 0x12, 0x11);
 
     /// <summary>True when Windows apps use the dark theme (AppsUseLightTheme = 0).</summary>
     public static bool AppsUseDarkTheme()

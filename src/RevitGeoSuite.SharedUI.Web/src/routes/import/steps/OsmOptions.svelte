@@ -57,7 +57,7 @@
     <Result title={$t('Import.Osm.Complete', 'Import Complete')}>
       {osmImportProgress.summary || fmt($t('Import.Osm.ResultSummary', 'Imported {0} building(s)'), osmImportProgress.importedElements ?? 0)}
       {#if osmImportProgress.warnings?.length}
-        <p class="mt-1 text-warning-foreground">{fmt($t('Import.Warnings', '{0} warning(s)'), osmImportProgress.warnings.length)}</p>
+        <p class="mt-1 text-warning-text">{fmt($t('Import.Warnings', '{0} warning(s)'), osmImportProgress.warnings.length)}</p>
       {/if}
     </Result>
   {/if}
