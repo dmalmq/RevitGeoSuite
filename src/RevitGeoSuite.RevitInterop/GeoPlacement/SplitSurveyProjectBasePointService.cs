@@ -1,5 +1,6 @@
 using System;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.Core.Mesh;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.Core.Storage;
 using RevitGeoSuite.Core.Workflow;
@@ -13,18 +14,30 @@ public sealed class SplitSurveyProjectBasePointService : ISplitSurveyProjectBase
     private readonly IGeoProjectInfoStore geoProjectInfoStore;
     private readonly PlacementAuditStorage placementAuditStorage;
     private readonly IModuleStateStore moduleStateStore;
+    private readonly GeoreferenceUndoStorage undoStorage;
 
     public SplitSurveyProjectBasePointService(
         IGeoProjectInfoStore? geoProjectInfoStore = null,
         PlacementAuditStorage? placementAuditStorage = null,
-        IModuleStateStore? moduleStateStore = null)
+        IModuleStateStore? moduleStateStore = null,
+        GeoreferenceUndoStorage? undoStorage = null)
     {
         this.geoProjectInfoStore = geoProjectInfoStore ?? new GeoProjectInfoStorage();
         this.placementAuditStorage = placementAuditStorage ?? new PlacementAuditStorage();
         this.moduleStateStore = moduleStateStore ?? new ModuleStateStorage();
+        this.undoStorage = undoStorage ?? new GeoreferenceUndoStorage();
     }
 
     public PlacementApplyResult ApplyPlacement(IDocumentHandle document, SplitSurveyProjectBasePointIntent intent)
+    {
+        return ApplyPlacement(document, intent, undoSnapshot: null, primaryMeshCode: null);
+    }
+
+    public PlacementApplyResult ApplyPlacement(
+        IDocumentHandle document,
+        SplitSurveyProjectBasePointIntent intent,
+        GeoreferenceUndoSnapshot? undoSnapshot,
+        MeshCode? primaryMeshCode = null)
     {
         if (intent is null)
         {
@@ -39,7 +52,7 @@ public sealed class SplitSurveyProjectBasePointService : ISplitSurveyProjectBase
         EnsureSupportedDocument(revitDocument);
 
         double resolvedTrueNorthAngle = ResolveTrueNorthAngleDegrees(revitDocument, intent);
-        GeoProjectInfo geoProjectInfo = BuildGeoProjectInfo(intent, resolvedTrueNorthAngle);
+        GeoProjectInfo geoProjectInfo = BuildGeoProjectInfo(intent, resolvedTrueNorthAngle, primaryMeshCode);
         PlacementAuditRecord auditRecord = BuildAuditRecord(revitDocument, intent, resolvedTrueNorthAngle);
 
         using Transaction transaction = new Transaction(revitDocument, "Apply Split Georeference");
@@ -51,6 +64,10 @@ public sealed class SplitSurveyProjectBasePointService : ISplitSurveyProjectBase
             geoProjectInfoStore.Save(handle, geoProjectInfo);
             SaveGeoreferenceModuleState(handle, intent.LocalProjectBasePoint!);
             placementAuditStorage.Save(handle, auditRecord);
+            if (undoSnapshot is not null)
+            {
+                undoStorage.Save(handle, undoSnapshot);
+            }
 
             TransactionStatus status = transaction.Commit();
             if (status != TransactionStatus.Committed)
@@ -132,19 +149,39 @@ public sealed class SplitSurveyProjectBasePointService : ISplitSurveyProjectBase
         MoveSurveyPointLocally(document, surveyPoint, desiredSurveyPoint);
     }
 
-    private static void MoveSurveyPointLocally(Document document, BasePoint surveyPoint, XYZ desiredSurveyPoint)
+    public static void MoveSurveyPointLocally(
+        Document document,
+        BasePoint surveyPoint,
+        XYZ desiredSurveyPoint,
+        bool? restoreClipped = null,
+        bool? restorePinned = null)
     {
-        bool wasPinned = surveyPoint.Pinned;
-        bool wasClipped = surveyPoint.Clipped;
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        if (surveyPoint is null)
+        {
+            throw new ArgumentNullException(nameof(surveyPoint));
+        }
+
+        if (desiredSurveyPoint is null)
+        {
+            throw new ArgumentNullException(nameof(desiredSurveyPoint));
+        }
+
+        bool targetClipped = restoreClipped ?? surveyPoint.Clipped;
+        bool targetPinned = restorePinned ?? surveyPoint.Pinned;
 
         try
         {
-            if (wasPinned)
+            if (surveyPoint.Pinned)
             {
                 surveyPoint.Pinned = false;
             }
 
-            if (wasClipped)
+            if (surveyPoint.Clipped)
             {
                 surveyPoint.Clipped = false;
             }
@@ -159,14 +196,14 @@ public sealed class SplitSurveyProjectBasePointService : ISplitSurveyProjectBase
         {
             if (surveyPoint.IsValidObject)
             {
-                if (wasClipped)
+                if (surveyPoint.Clipped != targetClipped)
                 {
-                    surveyPoint.Clipped = true;
+                    surveyPoint.Clipped = targetClipped;
                 }
 
-                if (wasPinned)
+                if (surveyPoint.Pinned != targetPinned)
                 {
-                    surveyPoint.Pinned = true;
+                    surveyPoint.Pinned = targetPinned;
                 }
             }
         }
@@ -221,7 +258,10 @@ public sealed class SplitSurveyProjectBasePointService : ISplitSurveyProjectBase
             : currentAngleDegrees;
     }
 
-    private static GeoProjectInfo BuildGeoProjectInfo(SplitSurveyProjectBasePointIntent intent, double resolvedTrueNorthAngle)
+    private static GeoProjectInfo BuildGeoProjectInfo(
+        SplitSurveyProjectBasePointIntent intent,
+        double resolvedTrueNorthAngle,
+        MeshCode? primaryMeshCode)
     {
         GeoProjectInfo info = new GeoProjectInfo
         {
@@ -231,6 +271,11 @@ public sealed class SplitSurveyProjectBasePointService : ISplitSurveyProjectBase
         };
 
         info.ApplyCanonicalLocation(intent.SelectedCrs!, intent.SharedSurveyOrigin!, resolvedTrueNorthAngle);
+        if (primaryMeshCode is not null && !string.IsNullOrWhiteSpace(primaryMeshCode.Value))
+        {
+            info.PrimaryMeshCode = new MeshCode { Value = primaryMeshCode.Value };
+        }
+
         return info;
     }
 

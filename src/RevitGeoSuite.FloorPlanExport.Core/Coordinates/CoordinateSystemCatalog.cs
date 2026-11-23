@@ -35,19 +35,20 @@ public static class CoordinateSystemCatalog
 
     public static bool TryGetDefinitionWkt(int epsg, out string wkt)
     {
-        if (epsg == 4326)
+        int normalizedEpsg = JapanPlaneRectangular.NormalizeEpsg(epsg);
+        if (normalizedEpsg == 4326)
         {
             wkt = Wgs84Wkt;
             return true;
         }
 
-        if (epsg == 3857)
+        if (normalizedEpsg == 3857)
         {
             wkt = WebMercatorWkt;
             return true;
         }
 
-        if (JapanPlaneRectangular.TryGetZone(epsg, out JapanPlaneRectangularZoneDefinition? zone))
+        if (JapanPlaneRectangular.TryGetZone(normalizedEpsg, out JapanPlaneRectangularZoneDefinition? zone))
         {
             wkt = BuildJapanPlaneRectangularWkt(zone!);
             return true;
@@ -61,7 +62,8 @@ public static class CoordinateSystemCatalog
     {
         try
         {
-            coordinateSystem = Services.GetCoordinateSystem(epsg);
+            int normalizedEpsg = JapanPlaneRectangular.NormalizeEpsg(epsg);
+            coordinateSystem = Services.GetCoordinateSystem(normalizedEpsg);
             return coordinateSystem != null;
         }
         catch
@@ -78,13 +80,24 @@ public static class CoordinateSystemCatalog
 
     public static string DescribeEpsg(int epsg)
     {
-        string? presetName = CrsPresetCatalog.TryGetDisplayName(epsg);
-        if (presetName != null)
+        int normalizedEpsg = JapanPlaneRectangular.NormalizeEpsg(epsg);
+        if (normalizedEpsg == 4326)
         {
-            return $"EPSG:{epsg} - {presetName}";
+            return "EPSG:4326 - WGS 84";
         }
 
-        return $"EPSG:{epsg}";
+        if (normalizedEpsg == 3857)
+        {
+            return "EPSG:3857 - WGS 84 / Pseudo-Mercator";
+        }
+
+        string? presetName = CrsPresetCatalog.TryGetDisplayName(normalizedEpsg);
+        if (presetName != null)
+        {
+            return $"EPSG:{normalizedEpsg} - {presetName}";
+        }
+
+        return $"EPSG:{normalizedEpsg}";
     }
 
     public static bool TryCreateSourceCoordinateSystem(
@@ -222,25 +235,30 @@ public static class CoordinateSystemCatalog
     {
         Func<double, double, (double X, double Y)> identity = static (x, y) => (x, y);
 
-        bool hasSource = (sourceEpsg.HasValue && sourceEpsg.Value > 0) || !string.IsNullOrWhiteSpace(sourceWkt);
+        int? normalizedSourceEpsg = sourceEpsg.HasValue
+            ? JapanPlaneRectangular.NormalizeEpsg(sourceEpsg.Value)
+            : null;
+        int normalizedTargetEpsg = JapanPlaneRectangular.NormalizeEpsg(targetEpsg);
+
+        bool hasSource = (normalizedSourceEpsg.HasValue && normalizedSourceEpsg.Value > 0) || !string.IsNullOrWhiteSpace(sourceWkt);
         if (!hasSource)
         {
-            return (identity, $"The file did not declare a coordinate system; assuming it is already in the project CRS (EPSG:{targetEpsg}).");
+            return (identity, $"The file did not declare a coordinate system; assuming it is already in the project CRS (EPSG:{normalizedTargetEpsg}).");
         }
 
-        if (sourceEpsg.HasValue && sourceEpsg.Value == targetEpsg)
+        if (normalizedSourceEpsg.HasValue && normalizedSourceEpsg.Value == normalizedTargetEpsg)
         {
             return (identity, null);
         }
 
-        if (!TryCreateSourceCoordinateSystem(sourceWkt, null, sourceEpsg, out CoordinateSystem? source, out _) || source is null)
+        if (!TryCreateSourceCoordinateSystem(sourceWkt, null, normalizedSourceEpsg, out CoordinateSystem? source, out _) || source is null)
         {
             return (identity, "The file's coordinate system could not be interpreted; coordinates were imported without reprojection.");
         }
 
-        if (!TryCreateFromEpsg(targetEpsg, out CoordinateSystem? target) || target is null)
+        if (!TryCreateFromEpsg(normalizedTargetEpsg, out CoordinateSystem? target) || target is null)
         {
-            return (identity, $"The project CRS (EPSG:{targetEpsg}) is not supported for reprojection; coordinates were imported without reprojection.");
+            return (identity, $"The project CRS (EPSG:{normalizedTargetEpsg}) is not supported for reprojection; coordinates were imported without reprojection.");
         }
 
         ICoordinateTransformation? transformation = TransformationFactory.CreateFromCoordinateSystems(source, target);

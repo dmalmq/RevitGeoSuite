@@ -5,29 +5,44 @@ namespace RevitGeoSuite.Core.Mesh;
 
 public sealed class JapanMeshCalculator : IMeshCalculator
 {
-    private const double PrimaryLatitudeSpan = 2.0 / 3.0;
-    private const double PrimaryLongitudeSpan = 1.0;
-    private const double SecondaryLatitudeSpan = 5.0 / 60.0;
-    private const double SecondaryLongitudeSpan = 7.5 / 60.0;
-    private const double TertiaryLatitudeSpan = 30.0 / 3600.0;
-    private const double TertiaryLongitudeSpan = 45.0 / 3600.0;
+    // Exact JIS X 0410 tertiary cell grid:
+    // - Latitude: 30 arc-seconds = 1/120 degree per tertiary cell (10 per secondary, 80 per primary = 2/3 deg).
+    // - Longitude: 45 arc-seconds = 1/80 degree per tertiary cell (10 per secondary, 80 per primary = 1 deg),
+    //   origin at 100 degrees East (= 8000 tertiary cells).
+    private const double TertiaryLatitudeCellsPerDegree = 120.0;
+    private const double TertiaryLongitudeCellsPerDegree = 80.0;
+    private const long TertiaryCellsPerPrimary = 80L;
+    private const long TertiaryCellsPerSecondary = 10L;
+    private const long LongitudeBaseCells = 8000L;
+
+    // 1e-9 of a tertiary cell (~1 micrometer) absorbs IEEE-754 half-ULP truncation on exact cell corners
+    // without moving any interior point across a boundary.
+    private const double BoundaryEpsilonCells = 1e-9;
 
     public MeshCode Calculate(double latitude, double longitude, JapanMeshLevel level = JapanMeshLevel.Tertiary)
     {
-        int primaryLatitudeIndex = (int)Math.Floor(latitude / PrimaryLatitudeSpan);
-        int primaryLongitudeIndex = (int)Math.Floor(longitude) - 100;
+        if (!JapanMeshDomain.IsFinite(latitude))
+        {
+            throw new ArgumentOutOfRangeException(nameof(latitude), "Latitude must be a finite number.");
+        }
 
-        double latitudeRemainder = latitude - (primaryLatitudeIndex * PrimaryLatitudeSpan);
-        double longitudeRemainder = longitude - (primaryLongitudeIndex + 100.0);
+        if (!JapanMeshDomain.IsFinite(longitude))
+        {
+            throw new ArgumentOutOfRangeException(nameof(longitude), "Longitude must be a finite number.");
+        }
 
-        int secondaryLatitudeIndex = ClampIndex((int)Math.Floor(latitudeRemainder / SecondaryLatitudeSpan), 8);
-        int secondaryLongitudeIndex = ClampIndex((int)Math.Floor(longitudeRemainder / SecondaryLongitudeSpan), 8);
+        long totalLatitudeCells = (long)Math.Floor((latitude * TertiaryLatitudeCellsPerDegree) + BoundaryEpsilonCells);
+        long totalLongitudeCells = (long)Math.Floor(((longitude - 100.0) * TertiaryLongitudeCellsPerDegree) + BoundaryEpsilonCells);
 
-        double secondaryLatitudeBase = primaryLatitudeIndex * PrimaryLatitudeSpan + (secondaryLatitudeIndex * SecondaryLatitudeSpan);
-        double secondaryLongitudeBase = primaryLongitudeIndex + 100.0 + (secondaryLongitudeIndex * SecondaryLongitudeSpan);
+        long primaryLatitudeIndex = FloorDiv(totalLatitudeCells, TertiaryCellsPerPrimary);
+        long latitudeRemainder = totalLatitudeCells - (primaryLatitudeIndex * TertiaryCellsPerPrimary);
+        long secondaryLatitudeIndex = latitudeRemainder / TertiaryCellsPerSecondary;
+        long tertiaryLatitudeIndex = latitudeRemainder % TertiaryCellsPerSecondary;
 
-        int tertiaryLatitudeIndex = ClampIndex((int)Math.Floor((latitude - secondaryLatitudeBase) / TertiaryLatitudeSpan), 10);
-        int tertiaryLongitudeIndex = ClampIndex((int)Math.Floor((longitude - secondaryLongitudeBase) / TertiaryLongitudeSpan), 10);
+        long primaryLongitudeIndex = FloorDiv(totalLongitudeCells, TertiaryCellsPerPrimary);
+        long longitudeRemainder = totalLongitudeCells - (primaryLongitudeIndex * TertiaryCellsPerPrimary);
+        long secondaryLongitudeIndex = longitudeRemainder / TertiaryCellsPerSecondary;
+        long tertiaryLongitudeIndex = longitudeRemainder % TertiaryCellsPerSecondary;
 
         string primaryCode = string.Concat(
             primaryLatitudeIndex.ToString("00", CultureInfo.InvariantCulture),
@@ -38,13 +53,19 @@ public sealed class JapanMeshCalculator : IMeshCalculator
             return new MeshCode { Value = primaryCode };
         }
 
-        string secondaryCode = primaryCode + secondaryLatitudeIndex.ToString(CultureInfo.InvariantCulture) + secondaryLongitudeIndex.ToString(CultureInfo.InvariantCulture);
+        string secondaryCode = string.Concat(
+            primaryCode,
+            secondaryLatitudeIndex.ToString(CultureInfo.InvariantCulture),
+            secondaryLongitudeIndex.ToString(CultureInfo.InvariantCulture));
         if (level == JapanMeshLevel.Secondary)
         {
             return new MeshCode { Value = secondaryCode };
         }
 
-        string tertiaryCode = secondaryCode + tertiaryLatitudeIndex.ToString(CultureInfo.InvariantCulture) + tertiaryLongitudeIndex.ToString(CultureInfo.InvariantCulture);
+        string tertiaryCode = string.Concat(
+            secondaryCode,
+            tertiaryLatitudeIndex.ToString(CultureInfo.InvariantCulture),
+            tertiaryLongitudeIndex.ToString(CultureInfo.InvariantCulture));
         return new MeshCode { Value = tertiaryCode };
     }
 
@@ -66,54 +87,61 @@ public sealed class JapanMeshCalculator : IMeshCalculator
             throw new ArgumentException("Mesh code must be 4, 6, or 8 digits long.", nameof(meshCode));
         }
 
-        if (!long.TryParse(value, out _))
+        for (int i = 0; i < value.Length; i++)
         {
-            throw new ArgumentException("Mesh code must contain only digits.", nameof(meshCode));
+            if (value[i] < '0' || value[i] > '9')
+            {
+                throw new ArgumentException("Mesh code must contain only ASCII digits.", nameof(meshCode));
+            }
         }
 
-        int primaryLatitudeIndex = int.Parse(value.Substring(0, 2), CultureInfo.InvariantCulture);
-        int primaryLongitudeIndex = int.Parse(value.Substring(2, 2), CultureInfo.InvariantCulture);
+        long primaryLatitudeIndex = ((value[0] - '0') * 10L) + (value[1] - '0');
+        long primaryLongitudeIndex = ((value[2] - '0') * 10L) + (value[3] - '0');
 
-        double southLatitude = primaryLatitudeIndex * PrimaryLatitudeSpan;
-        double westLongitude = primaryLongitudeIndex + 100.0;
-        double latitudeSpan = PrimaryLatitudeSpan;
-        double longitudeSpan = PrimaryLongitudeSpan;
+        long southCells = primaryLatitudeIndex * TertiaryCellsPerPrimary;
+        long westCells = primaryLongitudeIndex * TertiaryCellsPerPrimary;
+        long spanCells = TertiaryCellsPerPrimary;
 
         if (value.Length >= 6)
         {
-            int secondaryLatitudeIndex = int.Parse(value.Substring(4, 1), CultureInfo.InvariantCulture);
-            int secondaryLongitudeIndex = int.Parse(value.Substring(5, 1), CultureInfo.InvariantCulture);
-            southLatitude += secondaryLatitudeIndex * SecondaryLatitudeSpan;
-            westLongitude += secondaryLongitudeIndex * SecondaryLongitudeSpan;
-            latitudeSpan = SecondaryLatitudeSpan;
-            longitudeSpan = SecondaryLongitudeSpan;
+            long secondaryLatitudeIndex = value[4] - '0';
+            long secondaryLongitudeIndex = value[5] - '0';
+            if (secondaryLatitudeIndex > 7L || secondaryLongitudeIndex > 7L)
+            {
+                throw new ArgumentException("Secondary mesh digits must be between 0 and 7.", nameof(meshCode));
+            }
+
+            southCells += secondaryLatitudeIndex * TertiaryCellsPerSecondary;
+            westCells += secondaryLongitudeIndex * TertiaryCellsPerSecondary;
+            spanCells = TertiaryCellsPerSecondary;
         }
 
         if (value.Length == 8)
         {
-            int tertiaryLatitudeIndex = int.Parse(value.Substring(6, 1), CultureInfo.InvariantCulture);
-            int tertiaryLongitudeIndex = int.Parse(value.Substring(7, 1), CultureInfo.InvariantCulture);
-            southLatitude += tertiaryLatitudeIndex * TertiaryLatitudeSpan;
-            westLongitude += tertiaryLongitudeIndex * TertiaryLongitudeSpan;
-            latitudeSpan = TertiaryLatitudeSpan;
-            longitudeSpan = TertiaryLongitudeSpan;
+            long tertiaryLatitudeIndex = value[6] - '0';
+            long tertiaryLongitudeIndex = value[7] - '0';
+            southCells += tertiaryLatitudeIndex;
+            westCells += tertiaryLongitudeIndex;
+            spanCells = 1L;
         }
 
-        return new MeshBounds(southLatitude, westLongitude, southLatitude + latitudeSpan, westLongitude + longitudeSpan);
+        double southLatitude = southCells / TertiaryLatitudeCellsPerDegree;
+        double northLatitude = (southCells + spanCells) / TertiaryLatitudeCellsPerDegree;
+        double westLongitude = (LongitudeBaseCells + westCells) / TertiaryLongitudeCellsPerDegree;
+        double eastLongitude = (LongitudeBaseCells + westCells + spanCells) / TertiaryLongitudeCellsPerDegree;
+
+        return new MeshBounds(southLatitude, westLongitude, northLatitude, eastLongitude);
     }
 
-    private static int ClampIndex(int value, int maxExclusive)
+    private static long FloorDiv(long value, long divisor)
     {
-        if (value < 0)
+        long quotient = value / divisor;
+        long remainder = value % divisor;
+        if (remainder < 0L)
         {
-            return 0;
+            quotient--;
         }
 
-        if (value >= maxExclusive)
-        {
-            return maxExclusive - 1;
-        }
-
-        return value;
+        return quotient;
     }
 }

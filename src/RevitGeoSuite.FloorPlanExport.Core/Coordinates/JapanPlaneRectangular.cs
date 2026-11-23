@@ -7,9 +7,13 @@ namespace RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 
 public static class JapanPlaneRectangular
 {
-    private static readonly Regex EpsgRegex = new(@"EPSG\D*(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex JgdZoneRegex = new(@"JGD\s*2011\D*0?([1-9]|1[0-9])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex ZoneRegex = new(@"(?:Zone|CS)\s*(\d{1,2}|XIX|XVIII|XVII|XVI|XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private const int LegacyJgd2024FirstCode = 10267;
+    private const int LegacyJgd2024LastCode = 10285;
+    private const int OfficialFirstCode = 6669;
+
+    private static readonly Regex EpsgRegex = new(@"EPSG[\s:_\-,""]*(\d+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex JgdZoneRegex = new(@"JGD\s*(?:2011|2024)[\s\-_]*(?:Zone\s*)?(1[0-9]|0?[1-9])\b(?!\.)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ZoneRegex = new(@"(?:Zone|CS)\s*(1[0-9]|0?[1-9]|XIX|XVIII|XVII|XVI|XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)\b(?!\.)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static readonly IReadOnlyList<JapanPlaneRectangularZoneDefinition> AllZones = new[]
     {
@@ -37,20 +41,36 @@ public static class JapanPlaneRectangular
     public static readonly IReadOnlyDictionary<int, string> Zones = AllZones
         .ToDictionary(zone => zone.Epsg, zone => zone.DisplayName);
 
+    /// <summary>
+    /// Earlier builds stored codes 10267-10285 for JGD2024. Those are unrelated EPSG entries.
+    /// EPSG publishes JGD2024 under the same codes as JGD2011, 6669-6687, in zone order.
+    /// </summary>
+    public static int NormalizeEpsg(int epsg)
+    {
+        if (epsg >= LegacyJgd2024FirstCode && epsg <= LegacyJgd2024LastCode)
+        {
+            return OfficialFirstCode + (epsg - LegacyJgd2024FirstCode);
+        }
+
+        return epsg;
+    }
+
     public static bool TryGetZone(int epsg, out JapanPlaneRectangularZoneDefinition? zone)
     {
-        zone = AllZones.FirstOrDefault(candidate => candidate.Epsg == epsg);
+        int normalizedEpsg = NormalizeEpsg(epsg);
+        zone = AllZones.FirstOrDefault(candidate => candidate.Epsg == normalizedEpsg);
         return zone != null;
     }
 
     public static string DescribeEpsg(int epsg)
     {
-        if (TryGetZone(epsg, out JapanPlaneRectangularZoneDefinition? zone) && zone != null)
+        int normalizedEpsg = NormalizeEpsg(epsg);
+        if (TryGetZone(normalizedEpsg, out JapanPlaneRectangularZoneDefinition? zone) && zone != null)
         {
             return $"EPSG:{zone.Epsg} - {zone.DisplayName}";
         }
 
-        return $"EPSG:{epsg}";
+        return $"EPSG:{normalizedEpsg}";
     }
 
     public static bool TryResolveEpsg(string? text, out int epsg)
@@ -65,7 +85,13 @@ public static class JapanPlaneRectangular
         Match epsgMatch = EpsgRegex.Match(normalized);
         if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out epsg))
         {
-            return epsg > 0;
+            if (epsg > 0)
+            {
+                epsg = NormalizeEpsg(epsg);
+                return true;
+            }
+
+            return false;
         }
 
         Match jgdZoneMatch = JgdZoneRegex.Match(normalized);
@@ -78,7 +104,8 @@ public static class JapanPlaneRectangular
 
         bool mentionsJapanPlaneRectangular =
             normalized.IndexOf("Japan Plane Rectangular", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            normalized.IndexOf("JGD2011", StringComparison.OrdinalIgnoreCase) >= 0;
+            normalized.IndexOf("JGD2011", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            normalized.IndexOf("JGD2024", StringComparison.OrdinalIgnoreCase) >= 0;
         Match zoneMatch = ZoneRegex.Match(normalized);
         if (mentionsJapanPlaneRectangular && zoneMatch.Success)
         {

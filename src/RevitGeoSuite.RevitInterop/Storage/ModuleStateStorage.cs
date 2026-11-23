@@ -53,6 +53,11 @@ public sealed class ModuleStateStorage : IModuleStateStore
         }
 
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return null;
+        }
+
         Schema? schema = Schema.Lookup(SchemaGuid);
         if (schema is null)
         {
@@ -82,6 +87,11 @@ public sealed class ModuleStateStorage : IModuleStateStore
         }
 
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return false;
+        }
+
         Schema? schema = Schema.Lookup(SchemaGuid);
         if (schema is null)
         {
@@ -91,6 +101,48 @@ public sealed class ModuleStateStorage : IModuleStateStore
         Dictionary<string, StorageEnvelope<string>> entries = LoadPayload(handle.Document, schema);
         return entries.TryGetValue(moduleId, out StorageEnvelope<string>? entry)
             && ModuleStateStorageSerializer.HasUsablePayload(entry);
+    }
+
+    public void Remove(IDocumentHandle document, string moduleId)
+    {
+        if (string.IsNullOrWhiteSpace(moduleId))
+        {
+            throw new ArgumentException("Module id cannot be empty.", nameof(moduleId));
+        }
+
+        RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return;
+        }
+
+        if (!handle.Document.IsModifiable)
+        {
+            throw new InvalidOperationException("Removing module state requires an active Revit transaction.");
+        }
+
+        Schema? schema = Schema.Lookup(SchemaGuid);
+        if (schema is null)
+        {
+            return;
+        }
+
+        Entity existingEntity = handle.Document.ProjectInformation.GetEntity(schema);
+        if (!existingEntity.IsValid())
+        {
+            return;
+        }
+
+        Dictionary<string, StorageEnvelope<string>> entries = LoadPayloadForWrite(handle.Document, schema);
+        if (!ModuleStateStorageSerializer.RemoveEntry(entries, moduleId))
+        {
+            return;
+        }
+
+        Entity entity = new Entity(schema);
+        entity.Set(schema.GetField(SchemaVersionFieldName), CurrentSchemaVersion);
+        entity.Set(schema.GetField(PayloadJsonFieldName), JsonConvert.SerializeObject(entries));
+        handle.Document.ProjectInformation.SetEntity(entity);
     }
 
     private static RevitDocumentHandle RequireRevitDocumentHandle(IDocumentHandle document)
@@ -181,6 +233,21 @@ internal static class ModuleStateStorageSerializer
             Trace.WriteLine($"Ignoring corrupt module state payload because it could not be deserialized: {ex}");
             return false;
         }
+    }
+
+    public static bool RemoveEntry(Dictionary<string, StorageEnvelope<string>> entries, string moduleId)
+    {
+        if (entries is null)
+        {
+            throw new ArgumentNullException(nameof(entries));
+        }
+
+        if (string.IsNullOrWhiteSpace(moduleId))
+        {
+            throw new ArgumentException("Module id cannot be empty.", nameof(moduleId));
+        }
+
+        return entries.Remove(moduleId);
     }
 
     public static bool HasUsablePayload(StorageEnvelope<string>? entry)

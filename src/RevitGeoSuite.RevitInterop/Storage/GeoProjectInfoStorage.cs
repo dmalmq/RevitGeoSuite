@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Autodesk.Revit.DB.ExtensibleStorage;
 using Newtonsoft.Json;
 using RevitGeoSuite.Core.ProjectMetadata;
@@ -59,6 +60,11 @@ public sealed class GeoProjectInfoStorage : IGeoProjectInfoStore
     public GeoProjectInfo? Load(IDocumentHandle document)
     {
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return null;
+        }
+
         Schema? schema = Schema.Lookup(SchemaGuid);
         if (schema is null)
         {
@@ -77,13 +83,26 @@ public sealed class GeoProjectInfoStorage : IGeoProjectInfoStore
             return null;
         }
 
-        GeoProjectInfo? info = JsonConvert.DeserializeObject<GeoProjectInfo>(payload);
-        return info is null ? null : MigrationRunner.Migrate(info);
+        try
+        {
+            GeoProjectInfo? info = JsonConvert.DeserializeObject<GeoProjectInfo>(payload);
+            return info is null ? null : MigrationRunner.Migrate(info);
+        }
+        catch (JsonException ex)
+        {
+            Trace.WriteLine($"Ignoring corrupt geo project info payload because it could not be deserialized: {ex}");
+            return null;
+        }
     }
 
     public bool HasData(IDocumentHandle document)
     {
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return false;
+        }
+
         Schema? schema = Schema.Lookup(SchemaGuid);
         if (schema is null)
         {
@@ -98,6 +117,34 @@ public sealed class GeoProjectInfoStorage : IGeoProjectInfoStore
 
         string payload = entity.Get<string>(schema.GetField(PayloadJsonFieldName));
         return !string.IsNullOrWhiteSpace(payload);
+    }
+
+    public void Clear(IDocumentHandle document)
+    {
+        RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return;
+        }
+
+        if (!handle.Document.IsModifiable)
+        {
+            throw new InvalidOperationException("Clearing stored geo project info requires an active Revit transaction.");
+        }
+
+        Schema? schema = Schema.Lookup(SchemaGuid);
+        if (schema is null)
+        {
+            return;
+        }
+
+        Entity entity = handle.Document.ProjectInformation.GetEntity(schema);
+        if (!entity.IsValid())
+        {
+            return;
+        }
+
+        handle.Document.ProjectInformation.DeleteEntity(schema);
     }
 
     private static RevitDocumentHandle RequireRevitDocumentHandle(IDocumentHandle document)

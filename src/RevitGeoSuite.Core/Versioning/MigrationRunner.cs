@@ -57,6 +57,11 @@ public static class MigrationRunner
             MigrateCrs(snapshot.PreviousGeoInfo);
         }
 
+        if (snapshot.PreviousModuleState is not null)
+        {
+            Migrate(snapshot.PreviousModuleState);
+        }
+
         return snapshot;
     }
 
