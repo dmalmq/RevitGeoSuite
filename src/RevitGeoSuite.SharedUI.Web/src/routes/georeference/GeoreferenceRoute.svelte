@@ -123,6 +123,9 @@
       const currentId = reviewedDocumentId ?? currentState?.documentId ?? ''
       if (currentId && nextId === currentId) {
         // Same open document (e.g. title changed on Save / Save As): keep wizard state intact.
+        if (currentState && typeof evt?.documentTitle === 'string') {
+          currentState.documentTitle = evt.documentTitle
+        }
         return
       }
 
@@ -137,8 +140,9 @@
       if (nextId) {
         void Promise.all([refreshReadiness(), loadCurrentState(), loadUndoState()])
       }
-      if (hadReviewedDocument) {
-        const title = evt?.documentTitle
+      // An empty event during the initial load has no reviewed document, but still needs a message.
+      if (hadReviewedDocument || !nextId) {
+        const title = nextId ? evt?.documentTitle : ''
         error = title
           ? $t(
               'Georef.Wizard.Error.DocumentChanged',

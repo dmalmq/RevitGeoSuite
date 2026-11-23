@@ -161,6 +161,39 @@ public sealed class PlateauGroundSurfaceBuilderTests
         Assert.InRange(groundZMeters, -0.01d, 0.01d);
     }
 
+    [Fact]
+    public void Build_with_transformer_evaluates_the_geoid_at_each_sample()
+    {
+        PlateauGroundSurfaceBuilder.GroundSurfaceResult ground = new PlateauGroundSurfaceBuilder().Build(
+            FlatPlaneSampler(),
+            IdentityContext(),
+            gridSpacingMeters: 25d,
+            new LatitudeGeoidModel(),
+            new NorthingAsLatitudeTransformer());
+
+        Assert.Equal(25, ground.PointCount);
+        Assert.All(ground.Points, point =>
+        {
+            double northingMeters = point.YFeet * 0.3048d;
+            Assert.Equal((50d - (northingMeters / 10d)) * MetersToFeet, point.ZFeet, 6);
+        });
+    }
+
+    private sealed class LatitudeGeoidModel : IGeoidModel
+    {
+        public string Name => "Latitude";
+
+        public double GetUndulationMeters(double latitudeDegrees, double longitudeDegrees) => latitudeDegrees;
+    }
+
+    private sealed class NorthingAsLatitudeTransformer : ICoordinateTransformer
+    {
+        public ProjectedCoordinate Project(GeographicCoordinate coordinate, CrsReference targetCrs) => throw new NotSupportedException();
+
+        public GeographicCoordinate Unproject(ProjectedCoordinate coordinate, CrsReference sourceCrs) =>
+            new GeographicCoordinate(coordinate.Northing / 10d, coordinate.Easting / 10d);
+    }
+
     private sealed class ZeroCoordinateTransformer : ICoordinateTransformer
     {
         public ProjectedCoordinate Project(GeographicCoordinate coordinate, CrsReference targetCrs) => new ProjectedCoordinate(0d, 0d);

@@ -179,7 +179,7 @@ public sealed class TilesetWalker
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (depth > context.MaxDepth || context.Leaves.Count >= context.MaxLeaves)
+        if (depth > context.MaxDepth)
         {
             return WalkResult.Empty;
         }
@@ -243,7 +243,7 @@ public sealed class TilesetWalker
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (depth > context.MaxDepth || context.Leaves.Count >= context.MaxLeaves)
+        if (depth > context.MaxDepth)
         {
             return WalkResult.Empty;
         }
@@ -275,11 +275,6 @@ public sealed class TilesetWalker
             {
                 foreach (TilesetTile child in tile.Children)
                 {
-                    if (context.Leaves.Count >= context.MaxLeaves)
-                    {
-                        break;
-                    }
-
                     WalkResult childResult = await WalkTileAsync(
                         child,
                         world,
@@ -313,11 +308,6 @@ public sealed class TilesetWalker
         {
             foreach (TilesetTile child in tile.Children)
             {
-                if (context.Leaves.Count >= context.MaxLeaves)
-                {
-                    break;
-                }
-
                 WalkResult childResult = await WalkTileAsync(
                     child,
                     world,
@@ -344,7 +334,7 @@ public sealed class TilesetWalker
         WalkContext context,
         CancellationToken ct)
     {
-        if (contentUri is null || context.Leaves.Count >= context.MaxLeaves)
+        if (contentUri is null)
         {
             return WalkResult.Empty;
         }
@@ -363,6 +353,13 @@ public sealed class TilesetWalker
 
         if (LooksLikeB3dm(contentUri))
         {
+            // A truncated leaf list would make re-import delete buildings it never recreates.
+            if (context.Leaves.Count >= context.MaxLeaves)
+            {
+                throw new InvalidOperationException(
+                    $"3D Tileset traversal exceeded the maximum of {context.MaxLeaves} content tiles. Select a smaller area.");
+            }
+
             context.Leaves.Add(new TilesetLeaf(contentUri, world, tileRegion));
             return new WalkResult(emittedLeaves: true, prunedByRegion: false);
         }

@@ -59,10 +59,10 @@
   let geometryMode = $state<'solids' | 'dxf' | 'ground'>('solids')
   // Ground/terrain grid resolution in metres (used when geometryMode === 'ground').
   let groundSpacingMeters = $state(10)
-  // Online terrain: radius (m) around the project to fetch, and the geoid undulation offset
-  // (ellipsoidal Cesium terrain → orthometric model; Japan ≈ 36–42 m).
+  // Online terrain: radius (m) around the project to fetch, and an optional manual geoid
+  // undulation. Left empty, the backend uses the local EGM2008 value at every ground point.
   let groundRadiusMeters = $state(600)
-  let groundGeoidOffsetMeters = $state(36)
+  let groundGeoidOffsetMeters = $state<number | null>(null)
   let onlineBasemapCategories = $state<Set<OnlineBasemapCategory>>(new Set(['buildings', 'roads', 'landuse']))
   let importing = $state(false)
   let importProgress = $state<any>(null)
@@ -365,7 +365,9 @@
           source: 'online',
           radiusMeters: groundRadiusMeters,
           gridSpacingMeters: groundSpacingMeters,
-          geoidOffsetMeters: groundGeoidOffsetMeters,
+          ...(typeof groundGeoidOffsetMeters === 'number' && Number.isFinite(groundGeoidOffsetMeters)
+            ? { geoidOffsetMeters: groundGeoidOffsetMeters }
+            : {}),
           ...(osmIonToken.trim() ? { ionToken: osmIonToken.trim() } : {}),
           ...((catalogDocumentId ?? activeDocumentId) ? { documentId: catalogDocumentId ?? activeDocumentId } : {})
         }

@@ -127,23 +127,8 @@ public sealed class OsmBuildingsImportHandler : IRpcHandler
             PlateauTilesImporterResult result = await RevitContext.Instance.InvokeWithExpectedDocumentAsync(
                 capturedDocumentId,
                 "OSM Buildings import",
-                doc =>
-                {
-                    using Transaction tx = new Transaction(doc, "Import OSM Buildings");
-                    tx.Start();
-                    try
-                    {
-                        PlateauTilesImporter importer = new PlateauTilesImporter();
-                        PlateauTilesImporterResult r = importer.Import(doc, buildings, PlateauOnlineGeometryMode.Lod2Untextured);
-                        tx.Commit();
-                        return r;
-                    }
-                    catch
-                    {
-                        tx.RollBack();
-                        throw;
-                    }
-                },
+                doc => new PlateauTilesImporter()
+                    .ImportAll(doc, "Import OSM Buildings", new[] { buildings }, PlateauOnlineGeometryMode.Lod2Untextured)[0],
                 capturedDocument).ConfigureAwait(false);
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "OSM Buildings import complete" });

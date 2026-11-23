@@ -1215,33 +1215,19 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
     {
         return RevitContext.Instance.InvokeWithExpectedDocumentAsync(expectedDocumentId, "PLATEAU Online import", doc =>
         {
-            using Transaction tx = new Transaction(doc, "Import PLATEAU Online");
-            tx.Start();
-            try
+            IReadOnlyList<PlateauTilesImporterResult> imported = new PlateauTilesImporter().ImportAll(
+                doc,
+                "Import PLATEAU Online",
+                downloads.Select(download => download.Buildings).ToList(),
+                mode);
+            return downloads.Zip(imported, (download, result) => new PlateauOnlineImportAreaResult
             {
-                PlateauTilesImporter importer = new PlateauTilesImporter();
-                List<PlateauOnlineImportAreaResult> results = new List<PlateauOnlineImportAreaResult>(downloads.Count);
-                foreach (AreaDownloadResult download in downloads)
-                {
-                    PlateauTilesImporterResult result = importer.Import(doc, download.Buildings, mode);
-                    results.Add(new PlateauOnlineImportAreaResult
-                    {
-                        AreaCode = download.Area.Code,
-                        AreaLabel = download.Area.Label,
-                        ImportedElements = result.ImportedElementCount,
-                        Groups = result.CreatedGroupCount,
-                        Warnings = download.DownloadWarnings.Concat(result.Warnings).ToArray()
-                    });
-                }
-
-                tx.Commit();
-                return results.ToArray();
-            }
-            catch
-            {
-                tx.RollBack();
-                throw;
-            }
+                AreaCode = download.Area.Code,
+                AreaLabel = download.Area.Label,
+                ImportedElements = result.ImportedElementCount,
+                Groups = result.CreatedGroupCount,
+                Warnings = download.DownloadWarnings.Concat(result.Warnings).ToArray()
+            }).ToArray();
         }, expectedDocument);
     }
 

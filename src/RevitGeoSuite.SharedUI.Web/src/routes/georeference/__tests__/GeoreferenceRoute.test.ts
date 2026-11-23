@@ -238,4 +238,63 @@ describe('GeoreferenceRoute document switching', () => {
     expect(target.textContent).toContain('ModelB.rvt')
     expect(target.textContent).not.toContain('ModelA.rvt')
   })
+
+  it('updates the Review card filename when Save As keeps the same document id', async () => {
+    const { flushSync, mount, unmount } = await import('svelte')
+    const { default: GeoreferenceRoute } = await import('../GeoreferenceRoute.svelte')
+    const flush = async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      flushSync()
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const instance = mount(GeoreferenceRoute, { target })
+    cleanupInstance = () => unmount(instance)
+    flushSync()
+
+    const stateReq = postedMessages.find((m) => m.method === 'georeference.getCurrentState')!
+    reply(stateReq, pristineState('doc-a', 'Before.rvt'))
+    await flush()
+    expect(target.textContent).toContain('Before.rvt')
+
+    const requestsBefore = postedMessages.length
+    emit({
+      kind: 'evt',
+      method: 'document.changed',
+      payload: { documentId: 'doc-a', documentTitle: 'After.rvt' }
+    })
+    await flush()
+
+    expect(target.textContent).toContain('After.rvt')
+    expect(target.textContent).not.toContain('Before.rvt')
+    expect(postedMessages.slice(requestsBefore).some((m) => m.method === 'georeference.getCurrentState')).toBe(false)
+  })
+
+  it('shows a closed-model message when the last model closes during the initial load', async () => {
+    const { flushSync, mount, unmount } = await import('svelte')
+    const { default: GeoreferenceRoute } = await import('../GeoreferenceRoute.svelte')
+    const flush = async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      flushSync()
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const instance = mount(GeoreferenceRoute, { target })
+    cleanupInstance = () => unmount(instance)
+    flushSync()
+
+    const stateReq = postedMessages.find((m) => m.method === 'georeference.getCurrentState')!
+    emit({ kind: 'evt', method: 'document.changed', payload: { documentId: '', documentTitle: '' } })
+    await flush()
+    expect(target.textContent).toContain('The active Revit model was closed')
+
+    reply(stateReq, pristineState('doc-a', 'Stale.rvt'))
+    await flush()
+    expect(target.textContent).not.toContain('Stale.rvt')
+    expect(target.textContent).toContain('The active Revit model was closed')
+  })
 })

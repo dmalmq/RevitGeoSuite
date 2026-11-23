@@ -21,6 +21,44 @@ public sealed class PlateauTilesImporter
     internal const string ApplicationId = "RevitGeoSuite.PlateauImport.Online";
     internal const int DefaultMaxFeaturesPerBatch = 250;
 
+    /// <summary>
+    /// Imports every dataset as one undo step that rolls back as a whole if any dataset fails,
+    /// while each dataset still commits its grid batches in separate transactions.
+    /// </summary>
+    public IReadOnlyList<PlateauTilesImporterResult> ImportAll(
+        Document document,
+        string undoName,
+        IReadOnlyList<PlateauTilesetModel> datasets,
+        PlateauOnlineGeometryMode mode)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (datasets is null) throw new ArgumentNullException(nameof(datasets));
+
+        EnsureImportableDocument(document);
+        using TransactionGroup importGroup = new TransactionGroup(document, undoName);
+        importGroup.Start();
+        try
+        {
+            List<PlateauTilesImporterResult> results = new List<PlateauTilesImporterResult>(datasets.Count);
+            foreach (PlateauTilesetModel dataset in datasets)
+            {
+                results.Add(Import(document, dataset, mode));
+            }
+
+            RequireCommitted(importGroup.Assimilate(), undoName);
+            return results;
+        }
+        catch
+        {
+            if (importGroup.GetStatus() == TransactionStatus.Started)
+            {
+                importGroup.RollBack();
+            }
+
+            throw;
+        }
+    }
+
     public PlateauTilesImporterResult Import(
         Document document,
         PlateauTilesetModel buildings,
@@ -45,15 +83,7 @@ public sealed class PlateauTilesImporter
 
         if (!document.IsModifiable)
         {
-            if (document.IsFamilyDocument)
-            {
-                throw new InvalidOperationException("PLATEAU online import is not supported in family documents.");
-            }
-
-            if (document.IsReadOnly)
-            {
-                throw new InvalidOperationException("This Revit document is read-only. PLATEAU online import requires an editable project.");
-            }
+            EnsureImportableDocument(document);
 
             using TransactionGroup transactionGroup = new TransactionGroup(document, "Import PLATEAU Online");
             transactionGroup.Start();
@@ -63,7 +93,7 @@ public sealed class PlateauTilesImporter
                 {
                     deleteTx.Start();
                     DeleteMatchingExistingImports(document, buildings, warnings);
-                    deleteTx.Commit();
+                    RequireCommitted(deleteTx.Commit(), deleteTx.GetName());
                 }
 
                 HashSet<string> existingGroupNames = GetExistingGroupNames(document);
@@ -87,13 +117,13 @@ public sealed class PlateauTilesImporter
                         buildingMaterialId,
                         existingGroupNames,
                         warnings);
-                    batchTx.Commit();
+                    RequireCommitted(batchTx.Commit(), batchTx.GetName());
 
                     importedCount += batchImported;
                     groupCount += batchGroups;
                 }
 
-                transactionGroup.Assimilate();
+                RequireCommitted(transactionGroup.Assimilate(), "Import PLATEAU Online");
                 return new PlateauTilesImporterResult(importedCount, groupCount, warnings);
             }
             catch
@@ -132,6 +162,28 @@ public sealed class PlateauTilesImporter
         }
 
         return new PlateauTilesImporterResult(importedCount, groupCount, warnings);
+    }
+
+    private static void EnsureImportableDocument(Document document)
+    {
+        if (document.IsFamilyDocument)
+        {
+            throw new InvalidOperationException("PLATEAU online import is not supported in family documents.");
+        }
+
+        if (document.IsReadOnly)
+        {
+            throw new InvalidOperationException("This Revit document is read-only. PLATEAU online import requires an editable project.");
+        }
+    }
+
+    // Revit's failure handling can roll a commit back and report it only through the returned status.
+    private static void RequireCommitted(TransactionStatus status, string operation)
+    {
+        if (status != TransactionStatus.Committed)
+        {
+            throw new InvalidOperationException($"Revit did not commit '{operation}' (status: {status}).");
+        }
     }
 
     private static (int ImportedCount, int GroupCount) ImportBatchInActiveTransaction(
@@ -426,6 +478,16 @@ public sealed class PlateauTilesImporter
             legacyOsmBatchShapeCount);
     }
 
+    internal static string BuildPartialGroupWarning(string groupName, int replacedCount, int keptCount)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "Dissolved group '{0}' to replace {1} matched building(s). Its other {2} building(s) were kept as ungrouped elements.",
+            groupName,
+            replacedCount,
+            keptCount);
+    }
+
     internal static IReadOnlyList<OnlineImportBatch> PartitionIntoBatches(
         PlateauTilesetModel buildings,
         int maxFeaturesPerBatch = DefaultMaxFeaturesPerBatch)
@@ -583,7 +645,10 @@ public sealed class PlateauTilesImporter
                 // feature-ID replacement): ungroup first so Revit permits deleting only the subset.
                 if (group is not null)
                 {
+                    string groupName = group.Name;
+                    int keptMemberCount = Math.Max(0, (allMemberIds?.Count ?? 0) - entry.Value.Count);
                     group.UngroupMembers();
+                    warnings.Add(BuildPartialGroupWarning(groupName, entry.Value.Count, keptMemberCount));
                 }
 
                 foreach (long memberId in entry.Value)

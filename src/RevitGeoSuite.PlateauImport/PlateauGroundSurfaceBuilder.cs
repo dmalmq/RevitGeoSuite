@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.Plateau.Dem;
 using RevitGeoSuite.Core.Plateau.Tiles3D;
 
@@ -51,11 +52,44 @@ public sealed class PlateauGroundSurfaceBuilder
         return Build(sampler, referenceContext, gridSpacingMeters, geoidOffsetMeters);
     }
 
+    /// <summary>
+    /// Builds a ground surface from an ellipsoidal DEM source, evaluating <paramref name="geoidModel"/>
+    /// at every sample's own location, as <see cref="EcefToProjectTransformer"/> does per building vertex.
+    /// </summary>
+    public GroundSurfaceResult Build(
+        DemSampler sampler,
+        PlateauImportReferenceContext referenceContext,
+        double gridSpacingMeters,
+        IGeoidModel geoidModel,
+        ICoordinateTransformer coordinateTransformer)
+    {
+        if (referenceContext is null) throw new ArgumentNullException(nameof(referenceContext));
+        if (geoidModel is null) throw new ArgumentNullException(nameof(geoidModel));
+        if (coordinateTransformer is null) throw new ArgumentNullException(nameof(coordinateTransformer));
+
+        return BuildCore(sampler, referenceContext, gridSpacingMeters, (x, y) =>
+        {
+            GeographicCoordinate location = coordinateTransformer.Unproject(
+                new ProjectedCoordinate(x, y),
+                referenceContext.ProjectCrs);
+            return geoidModel.GetUndulationMeters(location.Latitude, location.Longitude);
+        });
+    }
+
     public GroundSurfaceResult Build(
         DemSampler sampler,
         PlateauImportReferenceContext referenceContext,
         double gridSpacingMeters,
         double geoidOffsetMeters)
+    {
+        return BuildCore(sampler, referenceContext, gridSpacingMeters, (_, _) => geoidOffsetMeters);
+    }
+
+    private GroundSurfaceResult BuildCore(
+        DemSampler sampler,
+        PlateauImportReferenceContext referenceContext,
+        double gridSpacingMeters,
+        Func<double, double, double> undulationAt)
     {
         if (sampler is null) throw new ArgumentNullException(nameof(sampler));
         if (referenceContext is null) throw new ArgumentNullException(nameof(referenceContext));
@@ -120,7 +154,7 @@ public sealed class PlateauGroundSurfaceBuilder
                     continue;
                 }
 
-                double adjustedElevation = elevationMeters - geoidOffsetMeters;
+                double adjustedElevation = elevationMeters - undulationAt(x, y);
                 (double xFeet, double yFeet) = PlateauReferenceFrame.ToLocalFeet(x, y, referenceContext);
                 double zFeet = PlateauReferenceFrame.ToLocalElevationFeet(adjustedElevation, referenceContext);
                 points.Add(new ContextShapePoint3D(xFeet, yFeet, zFeet));
