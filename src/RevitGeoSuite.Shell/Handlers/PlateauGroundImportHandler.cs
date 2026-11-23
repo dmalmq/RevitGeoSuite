@@ -9,6 +9,7 @@ using Newtonsoft.Json.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.Plateau.Dem;
 using RevitGeoSuite.Core.Plateau.Terrain;
+using RevitGeoSuite.Core.Plateau.Tiles3D;
 using RevitGeoSuite.PlateauImport;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
@@ -49,7 +50,10 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
         bool isOnline = string.Equals(source, "online", StringComparison.OrdinalIgnoreCase);
         double gridSpacingMeters = jobj?.Value<double?>("gridSpacingMeters") ?? PlateauGroundSurfaceBuilder.DefaultGridSpacingMeters;
         double radiusMeters = jobj?.Value<double?>("radiusMeters") ?? 600d;
-        double geoidOffsetMeters = jobj?.Value<double?>("geoidOffsetMeters") ?? 0d;
+        double? manualGeoidOffsetMeters = jobj?.Value<double?>("geoidOffsetMeters");
+        IGeoidModel onlineGeoidModel = manualGeoidOffsetMeters.HasValue
+            ? new ConstantGeoidModel(manualGeoidOffsetMeters.Value, "Manual")
+            : Egm2008GeoidModel.Instance;
         string? requestedDocumentId = jobj?.Value<string>("documentId")?.Trim();
         string ionToken = ResolveCesiumIonToken(jobj?.Value<string>("ionToken"));
 
@@ -101,11 +105,8 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
             // 2) Build a DEM sampler from the chosen source (off the Revit thread).
             var warnings = new List<string>();
             DemSampler? sampler;
-            double effectiveGeoidOffset;
             if (isOnline)
             {
-                // Cesium/PLATEAU terrain heights are ellipsoidal — apply the geoid offset.
-                effectiveGeoidOffset = geoidOffsetMeters;
                 progress.Report(new JobProgress { Phase = "downloading", Percent = 15, Message = "Resolving PLATEAU terrain…" });
                 var transport = new CesiumTerrainHttpTransport();
                 CesiumTerrainSource terrainSource = await RunStageAsync("terrain-endpoint", () =>
@@ -128,8 +129,6 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
             }
             else
             {
-                // Local PLATEAU dem is orthometric (same datum as the model anchor), so no geoid offset.
-                effectiveGeoidOffset = 0d;
                 progress.Report(new JobProgress { Phase = "scanning", Percent = 10, Message = "Scanning folder…" });
                 PlateauFolderScanResult scanResult = RunStage("scan", () =>
                 {
@@ -163,8 +162,10 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
 
             // 3) Grid-sample the ground into Revit-frame points.
             progress.Report(new JobProgress { Phase = "building", Percent = 75, Message = "Sampling ground grid…" });
-            PlateauGroundSurfaceBuilder.GroundSurfaceResult ground = RunStage("ground-grid", () =>
-                new PlateauGroundSurfaceBuilder().Build(sampler, referenceContext, gridSpacingMeters, effectiveGeoidOffset));
+            // Cesium terrain is ellipsoidal and needs the geoid. Local PLATEAU DEM is already orthometric.
+            PlateauGroundSurfaceBuilder.GroundSurfaceResult ground = RunStage("ground-grid", () => isOnline
+                ? new PlateauGroundSurfaceBuilder().Build(sampler, referenceContext, gridSpacingMeters, onlineGeoidModel, transformer)
+                : new PlateauGroundSurfaceBuilder().Build(sampler, referenceContext, gridSpacingMeters, geoidOffsetMeters: 0d));
             warnings.AddRange(ground.Warnings);
 
             if (ground.PointCount < 3)

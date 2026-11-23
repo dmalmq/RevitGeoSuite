@@ -9,7 +9,7 @@
     activeOnlineAreas: any
     estimatedTime: any
     geometryMode: 'solids' | 'dxf' | 'ground'
-    groundGeoidOffsetMeters: number
+    groundGeoidOffsetMeters: number | null
     groundRadiusMeters: number
     groundSpacingMeters: number
     ionToken: string
@@ -126,7 +126,7 @@
           <Input id="ground-radius" type="number" mono min="100" max="5000" step="50" bind:value={groundRadiusMeters} />
         </Field>
         <Field label={$t('Import.Ground.GeoidOffset', 'Geoid undulation (m)')} id="ground-geoid">
-          <Input id="ground-geoid" type="number" mono min="-150" max="150" step="0.1" bind:value={groundGeoidOffsetMeters} />
+          <Input id="ground-geoid" type="number" mono min="-150" max="150" step="0.1" placeholder="EGM2008" bind:value={groundGeoidOffsetMeters} />
         </Field>
         <p class="text-small text-muted-foreground">
           {$t('Import.Ground.OnlineHint', 'PLATEAU terrain is fetched around the georeferenced project. Cesium heights are ellipsoidal — the geoid undulation (Japan ≈ 36–42 m) is subtracted to meet the model datum; adjust if the surface sits too high or low.')}
