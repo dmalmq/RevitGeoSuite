@@ -129,7 +129,7 @@
           <Input id="ground-geoid" type="number" mono min="-150" max="150" step="0.1" placeholder="EGM2008" bind:value={groundGeoidOffsetMeters} />
         </Field>
         <p class="text-small text-muted-foreground">
-          {$t('Import.Ground.OnlineHint', 'PLATEAU terrain is fetched around the georeferenced project. Cesium heights are ellipsoidal — the geoid undulation (Japan ≈ 36–42 m) is subtracted to meet the model datum; adjust if the surface sits too high or low.')}
+          {$t('Import.Ground.OnlineHint', 'PLATEAU terrain is fetched around the georeferenced project. Cesium heights are ellipsoidal — local EGM2008 geoid correction is applied automatically by default. Leave blank for EGM2008, or enter a manual override in metres.')}
         </p>
       {:else}
         <p class="text-small text-muted-foreground">

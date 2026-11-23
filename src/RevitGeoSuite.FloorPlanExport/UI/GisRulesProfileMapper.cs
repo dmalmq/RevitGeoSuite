@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
@@ -36,7 +37,9 @@ internal static class GisRulesProfileMapper
         return new GisRulesProfile
         {
             Name = name?.Trim() ?? string.Empty,
-            TargetEpsg = settings.TargetEpsg > 0 ? settings.TargetEpsg : GisRulesProfile.DefaultTargetEpsg,
+            TargetEpsg = settings.TargetEpsg > 0
+                ? JapanPlaneRectangular.NormalizeEpsg(settings.TargetEpsg)
+                : GisRulesProfile.DefaultTargetEpsg,
             CoordinateMode = settings.CoordinateMode,
             FeatureTypes = ToNames(settings.FeatureTypes),
             UnitGeometrySource = geometrySource,
@@ -98,7 +101,9 @@ internal static class GisRulesProfileMapper
 
     public static void ApplyTo(GisRulesProfile profile, ExportDialogSettings settings)
     {
-        settings.TargetEpsg = profile.TargetEpsg;
+        settings.TargetEpsg = profile.TargetEpsg > 0
+            ? JapanPlaneRectangular.NormalizeEpsg(profile.TargetEpsg)
+            : GisRulesProfile.DefaultTargetEpsg;
         settings.CoordinateMode = profile.CoordinateMode;
         settings.FeatureTypes = ToFeatureTypes(profile.FeatureTypes);
         settings.UnitGeometrySource = profile.UnitGeometrySource;

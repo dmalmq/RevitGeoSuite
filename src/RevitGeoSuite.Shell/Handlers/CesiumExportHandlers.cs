@@ -441,12 +441,14 @@ public sealed class CesiumPushHandler : IRpcHandler
                 {
                     string projectKey = DocumentProjectKeyBuilder.Create(document);
                     string buildingName = DocumentProjectKeyBuilder.CreateDisplayName(document);
+                    string modelKey = RevitModelKeyResolver.Resolve(document);
                     return new CesiumPackageBuildInputs
                     {
                         BuildingId = CesiumBuildingIdentity.CreateId(projectKey, buildingName),
                         BuildingName = buildingName,
                         SourceModel = Path.GetFileName(document.PathName ?? string.Empty),
                         DocumentKey = projectKey,
+                        ModelId = RevitKey.IsDocumentModelKey(modelKey) ? null : modelKey,
                         GeneratorVersion = typeof(CesiumPushHandler).Assembly.GetName().Version?.ToString() ?? string.Empty,
                         LevelMap = CesiumExportSupport.BuildLevelMap(document),
                     };

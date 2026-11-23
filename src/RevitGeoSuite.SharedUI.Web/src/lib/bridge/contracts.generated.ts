@@ -1317,6 +1317,7 @@ export interface RpcMethods {
   'gisDrift.applyShapes': { request: GisShapeApplyRequest; response: GisStandardApplyResponse }
   'gisDrift.clearShape': { request: ExporterEmptyRequest; response: void }
   'gisDrift.inspect': { request: GisDriftInspectRequest; response: GisDriftInspectResponse }
+  'gisDrift.keep': { request: GisDriftApplyRequest; response: GisStandardApplyResponse }
   'gisDrift.showShape': { request: GisShapeShowRequest; response: GisShapeShowResponse }
   'gisDrift.waiting': { request: GisStandardEmptyRequest; response: GisDriftWaitingResponse }
   'gisNetwork.inspect': { request: GisStandardEmptyRequest; response: GisNetworkResponse }

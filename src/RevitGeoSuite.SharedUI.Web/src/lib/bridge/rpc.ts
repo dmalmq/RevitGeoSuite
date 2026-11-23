@@ -52,6 +52,7 @@ const NO_TIMEOUT_METHODS = new Set<string>([
   'gisStandard.resetFloorType',
   'gisParameters.apply',
   'gisDrift.apply',
+  'gisDrift.keep',
   'gisDrift.applyShapes',
   'gisDrift.showShape',
   'gisDrift.clearShape',

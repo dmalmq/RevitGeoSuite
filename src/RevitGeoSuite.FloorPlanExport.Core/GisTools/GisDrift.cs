@@ -197,9 +197,16 @@ public sealed class GisDriftShape
 /// <summary>One parameter to set on one element: the GDB's value, accepted into Revit.</summary>
 public sealed class GisDriftChange
 {
-    public GisDriftChange(GisDriftRow row, string parameter, string binding, string oldValue, string newValue)
+    public GisDriftChange(
+        GisDriftRow row,
+        string parameter,
+        string binding,
+        string oldValue,
+        string newValue,
+        IReadOnlyList<GisDriftRow>? rows = null)
     {
         Row = row;
+        Rows = rows is { Count: > 0 } ? rows : new[] { row };
         Parameter = parameter;
         Binding = binding;
         OldValue = oldValue;
@@ -207,6 +214,12 @@ public sealed class GisDriftChange
     }
 
     public GisDriftRow Row { get; }
+
+    /// <summary>
+    /// Every drift row that maps to this element and parameter: usually just <see cref="Row"/>,
+    /// and more than one when a split feature carries several GDB values for the same field.
+    /// </summary>
+    public IReadOnlyList<GisDriftRow> Rows { get; }
 
     public string UniqueId => Row.UniqueId;
 
@@ -219,7 +232,7 @@ public sealed class GisDriftChange
 
     public string NewValue { get; }
 
-    public bool Conflict => Row.Conflict;
+    public bool Conflict => Rows.Any(row => row.Conflict);
 
     public string Label()
     {
@@ -429,9 +442,9 @@ public static class GisDrift
         Func<string, string, string, string?> current,
         GisToolStandard standard)
     {
-        List<GisDriftChange> changes = new();
+        List<(GisDriftRow Row, string Parameter, string Binding, string OldValue, string NewValue, List<GisDriftRow> Rows)> planned = new();
         List<string> problems = new();
-        HashSet<(string, string, string)> seen = new();
+        Dictionary<(string, string, string), List<GisDriftRow>> rowsByTarget = new();
         foreach (GisDriftRow row in driftFile.Rows)
         {
             (string Parameter, string Binding)? target = Target(row);
@@ -479,14 +492,23 @@ public static class GisDrift
                 continue;
             }
 
-            if (!seen.Add((row.UniqueId, parameter, binding)))
+            (string, string, string) targetKey = (row.UniqueId, parameter, binding);
+            if (rowsByTarget.TryGetValue(targetKey, out List<GisDriftRow>? existingRows))
             {
+                // A split feature can carry several GDB rows for one element and parameter: keep every
+                // row attached to the collapsed change so "Keep Revit's" records an answer for each GDB value.
+                existingRows.Add(row);
                 continue;
             }
 
-            changes.Add(new GisDriftChange(row, parameter, binding, old, value!));
+            List<GisDriftRow> group = new() { row };
+            rowsByTarget[targetKey] = group;
+            planned.Add((row, parameter, binding, old, value!, group));
         }
 
+        List<GisDriftChange> changes = planned
+            .Select(item => new GisDriftChange(item.Row, item.Parameter, item.Binding, item.OldValue, item.NewValue, item.Rows.AsReadOnly()))
+            .ToList();
         return (changes, problems);
     }
 
@@ -537,10 +559,15 @@ public static class GisDrift
         return (changes, skipped);
     }
 
-    private static bool Same(string parameter, string old, string value)
+    public static bool Same(string parameter, string old, string value)
     {
         if (ParameterTable.IntegerColumns.Contains(parameter))
         {
+            if (string.IsNullOrWhiteSpace(old) && string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
             return int.TryParse(old.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int left) &&
                    int.TryParse(value.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int right) &&
                    left == right;
