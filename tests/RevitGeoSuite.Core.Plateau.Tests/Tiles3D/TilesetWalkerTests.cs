@@ -194,12 +194,12 @@ public sealed class TilesetWalkerTests
         }
 
         TilesetWalker walker = new TilesetWalker(fake);
-        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(
-            new Uri("https://example.com/diamond/d0.json"),
-            CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            walker.WalkAsync(
+                new Uri("https://example.com/diamond/d0.json"),
+                CancellationToken.None));
 
-        Assert.Empty(leaves);
-        // Each tileset URL is fetched at most once (bounded by level count, never 2^32).
+        // Fails closed once the visit budget is exceeded, while fetching each URL at most once.
         Assert.InRange(fake.RequestedUrls.Count, 1, levels);
     }
 

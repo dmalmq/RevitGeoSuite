@@ -117,7 +117,7 @@ public sealed class TilesetWalker
 {
     public const int DefaultMaxDepth = 64;
     public const int DefaultMaxLeaves = 10_000;
-    public const int DefaultMaxTilesetVisits = 1_000;
+    public const int DefaultMaxTilesetVisits = 20_000;
 
     private readonly IPlateauHttpClient httpClient;
     private readonly int maxDepth;
@@ -179,9 +179,7 @@ public sealed class TilesetWalker
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (depth > context.MaxDepth
-            || context.Leaves.Count >= context.MaxLeaves
-            || context.TilesetVisits >= context.MaxTilesetVisits)
+        if (depth > context.MaxDepth || context.Leaves.Count >= context.MaxLeaves)
         {
             return WalkResult.Empty;
         }
@@ -194,12 +192,18 @@ public sealed class TilesetWalker
             return WalkResult.Empty;
         }
 
-        context.TilesetVisits++;
-
         try
         {
+            if (context.TilesetVisits >= context.MaxTilesetVisits)
+            {
+                throw new InvalidOperationException(
+                    $"3D Tileset traversal exceeded the maximum of {context.MaxTilesetVisits} sub-tileset visits.");
+            }
+
+            context.TilesetVisits++;
+
             // Fetch and parse each tileset URL at most once per walk; total visits are also bounded
-            // by MaxTilesetVisits so no-leaf diamond DAG fan-out cannot cause exponential work.
+            // by MaxTilesetVisits so no-leaf diamond DAG fan-out fails closed instead of hanging.
             if (!context.ParsedTilesetCache.TryGetValue(tilesetKey, out TilesetJson? tileset))
             {
                 string body = await httpClient.GetStringAsync(tilesetUrl, ct).ConfigureAwait(false);

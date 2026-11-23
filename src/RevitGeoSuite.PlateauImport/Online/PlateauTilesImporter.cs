@@ -62,7 +62,7 @@ public sealed class PlateauTilesImporter
                 using (Transaction deleteTx = new Transaction(document, "Replace PLATEAU Online Imports"))
                 {
                     deleteTx.Start();
-                    DeleteMatchingExistingImports(document, buildings);
+                    DeleteMatchingExistingImports(document, buildings, warnings);
                     deleteTx.Commit();
                 }
 
@@ -109,7 +109,7 @@ public sealed class PlateauTilesImporter
 
         // Caller already owns an active transaction (e.g. legacy handler wrapper): perform the same
         // strictly scoped delete and per-grid/tile batch creation + grouping within it.
-        DeleteMatchingExistingImports(document, buildings);
+        DeleteMatchingExistingImports(document, buildings, warnings);
         HashSet<string> activeGroupNames = GetExistingGroupNames(document);
         ElementId activeCategoryId = ResolveCategoryId(document, warnings);
         PlateauImportMaterialFactory activeMaterialFactory = new PlateauImportMaterialFactory();
@@ -370,6 +370,62 @@ public sealed class PlateauTilesImporter
         return incomingGridIds.Count > 0 && incomingGridIds.Contains(existingGrid);
     }
 
+    internal static bool IsLegacyUnmatchedOsmBatchShape(
+        PlateauOnlineImportMetadata existing,
+        PlateauTilesetModel incoming)
+    {
+        if (existing is null) throw new ArgumentNullException(nameof(existing));
+        if (incoming is null) throw new ArgumentNullException(nameof(incoming));
+
+        if (NormalizeScopeToken(incoming.AreaCode).Length > 0
+            || NormalizeScopeToken(existing.AreaCode).Length > 0)
+        {
+            return false;
+        }
+
+        string existingDataset = NormalizeScopeToken(existing.Dataset);
+        string incomingDataset = NormalizeScopeToken(incoming.TypeEn);
+        if (existingDataset.Length > 0
+            && !string.Equals(existingDataset, incomingDataset, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string existingSourceUrl = NormalizeScopeToken(existing.SourceUrl);
+        string incomingSourceUrl = NormalizeScopeToken(incoming.SourceUrl);
+        if (existingSourceUrl.Length > 0
+            && incomingSourceUrl.Length > 0
+            && !string.Equals(existingSourceUrl, incomingSourceUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string existingLod = NormalizeScopeToken(existing.Lod);
+        string incomingLod = NormalizeScopeToken(incoming.Lod);
+        if (!string.Equals(existingLod, incomingLod, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string existingGrid = NormalizeScopeToken(existing.GridId);
+        string existingGmlId = NormalizeScopeToken(existing.GmlId);
+        return existingGrid.Length == 0
+            && existingGmlId.StartsWith("batch-", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string? BuildLegacyOsmWarningIfNeeded(int legacyOsmBatchShapeCount)
+    {
+        if (legacyOsmBatchShapeCount <= 0)
+        {
+            return null;
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "Left {0} legacy OSM building shape(s) from an earlier version in place to avoid unintended deletions outside the current bounding box; delete them manually if you want to remove prior imports.",
+            legacyOsmBatchShapeCount);
+    }
+
     internal static IReadOnlyList<OnlineImportBatch> PartitionIntoBatches(
         PlateauTilesetModel buildings,
         int maxFeaturesPerBatch = DefaultMaxFeaturesPerBatch)
@@ -450,12 +506,16 @@ public sealed class PlateauTilesImporter
         return preferred;
     }
 
-    private static void DeleteMatchingExistingImports(Document document, PlateauTilesetModel buildings)
+    private static void DeleteMatchingExistingImports(
+        Document document,
+        PlateauTilesetModel buildings,
+        ICollection<string> warnings)
     {
         HashSet<string> incomingGridIds = CollectIncomingGridIds(buildings);
         HashSet<string> incomingFeatureIds = CollectIncomingFeatureIds(buildings);
         Dictionary<long, HashSet<long>> matchedMembersByGroupId = new Dictionary<long, HashSet<long>>();
         HashSet<long> ungroupedIds = new HashSet<long>();
+        int legacyOsmBatchShapeCount = 0;
 
         foreach (DirectShape directShape in new FilteredElementCollector(document).OfClass(typeof(DirectShape)).Cast<DirectShape>())
         {
@@ -471,6 +531,11 @@ public sealed class PlateauTilesImporter
 
             if (!MatchesReplacementScope(metadata, buildings, incomingGridIds, incomingFeatureIds))
             {
+                if (IsLegacyUnmatchedOsmBatchShape(metadata, buildings))
+                {
+                    legacyOsmBatchShapeCount++;
+                }
+
                 continue;
             }
 
@@ -491,6 +556,12 @@ public sealed class PlateauTilesImporter
             }
         }
 
+        string? legacyOsmWarning = BuildLegacyOsmWarningIfNeeded(legacyOsmBatchShapeCount);
+        if (legacyOsmWarning is not null)
+        {
+            warnings.Add(legacyOsmWarning);
+        }
+
         List<ElementId> groupIdsToDelete = new List<ElementId>();
         List<ElementId> directShapeIdsToDelete = ungroupedIds.Select(id => new ElementId(id)).ToList();
 
@@ -508,7 +579,13 @@ public sealed class PlateauTilesImporter
             }
             else
             {
-                // Partial match inside a legacy multi-grid group: only delete the matching members.
+                // Partial match inside an existing group (e.g. cross-grid PLATEAU dedupe or OSM
+                // feature-ID replacement): ungroup first so Revit permits deleting only the subset.
+                if (group is not null)
+                {
+                    group.UngroupMembers();
+                }
+
                 foreach (long memberId in entry.Value)
                 {
                     directShapeIdsToDelete.Add(new ElementId(memberId));

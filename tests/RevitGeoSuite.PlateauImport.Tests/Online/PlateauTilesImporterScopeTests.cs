@@ -241,6 +241,38 @@ public sealed class PlateauTilesImporterScopeTests
     }
 
     [Fact]
+    public void Legacy_osm_batch_shapes_are_preserved_and_emit_a_warning_on_reimport()
+    {
+        const string legacyOsmBatchJson =
+            "{\"gml_id\":\"batch-0\",\"feature_type\":\"bldg:Building\",\"source_url\":\"https://example.test/tileset.json\",\"area_code\":null,\"lod\":null,\"mode\":\"Lod2Untextured\"}";
+
+        Assert.True(PlateauTilesImporter.TryReadMetadata(legacyOsmBatchJson, out PlateauTilesImporter.PlateauOnlineImportMetadata? legacyBatch));
+
+        PlateauTilesetModel incomingOsm = BuildModel(
+            areaCode: null,
+            dataset: "OSM Buildings",
+            lod: null,
+            gridId: "53394536",
+            featureId: "tile-abcd1234-batch-0");
+        HashSet<string> grids = PlateauTilesImporter.CollectIncomingGridIds(incomingOsm);
+        HashSet<string> features = PlateauTilesImporter.CollectIncomingFeatureIds(incomingOsm);
+
+        // Legacy batch-* OSM shape is left untouched (safe against cross-tile collisions)...
+        Assert.False(PlateauTilesImporter.MatchesReplacementScope(legacyBatch!, incomingOsm, grids, features));
+
+        // ...and flagged so the importer emits a clear warning to the user.
+        Assert.True(PlateauTilesImporter.IsLegacyUnmatchedOsmBatchShape(legacyBatch!, incomingOsm));
+        string? warning = PlateauTilesImporter.BuildLegacyOsmWarningIfNeeded(1);
+        Assert.NotNull(warning);
+        Assert.Contains("legacy OSM", warning!, StringComparison.OrdinalIgnoreCase);
+
+        // Non-OSM (PLATEAU) re-imports must not emit the legacy OSM warning.
+        PlateauTilesetModel incomingPlateau = BuildModel("13101", "bldg", "2", "53394536", "bldg-1");
+        Assert.False(PlateauTilesImporter.IsLegacyUnmatchedOsmBatchShape(legacyBatch!, incomingPlateau));
+        Assert.Null(PlateauTilesImporter.BuildLegacyOsmWarningIfNeeded(0));
+    }
+
+    [Fact]
     public void PartitionIntoBatches_groups_by_grid_and_chunks_large_grids()
     {
         List<PlateauTilesetFeature> features = new List<PlateauTilesetFeature>();
