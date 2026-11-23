@@ -1,10 +1,14 @@
+using RevitGeoSuite.Core.Storage;
+
 namespace RevitGeoSuite.RevitInterop.Storage;
 
 public static class RevitStorageSchemaNames
 {
-    public const string GeoProjectInfo = "RevitGeoSuiteGeoProjectInfo";
+    public const string GeoProjectInfo = RevitStorageContract.GeoProjectInfoSchemaName;
 
-    public const string PlacementAudit = "RevitGeoSuiteGeoreferenceAudit";
+    public const string ModuleState = RevitStorageContract.ModuleStateSchemaName;
 
-    public const string GeoreferenceUndo = "RevitGeoSuiteGeoreferenceUndo";
+    public const string PlacementAudit = RevitStorageContract.PlacementAuditSchemaName;
+
+    public const string GeoreferenceUndo = RevitStorageContract.GeoreferenceUndoSchemaName;
 }

@@ -10,10 +10,10 @@ namespace RevitGeoSuite.RevitInterop.Storage;
 
 public sealed class GeoProjectInfoStorage : IGeoProjectInfoStore
 {
-    private static readonly Guid SchemaGuid = new("1AA3F739-27A4-4426-B9A6-B0A6D7088F8D");
-    private const string SchemaVersionFieldName = "SchemaVersion";
-    private const string PayloadTypeFieldName = "PayloadType";
-    private const string PayloadJsonFieldName = "PayloadJson";
+    private static readonly Guid SchemaGuid = new(RevitStorageContract.GeoProjectInfoSchemaGuid);
+    private const string SchemaVersionFieldName = RevitStorageContract.SchemaVersionFieldName;
+    private const string PayloadTypeFieldName = RevitStorageContract.PayloadTypeFieldName;
+    private const string PayloadJsonFieldName = RevitStorageContract.PayloadJsonFieldName;
 
     public void Save(IDocumentHandle document, GeoProjectInfo info)
     {
@@ -45,7 +45,7 @@ public sealed class GeoProjectInfoStorage : IGeoProjectInfoStore
         StorageEnvelope<string> envelope = new StorageEnvelope<string>
         {
             SchemaVersion = SchemaVersion.Current,
-            PayloadType = nameof(GeoProjectInfo),
+            PayloadType = RevitStorageContract.GeoProjectInfoPayloadType,
             Payload = JsonConvert.SerializeObject(info)
         };
 

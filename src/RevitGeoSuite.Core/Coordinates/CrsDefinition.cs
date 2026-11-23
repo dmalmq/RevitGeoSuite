@@ -34,6 +34,8 @@ public sealed class CrsDefinition
 
     public string AreaSummary { get; set; } = string.Empty;
 
+    public string SearchAliases { get; set; } = string.Empty;
+
     /// <summary>
     /// Optional OGC WKT definition. When set, the transformer uses this directly instead of
     /// building from projection parameters — needed for projection methods that ProjNet cannot

@@ -9,10 +9,10 @@ namespace RevitGeoSuite.RevitInterop.Storage;
 
 public sealed class PlacementAuditStorage
 {
-    private static readonly Guid SchemaGuid = new("18A444A0-CE9E-4C12-9945-873B5F521A41");
-    private const string SchemaVersionFieldName = "SchemaVersion";
-    private const string PayloadTypeFieldName = "PayloadType";
-    private const string PayloadJsonFieldName = "PayloadJson";
+    private static readonly Guid SchemaGuid = new(RevitStorageContract.PlacementAuditSchemaGuid);
+    private const string SchemaVersionFieldName = RevitStorageContract.SchemaVersionFieldName;
+    private const string PayloadTypeFieldName = RevitStorageContract.PayloadTypeFieldName;
+    private const string PayloadJsonFieldName = RevitStorageContract.PayloadJsonFieldName;
 
     public void Save(IDocumentHandle document, PlacementAuditRecord record)
     {
@@ -28,7 +28,7 @@ public sealed class PlacementAuditStorage
 
         Entity entity = new Entity(schema);
         entity.Set(schema.GetField(SchemaVersionFieldName), 1);
-        entity.Set(schema.GetField(PayloadTypeFieldName), nameof(PlacementAuditRecord));
+        entity.Set(schema.GetField(PayloadTypeFieldName), RevitStorageContract.PlacementAuditPayloadType);
         entity.Set(schema.GetField(PayloadJsonFieldName), payload);
         handle.Document.ProjectInformation.SetEntity(entity);
     }

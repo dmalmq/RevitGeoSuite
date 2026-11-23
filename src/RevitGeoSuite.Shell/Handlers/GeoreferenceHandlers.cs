@@ -391,7 +391,7 @@ public sealed class GeoreferenceApplyHandler : IRpcHandler
         // persisted. This is the equivalent of the WPF BuildExistingSetupMetadataIntent path.
         return RevitContext.Instance.InvokeWithExpectedDocumentAsync<object?>(expectedDocumentId, "confirming existing georeference setup", document =>
         {
-            var reader = new ProjectLocationReader(new GeoProjectInfoStorage());
+            var reader = new ProjectLocationReader(new GeoProjectInfoStorage(), crsOverride: definition.ToReference());
             CurrentProjectStateSummary state = reader.Read(document);
 
             if (!state.SurveyPoint.HasEstimatedLocation || !state.ProjectBasePoint.HasEstimatedLocation)

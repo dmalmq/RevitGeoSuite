@@ -251,6 +251,7 @@ public sealed class FloorExportDataPreparer
                         unitExtractor,
                         supplementalUnitLayer,
                         fixtureLayer,
+                        activeSchemaProfile,
                         viewWarnings,
                         precomputedHostVerticalIds);
                     AddColumns(levelId, context.View, context.Columns, unitExtractor, supplementalUnitLayer, viewWarnings);
@@ -487,6 +488,7 @@ public sealed class FloorExportDataPreparer
         UnitExtractor extractor,
         ExportLayer unitLayer,
         ExportLayer? fixtureLayer,
+        SchemaProfile schemaProfile,
         ICollection<string> warnings,
         ICollection<long>? skippedSourceElementIds = null)
     {
@@ -505,7 +507,7 @@ public sealed class FloorExportDataPreparer
                 {
                     if (fixtureLayer != null)
                     {
-                        fixtureLayer.AddFeature(RemapToFixtureAttributes(feature));
+                        fixtureLayer.AddFeature(RemapToFixtureAttributes(feature, familyUnit, view.Name, schemaProfile, warnings));
                     }
                 }
                 else
@@ -1125,19 +1127,23 @@ public sealed class FloorExportDataPreparer
                Math.Abs(a.Y - b.Y) <= tolerance;
     }
 
-    private static ExportPolygon RemapToFixtureAttributes(ExportPolygon unitFeature)
+    private static ExportPolygon RemapToFixtureAttributes(
+        ExportPolygon unitFeature,
+        FamilyInstance sourceElement,
+        string? viewName,
+        SchemaProfile schemaProfile,
+        ICollection<string> warnings)
     {
-        Dictionary<string, object?> attributes = new()
-        {
-            ["id"] = unitFeature.Attributes.TryGetValue("id", out object? id) ? id : null,
-            [RevitKey.AttributeName] = unitFeature.Attributes.TryGetValue(RevitKey.AttributeName, out object? revitKey) ? revitKey : null,
-            ["type"] = unitFeature.Attributes.TryGetValue("category", out object? category) ? category : null,
-            ["name"] = unitFeature.Attributes.TryGetValue("name", out object? name) ? name : null,
-            ["alt_name"] = unitFeature.Attributes.TryGetValue("alt_name", out object? altName) ? altName : null,
-            ["level_id"] = unitFeature.Attributes.TryGetValue("level_id", out object? levelId) ? levelId : null,
-            ["source"] = unitFeature.Attributes.TryGetValue("source", out object? source) ? source : null,
-            ["display_point"] = unitFeature.Attributes.TryGetValue("display_point", out object? dp) ? dp : null,
-        };
+        Dictionary<string, object?> attributes = FixtureFeatureAttributes.FromUnit(unitFeature.Attributes);
+        // Mappings read the full unit values, so a fixture field can use any derived value.
+        SchemaAttributeMapper.ApplyMappings(
+            schemaProfile,
+            SchemaLayerType.Fixture,
+            attributes,
+            sourceElement,
+            viewName,
+            warnings,
+            unitFeature.Attributes.ToDictionary(entry => entry.Key, entry => entry.Value));
 
         return new ExportPolygon(unitFeature.Polygons, attributes);
     }
@@ -1389,6 +1395,7 @@ public sealed class FloorExportDataPreparer
                 linkedUnitExtractor,
                 supplementalUnitLayer,
                 fixtureLayer,
+                activeSchemaProfile,
                 warnings,
                 precomputedLinkedEscalatorIds);
             AddColumns(levelId, context.View, linkedSource.Columns, linkedUnitExtractor, supplementalUnitLayer, warnings);

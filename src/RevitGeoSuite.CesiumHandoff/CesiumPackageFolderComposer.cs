@@ -10,6 +10,7 @@ namespace RevitGeoSuite.CesiumHandoff;
 /// bundle or a floor-plan GIS output) so the individual export dialogs' "Send to Cesium viewer"
 /// action can push a tiles-only or GIS-only package without the tiles/-gis/ layout the combined
 /// export produces. Artifacts are described wherever they actually are, path-relative to the folder.
+/// A station version folder keeps its own manifest and is never written to.
 /// </summary>
 public static class CesiumPackageFolderComposer
 {
@@ -26,6 +27,26 @@ public static class CesiumPackageFolderComposer
         }
 
         string root = folder.Trim();
+        if (CesiumStationFolder.IsVersionFolder(root))
+        {
+            // Kanizu reads this manifest, and a version never changes once published.
+            string manifestPath = Path.Combine(root, "cesium-package.json");
+            if (!File.Exists(manifestPath))
+            {
+                throw new InvalidOperationException(
+                    $"'{root}' is a station version folder without a manifest, so it cannot be sent.");
+            }
+
+            return CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath));
+        }
+
+        string? enclosingVersion = CesiumStationFolder.FindEnclosingVersionFolder(root);
+        if (enclosingVersion != null)
+        {
+            throw new InvalidOperationException(
+                $"'{root}' is inside the station version '{enclosingVersion}'. Send the version folder itself.");
+        }
+
         CesiumPackageTiles? tiles = FindTiles(root);
         CesiumPackageGis? gis = FindGis(root, inputs);
         if (tiles is null && gis is null)

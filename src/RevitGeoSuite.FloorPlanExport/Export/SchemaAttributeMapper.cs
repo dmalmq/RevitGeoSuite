@@ -60,7 +60,8 @@ internal static class SchemaAttributeMapper
         IDictionary<string, object?> attributes,
         Element? sourceElement,
         string? viewName,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        IDictionary<string, object?>? valueSource = null)
     {
         if (attributes == null)
         {
@@ -85,7 +86,7 @@ internal static class SchemaAttributeMapper
                 continue;
             }
 
-            if (!TryResolveSourceValue(mapping, attributes, sourceElement, layerType, viewName, out object? sourceValue, out string? sourceFailure))
+            if (!TryResolveSourceValue(mapping, valueSource ?? attributes, sourceElement, layerType, viewName, out object? sourceValue, out string? sourceFailure))
             {
                 object? fallbackValue = ResolveFallbackValue(mapping);
                 if (mapping.WarnWhenMissing)

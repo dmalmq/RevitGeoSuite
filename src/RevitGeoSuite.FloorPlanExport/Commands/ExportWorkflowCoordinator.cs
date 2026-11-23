@@ -107,7 +107,8 @@ public sealed class ExportWorkflowCoordinator
         CancellationToken cancellationToken = default,
         string? baselineKeyOverride = null,
         bool persistBaseline = true,
-        bool recordViewsInGisModel = false)
+        bool recordViewsInGisModel = false,
+        bool requireCompleteLinkCoverage = false)
     {
         List<string> rulesWarnings = new();
         GisRulesSource rules = ResolveRulesForExport(rulesWarnings);
@@ -156,7 +157,8 @@ public sealed class ExportWorkflowCoordinator
             request.SectionBoxBelowFloorMeters,
             request.Keep3DTempViewsForDebug,
             request.UnitCategories,
-            rules);
+            rules,
+            requireCompleteLinkCoverage);
         session.OutputFormat = request.OutputFormat;
 
         // Validation feeds diagnostics only. The wizard surfaces readiness inline at Preview,
