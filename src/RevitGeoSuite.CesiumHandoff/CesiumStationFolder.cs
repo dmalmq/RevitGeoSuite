@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace RevitGeoSuite.CesiumHandoff;
 
@@ -21,6 +22,10 @@ public static class CesiumStationFolder
     public const string RevitDirectoryName = "revit";
 
     public const string StagingPrefix = ".tmp-";
+
+    private static readonly Regex VersionFolderNamePattern = new(
+        @"^\d{8}T\d{6}Z(-[0-9a-f]+)?(-\d+)?$",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>Starts a staging package on the same volume as the versions it will join.</summary>
     public static CesiumPackageLayout CreateStagingLayout(string stationFolder)
@@ -97,6 +102,49 @@ public static class CesiumStationFolder
         string hash = (contentHash ?? string.Empty).Trim();
         hash = hash.Length > 8 ? hash.Substring(0, 8) : hash;
         return hash.Length > 0 ? $"{time}-{hash.ToLowerInvariant()}" : time;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="folder"/> is a published version:
+    /// <c>revit/&lt;model&gt;/&lt;yyyyMMddTHHmmssZ&gt;-&lt;hash8&gt;</c>, with the suffix a same-second export gets.
+    /// </summary>
+    public static bool IsVersionFolder(string folder)
+    {
+        return !string.IsNullOrWhiteSpace(folder) && IsVersionDirectory(ToDirectory(folder));
+    }
+
+    /// <summary>The published version that strictly contains <paramref name="folder"/>, or null.</summary>
+    public static string? FindEnclosingVersionFolder(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return null;
+        }
+
+        for (DirectoryInfo? current = ToDirectory(folder).Parent; current != null; current = current.Parent)
+        {
+            if (IsVersionDirectory(current))
+            {
+                return current.FullName;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsVersionDirectory(DirectoryInfo directory)
+    {
+        return VersionFolderNamePattern.IsMatch(directory.Name) &&
+               string.Equals(directory.Parent?.Parent?.Name, RevitDirectoryName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DirectoryInfo ToDirectory(string folder)
+    {
+        string full = Path.GetFullPath(folder.Trim());
+        // Trimming a root would turn C:\ into the drive-relative C: and / into an empty path.
+        return string.Equals(full, Path.GetPathRoot(full), StringComparison.OrdinalIgnoreCase)
+            ? new DirectoryInfo(full)
+            : new DirectoryInfo(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     }
 
     private static string RevitRoot(string stationFolder)

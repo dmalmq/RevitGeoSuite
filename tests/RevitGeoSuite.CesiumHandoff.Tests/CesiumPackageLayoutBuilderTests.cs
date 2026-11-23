@@ -188,6 +188,39 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
     }
 
     [Fact]
+    public void WriteManifest_IgnoresArtifactsInNestedHandoffPackage()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.GisDirectory, "tower.gpkg"), "gpkg");
+        string nested = Path.Combine(layout.GisDirectory, "handoff-package-20260101-000000");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "tower.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(nested, "foo.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(nested, "package-manifest.json"), "{}");
+
+        CesiumPackageManifest manifest = builder.WriteManifest(layout, CreateInputs());
+
+        Assert.Equal("gis/tower.gpkg", Assert.Single(manifest.Gis!.Artifacts!).Path);
+        Assert.Null(manifest.Gis!.PackageManifest);
+    }
+
+    [Fact]
+    public void WriteManifest_WithOnlyNestedHandoffPackage_HasNoGisSection()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
+        string nested = Path.Combine(layout.GisDirectory, "handoff-package-20260101-000000");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "foo.gpkg"), "gpkg");
+
+        CesiumPackageManifest manifest = builder.WriteManifest(layout, CreateInputs());
+
+        Assert.Null(manifest.Gis);
+    }
+
+    [Fact]
     public void WriteManifest_WritesAnchorSourceNumbersAndModelId()
     {
         var builder = new CesiumPackageLayoutBuilder();
