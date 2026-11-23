@@ -132,6 +132,8 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
     [InlineData("20260102T030405Z-abcdef12")]
     [InlineData("20260102T030405Z-abcdef12-2")]
     [InlineData("20260102T030405Z")]
+    [InlineData("20260102T030405Z-ABCDEF12")]
+    [InlineData("20260102t030405z-abcdef12")]
     public void ComposeFromFolder_LeavesStationVersionManifestUntouched(string versionName)
     {
         string version = Path.Combine(_root, "station", "revit", "tower-12345678", versionName);
@@ -166,6 +168,32 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
 
         Assert.Throws<InvalidOperationException>(() => CesiumPackageFolderComposer.ComposeFromFolder(version, Inputs()));
         Assert.False(File.Exists(Path.Combine(version, "cesium-package.json")));
+    }
+
+    [Theory]
+    [InlineData("gis")]
+    [InlineData("tiles")]
+    public void ComposeFromFolder_RefusesSubfolderOfStationVersion(string subfolder)
+    {
+        string version = Path.Combine(_root, "station", "revit", "tower-12345678", "20260102T030405Z-abcdef12");
+        string inside = Path.Combine(version, subfolder);
+        Directory.CreateDirectory(inside);
+        File.WriteAllText(Path.Combine(inside, "tower.gpkg"), "gpkg");
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => CesiumPackageFolderComposer.ComposeFromFolder(inside, Inputs()));
+
+        Assert.Contains(version, exception.Message);
+        Assert.False(File.Exists(Path.Combine(inside, "cesium-package.json")));
+    }
+
+    [Theory]
+    [InlineData(@"C:\")]
+    [InlineData("/")]
+    public void VersionFolderChecks_TreatFilesystemRootsAsOrdinaryFolders(string root)
+    {
+        Assert.False(CesiumStationFolder.IsVersionFolder(root));
+        Assert.Null(CesiumStationFolder.FindEnclosingVersionFolder(root));
     }
 
     [Fact]

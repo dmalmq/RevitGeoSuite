@@ -40,6 +40,13 @@ public static class CesiumPackageFolderComposer
             return CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath));
         }
 
+        string? enclosingVersion = CesiumStationFolder.FindEnclosingVersionFolder(root);
+        if (enclosingVersion != null)
+        {
+            throw new InvalidOperationException(
+                $"'{root}' is inside the station version '{enclosingVersion}'. Send the version folder itself.");
+        }
+
         CesiumPackageTiles? tiles = FindTiles(root);
         CesiumPackageGis? gis = FindGis(root, inputs);
         if (tiles is null && gis is null)

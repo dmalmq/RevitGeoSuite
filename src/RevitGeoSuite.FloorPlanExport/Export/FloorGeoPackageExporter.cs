@@ -146,6 +146,12 @@ public sealed class FloorGeoPackageExporter
             throw new InvalidOperationException("No valid plan views were selected for export.");
         }
 
+        ViewExportContextProvider contextProvider = new(_document);
+        if (requireCompleteLinkCoverage)
+        {
+            LinkCoverage.ThrowIfIncomplete(contextProvider.FindLinkCoverageProblems(linkExportOptions));
+        }
+
         Directory.CreateDirectory(outputDirectory);
 
         List<string> setupWarnings = new();
@@ -163,7 +169,6 @@ public sealed class FloorGeoPackageExporter
         setupWarnings.AddRange(GisAudit.ExportRecord(ModelSnapshotReader.AuditErrors(_document)));
         SharedParameterManager parameterManager = new(_document);
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
-        ViewExportContextProvider contextProvider = new(_document);
         string projectKey = DocumentProjectKeyBuilder.Create(_document);
         LoadResult<ProjectMappingRules> rulesLoad = (rulesSource ?? GisRulesSourceFactory.For(_document)).Load();
         setupWarnings.AddRange(rulesLoad.Warnings);
@@ -178,11 +183,6 @@ public sealed class FloorGeoPackageExporter
         // The field list's parameter and derived rows become columns, beside the profile's own.
         SchemaProfile effectiveSchemaProfile = fieldList.ApplyTo(activeSchemaProfile);
         ValidationPolicyProfile effectiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
-
-        if (requireCompleteLinkCoverage)
-        {
-            LinkCoverage.ThrowIfIncomplete(contextProvider.FindLinkCoverageProblems(effectiveLinkExportOptions));
-        }
 
         using Temp3DViewScope? threeDViewScope = use3DSectionBoxExport
             ? new Temp3DViewScope(_document, exportViews, sectionBoxAboveFloorMeters, sectionBoxBelowFloorMeters, keep3DTempViewsForDebug)

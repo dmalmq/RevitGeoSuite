@@ -25,7 +25,7 @@ public static class CesiumStationFolder
 
     private static readonly Regex VersionFolderNamePattern = new(
         @"^\d{8}T\d{6}Z(-[0-9a-f]+)?(-\d+)?$",
-        RegexOptions.CultureInvariant);
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>Starts a staging package on the same volume as the versions it will join.</summary>
     public static CesiumPackageLayout CreateStagingLayout(string stationFolder)
@@ -110,14 +110,41 @@ public static class CesiumStationFolder
     /// </summary>
     public static bool IsVersionFolder(string folder)
     {
+        return !string.IsNullOrWhiteSpace(folder) && IsVersionDirectory(ToDirectory(folder));
+    }
+
+    /// <summary>The published version that strictly contains <paramref name="folder"/>, or null.</summary>
+    public static string? FindEnclosingVersionFolder(string folder)
+    {
         if (string.IsNullOrWhiteSpace(folder))
         {
-            return false;
+            return null;
         }
 
-        var version = new DirectoryInfo(Path.GetFullPath(folder.Trim()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        return VersionFolderNamePattern.IsMatch(version.Name) &&
-               string.Equals(version.Parent?.Parent?.Name, RevitDirectoryName, StringComparison.OrdinalIgnoreCase);
+        for (DirectoryInfo? current = ToDirectory(folder).Parent; current != null; current = current.Parent)
+        {
+            if (IsVersionDirectory(current))
+            {
+                return current.FullName;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsVersionDirectory(DirectoryInfo directory)
+    {
+        return VersionFolderNamePattern.IsMatch(directory.Name) &&
+               string.Equals(directory.Parent?.Parent?.Name, RevitDirectoryName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DirectoryInfo ToDirectory(string folder)
+    {
+        string full = Path.GetFullPath(folder.Trim());
+        // Trimming a root would turn C:\ into the drive-relative C: and / into an empty path.
+        return string.Equals(full, Path.GetPathRoot(full), StringComparison.OrdinalIgnoreCase)
+            ? new DirectoryInfo(full)
+            : new DirectoryInfo(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     }
 
     private static string RevitRoot(string stationFolder)

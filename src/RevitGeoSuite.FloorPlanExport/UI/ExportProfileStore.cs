@@ -304,7 +304,7 @@ public sealed class ExportProfileStore
             SectionBoxBelowFloorMeters = profile.SectionBoxBelowFloorMeters,
             Keep3DTempViewsForDebug = profile.Keep3DTempViewsForDebug,
             OutputFormat = profile.OutputFormat,
-            SchemaProfiles =SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
+            SchemaProfiles = SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(profile.SchemaProfiles, profile.ActiveSchemaProfileName),
             ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(profile.ValidationPolicyProfiles).Select(policy => policy.Clone()).ToList(),
             ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(profile.ValidationPolicyProfiles, profile.ActiveValidationPolicyProfileName),
