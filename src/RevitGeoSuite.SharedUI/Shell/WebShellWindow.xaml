@@ -9,7 +9,7 @@
         WindowStyle="None"
         ResizeMode="CanResizeWithGrip"
         AllowsTransparency="False"
-        Background="#E9EEEC">
+        Background="#E7EDEB">
     <WindowChrome.WindowChrome>
         <WindowChrome
             CaptionHeight="0"
@@ -20,7 +20,7 @@
     <Grid>
         <wv2:WebView2 x:Name="ShellBrowser" />
         <Border x:Name="FallbackOverlay"
-                Background="#E9EEEC"
+                Background="#E7EDEB"
                 TextElement.FontFamily="Yu Gothic UI, Segoe UI"
                 Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"

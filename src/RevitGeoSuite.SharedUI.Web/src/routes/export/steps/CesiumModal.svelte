@@ -123,7 +123,7 @@
           <p>{cesiumResult.pushMessage}</p>
         {/if}
         {#if cesiumResult.warnings.length > 0}
-          <ul class="ml-4 mt-1 list-disc text-warning-foreground">
+          <ul class="ml-4 mt-1 list-disc text-warning-text">
             {#each cesiumResult.warnings as warning}<li>{warning}</li>{/each}
           </ul>
         {/if}

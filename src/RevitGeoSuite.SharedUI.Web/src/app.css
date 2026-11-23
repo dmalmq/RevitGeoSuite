@@ -52,22 +52,29 @@
   --color-destructive-muted: hsl(var(--destructive-muted));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
+  --color-input-frame: hsl(var(--input-frame));
   --color-ring: hsl(var(--ring));
   --color-info: hsl(var(--info));
   --color-info-foreground: hsl(var(--info-foreground));
+  --color-info-text: hsl(var(--info-text));
   --color-info-muted: hsl(var(--info-muted));
   --color-success: hsl(var(--success));
   --color-success-text: hsl(var(--success-text));
   --color-warning: hsl(var(--warning));
   --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-warning-text: hsl(var(--warning-text));
   --color-warning-surface: hsl(var(--warning-surface));
+  --color-scrim: hsl(var(--scrim));
+  --color-help-ring: hsl(var(--help-ring));
+  --color-overlay-edited: hsl(var(--overlay-edited));
+  --color-overlay-ambiguous: hsl(var(--overlay-ambiguous));
 
   /* Kanizu ui/tokens.rs: Yu Gothic UI for both languages, Geist Mono for numbers and paths. */
   --font-sans: "Yu Gothic UI", "Segoe UI", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --font-mono: "Geist Mono", "Cascadia Mono", Consolas, "Yu Gothic UI", monospace;
 
-  /* Kanizu type scale (ui/tokens.rs): caption 11, small 12, body 13, title 15, heading 20. */
-  --text-caption: 11px;
+  /* Kanizu type scale (ui/tokens.rs): caption 12, small 12, body 13, title 15, heading 20. */
+  --text-caption: 12px;
   --text-small: 12px;
   --text-body: 13px;
   --text-title: 15px;
@@ -75,7 +82,8 @@
 
   --radius-chip: 4px;
   --radius-control: 6px;
-  --radius-card: 10px;
+  --radius-card: 8px;
+  --radius-floating: 10px;
   --radius-sheet: 14px;
 }
 
