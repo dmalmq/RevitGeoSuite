@@ -1704,7 +1704,7 @@ public sealed class UnitExtractor
         VerticalCirculationVisibilitySourceKind sourceKind;
 
         if (view != null &&
-            ReferenceEquals(view.Document, _document) &&
+            DocumentComparer.IsSameDocument(view.Document, _document) &&
             TryExtractElementPolygonsInView(escalator, view, out viewPolygons) &&
             viewPolygons.Count > 0)
         {
@@ -1755,7 +1755,7 @@ public sealed class UnitExtractor
         }
 
         if (view != null &&
-            ReferenceEquals(view.Document, _document) &&
+            DocumentComparer.IsSameDocument(view.Document, _document) &&
             TryExtractElementPolygonsInView(familyInstance, view, out List<Polygon2D> viewPolygons) &&
             viewPolygons.Count > 0)
         {

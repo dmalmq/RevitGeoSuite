@@ -288,7 +288,7 @@ public sealed class DetailExtractor
                 }
             }
             else if (view != null &&
-                     ReferenceEquals(view.Document, _document) &&
+                     DocumentComparer.IsSameDocument(view.Document, _document) &&
                      _stairVisibilityResolver.TryResolveVisibleStair(
                          stair,
                          view,
@@ -306,7 +306,7 @@ public sealed class DetailExtractor
             // on the host view's level, so its step lines must too.
             bool linkedUnderHostView = stairVisibility == null &&
                                        view != null &&
-                                       !ReferenceEquals(view.Document, _document);
+                                       !DocumentComparer.IsSameDocument(view.Document, _document);
             bool ruleDrawsFloor = stairVisibility?.SourceKind == VerticalCirculationVisibilitySourceKind.DrawingRule ||
                                   linkedUnderHostView;
             foreach (IGrouping<StairPathPiece, StairStepLine> runLines in BuildStepLines(stair, view, ruleDrawsFloor)
