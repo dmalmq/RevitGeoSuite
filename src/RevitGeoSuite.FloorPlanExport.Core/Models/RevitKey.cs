@@ -68,6 +68,55 @@ public static class RevitKey
         return modelKey != null && modelKey.StartsWith(DocumentKeyPrefix, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The model part of a key: everything before its UniqueId, so <c>model</c> or
+    /// <c>model@LinkUniqueId</c>. Empty when <paramref name="key"/> is not <c>model|UniqueId|part</c>.
+    /// </summary>
+    public static string ModelPartOf(string? key)
+    {
+        if (string.IsNullOrEmpty(key))
+        {
+            return string.Empty;
+        }
+
+        int part = key!.LastIndexOf(Separator);
+        if (part <= 0)
+        {
+            return string.Empty;
+        }
+
+        int uniqueId = key.LastIndexOf(Separator, part - 1);
+        return uniqueId <= 0 ? string.Empty : key.Substring(0, uniqueId);
+    }
+
+    /// <summary>
+    /// Whether the feature a key names belongs to the model <paramref name="hostModelKey"/> itself,
+    /// not to a model linked into it or to another model. The model parts compare whole, so a
+    /// linked model's <c>model@LinkUniqueId</c> never matches its host. True when either side names
+    /// no model, since there is then nothing to tell them apart by.
+    /// </summary>
+    public static bool BelongsToModel(string? key, string? hostModelKey)
+    {
+        string model = ModelPartOf(key).Trim();
+        string host = (hostModelKey ?? string.Empty).Trim();
+        return model.Length == 0 || host.Length == 0 || string.Equals(model, host, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The UniqueId of the link instance a model part names (<c>model@LinkUniqueId</c>), or empty
+    /// for a model part without one.
+    /// </summary>
+    public static string LinkInstanceOf(string? modelPart)
+    {
+        if (string.IsNullOrEmpty(modelPart))
+        {
+            return string.Empty;
+        }
+
+        int link = modelPart!.LastIndexOf(LinkSeparator);
+        return link < 0 ? string.Empty : modelPart.Substring(link + 1).Trim();
+    }
+
     /// <summary>The key, or null when the element has no UniqueId (a synthetic feature).</summary>
     public static string? Create(string? modelKey, string? uniqueId, int partIndex = 0)
     {
