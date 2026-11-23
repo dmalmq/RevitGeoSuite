@@ -110,21 +110,19 @@ public sealed class GisExportHandler : IRpcHandler
 
         if (exportPaths.Length == 0)
         {
-            return Task.FromResult<object?>(new { error = "At least one GIS file is required" });
+            throw new InvalidOperationException("At least one GIS file is required.");
         }
 
         if (string.IsNullOrWhiteSpace(outputFolder))
         {
-            return Task.FromResult<object?>(new { error = "Choose an output folder for the DXF files." });
+            throw new InvalidOperationException("Choose an output folder for the DXF files.");
         }
 
         string? unsupportedPath = exportPaths.FirstOrDefault(path => !GisFileReader.IsSupported(path));
         if (!string.IsNullOrWhiteSpace(unsupportedPath))
         {
-            return Task.FromResult<object?>(new
-            {
-                error = $"Unsupported GIS file '{Path.GetFileName(unsupportedPath)}'. Supported GIS files are Shapefile (.shp) and GeoPackage (.gpkg)."
-            });
+            throw new InvalidOperationException(
+                $"Unsupported GIS file '{Path.GetFileName(unsupportedPath)}'. Supported GIS files are Shapefile (.shp) and GeoPackage (.gpkg).");
         }
 
         string basemapName = BuildBasemapName(jobj?.Value<string>("basemapName"), exportPaths);

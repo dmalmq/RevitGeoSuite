@@ -3,6 +3,15 @@ import type { JobProgress } from './contracts.generated'
 
 export type { JobProgress }
 
+export class JobCancelledError extends Error {
+  readonly cancelled = true
+
+  constructor(message = 'Cancelled') {
+    super(message)
+    this.name = 'JobCancelledError'
+  }
+}
+
 export interface JobHandle<TResult> {
   /** Resolves with the job's result, or rejects on failure/cancellation. */
   result: Promise<TResult>
@@ -45,6 +54,7 @@ export function startJob<TResult = unknown>(
     offProgress()
     offCompleted()
     offFailed()
+    buffer.length = 0
   }
 
   function route(type: 'progress' | 'completed' | 'failed', p: any): void {
@@ -64,7 +74,11 @@ export function startJob<TResult = unknown>(
     } else {
       settled = true
       cleanup()
-      rejectResult(new Error(p.error || 'Job failed'))
+      if (p?.cancelled) {
+        rejectResult(new JobCancelledError(p.error || 'Cancelled'))
+      } else {
+        rejectResult(new Error(p?.error || 'Job failed'))
+      }
     }
   }
 
@@ -74,9 +88,22 @@ export function startJob<TResult = unknown>(
     }
   }
 
-  request<{ jobId: string }>(method, payload)
+  request<{ jobId?: unknown; error?: unknown }>(method, payload)
     .then(reply => {
-      jobId = reply.jobId
+      const startedId = typeof reply?.jobId === 'string' ? reply.jobId.trim() : ''
+      if (!startedId) {
+        if (!settled) {
+          settled = true
+          cleanup()
+          const hostError = typeof reply?.error === 'string' && reply.error.trim().length > 0
+            ? reply.error.trim()
+            : `Job '${method}' did not return a valid jobId`
+          rejectResult(new Error(hostError))
+        }
+        return
+      }
+
+      jobId = startedId
       const buffered = buffer.splice(0)
       for (const e of buffered) route(e.type, e.p)
       if (cancelRequested) doCancel()

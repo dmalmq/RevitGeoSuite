@@ -111,7 +111,25 @@ public sealed class WebRpcBridge
         }
 
         var response = await BuildResponseAsync(request);
-        return JsonConvert.SerializeObject(response, WireSettings);
+        try
+        {
+            return JsonConvert.SerializeObject(response, WireSettings);
+        }
+        catch (Exception ex)
+        {
+            var fallback = new RpcEnvelope
+            {
+                Kind = "res",
+                Id = request.Id,
+                Method = request.Method ?? string.Empty,
+                Error = new RpcError
+                {
+                    Code = "SERIALIZATION_ERROR",
+                    Message = $"Failed to serialize RPC response: {ex.Message}"
+                }
+            };
+            return JsonConvert.SerializeObject(fallback, WireSettings);
+        }
     }
 
     private async Task<RpcEnvelope> BuildResponseAsync(RpcEnvelope request)
@@ -120,10 +138,18 @@ public sealed class WebRpcBridge
         {
             Kind = "res",
             Id = request.Id,
-            Method = request.Method
+            Method = request.Method ?? string.Empty
         };
 
-        if (!handlers.TryGetValue(request.Method, out var handler))
+        if (string.IsNullOrWhiteSpace(request.Method))
+        {
+            response.Error = new RpcError
+            {
+                Code = "INVALID_REQUEST",
+                Message = "RPC request method is required."
+            };
+        }
+        else if (!handlers.TryGetValue(request.Method, out var handler))
         {
             response.Error = new RpcError
             {
@@ -152,6 +178,11 @@ public sealed class WebRpcBridge
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        if (!WebShellNavigationPolicy.IsTrustedRpcSource(e.Source))
+        {
+            return;
+        }
+
         _ = HandleMessageAsync(e.WebMessageAsJson);
     }
 

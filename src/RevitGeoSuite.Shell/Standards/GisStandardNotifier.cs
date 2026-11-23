@@ -43,6 +43,7 @@ internal sealed class GisStandardNotifier
     private DateTime _driftWritten;
     private DateTime _nextDriftPoll;
     private bool _modelChanged;
+    private bool _documentClosed;
     private volatile bool _forceRefresh;
     private string? _versionStamp;
     private const int MaxSecondLine = 32;
@@ -120,12 +121,14 @@ internal sealed class GisStandardNotifier
     private void OnDocumentClosed(object sender, DocumentClosedEventArgs e)
     {
         _buttonDocumentKey = null;
+        _documentClosed = true;
     }
 
     private void OnViewActivated(object sender, ViewActivatedEventArgs e)
     {
         Refresh(e.Document, force: false);
         GisNetworkWork.ReloadIfWritten(sender as UIApplication, e.Document);
+        WebShellWindowManager.Instance.NotifyActiveDocument(e.Document);
     }
 
     private void OnIdling(object sender, IdlingEventArgs e)
@@ -148,6 +151,12 @@ internal sealed class GisStandardNotifier
         }
 
         Document? active = (sender as UIApplication)?.ActiveUIDocument?.Document;
+        if (_documentClosed)
+        {
+            _documentClosed = false;
+            WebShellWindowManager.Instance.NotifyActiveDocument(active);
+        }
+
         if (_forceRefresh && active != null)
         {
             _forceRefresh = false;

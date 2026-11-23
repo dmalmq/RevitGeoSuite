@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
   import { startJob } from '$lib/bridge/jobs'
-  import { request } from '$lib/bridge/rpc'
+  import { on, request } from '$lib/bridge/rpc'
   import { parseManualCoordinate } from '$lib/georeference/manualCoordinate'
   import type {
     GeoreferenceGridCandidate,
@@ -113,8 +113,27 @@
     crsGroups.flatMap(g => g.entries.map(e => ({ code: `EPSG:${e.epsgCode}`, name: e.name })))
   )
 
-  onMount(async () => {
-    await Promise.all([refreshReadiness(), loadCurrentState(), loadAvailableCrs(), loadUndoState()])
+  onMount(() => {
+    const offDocumentChanged = on('document.changed', (evt) => {
+      const nextId = evt?.documentId ?? ''
+      if (currentState?.documentId && nextId && nextId !== currentState.documentId) {
+        if (currentStep === 'review' && !applying && !reverting) {
+          void Promise.all([refreshReadiness(), loadCurrentState(), loadUndoState()])
+        } else {
+          const title = evt?.documentTitle || 'another model'
+          error = $t(
+            'Georef.Wizard.Error.DocumentChanged',
+            `Active Revit model changed to '${title}'. Return to the original model or click Reset to review the current model before applying.`
+          )
+        }
+      } else if (!currentState && !currentStateLoading) {
+        void Promise.all([refreshReadiness(), loadCurrentState(), loadUndoState()])
+      }
+    })
+    void Promise.all([refreshReadiness(), loadCurrentState(), loadAvailableCrs(), loadUndoState()])
+    return () => {
+      offDocumentChanged()
+    }
   })
 
   async function loadAvailableCrs() {
@@ -489,6 +508,7 @@
         : null
       applyResult = await request('georeference.apply', {
         crsCode: selectedCrs,
+        documentId: currentState?.documentId,
         selectedMeshCodes: isConfirmExistingSetupMode || basePointSource === 'manual' ? [] : Array.from(selectedGrids),
         ...(manualProjectBasePoint ? { manualProjectBasePoint } : {}),
         confirmExistingSetup: isConfirmExistingSetupMode

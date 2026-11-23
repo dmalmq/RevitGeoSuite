@@ -181,4 +181,46 @@ describe('rpc bridge', () => {
     const result = await promise
     expect(result).toBe('done')
   })
+
+  it('rejects with RPC_TIMEOUT when the host never responds', async () => {
+    vi.useFakeTimers()
+    try {
+      const { request, BridgeError, DEFAULT_REQUEST_TIMEOUT_MS } = await import('../rpc')
+
+      const promise = request('georeference.getCurrentState', {})
+      const assertion = expect(promise).rejects.toMatchObject({
+        name: 'BridgeError',
+        code: 'RPC_TIMEOUT'
+      })
+
+      await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS + 10)
+      await assertion
+      await expect(promise).rejects.toBeInstanceOf(BridgeError)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not apply the default timeout to interactive OS file/folder pickers', async () => {
+    vi.useFakeTimers()
+    try {
+      const { request, DEFAULT_REQUEST_TIMEOUT_MS } = await import('../rpc')
+
+      const promise = request('dialog.openFolder', { title: 'Pick folder' })
+      const sent = postedMessages[0] as RpcEnvelope
+
+      await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS * 3)
+
+      simulateResponse({
+        kind: 'res',
+        id: sent.id,
+        method: 'dialog.openFolder',
+        payload: { path: 'C:\\Data' }
+      })
+
+      await expect(promise).resolves.toEqual({ path: 'C:\\Data' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

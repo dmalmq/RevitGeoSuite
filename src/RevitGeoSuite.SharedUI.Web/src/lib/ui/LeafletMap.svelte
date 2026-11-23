@@ -49,10 +49,21 @@
     }
   })
 
+  // Leaflet's bindTooltip(string) assigns innerHTML. Wrapping every label in a DOM element with
+  // textContent ensures untrusted catalog, mesh, or file metadata is always rendered as inert text.
+  function createTextTooltipContent(text: string): HTMLElement {
+    const el = document.createElement('span')
+    el.textContent = text
+    return el
+  }
+
   function initMap() {
     if (!mapContainer) return
 
-    map = L.map(mapContainer, { zoomControl: true }).setView([35.681236, 139.767125], 11)
+    // Disable Leaflet's default clickable attribution prefix so clicking it cannot navigate the
+    // embedded WebView2 shell away from the local virtual host.
+    map = L.map(mapContainer, { zoomControl: true, attributionControl: false }).setView([35.681236, 139.767125], 11)
+    L.control.attribution({ prefix: 'Leaflet' }).addTo(map)
     
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -100,7 +111,7 @@
     }
 
     if (title) {
-      marker.bindTooltip(title, {
+      marker.bindTooltip(createTextTooltipContent(title), {
         direction: 'top',
         offset: [0, -8],
         opacity: 0.92
@@ -135,7 +146,7 @@
       ).addTo(referenceMarkerLayer!)
 
       if (markerInfo.title) {
-        circleMarker.bindTooltip(markerInfo.title, {
+        circleMarker.bindTooltip(createTextTooltipContent(markerInfo.title), {
           permanent: true,
           direction: 'top',
           offset: [0, -10],
@@ -189,7 +200,7 @@
 
       const circleMarker = L.circleMarker([area.latitude, area.longitude], getSelectableAreaStyle(area.selected))
       if (area.label) {
-        circleMarker.bindTooltip(area.label, { direction: 'top', offset: [0, -6], opacity: 0.92 })
+        circleMarker.bindTooltip(createTextTooltipContent(area.label), { direction: 'top', offset: [0, -6], opacity: 0.92 })
       }
       circleMarker.on('click', (event) => {
         L.DomEvent.stop(event)
@@ -239,7 +250,7 @@
         const isPrimary = !!feature?.properties?.isPrimary
         
         if (meshCode) {
-          layer.bindTooltip(meshCode, {
+          layer.bindTooltip(createTextTooltipContent(String(meshCode)), {
             permanent: true,
             direction: 'center',
             className: 'mesh-code-label'
@@ -337,7 +348,7 @@
         const label = String(props.label ?? featureId)
 
         if (featureId) {
-          layer.bindTooltip(label, {
+          layer.bindTooltip(createTextTooltipContent(label), {
             permanent: true,
             direction: 'center',
             className: 'mesh-code-label'

@@ -27,7 +27,7 @@ public sealed class PlateauScanFolderHandler : IRpcHandler
         var path = (payload as JObject)?.Value<string>("path");
         if (string.IsNullOrWhiteSpace(path))
         {
-            return Task.FromResult<object?>(new { error = "Path is required" });
+            throw new InvalidOperationException("Path is required.");
         }
 
         // Enumerating the tile grid is pure file-name work (no parsing, no Revit API), so it runs on

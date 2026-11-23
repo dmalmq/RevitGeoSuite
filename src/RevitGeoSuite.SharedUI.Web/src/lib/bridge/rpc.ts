@@ -23,11 +23,42 @@ export class BridgeError extends Error {
   }
 }
 
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+export const WRITE_REQUEST_TIMEOUT_MS = 60_000
+export const LONG_REQUEST_TIMEOUT_MS = 300_000
+
+const NO_TIMEOUT_METHODS = new Set<string>([
+  'dialog.openFolder',
+  'dialog.openFile'
+])
+
+function resolveTimeoutMs(method: string): number | null {
+  if (NO_TIMEOUT_METHODS.has(method)) {
+    return null
+  }
+  if (method.startsWith('floorplan.') || method.endsWith('.prepare')) {
+    return LONG_REQUEST_TIMEOUT_MS
+  }
+  if (
+    method === 'georeference.apply' ||
+    method === 'georeference.revert' ||
+    method.startsWith('unitFloors.') ||
+    method.startsWith('gisStandard.') ||
+    method.startsWith('gisDrift.') ||
+    method.startsWith('gisParameters.') ||
+    method.startsWith('gisNetwork.')
+  ) {
+    return WRITE_REQUEST_TIMEOUT_MS
+  }
+  return DEFAULT_REQUEST_TIMEOUT_MS
+}
+
 type EventHandler = (payload: unknown) => void
 
 interface PendingRequest {
   resolve: (value: unknown) => void
   reject: (error: BridgeError) => void
+  timer: ReturnType<typeof setTimeout> | null
 }
 
 let nextId = 1
@@ -45,6 +76,9 @@ function handleMessage(event: MessageEvent): void {
     const pending = pendingRequests.get(envelope.id)
     if (pending) {
       pendingRequests.delete(envelope.id)
+      if (pending.timer !== null) {
+        clearTimeout(pending.timer)
+      }
       if (envelope.error) {
         pending.reject(new BridgeError(envelope.error.code, envelope.error.message))
       } else {
@@ -85,9 +119,20 @@ export function request<T = unknown>(method: string, payload?: unknown): Promise
       return
     }
 
+    const timeoutMs = resolveTimeoutMs(method)
+    const timer = timeoutMs !== null
+      ? setTimeout(() => {
+          const pending = pendingRequests.get(id)
+          if (!pending) return
+          pendingRequests.delete(id)
+          pending.reject(new BridgeError('RPC_TIMEOUT', `Request '${method}' timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+      : null
+
     pendingRequests.set(id, {
       resolve: resolve as (value: unknown) => void,
-      reject
+      reject,
+      timer
     })
 
     const envelope: RpcEnvelope = {
@@ -97,7 +142,15 @@ export function request<T = unknown>(method: string, payload?: unknown): Promise
       payload
     }
 
-    w.chrome.webview.postMessage(envelope)
+    try {
+      w.chrome.webview.postMessage(envelope)
+    } catch (err) {
+      pendingRequests.delete(id)
+      if (timer !== null) {
+        clearTimeout(timer)
+      }
+      reject(new BridgeError('POST_FAILED', err instanceof Error ? err.message : String(err)))
+    }
   })
 }
 

@@ -126,6 +126,11 @@ export interface DialogOpenFolderResponse {
   path?: string
 }
 
+export interface DocumentChangedEvent {
+  documentId: string
+  documentTitle: string
+}
+
 export interface ExecutionActionResponse {
   error?: string
   success: boolean
@@ -307,6 +312,7 @@ export interface ExportResultTimingPayload {
 export interface GeoreferenceApplyRequest {
   confirmExistingSetup: boolean
   crsCode: string
+  documentId?: string
   manualProjectBasePoint?: GeoreferenceManualProjectBasePoint
   selectedMeshCodes: string[]
 }
@@ -344,6 +350,7 @@ export interface GeoreferenceCurrentStateRequest {
 }
 
 export interface GeoreferenceCurrentStateResponse {
+  documentId?: string
   documentTitle: string
   existingSetupDetected: boolean
   existingSetupMessage: string
@@ -878,6 +885,7 @@ export interface PlateauContextExportResponse {
 }
 
 export interface PlateauImportRequest {
+  documentId?: string
   mode: string
   path: string
   tileIds: string[]
@@ -910,6 +918,7 @@ export interface PlateauOnlineCatalogResponse {
   areaCount: number
   areas: PlateauOnlineArea[]
   datasetCount: number
+  documentId?: string
   dracoAvailable: boolean
   dracoMessage: string
   suggestion?: PlateauOnlineSuggestion
@@ -954,6 +963,7 @@ export interface PlateauOnlineImportRequest {
   areaCodes: string[]
   areaSelections: PlateauOnlineAreaGridSelection[]
   categories: string[]
+  documentId?: string
   gridIds: string[]
   mode: string
 }
@@ -1342,6 +1352,7 @@ export interface RpcMethods {
 }
 
 export interface RpcEvents {
+  'document.changed': DocumentChangedEvent
   'floorplan.execution.progress.updated': ExecutionProgressPayload
   'job.completed': JobCompleted
   'job.failed': JobFailed

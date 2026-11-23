@@ -13,8 +13,6 @@ internal static class WebShellHandlerRegistry
 {
     public static void RegisterAll(WebRpcBridge bridge, JobManager jobs)
     {
-        bridge.RegisterHandler(new EchoHandler());
-
         // Georeference route
         bridge.RegisterHandler(new GeoreferenceGetAvailableCrsHandler());
         bridge.RegisterHandler(new MeshGetOverlayHandler());

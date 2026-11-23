@@ -83,6 +83,49 @@ public class JobManagerTests
         Assert.False(manager.Cancel("does-not-exist"));
     }
 
+    [Fact]
+    public async Task CancelAll_CancelsAllRunningJobs()
+    {
+        var sink = new RecordingSink();
+        var manager = new JobManager(sink.Send);
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        manager.Start(async (ct, _) =>
+        {
+            started.TrySetResult(true);
+            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+            return null;
+        });
+
+        Assert.True(await WaitAsync(started.Task, 5000));
+        int count = manager.CancelAll();
+
+        Assert.Equal(1, count);
+        Assert.True(await WaitAsync(sink.Terminal, 5000));
+        var failed = Assert.IsType<JobFailed>(LastPayload(sink, "job.failed"));
+        Assert.True(failed.Cancelled);
+    }
+
+    [Fact]
+    public async Task Cancel_DoesNotThrow_WhenRacingWithJobCompletion()
+    {
+        var manager = new JobManager((_, __) => { });
+
+        for (int i = 0; i < 50; i++)
+        {
+            string id = manager.Start(async (ct, _) =>
+            {
+                await Task.Yield();
+                return i;
+            });
+
+            _ = manager.Cancel(id);
+            _ = manager.Cancel(id);
+        }
+
+        await Task.Delay(50).ConfigureAwait(false);
+    }
+
     private static async Task<bool> WaitAsync(Task task, int milliseconds)
     {
         return await Task.WhenAny(task, Task.Delay(milliseconds)).ConfigureAwait(false) == task;

@@ -32,6 +32,7 @@ const point = (name: string): GeoreferenceBasePointSnapshot => ({
 export function currentState(scenario: MockScenario): GeoreferenceCurrentStateResponse {
   const existing = scenario === 'existing'
   return {
+    documentId: 'mock-doc-tokyo-station',
     documentTitle: 'TokyoStation_Concourse.rvt',
     existingSetupDetected: existing,
     existingSetupMessage: '',

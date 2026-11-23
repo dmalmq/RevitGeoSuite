@@ -54,7 +54,7 @@ public sealed class PlateauOnlineCatalogHandler : IRpcHandler
 
             ct.ThrowIfCancellationRequested();
             progress.Report(new JobProgress { Phase = "suggesting", Percent = 90, Message = "Resolving project location…" });
-            PlateauOnlineSuggestion? suggestion = await TryResolveSuggestionAsync(apiClient, catalog, ct).ConfigureAwait(false);
+            (PlateauOnlineSuggestion? suggestion, string? documentId) = await TryResolveSuggestionAsync(apiClient, catalog, ct).ConfigureAwait(false);
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "Catalog loaded" });
 
@@ -64,6 +64,7 @@ public sealed class PlateauOnlineCatalogHandler : IRpcHandler
                 Suggestion = suggestion,
                 AreaCount = areas.Length,
                 DatasetCount = catalog.Datasets.Count,
+                DocumentId = documentId,
                 DracoAvailable = NativeDracoMeshDecoder.IsAvailable(),
                 DracoMessage = NativeDracoMeshDecoder.IsAvailable() ? string.Empty : MissingDracoMeshDecoder.MissingMessage
             };
@@ -100,16 +101,17 @@ public sealed class PlateauOnlineCatalogHandler : IRpcHandler
         };
     }
 
-    private static async Task<PlateauOnlineSuggestion?> TryResolveSuggestionAsync(
+    private static async Task<(PlateauOnlineSuggestion? Suggestion, string? DocumentId)> TryResolveSuggestionAsync(
         PlateauApiClient apiClient,
         PlateauCatalog catalog,
         CancellationToken cancellationToken)
     {
         PlateauOnlineProjectPoint? projectPoint;
+        string? documentId = null;
         try
         {
             CoordinateTransformer coordinateTransformer = new CoordinateTransformer(new CrsRegistry());
-            projectPoint = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+            (projectPoint, documentId) = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
             {
                 GeoProjectInfoStorage geoStore = new GeoProjectInfoStorage();
                 ModuleStateStorage moduleStateStore = new ModuleStateStorage();
@@ -117,7 +119,8 @@ public sealed class PlateauOnlineCatalogHandler : IRpcHandler
                 CurrentProjectStateSummary currentState = reader.Read(doc);
                 RevitDocumentHandle handle = new RevitDocumentHandle(doc);
                 GeoProjectInfo? info = geoStore.Load(handle);
-                return PlateauOnlineSuggestionResolver.ResolveProjectPoint(currentState, info, coordinateTransformer);
+                PlateauOnlineProjectPoint? point = PlateauOnlineSuggestionResolver.ResolveProjectPoint(currentState, info, coordinateTransformer);
+                return (point, DocumentIdentity.Create(doc));
             }).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -126,13 +129,13 @@ public sealed class PlateauOnlineCatalogHandler : IRpcHandler
         }
         catch
         {
-            return null;
+            return (null, null);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         if (projectPoint is null)
         {
-            return null;
+            return (null, documentId);
         }
 
         string? municipalityCode;
@@ -179,11 +182,11 @@ public sealed class PlateauOnlineCatalogHandler : IRpcHandler
 
         if (nearbyAreas.Length == 0)
         {
-            return null;
+            return (null, documentId);
         }
 
         PlateauOnlineNearbyArea primary = nearbyAreas[0];
-        return new PlateauOnlineSuggestion
+        return (new PlateauOnlineSuggestion
         {
             AreaCode = primary.Area.Code,
             AreaLabel = primary.Area.Label,
@@ -202,7 +205,7 @@ public sealed class PlateauOnlineCatalogHandler : IRpcHandler
                     NearestDistanceMeters = a.NearestDistanceMeters
                 })
                 .ToArray()
-        };
+        }, documentId);
     }
 }
 
@@ -508,6 +511,7 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
         JObject? request = payload as JObject;
         AreaGridSelection[] selections = ParseAreaSelections(request);
         OnlineImportOptions options = ParseImportOptions(request);
+        string? requestedDocumentId = request?.Value<string>("documentId")?.Trim();
         if (selections.Length == 0)
         {
             throw new InvalidOperationException("Select at least one PLATEAU online grid before importing.");
@@ -525,7 +529,8 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
             CoordinateTransformer coordinateTransformer = new CoordinateTransformer(new CrsRegistry());
 
             progress.Report(new JobProgress { Phase = "preparing", Percent = 0, Message = "Resolving georeference…" });
-            PlateauImportReferenceContext referenceContext = await ResolveReferenceContextAsync(coordinateTransformer).ConfigureAwait(false);
+            (PlateauImportReferenceContext referenceContext, string capturedDocumentId, Document capturedDocument) =
+                await ResolveReferenceContextAsync(coordinateTransformer, requestedDocumentId).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
 
             progress.Report(new JobProgress { Phase = "catalog", Percent = 10, Message = "Loading PLATEAU catalog…" });
@@ -544,6 +549,8 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
                     coordinateTransformer,
                     ecefTransformer,
                     options,
+                    capturedDocumentId,
+                    capturedDocument,
                     progress,
                     ct).ConfigureAwait(false);
             }
@@ -595,7 +602,9 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
 
             PlateauOnlineImportAreaResult[] areaResults = await ImportOnRevitThreadAsync(
                 downloads,
-                PlateauOnlineGeometryMode.Lod2Untextured).ConfigureAwait(false);
+                PlateauOnlineGeometryMode.Lod2Untextured,
+                capturedDocumentId,
+                capturedDocument).ConfigureAwait(false);
             int importedElements = areaResults.Sum(result => result.ImportedElements);
             int groups = areaResults.Sum(result => result.Groups);
             string[] warnings = areaResults.SelectMany(result => result.Warnings).ToArray();
@@ -674,6 +683,8 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
         ICoordinateTransformer coordinateTransformer,
         EcefToProjectTransformer ecefTransformer,
         OnlineImportOptions options,
+        string expectedDocumentId,
+        Document expectedDocument,
         IProgress<JobProgress> progress,
         CancellationToken ct)
     {
@@ -808,7 +819,11 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
             }
 
             progress.Report(new JobProgress { Phase = "importing", Percent = 92, Message = "Importing DXF basemap…" });
-            await RevitContext.Instance.InvokeWithDocumentAsync(doc => importer.ImportDxf(doc, dxfPath)).ConfigureAwait(false);
+            await RevitContext.Instance.InvokeWithExpectedDocumentAsync(
+                expectedDocumentId,
+                "PLATEAU Online basemap import",
+                doc => importer.ImportDxf(doc, dxfPath),
+                expectedDocument).ConfigureAwait(false);
             imported = true;
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "Online basemap import complete" });
@@ -1018,24 +1033,32 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
             ?? Array.Empty<string>();
     }
 
-    private static async Task<PlateauImportReferenceContext> ResolveReferenceContextAsync(CoordinateTransformer coordinateTransformer)
+    private static async Task<(PlateauImportReferenceContext ReferenceContext, string DocumentId, Document Document)> ResolveReferenceContextAsync(
+        CoordinateTransformer coordinateTransformer,
+        string? requestedDocumentId)
     {
-        PlateauImportReferenceContext? referenceContext = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
-        {
-            GeoProjectInfoStorage geoStore = new GeoProjectInfoStorage();
-            ModuleStateStorage moduleStateStore = new ModuleStateStorage();
-            ProjectLocationReader reader = new ProjectLocationReader(geoStore, moduleStateStore: moduleStateStore);
-            CurrentProjectStateSummary currentState = reader.Read(doc);
-            RevitDocumentHandle handle = new RevitDocumentHandle(doc);
-            GeoProjectInfo? info = geoStore.Load(handle);
-            PlateauImportReferenceResolver resolver = new PlateauImportReferenceResolver(
-                coordinateTransformer,
-                new RevitPlateauImportLocalBasisProvider(doc));
-            return resolver.Resolve(currentState, info, PlateauImportReferenceSource.CanonicalOrigin);
-        }).ConfigureAwait(false);
+        (PlateauImportReferenceContext? referenceContext, string documentId, Document document) =
+            await RevitContext.Instance.InvokeWithExpectedDocumentAsync(requestedDocumentId, "PLATEAU Online import", doc =>
+            {
+                GeoProjectInfoStorage geoStore = new GeoProjectInfoStorage();
+                ModuleStateStorage moduleStateStore = new ModuleStateStorage();
+                ProjectLocationReader reader = new ProjectLocationReader(geoStore, moduleStateStore: moduleStateStore);
+                CurrentProjectStateSummary currentState = reader.Read(doc);
+                RevitDocumentHandle handle = new RevitDocumentHandle(doc);
+                GeoProjectInfo? info = geoStore.Load(handle);
+                PlateauImportReferenceResolver resolver = new PlateauImportReferenceResolver(
+                    coordinateTransformer,
+                    new RevitPlateauImportLocalBasisProvider(doc));
+                return (resolver.Resolve(currentState, info, PlateauImportReferenceSource.CanonicalOrigin), DocumentIdentity.Create(doc), doc);
+            }).ConfigureAwait(false);
 
-        return referenceContext ?? throw new InvalidOperationException(
-            "This project isn't georeferenced yet. Complete Georeference Setup before importing PLATEAU Online data.");
+        if (referenceContext is null)
+        {
+            throw new InvalidOperationException(
+                "This project isn't georeferenced yet. Complete Georeference Setup before importing PLATEAU Online data.");
+        }
+
+        return (referenceContext, documentId, document);
     }
 
     private static PlateauDatasetEntry SelectBuildingDataset(PlateauCatalog catalog, PlateauAreaOption area)
@@ -1186,9 +1209,11 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
 
     private static Task<PlateauOnlineImportAreaResult[]> ImportOnRevitThreadAsync(
         IReadOnlyList<AreaDownloadResult> downloads,
-        PlateauOnlineGeometryMode mode)
+        PlateauOnlineGeometryMode mode,
+        string expectedDocumentId,
+        Document expectedDocument)
     {
-        return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+        return RevitContext.Instance.InvokeWithExpectedDocumentAsync(expectedDocumentId, "PLATEAU Online import", doc =>
         {
             using Transaction tx = new Transaction(doc, "Import PLATEAU Online");
             tx.Start();
@@ -1217,7 +1242,7 @@ public sealed class PlateauOnlineImportHandler : IRpcHandler
                 tx.RollBack();
                 throw;
             }
-        });
+        }, expectedDocument);
     }
 
     private sealed class OnlineImportOptions
