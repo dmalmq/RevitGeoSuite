@@ -64,6 +64,8 @@ using RevitGeoSuite.SharedUI.Web.Contracts;
 [assembly: RpcMethod("localization.setLanguage", typeof(LocalizationSetLanguageRequest), typeof(LocalizationSetLanguageResponse))]
 [assembly: RpcMethod("gisStandard.inspect", typeof(GisStandardInspectRequest), typeof(GisStandardInspectResponse))]
 [assembly: RpcMethod("gisStandard.setup", typeof(GisStandardEmptyRequest), typeof(GisStandardApplyResponse))]
+[assembly: RpcMethod("gisStandard.prepareTemplate", typeof(GisStandardEmptyRequest), typeof(GisStandardApplyResponse))]
+[assembly: RpcMethod("gisStandard.validateRfaFolder", typeof(GisRfaValidationRequest), typeof(GisRfaValidationResponse))]
 [assembly: RpcMethod("gisStandard.fixFloorTypes", typeof(GisFixFloorTypesRequest), typeof(GisStandardApplyResponse))]
 [assembly: RpcMethod("gisStandard.resetFloorType", typeof(GisResetFloorTypeRequest), typeof(GisStandardApplyResponse))]
 [assembly: RpcMethod("gisStandard.select", typeof(GisSelectElementsRequest), typeof(GisSelectElementsResponse))]

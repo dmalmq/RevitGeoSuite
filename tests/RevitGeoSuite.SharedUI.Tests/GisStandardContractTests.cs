@@ -78,4 +78,71 @@ public sealed class GisStandardContractTests
         Assert.Equal("HANDLER_ERROR", (string)response["error"]!["code"]!);
         Assert.StartsWith("Nothing was changed", (string)response["error"]!["message"]!);
     }
+
+    private sealed class PrepareTemplateHandler : IRpcHandler
+    {
+        public string Method => "gisStandard.prepareTemplate";
+
+        public Task<object?> HandleAsync(object? payload) =>
+            Task.FromResult<object?>(new GisStandardApplyResponse
+            {
+                Log = new[]
+                {
+                    "Created QA schedule Kanizu GIS - Floors (gis_category, gis_restriction, category)",
+                    "Created view template Kanizu GIS Export Plan",
+                },
+            });
+    }
+
+    private sealed class ValidateRfaFolderHandler : IRpcHandler
+    {
+        public string ReceivedFolder { get; private set; } = string.Empty;
+
+        public string Method => "gisStandard.validateRfaFolder";
+
+        public Task<object?> HandleAsync(object? payload)
+        {
+            ReceivedFolder = ((payload as JObject)?.ToObject<GisRfaValidationRequest>() ?? new GisRfaValidationRequest()).FolderPath;
+            return Task.FromResult<object?>(new GisRfaValidationResponse
+            {
+                FolderPath = ReceivedFolder,
+                PassCount = 1,
+                WarnCount = 0,
+                FailCount = 0,
+                Items = new[]
+                {
+                    new GisRfaValidationItem
+                    {
+                        FamilyName = "j EV : EV_1500",
+                        Category = "OST_MechanicalEquipment",
+                        Status = "pass",
+                        Detail = "Matches standard elevator family with gis_kind = elevator.",
+                        FilePath = @"C:\Families\j EV.rfa",
+                    },
+                },
+            });
+        }
+    }
+
+    [Fact]
+    public async Task PrepareTemplateAndValidateRfaFolderRoundTripThroughBridge()
+    {
+        WebRpcBridge bridge = new();
+        ValidateRfaFolderHandler rfaHandler = new();
+        bridge.RegisterHandler(new PrepareTemplateHandler());
+        bridge.RegisterHandler(rfaHandler);
+
+        JObject prepResponse = await Dispatch(bridge, "gisStandard.prepareTemplate", new JObject());
+        Assert.Contains(
+            "Created view template Kanizu GIS Export Plan",
+            prepResponse["payload"]!["log"]!.Values<string>());
+
+        JObject rfaResponse = await Dispatch(bridge, "gisStandard.validateRfaFolder", new JObject
+        {
+            ["folderPath"] = @"C:\Families",
+        });
+        Assert.Equal(@"C:\Families", rfaHandler.ReceivedFolder);
+        Assert.Equal(1, (int)rfaResponse["payload"]!["passCount"]!);
+        Assert.Equal("pass", (string)rfaResponse["payload"]!["items"]![0]!["status"]!);
+    }
 }

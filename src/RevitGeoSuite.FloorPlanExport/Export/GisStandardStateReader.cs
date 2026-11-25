@@ -2,13 +2,27 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.Core.Coordinates;
+using RevitGeoSuite.Core.ProjectMetadata;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
+using RevitGeoSuite.FloorPlanExport.GisTools;
+using RevitGeoSuite.RevitInterop;
+using RevitGeoSuite.RevitInterop.Storage;
 
 namespace RevitGeoSuite.FloorPlanExport.Export;
 
-/// <summary>Reads what <see cref="GisStandardCheck"/> needs from a Revit model. Reads only.</summary>
+/// <summary>Reads what <see cref="GisStandardCheck"/> and <see cref="ProjectReadinessEvaluator"/> need from a Revit model. Reads only.</summary>
 public static class GisStandardStateReader
 {
+    private static readonly BuiltInCategory[] ReadinessFamilyCategories =
+    {
+        BuiltInCategory.OST_GenericModel,
+        BuiltInCategory.OST_SpecialityEquipment,
+        BuiltInCategory.OST_MechanicalEquipment,
+        BuiltInCategory.OST_Doors,
+    };
+
     public static GisStandardStatus Check(Document document)
     {
         return GisStandardCheck.Check(Read(document));
@@ -32,6 +46,219 @@ public static class GisStandardStateReader
                                (view.Name ?? string.Empty).StartsWith(GisModelFile.GisViewPrefix, StringComparison.OrdinalIgnoreCase)),
             FloorTypesWithoutCategory = ReadFloorTypesWithoutCategory(document),
         };
+    }
+
+    public static ReadinessCheckSnapshot ReadReadiness(Document document, ModelSnapshot? existingSnapshot = null)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        ModelSnapshot snapshot = existingSnapshot ?? ModelSnapshotReader.Read(document);
+        GeoProjectInfo? geoInfo = TryLoadGeoProjectInfo(document);
+        int? crsEpsg = null;
+        string crsName = string.Empty;
+        if (geoInfo?.ProjectCrs is { EpsgCode: > 0 } rawCrs)
+        {
+            CrsReference migrated = JapanCrsPresets.MigrateLegacyReference(rawCrs);
+            crsEpsg = migrated.EpsgCode;
+            crsName = migrated.NameSnapshot ?? string.Empty;
+        }
+
+        bool hasPlacedFloors = snapshot.FloorTypes.Any(type => type.FloorIds.Count > 0);
+        bool hasPlacedRooms = new FilteredElementCollector(document)
+            .OfCategory(BuiltInCategory.OST_Rooms)
+            .WhereElementIsNotElementType()
+            .Any();
+
+        List<string> viewTemplateNames = new FilteredElementCollector(document)
+            .OfClass(typeof(ViewPlan))
+            .Cast<ViewPlan>()
+            .Where(view => view.IsTemplate)
+            .Select(view => view.Name ?? string.Empty)
+            .Where(name => name.Length > 0)
+            .ToList();
+
+        return new ReadinessCheckSnapshot
+        {
+            DocumentTitle = document.Title ?? string.Empty,
+            DocumentPath = document.PathName ?? string.Empty,
+            IsEmptyModel = !hasPlacedFloors && !hasPlacedRooms,
+            StandardVersionText = snapshot.StandardVersion,
+            BoundParameters = snapshot.BoundParameters.Values.ToList(),
+            FloorTypes = snapshot.FloorTypes,
+            Floors = snapshot.Floors,
+            Materials = snapshot.Materials.Values.ToList(),
+            Levels = snapshot.Levels,
+            LoadedFamilies = ReadLoadedFamilies(document),
+            Schedules = ReadQaSchedules(document),
+            ViewTemplateNames = viewTemplateNames,
+            ExportPlanTemplateIssues = ExportViewSetup.InspectTemplateIssues(
+                document,
+                TemplateStandardDefinitions.ExportPlanViewTemplateName,
+                BuiltInCategory.OST_MechanicalEquipment),
+            ProjectCrsEpsgCode = crsEpsg,
+            ProjectCrsName = crsName,
+            IsGeoreferenceVerified = geoInfo?.Confidence == GeoConfidenceLevel.Verified,
+            HostModelId = geoInfo?.ModelId?.Trim() ?? string.Empty,
+            LinkedModels = ReadLinkedModels(document),
+        };
+    }
+
+    private static GeoProjectInfo? TryLoadGeoProjectInfo(Document document)
+    {
+        try
+        {
+            return new GeoProjectInfoStorage().Load(new RevitDocumentHandle(document));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static List<LinkedModelReadinessInfo> ReadLinkedModels(Document document)
+    {
+        List<LinkedModelReadinessInfo> links = new();
+        foreach (RevitLinkInstance link in new FilteredElementCollector(document)
+            .OfClass(typeof(RevitLinkInstance))
+            .WhereElementIsNotElementType()
+            .Cast<RevitLinkInstance>())
+        {
+            Document? linkedDoc = link.GetLinkDocument();
+            string name = linkedDoc?.Title ?? link.Name ?? $"Link {link.Id.Value}";
+            if (linkedDoc is null)
+            {
+                links.Add(new LinkedModelReadinessInfo(name, isLoaded: false));
+                continue;
+            }
+
+            string modelId = TryLoadGeoProjectInfo(linkedDoc)?.ModelId?.Trim() ?? string.Empty;
+            links.Add(new LinkedModelReadinessInfo(name, isLoaded: true, modelId: modelId));
+        }
+
+        return links;
+    }
+
+    private static List<LoadedFamilyCheckInfo> ReadLoadedFamilies(Document document)
+    {
+        Dictionary<long, List<long>> instancesBySymbol = new();
+        foreach (BuiltInCategory category in ReadinessFamilyCategories)
+        {
+            foreach (FamilyInstance instance in new FilteredElementCollector(document)
+                .OfCategory(category)
+                .OfClass(typeof(FamilyInstance))
+                .WhereElementIsNotElementType()
+                .Cast<FamilyInstance>())
+            {
+                long symbolId = instance.GetTypeId().Value;
+                if (!instancesBySymbol.TryGetValue(symbolId, out List<long>? ids))
+                {
+                    instancesBySymbol[symbolId] = ids = new List<long>();
+                }
+
+                ids.Add(instance.Id.Value);
+            }
+        }
+
+        List<string> requiredParamNames = FamilyStandard.Embedded.Kinds
+            .SelectMany(kind => kind.RequiredTypeParameters)
+            .Where(name => !string.Equals(name, GisSharedParameters.GisKind, StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        List<LoadedFamilyCheckInfo> loaded = new();
+        foreach (BuiltInCategory category in ReadinessFamilyCategories)
+        {
+            string categoryName = category.ToString();
+            foreach (FamilySymbol symbol in new FilteredElementCollector(document)
+                .OfCategory(category)
+                .OfClass(typeof(FamilySymbol))
+                .Cast<FamilySymbol>())
+            {
+                Parameter? gisKindParam = symbol.LookupParameter(GisSharedParameters.GisKind);
+                Parameter? gisDoorParam = symbol.LookupParameter(GisSharedParameters.GisDoor);
+                Parameter? gisAccessConParam = symbol.LookupParameter(GisSharedParameters.GisAccessCon);
+
+                Dictionary<string, string> requiredValues = new(StringComparer.Ordinal);
+                foreach (string paramName in requiredParamNames)
+                {
+                    if (symbol.LookupParameter(paramName) is { } param)
+                    {
+                        requiredValues[paramName] = ReadParameterText(param);
+                    }
+                }
+
+                loaded.Add(new LoadedFamilyCheckInfo(
+                    symbol.Id.Value,
+                    symbol.FamilyName ?? string.Empty,
+                    symbol.Name ?? string.Empty,
+                    categoryName,
+                    gisKind: ReadParameterText(gisKindParam),
+                    gisCategory: ReadText(symbol, GisSharedParameters.GisCategory),
+                    gisDoor: ReadParameterText(gisDoorParam),
+                    gisAccessCon: ReadParameterText(gisAccessConParam),
+                    hasGisKindParameter: gisKindParam != null,
+                    hasGisDoorParameter: gisDoorParam != null,
+                    hasGisAccessConParameter: gisAccessConParam != null,
+                    typeParameters: requiredValues,
+                    instanceIds: instancesBySymbol.TryGetValue(symbol.Id.Value, out List<long>? ids) ? ids : null));
+            }
+        }
+
+        return loaded;
+    }
+
+    private static List<QaScheduleInfo> ReadQaSchedules(Document document)
+    {
+        List<QaScheduleInfo> schedules = new();
+        foreach (ViewSchedule schedule in new FilteredElementCollector(document)
+            .OfClass(typeof(ViewSchedule))
+            .Cast<ViewSchedule>())
+        {
+            if (schedule.IsTemplate)
+            {
+                continue;
+            }
+
+            List<string> fields = new();
+            ScheduleDefinition definition = schedule.Definition;
+            int count = definition.GetFieldCount();
+            for (int index = 0; index < count; index++)
+            {
+                ScheduleField field = definition.GetField(index);
+                string resolvedName = ResolveScheduleFieldName(document, field);
+                if (resolvedName.Length > 0)
+                {
+                    fields.Add(resolvedName);
+                }
+            }
+
+            schedules.Add(new QaScheduleInfo(schedule.Id.Value, schedule.Name ?? string.Empty, fields));
+        }
+
+        return schedules;
+    }
+
+    private static string ResolveScheduleFieldName(Document document, ScheduleField field)
+    {
+        if (field.ParameterId != ElementId.InvalidElementId
+            && document.GetElement(field.ParameterId) is SharedParameterElement shared)
+        {
+            string? defName = shared.GetDefinition()?.Name;
+            if (!string.IsNullOrWhiteSpace(defName))
+            {
+                return defName!.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(shared.Name))
+            {
+                return shared.Name.Trim();
+            }
+        }
+
+        return (field.GetName() ?? string.Empty).Trim();
     }
 
     private static List<GisBoundParameterState> ReadBoundParameters(Document document)
@@ -81,7 +308,11 @@ public static class GisStandardStateReader
 
     private static string ReadText(Element? element, string parameterName)
     {
-        Parameter? parameter = element?.LookupParameter(parameterName);
+        return ReadParameterText(element?.LookupParameter(parameterName));
+    }
+
+    private static string ReadParameterText(Parameter? parameter)
+    {
         if (parameter == null || !parameter.HasValue)
         {
             return string.Empty;

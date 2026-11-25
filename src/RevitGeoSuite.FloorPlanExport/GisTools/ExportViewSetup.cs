@@ -151,9 +151,9 @@ public static class ExportViewSetup
     /// The categories and line styles whose visibility the template owns, as they are on
     /// <paramref name="template"/>: what the export reads and every line style.
     /// </summary>
-    private static IEnumerable<TemplateCategory> OwnedCategories(Document document, View template)
+    private static IEnumerable<TemplateCategory> OwnedCategories(Document document, View template, params BuiltInCategory[] extraVisibleCategories)
     {
-        HashSet<long> reads = ExportReadCategoryIds(document);
+        HashSet<long> reads = ExportReadCategoryIds(document, extraVisibleCategories);
         foreach (Category category in document.Settings.Categories)
         {
             if (category.CategoryType == CategoryType.Model && reads.Contains(category.Id.Value) && template.CanCategoryBeHidden(category.Id))
@@ -172,19 +172,75 @@ public static class ExportViewSetup
     }
 
     /// <summary>What the export reads from a view, and the category of every family the export maps.</summary>
-    private static HashSet<long> ExportReadCategoryIds(Document document)
+    private static HashSet<long> ExportReadCategoryIds(Document document, params BuiltInCategory[] extraVisibleCategories)
     {
-        HashSet<long> ids = new(VisibleModelCategories.Select(category => (long)category));
+        HashSet<long> ids = new(VisibleModelCategories.Concat(extraVisibleCategories ?? Array.Empty<BuiltInCategory>()).Select(category => (long)category));
         ids.UnionWith(MappedFamilyCategories(document));
         return ids;
     }
 
     /// <summary>The template named <c>GIS Export</c> in any case: Revit view names are unique regardless of case.</summary>
-    private static View? FindTemplate(Document document) =>
+    private static View? FindTemplate(Document document) => FindTemplateByName(document, ExportViewPlanner.TemplateName);
+
+    internal static View? FindTemplateByName(Document document, string templateName) =>
         new FilteredElementCollector(document)
             .OfClass(typeof(ViewPlan))
             .Cast<ViewPlan>()
-            .FirstOrDefault(view => view.IsTemplate && string.Equals(view.Name, ExportViewPlanner.TemplateName, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(view => view.IsTemplate && string.Equals(view.Name, templateName, StringComparison.OrdinalIgnoreCase));
+
+    internal static IReadOnlyList<string> InspectTemplateIssues(Document document, string templateName, params BuiltInCategory[] extraVisibleCategories)
+    {
+        View? template = FindTemplateByName(document, templateName);
+        if (template is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        TemplateRepair? repair = ExportViewPlanner.RepairFor(
+            new ExportTemplate(template.Id.Value, OwnedCategories(document, template, extraVisibleCategories)));
+        return repair is null ? Array.Empty<string>() : new[] { repair.Changes() };
+    }
+
+    internal static bool EnsureNamedExportPlanTemplate(
+        Document document,
+        string templateName,
+        List<string> log,
+        params BuiltInCategory[] extraVisibleCategories)
+    {
+        View? existing = FindTemplateByName(document, templateName);
+        if (existing is not null)
+        {
+            TemplateRepair? repair = ExportViewPlanner.RepairFor(
+                new ExportTemplate(existing.Id.Value, OwnedCategories(document, existing, extraVisibleCategories)));
+            if (repair is null)
+            {
+                return false;
+            }
+
+            foreach (TemplateCategory category in repair.Show)
+            {
+                existing.SetCategoryHidden(new ElementId(category.ElementId), false);
+            }
+
+            foreach (TemplateCategory category in repair.Hide)
+            {
+                existing.SetCategoryHidden(new ElementId(category.ElementId), true);
+            }
+
+            log.Add($"Updated view template {templateName}: {repair.Changes()}");
+            return true;
+        }
+
+        ElementId levelId = new FilteredElementCollector(document).OfClass(typeof(Level)).FirstElementId();
+        if (levelId == ElementId.InvalidElementId)
+        {
+            throw new InvalidOperationException($"Cannot create view template {templateName}: the model has no level.");
+        }
+
+        CreateTemplateCore(document, templateName, levelId, extraVisibleCategories);
+        log.Add($"Created view template {templateName}");
+        return true;
+    }
 
     /// <summary>
     /// The <c>GIS Export</c> template, made from a scratch plan that is deleted again. It shows only
@@ -195,12 +251,17 @@ public static class ExportViewSetup
         ElementId levelId = plan.NewViews.Count > 0
             ? new ElementId(plan.NewViews[0].LevelId)
             : new FilteredElementCollector(document).OfClass(typeof(Level)).FirstElementId();
+        return CreateTemplateCore(document, ExportViewPlanner.TemplateName, levelId, Array.Empty<BuiltInCategory>());
+    }
+
+    private static View CreateTemplateCore(Document document, string templateName, ElementId levelId, BuiltInCategory[] extraVisibleCategories)
+    {
         ViewPlan scratch = ViewPlan.Create(document, FloorPlanTypeId(document), levelId);
         View template = scratch.CreateViewTemplate();
         document.Delete(scratch.Id);
-        template.Name = ExportViewPlanner.TemplateName;
+        template.Name = templateName;
 
-        HashSet<long> visible = ExportReadCategoryIds(document);
+        HashSet<long> visible = ExportReadCategoryIds(document, extraVisibleCategories);
         foreach (Category category in document.Settings.Categories)
         {
             bool show = category.CategoryType == CategoryType.Model && visible.Contains(category.Id.Value);

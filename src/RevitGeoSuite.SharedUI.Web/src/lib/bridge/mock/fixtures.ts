@@ -297,69 +297,187 @@ const range = (start: number, count: number) => Array.from({ length: count }, (_
 
 function gisStandard(scenario: MockScenario) {
   let setUp = scenario === 'existing'
+  let templatePrepared = false
   let fixed = false
   let platformReset = false
-  const inspect = (): GisStandardInspectResponse => ({
-    documentTitle: 'TokyoStation_Concourse.rvt',
-    standardVersion: 2,
-    modelVersion: setUp ? '2' : '',
-    exportSummary: setUp ? 'On the current Kanizu GIS standard (version 2).' : 'Not set up with the Kanizu GIS standard.',
-    exportBlockers: [],
-    findings: [
-      ...(setUp && !platformReset
-        ? [
-            {
-              severity: 'error',
-              topic: 'floor types',
-              message: "Floor type j ホーム_床 is a standard type, but its gis_category 'walkway' differs from the standard ('platform'). Its 4 floors export as 'walkway', not as the name says. Reset it to the standard.",
-              elementIds: range(361, 4),
-              fix: 'resetFloorType',
-              fixTargetId: 204
-            }
-          ]
-        : []),
-      ...(setUp ? [] : [{ severity: 'warning', topic: 'standard', message: 'The model has not been set up with the Kanizu GIS standard. Run Set up model.', elementIds: [] }]),
-      ...(fixed
+  const inspect = (payload?: { mode?: string }): GisStandardInspectResponse => {
+    const mode = payload?.mode === 'template' ? 'template' : 'project'
+    const groups = [
+      {
+        id: 'parameters',
+        title: 'Shared parameters & standard',
+        status: setUp ? 'pass' : 'fail',
+        passCount: setUp ? 2 : 0,
+        warnCount: 0,
+        failCount: setUp ? 0 : 2,
+        notApplicableCount: 0,
+        items: [
+          {
+            id: 'standard-version',
+            title: 'Kanizu GIS standard version',
+            status: setUp ? 'pass' : 'fail',
+            detail: setUp ? 'Stamped at current Kanizu GIS standard v2.' : 'gis_standard_version is not stamped.',
+            action: setUp ? 'none' : 'prepareTemplate',
+            elementIds: []
+          },
+          {
+            id: 'shared-parameters',
+            title: 'Shared parameters (15 frozen GUIDs)',
+            status: setUp ? 'pass' : 'fail',
+            detail: setUp ? 'All 15 shared parameters match the shipped GUIDs, bindings, and categories.' : '3 missing (gis_category, gis_restriction, gis_standard_version).',
+            action: setUp ? 'none' : 'prepareTemplate',
+            elementIds: []
+          }
+        ]
+      },
+      {
+        id: 'template-views',
+        title: 'QA schedules & export view template',
+        status: templatePrepared ? 'pass' : 'fail',
+        passCount: templatePrepared ? 5 : 0,
+        warnCount: 0,
+        failCount: templatePrepared ? 0 : 5,
+        notApplicableCount: 0,
+        items: [
+          { id: 'qa-schedule-floors', title: 'Kanizu GIS - Floors', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'Present with required QA fields (gis_category, gis_restriction, category).' : 'Missing QA schedule.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] },
+          { id: 'qa-schedule-circulation', title: 'Kanizu GIS - Circulation', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'Present with required QA fields (gis_kind, gis_direction, gis_levels_served).' : 'Missing QA schedule.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] },
+          { id: 'qa-schedule-doors', title: 'Kanizu GIS - Doors', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'Present with required QA fields (gis_door, gis_access_con).' : 'Missing QA schedule.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] },
+          { id: 'qa-schedule-levels', title: 'Kanizu GIS - Levels', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'Present with required QA fields (ordinal, short_name, level_id).' : 'Missing QA schedule.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] },
+          { id: 'view-template-export-plan', title: 'Kanizu GIS Export Plan', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'View template is present and configured for GIS export.' : 'Missing view template.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] }
+        ]
+      },
+      {
+        id: 'project-setup',
+        title: 'Project georeferencing, Model IDs & levels',
+        status: mode === 'template' ? 'not_applicable' : 'pass',
+        passCount: mode === 'template' ? 0 : 3,
+        warnCount: 0,
+        failCount: 0,
+        notApplicableCount: mode === 'template' ? 3 : 0,
+        items: [
+          { id: 'project-crs', title: 'Japan Plane Rectangular CRS (EPSG:6669–6687)', status: mode === 'template' ? 'not_applicable' : 'pass', detail: mode === 'template' ? 'Not required in Template mode.' : 'Verified on EPSG:6677.', action: 'none', elementIds: [] },
+          { id: 'model-ids', title: 'Host & linked model stable ModelId', status: mode === 'template' ? 'not_applicable' : 'pass', detail: mode === 'template' ? 'Not required in Template mode.' : 'Host ModelId is present.', action: 'none', elementIds: [] },
+          { id: 'level-metadata', title: 'Level ordinal & short_name completeness', status: mode === 'template' ? 'not_applicable' : 'pass', detail: mode === 'template' ? 'Not required in Template mode.' : 'All levels have unique ordinals and short_name.', action: 'none', elementIds: [] }
+        ]
+      }
+    ]
+    const applicable = groups.flatMap((g) => g.items).filter((i) => i.status !== 'not_applicable')
+    const passCount = applicable.filter((i) => i.status === 'pass').length
+    const warnCount = applicable.filter((i) => i.status === 'warn').length
+    const failCount = applicable.filter((i) => i.status === 'fail').length
+    const notApplicableCount = groups.flatMap((g) => g.items).filter((i) => i.status === 'not_applicable').length
+    return {
+      documentTitle: 'TokyoStation_Concourse.rvt',
+      standardVersion: 2,
+      modelVersion: setUp ? '2' : '',
+      exportSummary: setUp ? 'On the current Kanizu GIS standard (version 2).' : 'Not set up with the Kanizu GIS standard.',
+      exportBlockers: [],
+      findings: [
+        ...(setUp && !platformReset
+          ? [
+              {
+                severity: 'error',
+                topic: 'floor types',
+                message: "Floor type j ホーム_床 is a standard type, but its gis_category 'walkway' differs from the standard ('platform'). Its 4 floors export as 'walkway', not as the name says. Reset it to the standard.",
+                elementIds: range(361, 4),
+                fix: 'resetFloorType',
+                fixTargetId: 204
+              }
+            ]
+          : []),
+        ...(setUp ? [] : [{ severity: 'warning', topic: 'standard', message: 'The model has not been set up with the Kanizu GIS standard. Run Set up model.', elementIds: [] }]),
+        ...(fixed
+          ? []
+          : [
+              { severity: 'warning', topic: 'floor types', message: 'Floor type 1F ラチ内 床 (14 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: range(301, 14) },
+              { severity: 'warning', topic: 'floor types', message: 'Floor type j 店舗_床 (6 floors) uses an old name. Run Fix floor types to rename it to j ラチ外店舗_床 or j ラチ内店舗_床. All 6 floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first.', elementIds: range(331, 6) }
+            ]),
+        { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
+        { severity: 'error', topic: 'families', message: "Lift : A has gis_kind 'lift', which the export does not know; its instances export as plain fixtures.", elementIds: [501] },
+        { severity: 'warning', topic: 'levels', message: 'Level B1FL has no short_name, so the export guesses it from the level name.', elementIds: [11] },
+        { severity: 'warning', topic: 'families', message: 'ESC_1200 : S800 looks like an escalator but has no gis_kind, so it is found only by its family name, if at all.', elementIds: [401, 402] },
+        { severity: 'info', topic: 'parameters', message: 'Parameter name uses its own GUID 1f0c9e2a-0000-4000-8000-000000000001, not the standard\'s 47b8db20-e756-4280-a842-f570dc847db5. It exports, but other models cannot share schedules or families with it.', elementIds: [] }
+      ].map((finding) => ({ fix: '', fixTargetId: 0, ...finding })),
+      setupLines: setUp
         ? []
         : [
-            { severity: 'warning', topic: 'floor types', message: 'Floor type 1F ラチ内 床 (14 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: range(301, 14) },
-            { severity: 'warning', topic: 'floor types', message: 'Floor type j 店舗_床 (6 floors) uses an old name. Run Fix floor types to rename it to j ラチ外店舗_床 or j ラチ内店舗_床. All 6 floors of this type get the name you choose. If some belong to the other one, duplicate the type and move those floors to the copy first.', elementIds: range(331, 6) }
-          ]),
-      { severity: 'warning', topic: 'floor types', message: 'Floor type 機械室 (2 floors) has no gis_category, so its floors export by type name. Run Fix floor types.', elementIds: [321, 322] },
-      { severity: 'error', topic: 'families', message: "Lift : A has gis_kind 'lift', which the export does not know; its instances export as plain fixtures.", elementIds: [501] },
-      { severity: 'warning', topic: 'levels', message: 'Level B1FL has no short_name, so the export guesses it from the level name.', elementIds: [11] },
-      { severity: 'warning', topic: 'families', message: 'ESC_1200 : S800 looks like an escalator but has no gis_kind, so it is found only by its family name, if at all.', elementIds: [401, 402] },
-      { severity: 'info', topic: 'parameters', message: 'Parameter name uses its own GUID 1f0c9e2a-0000-4000-8000-000000000001, not the standard\'s 47b8db20-e756-4280-a842-f570dc847db5. It exports, but other models cannot share schedules or families with it.', elementIds: [] }
-    ].map((finding) => ({ fix: '', fixTargetId: 0, ...finding })),
-    setupLines: setUp
-      ? []
-      : [
-          'Bind gis_category (type) to Floors',
-          'Bind gis_restriction (type) to Floors',
-          'Bind gis_standard_version to Project Information',
-          'Create material GIS_ラチ内コンコース #F2E6C9',
-          'Create material GIS_店舗 #F7C6A3',
-          'Create floor type j ラチ内コンコース_床 (walkway, rachi_nai, GIS_ラチ内コンコース)',
-          'Create floor type j ラチ外スロープ_床 (ramp, rachi_gai, GIS_ラチ外コンコース)',
-          'Set gis_standard_version 2'
-        ],
-    proposals:
-      !setUp || fixed
-        ? []
-        : [
-            { floorTypeId: 201, floorTypeName: '1F ラチ内 床', floorCount: 14, standardTypeName: 'j ラチ内コンコース_床', gisCategory: 'walkway', gisRestriction: 'rachi_nai', material: 'GIS_ラチ内コンコース', newName: '', reason: 'words' },
-            { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ外店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_gai', material: 'GIS_店舗', newName: 'j ラチ外店舗_床', reason: 'oldName' },
-            { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ内店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_nai', material: 'GIS_店舗', newName: 'j ラチ内店舗_床', reason: 'oldName' }
+            'Bind gis_category (type) to Floors',
+            'Bind gis_restriction (type) to Floors',
+            'Bind gis_standard_version to Project Information',
+            'Create material GIS_ラチ内コンコース #F2E6C9',
+            'Create material GIS_店舗 #F7C6A3',
+            'Create floor type j ラチ内コンコース_床 (walkway, rachi_nai, GIS_ラチ内コンコース)',
+            'Create floor type j ラチ外スロープ_床 (ramp, rachi_gai, GIS_ラチ外コンコース)',
+            'Set gis_standard_version 2'
           ],
-    unmatched: [{ floorTypeId: 203, name: '機械室', floorIds: [321, 322] }],
-    fixBlocker: setUp ? '' : 'gis_category is not bound yet. Run Set up model first.'
-  })
+      proposals:
+        !setUp || fixed
+          ? []
+          : [
+              { floorTypeId: 201, floorTypeName: '1F ラチ内 床', floorCount: 14, standardTypeName: 'j ラチ内コンコース_床', gisCategory: 'walkway', gisRestriction: 'rachi_nai', material: 'GIS_ラチ内コンコース', newName: '', reason: 'words' },
+              { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ外店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_gai', material: 'GIS_店舗', newName: 'j ラチ外店舗_床', reason: 'oldName' },
+              { floorTypeId: 202, floorTypeName: 'j 店舗_床', floorCount: 6, standardTypeName: 'j ラチ内店舗_床', gisCategory: 'retail', gisRestriction: 'rachi_nai', material: 'GIS_店舗', newName: 'j ラチ内店舗_床', reason: 'oldName' }
+            ],
+      unmatched: [{ floorTypeId: 203, name: '機械室', floorIds: [321, 322] }],
+      fixBlocker: setUp ? '' : 'gis_category is not bound yet. Run Set up model first.',
+      readiness: {
+        mode,
+        suggestedMode: 'project',
+        scorePercent: applicable.length ? Math.round((100 * passCount) / applicable.length) : 100,
+        isReady: failCount === 0 && warnCount === 0,
+        applicableCount: applicable.length,
+        passCount,
+        warnCount,
+        failCount,
+        notApplicableCount,
+        canPrepareTemplate: !setUp || !templatePrepared,
+        canSetupModel: !setUp,
+        canFixFloorTypes: setUp && !fixed,
+        prepareTemplateLines: templatePrepared
+          ? []
+          : [
+              'Create QA schedule Kanizu GIS - Floors (gis_category, gis_restriction, category)',
+              'Create QA schedule Kanizu GIS - Circulation (gis_kind, gis_direction, gis_levels_served)',
+              'Create QA schedule Kanizu GIS - Doors (gis_door, gis_access_con)',
+              'Create QA schedule Kanizu GIS - Levels (ordinal, short_name, level_id)',
+              'Create view template Kanizu GIS Export Plan'
+            ],
+        groups
+      }
+    }
+  }
   return {
     'gisStandard.inspect': inspect,
     'gisStandard.setup': () => {
       setUp = true
       return { log: ['Bound gis_category', 'Bound gis_restriction', 'Material GIS_店舗 #F7C6A3', 'Created floor type j 店舗_床 from j 床', 'gis_standard_version = 2'], skipped: [] }
     },
+    'gisStandard.prepareTemplate': () => {
+      setUp = true
+      templatePrepared = true
+      return {
+        log: [
+          'Bound gis_category',
+          'gis_standard_version = 2',
+          'Created QA schedule Kanizu GIS - Floors (gis_category, gis_restriction, category)',
+          'Created QA schedule Kanizu GIS - Circulation (gis_kind, gis_direction, gis_levels_served)',
+          'Created QA schedule Kanizu GIS - Doors (gis_door, gis_access_con)',
+          'Created QA schedule Kanizu GIS - Levels (ordinal, short_name, level_id)',
+          'Created view template Kanizu GIS Export Plan'
+        ],
+        skipped: []
+      }
+    },
+    'gisStandard.validateRfaFolder': (payload: { folderPath?: string }) => ({
+      folderPath: payload?.folderPath ?? 'C:\\Families',
+      passCount: 2,
+      warnCount: 0,
+      failCount: 0,
+      items: [
+        { familyName: 'j EV : EV_1500', category: 'OST_MechanicalEquipment', status: 'pass', detail: 'Matches standard elevator family with gis_kind = elevator.', filePath: 'C:\\Families\\j EV.rfa' },
+        { familyName: 'StationDoor : Sliding_1800', category: 'OST_Doors', status: 'pass', detail: 'Door type carries gis_door and gis_access_con parameters.', filePath: 'C:\\Families\\StationDoor.rfa' }
+      ]
+    }),
     'gisStandard.fixFloorTypes': (payload: { accepted?: { floorTypeId: number; standardTypeName: string }[] }) => {
       fixed = true
       const names: Record<number, string> = {

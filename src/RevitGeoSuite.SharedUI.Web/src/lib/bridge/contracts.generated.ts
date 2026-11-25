@@ -584,8 +584,65 @@ export interface GisParametersWriteResponse {
   rowCount: number
 }
 
+export interface GisReadinessGroup {
+  failCount: number
+  id: string
+  items: GisReadinessItem[]
+  notApplicableCount: number
+  passCount: number
+  status: string
+  title: string
+  warnCount: number
+}
+
+export interface GisReadinessItem {
+  action: string
+  detail: string
+  elementIds: number[]
+  id: string
+  status: string
+  title: string
+}
+
+export interface GisReadinessSummary {
+  applicableCount: number
+  canFixFloorTypes: boolean
+  canPrepareTemplate: boolean
+  canSetupModel: boolean
+  failCount: number
+  groups: GisReadinessGroup[]
+  isReady: boolean
+  mode: string
+  notApplicableCount: number
+  passCount: number
+  prepareTemplateLines: string[]
+  scorePercent: number
+  suggestedMode: string
+  warnCount: number
+}
+
 export interface GisResetFloorTypeRequest {
   floorTypeId: number
+}
+
+export interface GisRfaValidationItem {
+  category: string
+  detail: string
+  familyName: string
+  filePath: string
+  status: string
+}
+
+export interface GisRfaValidationRequest {
+  folderPath: string
+}
+
+export interface GisRfaValidationResponse {
+  failCount: number
+  folderPath: string
+  items: GisRfaValidationItem[]
+  passCount: number
+  warnCount: number
 }
 
 export interface GisSelectElementsRequest {
@@ -637,6 +694,7 @@ export interface GisStandardEmptyRequest {
 }
 
 export interface GisStandardInspectRequest {
+  mode?: string
   stationFolder: string
 }
 
@@ -648,6 +706,7 @@ export interface GisStandardInspectResponse {
   fixBlocker: string
   modelVersion: string
   proposals: GisFloorTypeProposalItem[]
+  readiness?: GisReadinessSummary
   setupLines: string[]
   standardVersion: number
   unmatched: GisUnmatchedFloorTypeItem[]
@@ -1370,9 +1429,11 @@ export interface RpcMethods {
   'gisParameters.write': { request: GisStandardEmptyRequest; response: GisParametersWriteResponse }
   'gisStandard.fixFloorTypes': { request: GisFixFloorTypesRequest; response: GisStandardApplyResponse }
   'gisStandard.inspect': { request: GisStandardInspectRequest; response: GisStandardInspectResponse }
+  'gisStandard.prepareTemplate': { request: GisStandardEmptyRequest; response: GisStandardApplyResponse }
   'gisStandard.resetFloorType': { request: GisResetFloorTypeRequest; response: GisStandardApplyResponse }
   'gisStandard.select': { request: GisSelectElementsRequest; response: GisSelectElementsResponse }
   'gisStandard.setup': { request: GisStandardEmptyRequest; response: GisStandardApplyResponse }
+  'gisStandard.validateRfaFolder': { request: GisRfaValidationRequest; response: GisRfaValidationResponse }
   'job.cancel': { request: JobCancelRequest; response: JobCancelResponse }
   'localization.getAll': { request: LocalizationGetAllRequest; response: LocalizationStrings }
   'localization.setLanguage': { request: LocalizationSetLanguageRequest; response: LocalizationSetLanguageResponse }

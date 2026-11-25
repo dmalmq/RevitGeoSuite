@@ -13,6 +13,9 @@ public sealed class GisStandardEmptyRequest
 public sealed class GisStandardInspectRequest
 {
     public string StationFolder { get; set; } = string.Empty;
+
+    /// <summary>Optional readiness mode override: "project" or "template". Empty/null auto-detects from the active model.</summary>
+    public string? Mode { get; set; }
 }
 
 /// <summary>Where the active model stands against the Kanizu GIS standard, and what the tools would change.</summary>
@@ -45,6 +48,124 @@ public sealed class GisStandardInspectResponse
 
     /// <summary>Why Fix floor types cannot write yet, such as gis_category not bound; empty when it can.</summary>
     public string FixBlocker { get; set; } = string.Empty;
+
+    /// <summary>Structured Template / Project readiness checklist evaluated for the active document.</summary>
+    public GisReadinessSummary? Readiness { get; set; }
+}
+
+/// <summary>Structured readiness checklist summary for Template or Project mode.</summary>
+[TsExport]
+public sealed class GisReadinessSummary
+{
+    public int ApplicableCount { get; set; }
+
+    public bool CanFixFloorTypes { get; set; }
+
+    public bool CanPrepareTemplate { get; set; }
+
+    public bool CanSetupModel { get; set; }
+
+    public int FailCount { get; set; }
+
+    public GisReadinessGroup[] Groups { get; set; } = Array.Empty<GisReadinessGroup>();
+
+    public bool IsReady { get; set; }
+
+    /// <summary>Active evaluation mode: project or template.</summary>
+    public string Mode { get; set; } = string.Empty;
+
+    public int NotApplicableCount { get; set; }
+
+    public int PassCount { get; set; }
+
+    /// <summary>Preview lines for QA schedules and export view template changes beyond Set up model.</summary>
+    public string[] PrepareTemplateLines { get; set; } = Array.Empty<string>();
+
+    public int ScorePercent { get; set; }
+
+    /// <summary>Auto-detected mode from document (.rte or empty model -> template, otherwise project).</summary>
+    public string SuggestedMode { get; set; } = string.Empty;
+
+    public int WarnCount { get; set; }
+}
+
+/// <summary>One expandable group in the readiness checklist.</summary>
+[TsExport]
+public sealed class GisReadinessGroup
+{
+    public int FailCount { get; set; }
+
+    public string Id { get; set; } = string.Empty;
+
+    public GisReadinessItem[] Items { get; set; } = Array.Empty<GisReadinessItem>();
+
+    public int NotApplicableCount { get; set; }
+
+    public int PassCount { get; set; }
+
+    /// <summary>pass, warn, fail or not_applicable.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+
+    public int WarnCount { get; set; }
+}
+
+/// <summary>One individual readiness check item.</summary>
+[TsExport]
+public sealed class GisReadinessItem
+{
+    /// <summary>none, prepareTemplate, setupModel or fixFloorTypes.</summary>
+    public string Action { get; set; } = string.Empty;
+
+    public string Detail { get; set; } = string.Empty;
+
+    public long[] ElementIds { get; set; } = Array.Empty<long>();
+
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>pass, warn, fail or not_applicable.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+}
+
+/// <summary>Payload of <c>gisStandard.validateRfaFolder</c>: folder containing .rfa family files.</summary>
+[TsExport]
+public sealed class GisRfaValidationRequest
+{
+    public string FolderPath { get; set; } = string.Empty;
+}
+
+/// <summary>One family type result from validating a folder of .rfa files.</summary>
+[TsExport]
+public sealed class GisRfaValidationItem
+{
+    public string Category { get; set; } = string.Empty;
+
+    public string Detail { get; set; } = string.Empty;
+
+    public string FamilyName { get; set; } = string.Empty;
+
+    public string FilePath { get; set; } = string.Empty;
+
+    /// <summary>pass, warn or fail.</summary>
+    public string Status { get; set; } = string.Empty;
+}
+
+/// <summary>Results of validating .rfa files in a folder against standards/families.json and door rules.</summary>
+[TsExport]
+public sealed class GisRfaValidationResponse
+{
+    public int FailCount { get; set; }
+
+    public string FolderPath { get; set; } = string.Empty;
+
+    public GisRfaValidationItem[] Items { get; set; } = Array.Empty<GisRfaValidationItem>();
+
+    public int PassCount { get; set; }
+
+    public int WarnCount { get; set; }
 }
 
 /// <summary>One audit finding: something that would need fixing by hand after a GDB export.</summary>
