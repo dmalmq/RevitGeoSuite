@@ -39,7 +39,7 @@ internal static class Tiles3DExportSupport
         return (coordinator, reference, scope);
     }
 
-    public static (bool PreciseCrs, double? GeoidOffset, string Scope, string[] SelectedLinkUniqueIds, string? SelectedViewUniqueId, Tiles3DLevelOfDetail LevelOfDetail) ReadOptions(JObject? payload)
+    public static (bool PreciseCrs, double? GeoidOffset, string Scope, string[] SelectedLinkUniqueIds, string? SelectedViewUniqueId, Tiles3DLevelOfDetail LevelOfDetail, Tiles3DMaterialPalette MaterialPalette) ReadOptions(JObject? payload)
     {
         var options = payload?["options"] as JObject;
         bool preciseCrs = options?.Value<bool?>("preciseCrs") ?? true;
@@ -47,10 +47,11 @@ internal static class Tiles3DExportSupport
         string scope = payload?.Value<string>("scope") ?? "whole";
         string? selectedViewUniqueId = options?.Value<string>("selectedViewUniqueId");
         Tiles3DLevelOfDetail levelOfDetail = ParseLevelOfDetail(options?.Value<string>("lod"));
+        Tiles3DMaterialPalette materialPalette = Tiles3DMaterialPaletteResolver.Parse(options?.Value<string>("materialPalette"));
         string[] selectedLinkUniqueIds = options?["selectedLinkUniqueIds"] is JArray arr
             ? arr.Values<string>().Where(s => s != null).Cast<string>().ToArray()
             : Array.Empty<string>();
-        return (preciseCrs, geoidOffset, scope, selectedLinkUniqueIds, selectedViewUniqueId, levelOfDetail);
+        return (preciseCrs, geoidOffset, scope, selectedLinkUniqueIds, selectedViewUniqueId, levelOfDetail, materialPalette);
     }
 
     public static void ApplySelectedLinks(Tiles3DExportScopeSelection scope, Document document, string[] selectedLinkUniqueIds)
@@ -186,7 +187,7 @@ public sealed class Tiles3DExportPrepareHandler : IRpcHandler
 
     public Task<object?> HandleAsync(object? payload)
     {
-        (bool preciseCrs, double? geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail) =
+        (bool preciseCrs, double? geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail, Tiles3DMaterialPalette materialPalette) =
             Tiles3DExportSupport.ReadOptions(payload as JObject);
 
         // Geometry extraction touches the Revit API, so the preview runs on the API thread.
@@ -196,7 +197,7 @@ public sealed class Tiles3DExportPrepareHandler : IRpcHandler
             var (coordinator, reference, scopeSelection) = Tiles3DExportSupport.Resolve(document, handle, currentState, info, scope, selectedViewUniqueId);
             Tiles3DExportSupport.ApplySelectedLinks(scopeSelection, document, selectedLinkUniqueIds);
 
-            Tiles3DExportPreparationResult prep = coordinator.Prepare(handle, reference, scopeSelection, levelOfDetail, preciseCrs, geoidOffset);
+            Tiles3DExportPreparationResult prep = coordinator.Prepare(handle, reference, scopeSelection, levelOfDetail, preciseCrs, geoidOffset, materialPalette);
             Tiles3DExportPackage package = prep.Package;
 
             return new Tiles3DExportPrepareResponse
@@ -237,7 +238,7 @@ public sealed class Tiles3DExportHandler : IRpcHandler
             throw new InvalidOperationException("Output folder is required.");
         }
 
-        (bool preciseCrs, double? geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail) =
+        (bool preciseCrs, double? geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail, Tiles3DMaterialPalette materialPalette) =
             Tiles3DExportSupport.ReadOptions(jobj);
 
         string jobId = jobs.Start(async (ct, progress) =>
@@ -251,7 +252,7 @@ public sealed class Tiles3DExportHandler : IRpcHandler
                 var (coordinator, reference, scopeSelection) = Tiles3DExportSupport.Resolve(document, handle, currentState, info, scope, selectedViewUniqueId);
                 Tiles3DExportSupport.ApplySelectedLinks(scopeSelection, document, selectedLinkUniqueIds);
 
-                Tiles3DExportPreparationResult prep = coordinator.Prepare(handle, reference, scopeSelection, levelOfDetail, preciseCrs, geoidOffset);
+                Tiles3DExportPreparationResult prep = coordinator.Prepare(handle, reference, scopeSelection, levelOfDetail, preciseCrs, geoidOffset, materialPalette);
                 Tiles3DExportState? existingState = new Tiles3DExportStateService().Load(handle);
                 Tiles3DExportResult exportResult = coordinator.Export(
                     handle, prep.Package, outputFolder!, Tiles3DExportSupport.ReferenceSource, scopeSelection, existingState);

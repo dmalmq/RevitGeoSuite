@@ -8,6 +8,12 @@ public sealed class Tiles3DExportPackage
 
     public Tiles3DLevelOfDetail LevelOfDetail { get; set; }
 
+    /// <summary>
+    /// Material colour palette used when preparing this package. <see cref="Tiles3DMaterialPalette.Source"/>
+    /// preserves authored Revit material colours and legacy glTF factor encoding.
+    /// </summary>
+    public Tiles3DMaterialPalette MaterialPalette { get; set; } = Tiles3DMaterialPalette.Source;
+
     public List<Tiles3DMeshPrimitive> Meshes { get; set; } = new List<Tiles3DMeshPrimitive>();
 
     public int ElementCount { get; set; }

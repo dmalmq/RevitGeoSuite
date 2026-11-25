@@ -45,7 +45,8 @@ public sealed class Tiles3DExportCoordinator
         Tiles3DExportScopeSelection scope,
         Tiles3DLevelOfDetail levelOfDetail = Tiles3DLevelOfDetail.Fine,
         bool usePreciseCrsProjection = true,
-        double? geoidHeightOffsetMeters = null)
+        double? geoidHeightOffsetMeters = null,
+        Tiles3DMaterialPalette materialPalette = Tiles3DMaterialPalette.Source)
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("3D Tiles export requires a RevitDocumentHandle.");
@@ -71,7 +72,7 @@ public sealed class Tiles3DExportCoordinator
         Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(resolvedGeoidHeightOffsetMeters);
 
         List<string> extractionWarnings = new List<string>();
-        IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext, scope, extractionWarnings);
+        IReadOnlyCollection<Tiles3DMeshPrimitive> extracted = geometryExtractor.Extract(revitDocument, referenceContext, scope, extractionWarnings, materialPalette);
         IReadOnlyCollection<Tiles3DMeshPrimitive> simplified = geometrySimplifier.Simplify(extracted, levelOfDetail);
         if (simplified.Count == 0)
         {
@@ -81,7 +82,7 @@ public sealed class Tiles3DExportCoordinator
 
         List<Tiles3DMeshPrimitive> meshList = simplified.ToList();
         IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(meshList);
-        Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, resolvedGeoidHeightOffsetMeters);
+        Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, resolvedGeoidHeightOffsetMeters, materialPalette);
         package.GeoidModel = resolvedGeoidModel;
         // Rooms are in plane-grid coordinates from the start, so rebasing and exact placement
         // leave them alone.
@@ -172,7 +173,8 @@ public sealed class Tiles3DExportCoordinator
         Tiles3DExportReferenceContext referenceContext,
         IReadOnlyCollection<Tiles3DMeshPrimitive> meshes,
         Tiles3DLevelOfDetail levelOfDetail,
-        double geoidHeightOffsetMeters)
+        double geoidHeightOffsetMeters,
+        Tiles3DMaterialPalette materialPalette = Tiles3DMaterialPalette.Source)
     {
         if (referenceContext is null)
         {
@@ -190,6 +192,7 @@ public sealed class Tiles3DExportCoordinator
         {
             ReferenceContext = referenceContext.Copy(),
             LevelOfDetail = levelOfDetail,
+            MaterialPalette = materialPalette,
             Meshes = meshList,
             ElementCount = meshList.Count,
             TriangleCount = meshList.Sum(mesh => mesh.Triangles.Count),
@@ -295,7 +298,8 @@ public sealed class Tiles3DExportCoordinator
             LastSplitByLevel = false,
             LastExportedLevelCount = 0,
             LastUsedPreciseCrsProjection = package.UsedPreciseCrsProjection,
-            LastGeoidHeightOffsetMeters = package.GeoidHeightOffsetMeters
+            LastGeoidHeightOffsetMeters = package.GeoidHeightOffsetMeters,
+            LastMaterialPalette = package.MaterialPalette
         };
     }
 

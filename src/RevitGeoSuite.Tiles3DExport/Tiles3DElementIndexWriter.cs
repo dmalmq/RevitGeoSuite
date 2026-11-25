@@ -138,7 +138,26 @@ public sealed class Tiles3DElementIndexWriter
             Min = empty ? new double[3] : min.Select(Millimetres).ToArray(),
             Max = empty ? new double[3] : max.Select(Millimetres).ToArray(),
             VolumeCubicMeters = Math.Round(Math.Abs(volume), 3),
+            GisId = FirstNonBlank(meshes, item => item.Metadata.GisId),
+            GisRevitKey = FirstNonBlank(meshes, item => item.Metadata.GisRevitKey),
+            GisKind = FirstNonBlank(meshes, item => item.Metadata.GisKind),
+            GisCategory = FirstNonBlank(meshes, item => item.Metadata.GisCategory),
+            GisLevelId = FirstNonBlank(meshes, item => item.Metadata.GisLevelId),
         };
+    }
+
+    private static string? FirstNonBlank(IReadOnlyList<Tiles3DMeshPrimitive> meshes, Func<Tiles3DMeshPrimitive, string?> selector)
+    {
+        foreach (Tiles3DMeshPrimitive mesh in meshes)
+        {
+            string trimmed = selector(mesh)?.Trim() ?? string.Empty;
+            if (trimmed.Length > 0)
+            {
+                return trimmed;
+            }
+        }
+
+        return null;
     }
 
     private static QuantizedPoint Quantize(Tiles3DPoint point, double originEasting, double originNorthing, double originHeight)
@@ -321,4 +340,19 @@ public sealed class Tiles3DElementIndexEntry
     public double[] Max { get; set; } = new double[3];
 
     public double VolumeCubicMeters { get; set; }
+
+    [JsonProperty("gisId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? GisId { get; set; }
+
+    [JsonProperty("gisRevitKey", NullValueHandling = NullValueHandling.Ignore)]
+    public string? GisRevitKey { get; set; }
+
+    [JsonProperty("gisKind", NullValueHandling = NullValueHandling.Ignore)]
+    public string? GisKind { get; set; }
+
+    [JsonProperty("gisCategory", NullValueHandling = NullValueHandling.Ignore)]
+    public string? GisCategory { get; set; }
+
+    [JsonProperty("gisLevelId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? GisLevelId { get; set; }
 }

@@ -9,12 +9,21 @@ namespace RevitGeoSuite.Tiles3DExport;
 public sealed class Tiles3DGeometryExtractor
 {
     private const double FeetToMeters = 0.3048d;
+    internal const string FootprintSubcategoryName = "K_Footprint";
+
+    internal static readonly Guid GisIdParameterGuid = new Guid("64e7d743-c3ae-4831-a208-33c2762ac50a");
+    internal static readonly Guid GisKeyParameterGuid = new Guid("0816cab3-3717-4632-854f-c6c7c11e0881");
+    internal static readonly Guid GisKindParameterGuid = new Guid("ff63e172-c407-4265-b075-4e1d5e9822b8");
+    internal static readonly Guid GisCategoryParameterGuid = new Guid("d4ed1842-369c-4064-97fd-93fab33f0a87");
+    internal static readonly Guid GisInstanceCategoryParameterGuid = new Guid("7fb0aa6b-c570-437d-a86a-f25f02537165");
+    internal static readonly Guid GisLevelIdParameterGuid = new Guid("84f1637a-1421-4c6c-9670-c000206ffea0");
 
     public IReadOnlyCollection<Tiles3DMeshPrimitive> Extract(
         Document document,
         Tiles3DExportReferenceContext referenceContext,
         Tiles3DExportScopeSelection scope,
-        ICollection<string>? warnings = null)
+        ICollection<string>? warnings = null,
+        Tiles3DMaterialPalette materialPalette = Tiles3DMaterialPalette.Source)
     {
         if (document is null)
         {
@@ -48,20 +57,36 @@ public sealed class Tiles3DGeometryExtractor
         }
         Options linkedOptions = new Options
         {
-            DetailLevel = ViewDetailLevel.Fine,
+            DetailLevel = ResolveLinkedDetailLevel(selectedView?.DetailLevel),
             IncludeNonVisibleObjects = false,
             ComputeReferences = false
         };
 
         List<Tiles3DMeshPrimitive> meshes = new List<Tiles3DMeshPrimitive>();
-        AppendHostMeshes(document, selectedView, hostOptions, frame, scope.ScopeMode, meshes, warnings);
+        AppendHostMeshes(document, selectedView, hostOptions, frame, scope.ScopeMode, materialPalette, meshes, warnings);
 
         foreach (Tiles3DExportLinkOption linkOption in scope.SelectedLinkedModels)
         {
-            AppendLinkedMeshes(document, selectedView, linkOption, linkedOptions, frame, scope.ScopeMode, meshes, warnings);
+            AppendLinkedMeshes(document, selectedView, linkOption, linkedOptions, frame, scope.ScopeMode, materialPalette, meshes, warnings);
         }
 
         return meshes;
+    }
+
+    internal static ViewDetailLevel ResolveLinkedDetailLevel(ViewDetailLevel? selectedViewDetailLevel)
+    {
+        if (selectedViewDetailLevel.HasValue && selectedViewDetailLevel.Value != ViewDetailLevel.Undefined)
+        {
+            return selectedViewDetailLevel.Value;
+        }
+
+        return ViewDetailLevel.Fine;
+    }
+
+    internal static bool IsExcludedSubcategoryName(string? subcategoryName)
+    {
+        return !string.IsNullOrWhiteSpace(subcategoryName)
+            && string.Equals(subcategoryName!.Trim(), FootprintSubcategoryName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -287,6 +312,7 @@ public sealed class Tiles3DGeometryExtractor
         Options options,
         GeometryExtractionFrame frame,
         Tiles3DExportScopeMode scopeMode,
+        Tiles3DMaterialPalette materialPalette,
         List<Tiles3DMeshPrimitive> meshes,
         ICollection<string>? warnings)
     {
@@ -298,7 +324,7 @@ public sealed class Tiles3DGeometryExtractor
         {
             try
             {
-                AppendElementMesh(element, options, frame, Transform.Identity, meshes, document.Title, string.Empty);
+                AppendElementMesh(element, options, frame, Transform.Identity, materialPalette, meshes, document.Title, string.Empty);
             }
             catch (Exception ex)
             {
@@ -314,6 +340,7 @@ public sealed class Tiles3DGeometryExtractor
         Options options,
         GeometryExtractionFrame frame,
         Tiles3DExportScopeMode scopeMode,
+        Tiles3DMaterialPalette materialPalette,
         List<Tiles3DMeshPrimitive> meshes,
         ICollection<string>? warnings)
     {
@@ -356,7 +383,7 @@ public sealed class Tiles3DGeometryExtractor
                         continue;
                     }
 
-                    AppendLinkedElementMesh(element, options, frame, linkTransform, meshes, linkDocument.Title, linkOption.Title, warnings);
+                    AppendLinkedElementMesh(element, options, frame, linkTransform, materialPalette, meshes, linkDocument.Title, linkOption.Title, warnings);
                 }
 
                 return;
@@ -365,7 +392,7 @@ public sealed class Tiles3DGeometryExtractor
             FilteredElementCollector collector = new FilteredElementCollector(linkDocument).WhereElementIsNotElementType();
             foreach (Element element in collector)
             {
-                AppendLinkedElementMesh(element, options, frame, linkTransform, meshes, linkDocument.Title, linkOption.Title, warnings);
+                AppendLinkedElementMesh(element, options, frame, linkTransform, materialPalette, meshes, linkDocument.Title, linkOption.Title, warnings);
             }
         }
         catch (Exception ex)
@@ -388,6 +415,7 @@ public sealed class Tiles3DGeometryExtractor
         Options options,
         GeometryExtractionFrame frame,
         Transform linkTransform,
+        Tiles3DMaterialPalette materialPalette,
         List<Tiles3DMeshPrimitive> meshes,
         string sourceDocument,
         string sourceLinkName,
@@ -395,7 +423,7 @@ public sealed class Tiles3DGeometryExtractor
     {
         try
         {
-            AppendElementMesh(element, options, frame, linkTransform, meshes, sourceDocument, sourceLinkName);
+            AppendElementMesh(element, options, frame, linkTransform, materialPalette, meshes, sourceDocument, sourceLinkName);
         }
         catch (Exception ex)
         {
@@ -413,6 +441,7 @@ public sealed class Tiles3DGeometryExtractor
         Options options,
         GeometryExtractionFrame frame,
         Transform transform,
+        Tiles3DMaterialPalette materialPalette,
         List<Tiles3DMeshPrimitive> meshes,
         string sourceDocument,
         string sourceLinkName)
@@ -428,9 +457,9 @@ public sealed class Tiles3DGeometryExtractor
             return;
         }
 
-        MaterialColorResolver materialColorResolver = new MaterialColorResolver(element);
+        MaterialColorResolver materialColorResolver = new MaterialColorResolver(element, materialPalette);
         List<Tiles3DTriangle> triangles = new List<Tiles3DTriangle>();
-        AppendGeometry(geometry, transform, frame, materialColorResolver, triangles);
+        AppendGeometry(element.Document, geometry, transform, frame, materialColorResolver, triangles);
         if (triangles.Count == 0)
         {
             return;
@@ -499,20 +528,23 @@ public sealed class Tiles3DGeometryExtractor
     {
         string typeName = string.Empty;
         string familyName = string.Empty;
+        Element? typeElement = null;
         ElementId typeId = element.GetTypeId();
-        if (typeId != ElementId.InvalidElementId && element.Document.GetElement(typeId) is Element typeElement)
+        if (typeId != ElementId.InvalidElementId && element.Document.GetElement(typeId) is Element resolvedType)
         {
-            typeName = typeElement.Name ?? string.Empty;
-            if (typeElement is ElementType elementType)
+            typeElement = resolvedType;
+            typeName = resolvedType.Name ?? string.Empty;
+            if (resolvedType is ElementType elementType)
             {
                 familyName = elementType.FamilyName ?? string.Empty;
             }
         }
 
-        if (element is FamilyInstance familyInstance)
+        if (element is FamilyInstance familyInstance && familyInstance.Symbol is not null)
         {
-            familyName = familyInstance.Symbol?.FamilyName ?? familyName;
-            typeName = familyInstance.Symbol?.Name ?? typeName;
+            typeElement = familyInstance.Symbol;
+            familyName = familyInstance.Symbol.FamilyName ?? familyName;
+            typeName = familyInstance.Symbol.Name ?? typeName;
         }
 
         Tiles3DObjectMetadata metadata = new Tiles3DObjectMetadata
@@ -524,7 +556,17 @@ public sealed class Tiles3DGeometryExtractor
             FamilyName = familyName,
             TypeName = typeName,
             SourceDocument = sourceDocument ?? string.Empty,
-            SourceLinkName = sourceLinkName ?? string.Empty
+            SourceLinkName = sourceLinkName ?? string.Empty,
+            GisId = ReadSharedText(element, GisIdParameterGuid),
+            GisRevitKey = ReadSharedText(element, GisKeyParameterGuid),
+            GisKind = FirstNonEmpty(
+                ReadSharedText(element, GisKindParameterGuid),
+                ReadSharedText(typeElement, GisKindParameterGuid)),
+            GisCategory = FirstNonEmpty(
+                ReadSharedText(element, GisInstanceCategoryParameterGuid),
+                ReadSharedText(element, GisCategoryParameterGuid),
+                ReadSharedText(typeElement, GisCategoryParameterGuid),
+                ReadSharedText(typeElement, GisInstanceCategoryParameterGuid))
         };
 
         ResolveElementLevel(element, metadata, transform, frame);
@@ -556,6 +598,7 @@ public sealed class Tiles3DGeometryExtractor
 
         if (levelId == ElementId.InvalidElementId)
         {
+            metadata.GisLevelId = ReadSharedText(element, GisLevelIdParameterGuid);
             return;
         }
 
@@ -564,6 +607,9 @@ public sealed class Tiles3DGeometryExtractor
             metadata.LevelName = level.Name;
             metadata.LevelKey = Tiles3DLevelMetadata.BuildLevelKey(level.Name);
             metadata.LevelUniqueId = level.UniqueId ?? string.Empty;
+            metadata.GisLevelId = FirstNonEmpty(
+                ReadSharedText(level, GisLevelIdParameterGuid),
+                ReadSharedText(element, GisLevelIdParameterGuid));
             // Apply the link instance transform and tileset frame so the elevation lands
             // in the same coordinate space as triangle vertex Z values. Without this,
             // linked model levels would be in local linked-doc space and miss the link's
@@ -574,6 +620,43 @@ public sealed class Tiles3DGeometryExtractor
             XYZ levelInHost = transform.OfPoint(new XYZ(0, 0, level.ProjectElevation));
             metadata.LevelElevationMeters = frame.ToLocalMeters(levelInHost).Z;
         }
+        else
+        {
+            metadata.GisLevelId = ReadSharedText(element, GisLevelIdParameterGuid);
+        }
+    }
+
+    /// <summary>
+    /// A Kanizu GIS shared parameter's text, read only by its frozen GUID so a same-named project
+    /// parameter can never leak into the join columns. Empty when unbound or blank.
+    /// </summary>
+    private static string ReadSharedText(Element? element, Guid guid)
+    {
+        if (element is null)
+        {
+            return string.Empty;
+        }
+
+        Parameter? parameter = element.get_Parameter(guid);
+        if (parameter is null || !parameter.HasValue || parameter.StorageType != StorageType.String)
+        {
+            return string.Empty;
+        }
+
+        return (parameter.AsString() ?? string.Empty).Trim();
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+    {
+        foreach (string value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
     }
 
     private static ElementId ResolveLevelIdFromElement(Element element)
@@ -652,6 +735,7 @@ public sealed class Tiles3DGeometryExtractor
     }
 
     private static void AppendGeometry(
+        Document ownerDocument,
         GeometryElement geometryElement,
         Transform transform,
         GeometryExtractionFrame frame,
@@ -660,6 +744,11 @@ public sealed class Tiles3DGeometryExtractor
     {
         foreach (GeometryObject geometryObject in geometryElement)
         {
+            if (IsExcludedSubcategory(ownerDocument, geometryObject))
+            {
+                continue;
+            }
+
             if (geometryObject is Solid solid)
             {
                 AppendSolid(solid, transform, frame, materialColorResolver, triangles);
@@ -674,7 +763,7 @@ public sealed class Tiles3DGeometryExtractor
 
             if (geometryObject is GeometryInstance instance)
             {
-                AppendGeometry(instance.GetInstanceGeometry(), transform, frame, materialColorResolver, triangles);
+                AppendGeometry(ownerDocument, instance.GetInstanceGeometry(), transform, frame, materialColorResolver, triangles);
             }
         }
     }
@@ -695,6 +784,28 @@ public sealed class Tiles3DGeometryExtractor
         {
             AppendMesh(face.Triangulate(), transform, frame, materialColorResolver.Resolve(face.MaterialElementId), triangles);
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="geometryObject"/> is drawn in the <c>K_Footprint</c> subcategory, the 2D
+    /// footprint masses Kanizu families carry for plans. Its graphics style lives in the document
+    /// that owns the element, so a linked element resolves it in the link, not the host.
+    /// </summary>
+    private static bool IsExcludedSubcategory(Document ownerDocument, GeometryObject geometryObject)
+    {
+        ElementId styleId = geometryObject.GraphicsStyleId;
+        if (styleId is null || styleId == ElementId.InvalidElementId)
+        {
+            return false;
+        }
+
+        if (ownerDocument.GetElement(styleId) is not GraphicsStyle style)
+        {
+            return false;
+        }
+
+        return IsExcludedSubcategoryName(style.GraphicsStyleCategory?.Name)
+            || IsExcludedSubcategoryName(style.Name);
     }
 
     private static void AppendMesh(
@@ -726,12 +837,14 @@ public sealed class Tiles3DGeometryExtractor
     private sealed class MaterialColorResolver
     {
         private readonly Document document;
+        private readonly Tiles3DMaterialPalette materialPalette;
         private readonly Dictionary<long, Tiles3DMaterialColor> materialColors = new Dictionary<long, Tiles3DMaterialColor>();
 
-        public MaterialColorResolver(Element element)
+        public MaterialColorResolver(Element element, Tiles3DMaterialPalette materialPalette)
         {
             document = element.Document;
-            FallbackColor = ResolveFallbackColor(element);
+            this.materialPalette = materialPalette;
+            FallbackColor = ResolveFallbackColor(element, materialPalette);
         }
 
         public Tiles3DMaterialColor FallbackColor { get; }
@@ -750,34 +863,38 @@ public sealed class Tiles3DGeometryExtractor
             }
 
             Tiles3DMaterialColor color = document.GetElement(materialId) is Material material
-                && TryGetMaterialColor(material, out Tiles3DMaterialColor materialColor)
+                && TryGetMaterialColor(material, materialPalette, out Tiles3DMaterialColor materialColor)
                     ? materialColor
                     : FallbackColor;
             materialColors[key] = color;
             return color;
         }
 
-        private static Tiles3DMaterialColor ResolveFallbackColor(Element element)
+        private static Tiles3DMaterialColor ResolveFallbackColor(Element element, Tiles3DMaterialPalette materialPalette)
         {
-            if (TryGetMaterialColor(element.Category?.Material, out Tiles3DMaterialColor categoryColor))
+            if (TryGetMaterialColor(element.Category?.Material, materialPalette, out Tiles3DMaterialColor categoryColor))
             {
                 return categoryColor;
             }
 
-            if (TryGetFirstElementMaterialColor(element, false, out Tiles3DMaterialColor elementColor))
+            if (TryGetFirstElementMaterialColor(element, false, materialPalette, out Tiles3DMaterialColor elementColor))
             {
                 return elementColor;
             }
 
-            if (TryGetFirstElementMaterialColor(element, true, out Tiles3DMaterialColor paintColor))
+            if (TryGetFirstElementMaterialColor(element, true, materialPalette, out Tiles3DMaterialColor paintColor))
             {
                 return paintColor;
             }
 
-            return Tiles3DMaterialColor.Default;
+            return Tiles3DMaterialPaletteResolver.Resolve(materialPalette, null, Tiles3DMaterialColor.Default);
         }
 
-        private static bool TryGetFirstElementMaterialColor(Element element, bool returnPaintMaterials, out Tiles3DMaterialColor color)
+        private static bool TryGetFirstElementMaterialColor(
+            Element element,
+            bool returnPaintMaterials,
+            Tiles3DMaterialPalette materialPalette,
+            out Tiles3DMaterialColor color)
         {
             try
             {
@@ -789,7 +906,7 @@ public sealed class Tiles3DGeometryExtractor
                     }
 
                     if (element.Document.GetElement(materialId) is Material material
-                        && TryGetMaterialColor(material, out color))
+                        && TryGetMaterialColor(material, materialPalette, out color))
                     {
                         return true;
                     }
@@ -803,15 +920,16 @@ public sealed class Tiles3DGeometryExtractor
             return false;
         }
 
-        private static bool TryGetMaterialColor(Material? material, out Tiles3DMaterialColor color)
+        private static bool TryGetMaterialColor(Material? material, Tiles3DMaterialPalette materialPalette, out Tiles3DMaterialColor color)
         {
             if (material is not null && material.Color is Color revitColor && revitColor.IsValid)
             {
-                color = new Tiles3DMaterialColor(
+                Tiles3DMaterialColor authored = new Tiles3DMaterialColor(
                     revitColor.Red,
                     revitColor.Green,
                     revitColor.Blue,
                     TransparencyToAlpha(material.Transparency));
+                color = Tiles3DMaterialPaletteResolver.Resolve(materialPalette, material.Name, authored);
                 return true;
             }
 
