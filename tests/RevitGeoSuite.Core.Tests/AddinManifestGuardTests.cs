@@ -46,6 +46,7 @@ public sealed class AddinManifestGuardTests
         Assert.Contains("KanizuRevit.addin", installScript, StringComparison.Ordinal);
         Assert.Contains("RevitGeoSuite.addin", issScript, StringComparison.Ordinal);
         Assert.Contains("KanizuRevit.addin", issScript, StringComparison.Ordinal);
+        Assert.Contains("UsePreviousAppDir=no", issScript, StringComparison.Ordinal);
     }
 
     private static (string AddInId, string Name, string FullClassName) ReadManifest(string path)

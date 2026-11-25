@@ -31,6 +31,7 @@ AppName={#AppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#AppPublisher}
 DefaultDirName={#AddinsRoot}\{#InstallSubDir}
+UsePreviousAppDir=no
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 UninstallDisplayName={#AppName} for Revit {#RevitYear}

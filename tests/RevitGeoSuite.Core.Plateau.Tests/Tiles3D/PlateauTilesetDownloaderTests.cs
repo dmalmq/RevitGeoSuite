@@ -182,6 +182,68 @@ public sealed class PlateauTilesetDownloaderTests
         Assert.All(model.Features, f => Assert.False(string.IsNullOrWhiteSpace(f.GridId)));
     }
 
+    [Fact]
+    public async Task DownloadAsync_reuses_seeded_legacy_plateau_online_cache_without_network_download()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "RevitGeoSuiteTests", Guid.NewGuid().ToString("N"));
+        string newCacheRoot = Path.Combine(tempRoot, "KanizuRevit", "PlateauOnline");
+        string legacyCacheRoot = Path.Combine(tempRoot, "RevitGeoSuite", "PlateauOnline");
+        try
+        {
+            Uri entryRootUrl = new Uri("https://example.test/area/tileset.json");
+            Uri entryB3dmUrl = new Uri("https://example.test/area/leaf.b3dm");
+            Uri ionRootUrl = new Uri("https://example.test/ion/tileset.json");
+            Uri ionB3dmUrl = new Uri("https://example.test/ion/leaf.b3dm");
+
+            // Seed both dataset variants in the legacy RevitGeoSuite\PlateauOnline cache.
+            PlateauTilesetCache legacyCache = new PlateauTilesetCache(legacyCacheRoot);
+            string legacyEntryFolder = legacyCache.GetDatasetFolder("13101", "bldg", "2", texture: false);
+            legacyCache.Store(legacyCache.GetFilePath(legacyEntryFolder, entryB3dmUrl), BuildSingleTriangleB3dm());
+
+            string legacyIonFolder = legacyCache.GetDatasetFolder("ion", "osm-buildings", null, null);
+            legacyCache.Store(legacyCache.GetFilePath(legacyIonFolder, ionB3dmUrl), BuildSingleTriangleB3dm());
+
+            FakeHttpClient httpClient = new FakeHttpClient();
+            httpClient.StringResponses[entryRootUrl] = BuildRootTilesetJson(BuildEquatorEastNorthUpTransform());
+            httpClient.StringResponses[ionRootUrl] = BuildRootTilesetJson(BuildEquatorEastNorthUpTransform());
+            // Deliberately do not populate ByteResponses: any network fetch for the .b3dm fails.
+
+            EcefToProjectTransformer transformer = new EcefToProjectTransformer(
+                new IdentityCoordinateTransformer(),
+                new CrsReference { EpsgCode = 0 },
+                altitudeAnchorMeters: 0,
+                outputVerticalDatum: VerticalDatum.Ellipsoidal);
+            PlateauTilesetDownloader downloader = new PlateauTilesetDownloader(
+                httpClient,
+                new GltfMeshDecoder(new MissingDracoMeshDecoder()),
+                transformer,
+                new PlateauTilesetCache(newCacheRoot, legacyCacheRoot));
+
+            PlateauDatasetEntry entry = new PlateauDatasetEntry
+            {
+                Url = entryRootUrl.AbsoluteUri,
+                TypeEn = "bldg",
+                Lod = "2",
+                Texture = false
+            };
+
+            PlateauTilesetModel entryModel = await downloader.DownloadAsync(entry, "13101", progress: null, CancellationToken.None);
+            Assert.Single(entryModel.Features);
+
+            PlateauTilesetModel ionModel = await downloader.DownloadAsync(ionRootUrl, "OSM Buildings", bbox: null, progress: null, CancellationToken.None);
+            Assert.Single(ionModel.Features);
+
+            Assert.Empty(httpClient.ByteRequests);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
     private static string BuildRootTilesetJson(double[] transform)
     {
         string transformJson = string.Join(",", transform.Select(value => value.ToString("R", CultureInfo.InvariantCulture)));

@@ -6,6 +6,14 @@ namespace RevitGeoSuite.PlateauImport.Tests;
 
 public sealed class PlateauElementMarkerTests
 {
+    [Fact]
+    public void Writers_keep_legacy_revitgeosuite_markers_for_mixed_version_rvt_compatibility()
+    {
+        Assert.Equal("RevitGeoSuite.PlateauImport", PlateauContextImporter.ApplicationId);
+        Assert.Equal("RevitGeoSuite.PlateauImport.Online", PlateauTilesImporter.ApplicationId);
+        Assert.Equal("RevitGeoSuite.PlateauGround", PlateauTopographyImporter.GroundMarker);
+    }
+
     [Theory]
     [InlineData("RevitGeoSuite.PlateauImport", true)]
     [InlineData("KanizuRevit.PlateauImport", true)]

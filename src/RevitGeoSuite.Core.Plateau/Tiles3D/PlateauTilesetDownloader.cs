@@ -100,8 +100,7 @@ public sealed class PlateauTilesetDownloader
             progress?.Report(new PlateauTilesetDownloadProgress(i, leaves.Count, leaf.B3dmUrl.AbsoluteUri));
 
             byte[] b3dmBytes;
-            string cachePath = cache.GetFilePath(datasetFolder, leaf.B3dmUrl);
-            if (File.Exists(cachePath))
+            if (cache.TryGet(datasetFolder, leaf.B3dmUrl, out string cachePath))
             {
                 b3dmBytes = File.ReadAllBytes(cachePath);
             }
@@ -187,8 +186,7 @@ public sealed class PlateauTilesetDownloader
             progress?.Report(new PlateauTilesetDownloadProgress(i, leaves.Count, leaf.B3dmUrl.AbsoluteUri));
 
             byte[] b3dmBytes;
-            string cachePath = cache.GetFilePath(datasetFolder, leaf.B3dmUrl);
-            if (File.Exists(cachePath))
+            if (cache.TryGet(datasetFolder, leaf.B3dmUrl, out string cachePath))
             {
                 b3dmBytes = File.ReadAllBytes(cachePath);
             }

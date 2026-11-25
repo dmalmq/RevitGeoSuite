@@ -18,13 +18,15 @@ namespace RevitGeoSuite.PlateauImport.Online;
 /// </summary>
 public sealed class PlateauTilesImporter
 {
-    internal const string ApplicationId = "KanizuRevit.PlateauImport.Online";
-    internal const string LegacyApplicationId = "RevitGeoSuite.PlateauImport.Online";
+    // Keep writing the legacy RevitGeoSuite marker so mixed-version teams sharing .rvt models
+    // recognize imported elements without duplicating them; recognize KanizuRevit.* on read too.
+    internal const string ApplicationId = "RevitGeoSuite.PlateauImport.Online";
+    internal const string KanizuApplicationId = "KanizuRevit.PlateauImport.Online";
 
     internal static bool IsOwnedApplicationId(string? applicationId)
     {
         return string.Equals(applicationId, ApplicationId, StringComparison.Ordinal)
-            || string.Equals(applicationId, LegacyApplicationId, StringComparison.Ordinal);
+            || string.Equals(applicationId, KanizuApplicationId, StringComparison.Ordinal);
     }
     internal const int DefaultMaxFeaturesPerBatch = 250;
 

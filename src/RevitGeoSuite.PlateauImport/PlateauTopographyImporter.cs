@@ -14,13 +14,15 @@ namespace RevitGeoSuite.PlateauImport;
 /// </summary>
 public sealed class PlateauTopographyImporter
 {
-    internal const string GroundMarker = "KanizuRevit.PlateauGround";
-    internal const string LegacyGroundMarker = "RevitGeoSuite.PlateauGround";
+    // Keep writing the legacy RevitGeoSuite marker so mixed-version teams sharing .rvt models
+    // replace prior ground surfaces rather than duplicating them; recognize KanizuRevit.* on read too.
+    internal const string GroundMarker = "RevitGeoSuite.PlateauGround";
+    internal const string KanizuGroundMarker = "KanizuRevit.PlateauGround";
 
     internal static bool IsOwnedGroundMarker(string? comments)
     {
         return string.Equals(comments, GroundMarker, StringComparison.Ordinal)
-            || string.Equals(comments, LegacyGroundMarker, StringComparison.Ordinal);
+            || string.Equals(comments, KanizuGroundMarker, StringComparison.Ordinal);
     }
 
     public TopographyImportResult Import(

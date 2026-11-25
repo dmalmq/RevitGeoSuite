@@ -10,13 +10,15 @@ namespace RevitGeoSuite.PlateauImport;
 
 public sealed class PlateauContextImporter
 {
-    internal const string ApplicationId = "KanizuRevit.PlateauImport";
-    internal const string LegacyApplicationId = "RevitGeoSuite.PlateauImport";
+    // Keep writing the legacy RevitGeoSuite marker so mixed-version teams sharing .rvt models
+    // recognize imported elements without duplicating them; recognize KanizuRevit.* on read too.
+    internal const string ApplicationId = "RevitGeoSuite.PlateauImport";
+    internal const string KanizuApplicationId = "KanizuRevit.PlateauImport";
 
     internal static bool IsOwnedApplicationId(string? applicationId)
     {
         return string.Equals(applicationId, ApplicationId, StringComparison.Ordinal)
-            || string.Equals(applicationId, LegacyApplicationId, StringComparison.Ordinal);
+            || string.Equals(applicationId, KanizuApplicationId, StringComparison.Ordinal);
     }
     private readonly PlateauFootprintSanitizer footprintSanitizer;
     private readonly PlateauImportMaterialFactory materialFactory;

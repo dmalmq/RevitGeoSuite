@@ -13,7 +13,6 @@ namespace RevitGeoSuite.UiTestRunner;
 /// </summary>
 internal sealed partial class GisStandardRun
 {
-    private const string RibbonTab = "Kanizu Revit";
     private static readonly TimeSpan RibbonWait = TimeSpan.FromSeconds(20);
 
     private string waitingDrift = string.Empty;
@@ -171,11 +170,11 @@ internal sealed partial class GisStandardRun
     /// <summary>The GIS standard button on RevitGeoSuite's tab (name, text, tooltip), or null with a note when there is none.</summary>
     private JsonNode? RibbonButton(StepResult step)
     {
-        JsonArray items = host.Call("ribbonItems", new { tab = RibbonTab })["items"]?.AsArray() ?? new JsonArray();
+        JsonArray items = host.Call("ribbonItems", new { tab = Tab })["items"]?.AsArray() ?? new JsonArray();
         JsonNode? button = items.FirstOrDefault(item => (item?["text"]?.GetValue<string>() ?? string.Empty).StartsWith("GIS standard", StringComparison.Ordinal));
         if (button == null)
         {
-            step.Note($"No GIS standard button on '{RibbonTab}': {string.Join(" | ", items.Select(item => OneLine(item?["text"]?.GetValue<string>() ?? string.Empty)))}.");
+            step.Note($"No GIS standard button on '{Tab}': {string.Join(" | ", items.Select(item => OneLine(item?["text"]?.GetValue<string>() ?? string.Empty)))}.");
         }
 
         return button;
@@ -188,7 +187,7 @@ internal sealed partial class GisStandardRun
         JsonNode? button;
         do
         {
-            JsonArray items = host.Call("ribbonItems", new { tab = RibbonTab })["items"]?.AsArray() ?? new JsonArray();
+            JsonArray items = host.Call("ribbonItems", new { tab = Tab })["items"]?.AsArray() ?? new JsonArray();
             button = items.FirstOrDefault(item => (item?["text"]?.GetValue<string>() ?? string.Empty).StartsWith("GIS standard", StringComparison.Ordinal));
             if (button != null && done(button["text"]?.GetValue<string>() ?? string.Empty))
             {

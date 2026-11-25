@@ -162,7 +162,13 @@ public sealed class CityGmlPackageDownloader
         return new CityGmlPackageDownloadResult(root, gmlCount, warnings);
     }
 
-    /// <summary>Resolves the package folder a download would target (without creating it).</summary>
+    /// <summary>
+    /// Resolves the package folder a download would target (without creating it). When an existing
+    /// legacy <c>RevitGeoSuite\CityGmlDownloads</c> folder is present for the municipality and no new
+    /// <c>KanizuRevit\CityGmlDownloads</c> folder exists yet, the legacy folder is intentionally
+    /// reused in place (including resumed/additional resources) so multi-GB PLATEAU caches are never
+    /// re-downloaded. Fresh municipalities always write to <c>KanizuRevit\CityGmlDownloads</c>.
+    /// </summary>
     public string ResolvePackageFolder(string code, string? year, string? areaName)
     {
         string folderLabel = SanitizeName(BuildFolderLabel(code, year, areaName));

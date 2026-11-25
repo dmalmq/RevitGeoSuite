@@ -37,8 +37,11 @@ if errors:
             yes=True, no=True):
         script.exit()
 
-command_id = UI.RevitCommandId.LookupCommandId(export_link.EXPORT_COMMAND_ID)
-if command_id is None or not HOST_APP.uiapp.CanPostCommand(command_id):
-    forms.alert(u"RevitGeoSuite's Export button was not found. Install or load RevitGeoSuite first.\n"
-                u"RevitGeoSuite が見つかりません。", exitscript=True)
+command_id = export_link.resolve_export_command(
+    UI.RevitCommandId.LookupCommandId,
+    HOST_APP.uiapp.CanPostCommand,
+)
+if command_id is None:
+    forms.alert(u"Kanizu Revit's Export button was not found. Install or load Kanizu Revit first.\n"
+                u"Kanizu Revit が見つかりません。", exitscript=True)
 HOST_APP.uiapp.PostCommand(command_id)
