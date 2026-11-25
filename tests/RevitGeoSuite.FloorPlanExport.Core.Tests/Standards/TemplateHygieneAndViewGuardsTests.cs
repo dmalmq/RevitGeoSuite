@@ -30,7 +30,7 @@ public sealed class TemplateHygieneAndViewGuardsTests
             LoadedFamilies = new[]
             {
                 new LoadedFamilyCheckInfo(301, "j EV", "EV_1500", "OST_MechanicalEquipment", gisKind: "elevator", hasGisKindParameter: true),
-                new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "public", hasGisDoorParameter: true, hasGisAccessConParameter: true),
+                new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true),
             },
             Schedules = TemplateStandardDefinitions.QaSchedules
                 .Select((s, idx) => new QaScheduleInfo(
@@ -246,7 +246,7 @@ public sealed class TemplateHygieneAndViewGuardsTests
         ReadinessCheckSnapshot snapshot = TemplateReadinessProjectSnapshot();
         snapshot.LoadedFamilies = new[]
         {
-            new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding\nmultiline", gisAccessCon: "public", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 900L }),
+            new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding\nmultiline", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 900L }),
         };
 
         ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot, ReadinessMode.Project);
@@ -257,13 +257,13 @@ public sealed class TemplateHygieneAndViewGuardsTests
     }
 
     [Fact]
-    public void DoorValuesPassWhenValueDataIsBeingEnteredAndEveryDoorHasValue()
+    public void DoorValuesPassWhenValueDataIsBeingEnteredAndEveryDoorHasValidClosedDomainValue()
     {
         ReadinessCheckSnapshot snapshot = TemplateReadinessProjectSnapshot();
         snapshot.LoadedFamilies = new[]
         {
-            new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "public", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 900L }),
-            new LoadedFamilyCheckInfo(305, "StaffDoor", "Hinged_900", "OST_Doors", gisDoor: "hinged", gisAccessCon: "staff", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 901L }),
+            new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 900L }, gisOpeningCategory: "pedestrian.transit", hasGisOpeningCategoryParameter: true),
+            new LoadedFamilyCheckInfo(305, "StaffDoor", "Swinging_900", "OST_Doors", gisDoor: "swinging", gisAccessCon: "employeesonly", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 901L }),
         };
 
         ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot, ReadinessMode.Project);
@@ -273,13 +273,33 @@ public sealed class TemplateHygieneAndViewGuardsTests
     }
 
     [Fact]
+    public void DoorValuesFailWhenPlacedDoorHasOutOfDomainGisDoorGisAccessConOrGisOpeningCategory()
+    {
+        ReadinessCheckSnapshot snapshot = TemplateReadinessProjectSnapshot();
+        snapshot.LoadedFamilies = new[]
+        {
+            new LoadedFamilyCheckInfo(304, "BadDoorType", "Hinged_900", "OST_Doors", gisDoor: "hinged", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 900L }),
+            new LoadedFamilyCheckInfo(305, "BadAccessDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "public", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 901L }),
+            new LoadedFamilyCheckInfo(306, "BadOpeningCatDoor", "Auto_2000", "OST_Doors", gisDoor: "automatic", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 902L }, gisOpeningCategory: "main_gate", hasGisOpeningCategoryParameter: true),
+        };
+
+        ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot, ReadinessMode.Project);
+        ReadinessCheckItem item = report.Groups.SelectMany(g => g.Items).Single(i => i.Id == "door-values");
+        Assert.Equal(ReadinessCheckStatus.Fail, item.Status);
+        Assert.Equal("KZ-ELEM-001", item.RuleId);
+        Assert.Contains(900L, item.ElementIds);
+        Assert.Contains(901L, item.ElementIds);
+        Assert.Contains(902L, item.ElementIds);
+    }
+
+    [Fact]
     public void DoorValuesFailWhenAnyPlacedDoorHasEmptyGisDoorAfterDataStarted()
     {
         ReadinessCheckSnapshot snapshot = TemplateReadinessProjectSnapshot();
         snapshot.LoadedFamilies = new[]
         {
-            new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "public", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 900L }),
-            new LoadedFamilyCheckInfo(305, "StaffDoor", "Hinged_900", "OST_Doors", gisDoor: "", gisAccessCon: "staff", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 901L, 902L }),
+            new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 900L }),
+            new LoadedFamilyCheckInfo(305, "StaffDoor", "Swinging_900", "OST_Doors", gisDoor: "", gisAccessCon: "employeesonly", hasGisDoorParameter: true, hasGisAccessConParameter: true, instanceIds: new[] { 901L, 902L }),
         };
 
         ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot, ReadinessMode.Project);

@@ -12,7 +12,7 @@ public static class GisStandard
     /// The current standard. Raise it when the shipped files change in a way a model has to be set up
     /// again for, and add the migration from the version before.
     /// </summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>
     /// The oldest standard version this build still exports. A model on an older one is blocked
@@ -43,6 +43,8 @@ public static class GisStandardFiles
     public static string ReadFieldList() => Read(GisFieldList.FileName);
 
     public static string ReadFamilies() => Read(FamilyStandard.FileName);
+
+    public static string ReadOpeningTypes() => Read(GisStandardDomains.OpeningTypesFileName);
 
     private static string Read(string fileName)
     {

@@ -70,7 +70,7 @@ public static class RuleCatalog
             "parameters",
             RuleSeverity.Error,
             "Shared parameters bound with shipped GUIDs",
-            "All 15 Kanizu shared parameters must be bound to their expected categories with the shipped GUID and binding (type/instance).",
+            "All 19 Kanizu shared parameters must be bound to their expected categories with the shipped GUID and binding (type/instance).",
             new[] { "shared-parameters" }),
 
         // KZ-TPL-*: template hygiene (.rte) and QA artifacts
@@ -159,7 +159,7 @@ public static class RuleCatalog
             "element",
             RuleSeverity.Error,
             "Door gis_door values present",
-            "In Project mode, once any placed door type has a value, all placed door types require non-empty, single-line gis_door text.",
+            "In Project mode, once any placed door type has a value, all placed door types require valid gis_door values from the closed domain, and any populated gis_access_con or gis_opening_category value must match its closed domain.",
             new[] { "door-values" }),
         new RuleCatalogEntry(
             "KZ-ELEM-002",

@@ -72,15 +72,15 @@ public sealed class GisFieldList
             Core("detail", "element_id", "要素ID", "Revit element id.", type: GisFieldType.Integer),
             Core("opening", "id", "ID", "Stable export id."),
             Core("opening", RevitKey.AttributeName, "Revitキー", "Model, element UniqueId and part."),
-            Core("opening", "category", "カテゴリ", "Opening category."),
+            Core("opening", "category", "カテゴリ", "Opening category.", values: GisStandardDomains.OpeningCategories),
             Core("opening", "level_id", "レベルID", "The level the opening is on."),
             Core("opening", "element_id", "要素ID", "Revit element id.", type: GisFieldType.Integer),
-            StandardParameter("opening", "door", "ドア種別", GisSharedParameters.GisDoor, "Door type, from the door type's gis_door."),
-            StandardParameter("opening", "access_con", "入場管理", GisSharedParameters.GisAccessCon, "Access control, from the door type's gis_access_con."),
+            StandardParameter("opening", "door", "ドア種別", GisSharedParameters.GisDoor, "Door type, from the door type's gis_door.", values: GisStandardDomains.DoorTypes),
+            StandardParameter("opening", "access_con", "入場管理", GisSharedParameters.GisAccessCon, "Access control, from the door type's gis_access_con.", values: GisStandardDomains.AccessControls),
             StandardParameter("opening", "name", "名称", GisSharedParameters.Name, "Name of the door."),
             Core("fixture", "id", "ID", "Stable export id."),
             Core("fixture", RevitKey.AttributeName, "Revitキー", "Model, element UniqueId and part."),
-            Core("fixture", "type", "種別", "Fixture type."),
+            Core("fixture", "type", "種別", "Fixture type.", values: GisStandardDomains.FixtureTypes),
             Core("fixture", "name", "名称", "Name of the fixture."),
             Core("fixture", "alt_name", "略称", "Short name of the fixture."),
             Core("fixture", "level_id", "レベルID", "The level the fixture is on."),
@@ -407,7 +407,13 @@ public sealed class GisFieldList
     }
 
     /// <summary>A row read from a standard parameter, which <see cref="GisSharedParameters"/> binds.</summary>
-    private static GisField StandardParameter(string layer, string name, string aliasJa, string parameter, string description)
+    private static GisField StandardParameter(
+        string layer,
+        string name,
+        string aliasJa,
+        string parameter,
+        string description,
+        IReadOnlyList<string>? values = null)
     {
         GisParameterDefinition definition = GisSharedParameters.All.Single(entry => entry.Name == parameter);
         return new GisField
@@ -415,6 +421,7 @@ public sealed class GisFieldList
             Layer = layer,
             Name = name,
             AliasJa = aliasJa,
+            Values = values?.ToList() ?? new List<string>(),
             Source = new GisFieldSource
             {
                 Kind = GisFieldSourceKind.Parameter,

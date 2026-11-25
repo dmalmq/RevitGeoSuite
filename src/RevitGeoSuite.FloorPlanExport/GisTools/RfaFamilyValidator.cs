@@ -26,6 +26,8 @@ public static class RfaFamilyValidator
         GisSharedParameters.GisLevelsServed,
         GisSharedParameters.GisDoor,
         GisSharedParameters.GisAccessCon,
+        GisSharedParameters.GisOpeningCategory,
+        GisSharedParameters.GisFixtureType,
     };
 
     public static RfaFolderValidationResult ValidateFolder(
@@ -172,6 +174,8 @@ public static class RfaFamilyValidator
         bool hasGisCategory = paramsByName.TryGetValue(GisSharedParameters.GisCategory, out FamilyParameter? gisCategoryParam);
         bool hasGisDoor = paramsByName.TryGetValue(GisSharedParameters.GisDoor, out FamilyParameter? gisDoorParam);
         bool hasGisAccessCon = paramsByName.TryGetValue(GisSharedParameters.GisAccessCon, out FamilyParameter? gisAccessConParam);
+        bool hasGisOpeningCategory = paramsByName.TryGetValue(GisSharedParameters.GisOpeningCategory, out FamilyParameter? gisOpeningCategoryParam);
+        bool hasGisFixtureType = paramsByName.TryGetValue(GisSharedParameters.GisFixtureType, out FamilyParameter? gisFixtureTypeParam);
 
         List<string> extraRequiredNames = FamilyStandard.Embedded.Kinds
             .SelectMany(kind => kind.RequiredTypeParameters)
@@ -199,7 +203,9 @@ public static class RfaFamilyValidator
                 hasGisDoorParameter: hasGisDoor,
                 hasGisAccessConParameter: hasGisAccessCon,
                 sourcePath: filePath,
-                parameterBindings: bindings);
+                parameterBindings: bindings,
+                hasGisOpeningCategoryParameter: hasGisOpeningCategory,
+                hasGisFixtureTypeParameter: hasGisFixtureType);
             yield break;
         }
 
@@ -221,15 +227,34 @@ public static class RfaFamilyValidator
                 categoryName,
                 gisKind: hasGisKind ? ReadFamilyTypeText(familyType, gisKindParam!) : string.Empty,
                 gisCategory: hasGisCategory ? ReadFamilyTypeText(familyType, gisCategoryParam!) : string.Empty,
-                gisDoor: hasGisDoor ? ReadFamilyTypeText(familyType, gisDoorParam!) : string.Empty,
-                gisAccessCon: hasGisAccessCon ? ReadFamilyTypeText(familyType, gisAccessConParam!) : string.Empty,
+                gisDoor: hasGisDoor ? ReadFamilyTypeRawText(familyType, gisDoorParam!) : string.Empty,
+                gisAccessCon: hasGisAccessCon ? ReadFamilyTypeRawText(familyType, gisAccessConParam!) : string.Empty,
                 hasGisKindParameter: hasGisKind,
                 hasGisDoorParameter: hasGisDoor,
                 hasGisAccessConParameter: hasGisAccessCon,
                 typeParameters: requiredValues,
                 sourcePath: filePath,
-                parameterBindings: bindings);
+                parameterBindings: bindings,
+                gisOpeningCategory: hasGisOpeningCategory ? ReadFamilyTypeRawText(familyType, gisOpeningCategoryParam!) : string.Empty,
+                gisFixtureType: hasGisFixtureType ? ReadFamilyTypeRawText(familyType, gisFixtureTypeParam!) : string.Empty,
+                hasGisOpeningCategoryParameter: hasGisOpeningCategory,
+                hasGisFixtureTypeParameter: hasGisFixtureType);
         }
+    }
+
+    private static string ReadFamilyTypeRawText(FamilyType familyType, FamilyParameter parameter)
+    {
+        if (!familyType.HasValue(parameter))
+        {
+            return string.Empty;
+        }
+
+        if (parameter.StorageType == StorageType.String)
+        {
+            return familyType.AsString(parameter) ?? string.Empty;
+        }
+
+        return (familyType.AsValueString(parameter) ?? string.Empty).Trim();
     }
 
     private static string ReadFamilyTypeText(FamilyType familyType, FamilyParameter parameter)

@@ -136,15 +136,40 @@ public sealed class GisStandardCheckTests
     [Theory]
     [InlineData("0", GisStandardState.Unsupported, true)]
     [InlineData("1", GisStandardState.UpdateAvailable, false)]
-    [InlineData("3", GisStandardState.NewerThanTools, false)]
+    [InlineData("2", GisStandardState.UpdateAvailable, false)]
+    [InlineData("4", GisStandardState.NewerThanTools, false)]
     [InlineData("v1", GisStandardState.Unreadable, false)]
-    [InlineData(" 2 ", GisStandardState.Current, false)]
+    [InlineData(" 3 ", GisStandardState.Current, false)]
     public void TheVersionStampDecidesTheState(string version, GisStandardState expected, bool blocks)
     {
         GisStandardStatus status = GisStandardCheck.Check(SetUpModel(version));
 
         Assert.Equal(expected, status.State);
         Assert.Equal(blocks, status.BlocksExport);
+        Assert.True(status.AppliesToModel);
+    }
+
+    [Fact]
+    public void AV2ModelWithoutNewV3ParametersExportsWithUpdateWarningAndNoBlocker()
+    {
+        GisStandardModelState v2Model = new()
+        {
+            StandardVersionText = "2",
+            BoundParameters = AllStandard(
+                GisSharedParameters.GisOpeningCategory,
+                GisSharedParameters.GisFixtureType,
+                GisSharedParameters.GisModelRole,
+                GisSharedParameters.GisKitVersion),
+            GisViewCount = 2,
+        };
+
+        GisStandardStatus status = GisStandardCheck.Check(v2Model);
+
+        Assert.Equal(GisStandardState.UpdateAvailable, status.State);
+        Assert.Equal(2, status.ModelVersion);
+        Assert.Equal(3, status.CurrentVersion);
+        Assert.Equal(1, status.OldestSupportedVersion);
+        Assert.False(status.BlocksExport);
         Assert.True(status.AppliesToModel);
     }
 

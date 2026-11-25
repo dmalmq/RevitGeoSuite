@@ -70,7 +70,11 @@ public sealed class LoadedFamilyCheckInfo
         IReadOnlyDictionary<string, string>? typeParameters = null,
         IEnumerable<long>? instanceIds = null,
         string? sourcePath = null,
-        IReadOnlyDictionary<string, FamilyParameterBindingInfo>? parameterBindings = null)
+        IReadOnlyDictionary<string, FamilyParameterBindingInfo>? parameterBindings = null,
+        string? gisOpeningCategory = null,
+        string? gisFixtureType = null,
+        bool hasGisOpeningCategoryParameter = false,
+        bool hasGisFixtureTypeParameter = false)
     {
         ElementId = elementId;
         FamilyName = familyName ?? string.Empty;
@@ -80,9 +84,13 @@ public sealed class LoadedFamilyCheckInfo
         GisCategory = gisCategory ?? string.Empty;
         GisDoor = gisDoor ?? string.Empty;
         GisAccessCon = gisAccessCon ?? string.Empty;
+        GisOpeningCategory = gisOpeningCategory ?? string.Empty;
+        GisFixtureType = gisFixtureType ?? string.Empty;
         HasGisKindParameter = hasGisKindParameter;
         HasGisDoorParameter = hasGisDoorParameter;
         HasGisAccessConParameter = hasGisAccessConParameter;
+        HasGisOpeningCategoryParameter = hasGisOpeningCategoryParameter;
+        HasGisFixtureTypeParameter = hasGisFixtureTypeParameter;
         TypeParameters = typeParameters ?? new Dictionary<string, string>(StringComparer.Ordinal);
         InstanceIds = (instanceIds ?? Array.Empty<long>()).ToList();
         SourcePath = sourcePath ?? string.Empty;
@@ -105,11 +113,19 @@ public sealed class LoadedFamilyCheckInfo
 
     public string GisAccessCon { get; }
 
+    public string GisOpeningCategory { get; }
+
+    public string GisFixtureType { get; }
+
     public bool HasGisKindParameter { get; }
 
     public bool HasGisDoorParameter { get; }
 
     public bool HasGisAccessConParameter { get; }
+
+    public bool HasGisOpeningCategoryParameter { get; }
+
+    public bool HasGisFixtureTypeParameter { get; }
 
     public IReadOnlyDictionary<string, string> TypeParameters { get; }
 
@@ -439,6 +455,7 @@ public sealed class ProjectReadinessReport
 public static class FamilyStandardValidator
 {
     public const string DoorsCategory = "OST_Doors";
+    public const string WindowsCategory = "OST_Windows";
 
     public static IReadOnlyList<string> CirculationCategories { get; } = new[]
     {
@@ -454,6 +471,19 @@ public static class FamilyStandardValidator
         GisSharedParameters.GisRestriction,
         GisSharedParameters.GisDirection,
         GisSharedParameters.GisLevelsServed,
+        GisSharedParameters.GisFixtureType,
+    };
+
+    private static readonly string[] ValidatedDoorParameters =
+    {
+        GisSharedParameters.GisDoor,
+        GisSharedParameters.GisAccessCon,
+        GisSharedParameters.GisOpeningCategory,
+    };
+
+    private static readonly string[] ValidatedWindowParameters =
+    {
+        GisSharedParameters.GisOpeningCategory,
     };
 
     public static IReadOnlyList<FamilyValidationItem> ValidateFamilies(
@@ -475,10 +505,18 @@ public static class FamilyStandardValidator
                 continue;
             }
 
+            if (string.Equals(familyType.CategoryName, WindowsCategory, StringComparison.OrdinalIgnoreCase))
+            {
+                results.Add(ValidateWindowFamily(familyType, effective));
+                continue;
+            }
+
             if (CirculationCategories.Contains(familyType.CategoryName, StringComparer.OrdinalIgnoreCase)
                 || effective.Families.KindOf(familyType.FamilyName) != null
                 || !string.IsNullOrWhiteSpace(familyType.GisKind)
-                || familyType.ParameterBindings.ContainsKey(GisSharedParameters.GisKind))
+                || GisStandardDomains.HasValue(familyType.GisFixtureType)
+                || familyType.ParameterBindings.ContainsKey(GisSharedParameters.GisKind)
+                || familyType.ParameterBindings.ContainsKey(GisSharedParameters.GisFixtureType))
             {
                 results.Add(ValidateCirculationFamily(familyType, effective));
             }
@@ -492,7 +530,7 @@ public static class FamilyStandardValidator
         string displayName = DisplayName(familyType);
         List<string> bindingErrors = CollectBindingErrors(
             familyType,
-            new[] { GisSharedParameters.GisDoor, GisSharedParameters.GisAccessCon },
+            ValidatedDoorParameters,
             standard);
         if (bindingErrors.Count > 0)
         {
@@ -501,6 +539,18 @@ public static class FamilyStandardValidator
                 DoorsCategory,
                 ReadinessCheckStatus.Fail,
                 string.Join(" ", bindingErrors),
+                familyType.SourcePath,
+                familyType.InstanceIds);
+        }
+
+        List<string> domainErrors = CollectOpeningDomainErrors(familyType, includeDoorAndAccessCon: true);
+        if (domainErrors.Count > 0)
+        {
+            return new FamilyValidationItem(
+                displayName,
+                DoorsCategory,
+                ReadinessCheckStatus.Fail,
+                string.Join(" ", domainErrors),
                 familyType.SourcePath,
                 familyType.InstanceIds);
         }
@@ -552,6 +602,74 @@ public static class FamilyStandardValidator
             familyType.InstanceIds);
     }
 
+    private static FamilyValidationItem ValidateWindowFamily(LoadedFamilyCheckInfo familyType, GisToolStandard standard)
+    {
+        string displayName = DisplayName(familyType);
+        List<string> bindingErrors = CollectBindingErrors(
+            familyType,
+            ValidatedWindowParameters,
+            standard);
+        if (bindingErrors.Count > 0)
+        {
+            return new FamilyValidationItem(
+                displayName,
+                WindowsCategory,
+                ReadinessCheckStatus.Fail,
+                string.Join(" ", bindingErrors),
+                familyType.SourcePath,
+                familyType.InstanceIds);
+        }
+
+        List<string> domainErrors = CollectOpeningDomainErrors(familyType, includeDoorAndAccessCon: false);
+        if (domainErrors.Count > 0)
+        {
+            return new FamilyValidationItem(
+                displayName,
+                WindowsCategory,
+                ReadinessCheckStatus.Fail,
+                string.Join(" ", domainErrors),
+                familyType.SourcePath,
+                familyType.InstanceIds);
+        }
+
+        return new FamilyValidationItem(
+            displayName,
+            WindowsCategory,
+            ReadinessCheckStatus.Pass,
+            "No window opening parameter issues.",
+            familyType.SourcePath,
+            familyType.InstanceIds);
+    }
+
+    private static List<string> CollectOpeningDomainErrors(LoadedFamilyCheckInfo familyType, bool includeDoorAndAccessCon)
+    {
+        List<string> errors = new();
+        if (includeDoorAndAccessCon)
+        {
+            string? doorError = GisStandardDomains.ValidateOptionalValue(GisSharedParameters.GisDoor, familyType.GisDoor);
+            if (doorError != null)
+            {
+                errors.Add(doorError);
+            }
+
+            string? accessError = GisStandardDomains.ValidateOptionalValue(GisSharedParameters.GisAccessCon, familyType.GisAccessCon);
+            if (accessError != null)
+            {
+                errors.Add(accessError);
+            }
+        }
+
+        string? openingCategoryError = GisStandardDomains.ValidateOptionalValue(
+            GisSharedParameters.GisOpeningCategory,
+            familyType.GisOpeningCategory);
+        if (openingCategoryError != null)
+        {
+            errors.Add(openingCategoryError);
+        }
+
+        return errors;
+    }
+
     private static FamilyValidationItem ValidateCirculationFamily(LoadedFamilyCheckInfo familyType, GisToolStandard standard)
     {
         string displayName = DisplayName(familyType);
@@ -563,6 +681,20 @@ public static class FamilyStandardValidator
                 familyType.CategoryName,
                 ReadinessCheckStatus.Fail,
                 string.Join(" ", bindingErrors),
+                familyType.SourcePath,
+                familyType.InstanceIds);
+        }
+
+        string? fixtureTypeError = GisStandardDomains.ValidateOptionalValue(
+            GisSharedParameters.GisFixtureType,
+            familyType.GisFixtureType);
+        if (fixtureTypeError != null)
+        {
+            return new FamilyValidationItem(
+                displayName,
+                familyType.CategoryName,
+                ReadinessCheckStatus.Fail,
+                fixtureTypeError,
                 familyType.SourcePath,
                 familyType.InstanceIds);
         }
@@ -1063,7 +1195,8 @@ public static class ProjectReadinessEvaluator
         IReadOnlyList<FamilyValidationItem> validated = FamilyStandardValidator.ValidateFamilies(snapshot.LoadedFamilies, standard);
 
         List<FamilyValidationItem> circulation = validated
-            .Where(item => !string.Equals(item.Category, FamilyStandardValidator.DoorsCategory, StringComparison.OrdinalIgnoreCase))
+            .Where(item => !string.Equals(item.Category, FamilyStandardValidator.DoorsCategory, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(item.Category, FamilyStandardValidator.WindowsCategory, StringComparison.OrdinalIgnoreCase))
             .ToList();
         List<FamilyValidationItem> circulationFails = circulation.Where(item => item.Status == ReadinessCheckStatus.Fail).ToList();
         List<FamilyValidationItem> circulationWarns = circulation.Where(item => item.Status == ReadinessCheckStatus.Warn).ToList();
@@ -1074,7 +1207,7 @@ public static class ProjectReadinessEvaluator
                 "circulation-families",
                 "Circulation families (families.json)",
                 ReadinessCheckStatus.Fail,
-                $"{circulationFails.Count} family type(s) have invalid or mismatched gis_kind: {DescribeList(circulationFails.Select(f => f.FamilyName).ToList())}.",
+                $"{circulationFails.Count} family type(s) have invalid or mismatched gis_kind / gis_fixture_type: {DescribeList(circulationFails.Select(f => f.FamilyName).ToList())}.",
                 ReadinessActionKind.None,
                 circulationFails.SelectMany(f => f.ElementIds)));
         }
@@ -1103,7 +1236,11 @@ public static class ProjectReadinessEvaluator
         List<FamilyValidationItem> doors = validated
             .Where(item => string.Equals(item.Category, FamilyStandardValidator.DoorsCategory, StringComparison.OrdinalIgnoreCase))
             .ToList();
-        List<FamilyValidationItem> doorFails = doors.Where(item => item.Status == ReadinessCheckStatus.Fail).ToList();
+        List<FamilyValidationItem> openingFails = validated
+            .Where(item => (string.Equals(item.Category, FamilyStandardValidator.DoorsCategory, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(item.Category, FamilyStandardValidator.WindowsCategory, StringComparison.OrdinalIgnoreCase))
+                && item.Status == ReadinessCheckStatus.Fail)
+            .ToList();
         bool doorParamsBound =
             modelSnapshot.BoundParameters.TryGetValue(GisSharedParameters.GisDoor, out BoundParameterInfo? doorParam)
             && doorParam.Categories.Contains(FamilyStandardValidator.DoorsCategory)
@@ -1119,15 +1256,15 @@ public static class ProjectReadinessEvaluator
                 "gis_door and/or gis_access_con are not bound to Doors. Run Prepare Template or Set up model.",
                 ReadinessActionKind.PrepareTemplate));
         }
-        else if (doorFails.Count > 0)
+        else if (openingFails.Count > 0)
         {
             items.Add(new ReadinessCheckItem(
                 "door-families",
                 "Door opening parameters (gis_door / gis_access_con)",
                 ReadinessCheckStatus.Fail,
-                $"{doorFails.Count} loaded door family type(s) are missing gis_door or gis_access_con: {DescribeList(doorFails.Select(d => d.FamilyName).ToList())}.",
+                $"{openingFails.Count} loaded opening family type(s) failed opening parameter validation: {DescribeList(openingFails.Select(d => d.FamilyName).ToList())}.",
                 ReadinessActionKind.None,
-                doorFails.SelectMany(d => d.ElementIds)));
+                openingFails.SelectMany(d => d.ElementIds)));
         }
         else
         {
@@ -1148,25 +1285,45 @@ public static class ProjectReadinessEvaluator
                     && string.Equals(family.CategoryName, FamilyStandardValidator.DoorsCategory, StringComparison.OrdinalIgnoreCase)
                     && family.InstanceIds.Count > 0)
                 .ToList();
+            List<LoadedFamilyCheckInfo> placedWindows = snapshot.LoadedFamilies
+                .Where(family => family != null
+                    && string.Equals(family.CategoryName, FamilyStandardValidator.WindowsCategory, StringComparison.OrdinalIgnoreCase)
+                    && family.InstanceIds.Count > 0)
+                .ToList();
 
-            if (placedDoors.Any(door => !string.IsNullOrWhiteSpace(door.GisDoor)))
+            bool anyDoorHasValue = placedDoors.Any(door => GisStandardDomains.HasValue(door.GisDoor));
+            List<LoadedFamilyCheckInfo> invalidOpenings = new();
+            foreach (LoadedFamilyCheckInfo door in placedDoors)
             {
-                // The shipped opening.door field is open text, including station-specific values.
-                List<LoadedFamilyCheckInfo> invalidDoors = placedDoors
-                    .Where(door => !door.HasGisDoorParameter
-                        || string.IsNullOrWhiteSpace(door.GisDoor)
-                        || door.GisDoor.Any(character => char.IsControl(character) || character is '\u2028' or '\u2029'))
-                    .ToList();
-                bool passed = invalidDoors.Count == 0;
+                bool invalidDoor = anyDoorHasValue && (!door.HasGisDoorParameter || !GisStandardDomains.IsValidDoorType(door.GisDoor));
+                bool invalidAccess = GisStandardDomains.ValidateOptionalValue(GisSharedParameters.GisAccessCon, door.GisAccessCon) != null;
+                bool invalidCategory = GisStandardDomains.ValidateOptionalValue(GisSharedParameters.GisOpeningCategory, door.GisOpeningCategory) != null;
+                if (invalidDoor || invalidAccess || invalidCategory)
+                {
+                    invalidOpenings.Add(door);
+                }
+            }
+
+            foreach (LoadedFamilyCheckInfo window in placedWindows)
+            {
+                if (GisStandardDomains.ValidateOptionalValue(GisSharedParameters.GisOpeningCategory, window.GisOpeningCategory) != null)
+                {
+                    invalidOpenings.Add(window);
+                }
+            }
+
+            if (anyDoorHasValue || invalidOpenings.Count > 0)
+            {
+                bool passed = invalidOpenings.Count == 0;
                 items.Add(new ReadinessCheckItem(
                     "door-values",
                     "Door gis_door values",
                     passed ? ReadinessCheckStatus.Pass : ReadinessCheckStatus.Fail,
                     passed
-                        ? $"All {placedDoors.Count} placed door type(s) carry valid gis_door values."
-                        : $"{invalidDoors.Count} placed door type(s) need non-empty, single-line gis_door values: "
-                            + DescribeList(invalidDoors.Select(door => $"{door.FamilyName} / {door.TypeName}").ToList()) + ".",
-                    elementIds: invalidDoors.SelectMany(door => door.InstanceIds)));
+                        ? $"All {placedDoors.Count} placed door type(s) carry valid closed-domain opening values."
+                        : $"{invalidOpenings.Count} placed opening type(s) have missing or out-of-domain gis_door / gis_access_con / gis_opening_category values: "
+                            + DescribeList(invalidOpenings.Select(opening => $"{opening.FamilyName} / {opening.TypeName}").ToList()) + ".",
+                    elementIds: invalidOpenings.SelectMany(opening => opening.InstanceIds)));
             }
         }
 

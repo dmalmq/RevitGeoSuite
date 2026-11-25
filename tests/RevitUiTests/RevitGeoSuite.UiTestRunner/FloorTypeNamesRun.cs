@@ -78,7 +78,9 @@ internal sealed partial class GisStandardRun
         step.Check(await Shell.ShowsAsync(Shell.Text("Set up model applied"), 120000), "Banner 'Set up model applied'.");
         ExpectEvent(step, seq, "commit", SetupTransaction);
         InspectReply after = await Inspect();
-        step.Check(after.StandardVersion == 2 && after.ModelVersion == "2", $"The model is on standard version 2 (model '{after.ModelVersion}', standard {after.StandardVersion}; was '{before.ModelVersion}').");
+        step.Check(
+            after.StandardVersion >= 2 && after.ModelVersion == after.StandardVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            $"The model is on standard version {after.StandardVersion} (model '{after.ModelVersion}', standard {after.StandardVersion}; was '{before.ModelVersion}').");
 
         List<FloorTypeRow> types = FloorTypes();
         foreach (string name in blocked)

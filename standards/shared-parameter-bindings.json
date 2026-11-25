@@ -13,6 +13,7 @@
         "OST_Stairs",
         "OST_GenericModel",
         "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment",
         "OST_Doors",
         "OST_Windows",
         "OST_Columns",
@@ -43,6 +44,7 @@
         "OST_Stairs",
         "OST_GenericModel",
         "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment",
         "OST_Doors"
       ],
       "user_modifiable": true
@@ -58,6 +60,7 @@
         "OST_Stairs",
         "OST_GenericModel",
         "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment",
         "OST_Levels"
       ],
       "user_modifiable": true
@@ -72,7 +75,8 @@
         "OST_Rooms",
         "OST_Stairs",
         "OST_GenericModel",
-        "OST_SpecialityEquipment"
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
       ],
       "user_modifiable": true
     },
@@ -96,7 +100,8 @@
       "categories": [
         "OST_Floors",
         "OST_GenericModel",
-        "OST_SpecialityEquipment"
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
       ],
       "user_modifiable": true
     },
@@ -108,7 +113,8 @@
       "categories": [
         "OST_Floors",
         "OST_GenericModel",
-        "OST_SpecialityEquipment"
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
       ],
       "user_modifiable": true
     },
@@ -132,7 +138,8 @@
       "categories": [
         "OST_Stairs",
         "OST_GenericModel",
-        "OST_SpecialityEquipment"
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
       ],
       "user_modifiable": true
     },
@@ -179,6 +186,9 @@
         "OST_Stairs",
         "OST_GenericModel",
         "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment",
+        "OST_Doors",
+        "OST_Windows",
         "OST_Columns",
         "OST_StructuralColumns"
       ],
@@ -187,6 +197,49 @@
     {
       "name": "gis_standard_version",
       "guid": "a5edd0e8-7877-4498-91c6-29691a6a01f5",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_ProjectInformation"
+      ],
+      "user_modifiable": false
+    },
+    {
+      "name": "gis_opening_category",
+      "guid": "41d2586a-c48e-4dd1-a05b-fc247b619b88",
+      "data_type": "text",
+      "binding": "type",
+      "categories": [
+        "OST_Doors",
+        "OST_Windows"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_fixture_type",
+      "guid": "d94ee829-ecb1-4ba1-bd26-6981b2a51616",
+      "data_type": "text",
+      "binding": "type",
+      "categories": [
+        "OST_SpecialityEquipment",
+        "OST_GenericModel",
+        "OST_MechanicalEquipment"
+      ],
+      "user_modifiable": true
+    },
+    {
+      "name": "gis_model_role",
+      "guid": "90086db8-5f21-46cd-b4d5-5be2728a0e18",
+      "data_type": "text",
+      "binding": "instance",
+      "categories": [
+        "OST_ProjectInformation"
+      ],
+      "user_modifiable": false
+    },
+    {
+      "name": "gis_kit_version",
+      "guid": "dffa7f89-f402-4a3a-8f1e-904e3fd31633",
       "data_type": "text",
       "binding": "instance",
       "categories": [

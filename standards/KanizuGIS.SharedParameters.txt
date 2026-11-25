@@ -20,3 +20,7 @@ PARAM	e413bbb1-dab0-4acd-9b16-eeac608dca9b	gis_door	TEXT		1	1	Door type of every
 PARAM	0156f4b3-7806-4033-baa0-09838c299ddb	gis_access_con	TEXT		1	1	Access control of every door of this type, exported to the opening's access_con field.	1	0
 PARAM	0816cab3-3717-4632-854f-c6c7c11e0881	gis_key	TEXT		1	1	revit_key of the first feature (part 0) this element made in the last export. Written by the export.	0	0
 PARAM	a5edd0e8-7877-4498-91c6-29691a6a01f5	gis_standard_version	TEXT		1	1	Version of the Kanizu GIS standard the model was set up with.	0	0
+PARAM	41d2586a-c48e-4dd1-a05b-fc247b619b88	gis_opening_category	TEXT		1	1	Opening category of every door or window of this type: pedestrian, emergencyexit, service, automobile, bicycle, pedestrian.principal or pedestrian.transit.	1	0
+PARAM	d94ee829-ecb1-4ba1-bd26-6981b2a51616	gis_fixture_type	TEXT		1	1	Fixture type of every element of this type: turnstile, wall, kiosk, equipment, furniture or obstruction.	1	0
+PARAM	90086db8-5f21-46cd-b4d5-5be2728a0e18	gis_model_role	TEXT		1	1	Role of this Revit model in the Kanizu workflow: authoring or showcase. Blank is treated as authoring.	0	0
+PARAM	dffa7f89-f402-4a3a-8f1e-904e3fd31633	gis_kit_version	TEXT		1	1	Starter Kit version stamped on the template or initialized project.	0	0
