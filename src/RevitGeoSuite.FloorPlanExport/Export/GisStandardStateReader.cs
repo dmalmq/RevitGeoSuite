@@ -286,19 +286,20 @@ public static class GisStandardStateReader
 
             ScheduleDefinition definition = schedule.Definition;
             string categoryName = ResolveScheduleCategoryName(definition.CategoryId);
-            List<string> fields = new();
+            List<string> fieldNames = new();
+            List<QaScheduleFieldInfo> fields = new();
             int count = definition.GetFieldCount();
             for (int index = 0; index < count; index++)
             {
                 ScheduleField field = definition.GetField(index);
-                string resolvedName = ResolveSharedScheduleFieldName(document, field);
-                if (resolvedName.Length > 0)
+                if (ResolveSharedScheduleField(document, field) is { } resolved)
                 {
-                    fields.Add(resolvedName);
+                    fieldNames.Add(resolved.Name);
+                    fields.Add(resolved);
                 }
             }
 
-            schedules.Add(new QaScheduleInfo(schedule.Id.Value, schedule.Name ?? string.Empty, fields, categoryName));
+            schedules.Add(new QaScheduleInfo(schedule.Id.Value, schedule.Name ?? string.Empty, fieldNames, categoryName, fields));
         }
 
         return schedules;
@@ -324,24 +325,19 @@ public static class GisStandardStateReader
         return raw.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static string ResolveSharedScheduleFieldName(Document document, ScheduleField field)
+    private static QaScheduleFieldInfo? ResolveSharedScheduleField(Document document, ScheduleField field)
     {
         if (field.ParameterId != ElementId.InvalidElementId
             && document.GetElement(field.ParameterId) is SharedParameterElement shared)
         {
-            string? defName = shared.GetDefinition()?.Name;
-            if (!string.IsNullOrWhiteSpace(defName))
+            string name = (shared.GetDefinition()?.Name ?? shared.Name ?? string.Empty).Trim();
+            if (name.Length > 0)
             {
-                return defName!.Trim();
-            }
-
-            if (!string.IsNullOrWhiteSpace(shared.Name))
-            {
-                return shared.Name.Trim();
+                return new QaScheduleFieldInfo(name, shared.GuidValue);
             }
         }
 
-        return string.Empty;
+        return null;
     }
 
     private static List<GisBoundParameterState> ReadBoundParameters(Document document)

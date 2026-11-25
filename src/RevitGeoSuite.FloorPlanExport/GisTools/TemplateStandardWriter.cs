@@ -134,7 +134,7 @@ public static class TemplateStandardWriter
         ScheduleDefinition definition = schedule.Definition;
         IList<SchedulableField> schedulable = definition.GetSchedulableFields();
         HashSet<long> existingParamIds = new();
-        HashSet<string> existingSharedNames = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<Guid> existingSharedGuids = new();
 
         int fieldCount = definition.GetFieldCount();
         for (int i = 0; i < fieldCount; i++)
@@ -145,11 +145,7 @@ public static class TemplateStandardWriter
                 existingParamIds.Add(existingField.ParameterId.Value);
                 if (document.GetElement(existingField.ParameterId) is SharedParameterElement shared)
                 {
-                    string? sharedName = shared.GetDefinition()?.Name ?? shared.Name;
-                    if (!string.IsNullOrWhiteSpace(sharedName))
-                    {
-                        existingSharedNames.Add(sharedName!.Trim());
-                    }
+                    existingSharedGuids.Add(shared.GuidValue);
                 }
             }
         }
@@ -169,12 +165,13 @@ public static class TemplateStandardWriter
         List<string> skippedExtra = new();
         foreach (string paramName in fieldsToAdd)
         {
-            if (existingSharedNames.Contains(paramName))
+            if (GisSharedParameters.TryGet(paramName, out GisParameterDefinition standardDef)
+                && existingSharedGuids.Contains(standardDef.Guid))
             {
                 continue;
             }
 
-            if (TryAddSharedParameterField(definition, schedulable, sharedParamIds, paramName, existingParamIds, existingSharedNames))
+            if (TryAddSharedParameterField(definition, schedulable, sharedParamIds, paramName, existingParamIds, existingSharedGuids))
             {
                 added.Add(paramName);
             }
@@ -254,7 +251,7 @@ public static class TemplateStandardWriter
         IReadOnlyDictionary<string, ElementId> sharedParamIds,
         string paramName,
         HashSet<long> existingParamIds,
-        HashSet<string> existingSharedNames)
+        HashSet<Guid> existingSharedGuids)
     {
         if (!sharedParamIds.TryGetValue(paramName, out ElementId? targetId))
         {
@@ -263,7 +260,6 @@ public static class TemplateStandardWriter
 
         if (existingParamIds.Contains(targetId.Value))
         {
-            existingSharedNames.Add(paramName);
             return false;
         }
 
@@ -275,7 +271,11 @@ public static class TemplateStandardWriter
 
         definition.AddField(match);
         existingParamIds.Add(targetId.Value);
-        existingSharedNames.Add(paramName);
+        if (GisSharedParameters.TryGet(paramName, out GisParameterDefinition def))
+        {
+            existingSharedGuids.Add(def.Guid);
+        }
+
         return true;
     }
 
@@ -308,18 +308,11 @@ public static class TemplateStandardWriter
             .ToList();
 
         Dictionary<Guid, ElementId> byGuid = new();
-        Dictionary<string, ElementId> byName = new(StringComparer.OrdinalIgnoreCase);
         foreach (SharedParameterElement shared in allShared)
         {
             if (!byGuid.ContainsKey(shared.GuidValue))
             {
                 byGuid[shared.GuidValue] = shared.Id;
-            }
-
-            string? name = shared.GetDefinition()?.Name ?? shared.Name;
-            if (!string.IsNullOrWhiteSpace(name) && !byName.ContainsKey(name!.Trim()))
-            {
-                byName[name!.Trim()] = shared.Id;
             }
         }
 
@@ -329,11 +322,6 @@ public static class TemplateStandardWriter
             if (byGuid.TryGetValue(def.Guid, out ElementId? exactId))
             {
                 resolved[def.Name] = exactId;
-            }
-            else if (GisStandardCheck.LegacyParameterNames.Contains(def.Name)
-                     && byName.TryGetValue(def.Name, out ElementId? legacyId))
-            {
-                resolved[def.Name] = legacyId;
             }
         }
 

@@ -35,7 +35,14 @@ public sealed class TemplateReadinessCheckTests
                 new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "public", hasGisDoorParameter: true, hasGisAccessConParameter: true),
             },
             Schedules = TemplateStandardDefinitions.QaSchedules
-                .Select((s, idx) => new QaScheduleInfo(400 + idx, s.Name, s.RequiredFields, s.CategoryName))
+                .Select((s, idx) => new QaScheduleInfo(
+                    400 + idx,
+                    s.Name,
+                    s.RequiredFields,
+                    s.CategoryName,
+                    s.RequiredFields.Select(name => new QaScheduleFieldInfo(
+                        name,
+                        GisSharedParameters.TryGet(name, out GisParameterDefinition def) ? def.Guid : (Guid?)null))))
                 .ToList(),
             ViewTemplateNames = new[] { TemplateStandardDefinitions.ExportPlanViewTemplateName },
             Levels = new[] { new LevelInfo(501, "Level 1", ordinal: null, shortName: "", hasFloors: false) },
@@ -251,6 +258,43 @@ public sealed class TemplateReadinessCheckTests
         Assert.Equal(ReadinessActionKind.None, floorSchedule.Action);
         Assert.Contains("Multi-Category", floorSchedule.Detail);
         Assert.Contains("OST_Floors", floorSchedule.Detail);
+    }
+
+    [Fact]
+    public void ExistingScheduleWithWrongGuidSharedParameterFailsReadiness()
+    {
+        ReadinessCheckSnapshot snapshot = CleanTemplateSnapshot();
+        QaScheduleDefinition floorsDef = TemplateStandardDefinitions.QaSchedules
+            .Single(s => s.Name == TemplateStandardDefinitions.FloorsScheduleName);
+        snapshot.Schedules = TemplateStandardDefinitions.QaSchedules
+            .Select((s, idx) => s.Name == floorsDef.Name
+                ? new QaScheduleInfo(
+                    400 + idx,
+                    s.Name,
+                    s.RequiredFields,
+                    s.CategoryName,
+                    s.RequiredFields.Select(name => new QaScheduleFieldInfo(
+                        name,
+                        name == GisSharedParameters.GisCategory
+                            ? Guid.NewGuid()
+                            : GisSharedParameters.TryGet(name, out GisParameterDefinition def) ? def.Guid : (Guid?)null)))
+                : new QaScheduleInfo(
+                    400 + idx,
+                    s.Name,
+                    s.RequiredFields,
+                    s.CategoryName,
+                    s.RequiredFields.Select(name => new QaScheduleFieldInfo(
+                        name,
+                        GisSharedParameters.TryGet(name, out GisParameterDefinition def) ? def.Guid : (Guid?)null))))
+            .ToList();
+
+        ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot, ReadinessMode.Template);
+
+        Assert.False(report.IsReady);
+        Assert.True(report.CanPrepareTemplate);
+        ReadinessCheckItem floorSchedule = report.Groups.SelectMany(g => g.Items).Single(i => i.Id == "qa-schedule-floors");
+        Assert.Equal(ReadinessCheckStatus.Fail, floorSchedule.Status);
+        Assert.Contains(GisSharedParameters.GisCategory, floorSchedule.Detail);
     }
 
     [Fact]

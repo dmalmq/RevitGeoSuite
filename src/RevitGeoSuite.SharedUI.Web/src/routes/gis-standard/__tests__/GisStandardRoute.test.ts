@@ -433,6 +433,52 @@ describe('GisStandardRoute readiness checklist & Prepare Template', () => {
     expect(sent('gisStandard.inspect')[3].payload).toEqual({ stationFolder: '' })
   })
 
+  it('discards stale inspection response from an earlier document after document.changed', async () => {
+    const { flushSync, mount, unmount } = await import('svelte')
+    const { default: GisStandardRoute } = await import('../GisStandardRoute.svelte')
+
+    const flush = async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      flushSync()
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const instance = mount(GisStandardRoute, { target })
+    cleanupInstance = () => unmount(instance)
+    flushSync()
+
+    const docAReq = sent('gisStandard.inspect')[0]
+    expect(docAReq).toBeDefined()
+
+    emitEvent('document.changed', { documentId: 'doc-b', documentTitle: 'ModelB.rvt' })
+    await flush()
+
+    const docBReq = sent('gisStandard.inspect')[1]
+    expect(docBReq).toBeDefined()
+
+    const docBPayload = {
+      ...sampleInspect('project', true),
+      documentTitle: 'ModelB.rvt',
+      findings: [{ severity: 'warning', topic: 'levels', message: 'Model B finding', elementIds: [], fix: '', fixTargetId: 0 }]
+    }
+    const docAPayload = {
+      ...sampleInspect('template', false),
+      documentTitle: 'ModelA.rvt',
+      findings: [{ severity: 'error', topic: 'families', message: 'Stale Model A finding', elementIds: [], fix: '', fixTargetId: 0 }]
+    }
+
+    reply(docBReq, docBPayload)
+    await flush()
+    expect(target.textContent).toContain('Model B finding')
+
+    reply(docAReq, docAPayload)
+    await flush()
+    expect(target.textContent).toContain('Model B finding')
+    expect(target.textContent).not.toContain('Stale Model A finding')
+  })
+
   it('exposes named ui-sdk controls to createAgent and allows switching mode via agent.act', async () => {
     const { createAgent } = await import('@ui-sdk/svelte/agent')
     const agent = createAgent()

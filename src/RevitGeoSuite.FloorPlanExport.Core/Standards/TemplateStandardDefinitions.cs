@@ -37,15 +37,35 @@ public sealed class QaScheduleDefinition
     public IEnumerable<string> AllSharedParameterFields => RequiredFields.Concat(ExtraFields);
 }
 
+/// <summary>One shared-parameter field read from an existing Revit schedule, including its GUID.</summary>
+public sealed class QaScheduleFieldInfo
+{
+    public QaScheduleFieldInfo(string name, Guid? sharedParameterGuid)
+    {
+        Name = name ?? string.Empty;
+        SharedParameterGuid = sharedParameterGuid;
+    }
+
+    public string Name { get; }
+
+    public Guid? SharedParameterGuid { get; }
+}
+
 /// <summary>Current state of one QA schedule read from a Revit document.</summary>
 public sealed class QaScheduleInfo
 {
-    public QaScheduleInfo(long elementId, string name, IEnumerable<string>? fieldNames = null, string categoryName = "")
+    public QaScheduleInfo(
+        long elementId,
+        string name,
+        IEnumerable<string>? fieldNames = null,
+        string categoryName = "",
+        IEnumerable<QaScheduleFieldInfo>? fields = null)
     {
         ElementId = elementId;
         Name = name ?? string.Empty;
         FieldNames = (fieldNames ?? Array.Empty<string>()).ToList();
         CategoryName = categoryName ?? string.Empty;
+        Fields = (fields ?? Array.Empty<QaScheduleFieldInfo>()).ToList();
     }
 
     public long ElementId { get; }
@@ -56,6 +76,9 @@ public sealed class QaScheduleInfo
     public string CategoryName { get; }
 
     public IReadOnlyList<string> FieldNames { get; }
+
+    /// <summary>Shared-parameter fields with their Revit SharedParameterElement GUIDs for strict validation.</summary>
+    public IReadOnlyList<QaScheduleFieldInfo> Fields { get; }
 }
 
 /// <summary>One QA schedule action planned by <see cref="TemplateStandardPlanner"/>.</summary>
@@ -226,9 +249,8 @@ public static class TemplateStandardPlanner
                 continue;
             }
 
-            HashSet<string> existingFields = new(existing.FieldNames, StringComparer.OrdinalIgnoreCase);
             List<string> missing = definition.RequiredFields
-                .Where(field => !existingFields.Contains(field))
+                .Where(field => !HasStandardScheduleField(existing, field))
                 .ToList();
             if (missing.Count > 0)
             {
@@ -284,5 +306,20 @@ public static class TemplateStandardPlanner
         }
 
         return lines;
+    }
+
+    private static bool HasStandardScheduleField(QaScheduleInfo schedule, string requiredFieldName)
+    {
+        if (schedule.Fields.Count > 0)
+        {
+            if (GisSharedParameters.TryGet(requiredFieldName, out GisParameterDefinition expected))
+            {
+                return schedule.Fields.Any(field => field.SharedParameterGuid == expected.Guid);
+            }
+
+            return schedule.Fields.Any(field => string.Equals(field.Name, requiredFieldName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return schedule.FieldNames.Any(name => string.Equals(name, requiredFieldName, StringComparison.OrdinalIgnoreCase));
     }
 }
