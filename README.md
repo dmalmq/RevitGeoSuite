@@ -118,8 +118,8 @@ RevitGeoSuite/
 
 ## Prerequisites
 
-- **Revit 2024**
-- **.NET Framework 4.8 SDK**
+- **Revit 2024** (.NET Framework 4.8 build, the default) or **Revit 2027** (.NET 10 build)
+- **.NET Framework 4.8 SDK**, plus the **.NET 10 SDK** for Revit 2027 builds
 - **Visual Studio 2022** (or later) with the ".NET desktop development" workload
 - **Node.js 20+** *(builds the Svelte web UI during the solution build; pass `-p:SkipWebBuild=true` to reuse the committed bundle and skip Node)*
 - **WebView2 Runtime** (typically pre-installed on Windows 10/11)
@@ -135,7 +135,12 @@ cd RevitGeoSuite
 msbuild RevitGeoSuite.sln /p:Configuration=Release
 
 # Or open RevitGeoSuite.sln in Visual Studio and build
+
+# Revit 2027 (.NET 10): the add-in and its tests, without the Revit 2024 UI test tools
+dotnet build RevitGeoSuite.AddIn.slnf -c Release -p:RevitYear=2027
 ```
+
+`RevitYear` picks the target framework in `Directory.Build.props`: 2024 builds `net48`, 2027 builds `net10.0-windows`. Both write to `bin/Deploy/`, so build the year you are about to install.
 
 The solution build regenerates the TypeScript RPC contracts and runs the web build (`npm ci` + `vite build`) before compiling the WebView2 host, then embeds the bundle. Use `-p:SkipWebBuild=true` to reuse the committed `dist/` bundle when Node.js is unavailable. All output DLLs are written to `bin/Deploy/`.
 
@@ -155,7 +160,7 @@ After building the solution, create a distributable installer `.exe` (requires I
 pwsh ./install/build-installer.ps1 -RevitYear 2024
 ```
 
-The installer EXE is written to `install/output/` as `KanizuRevit-Setup-<year>-<version>.exe` and installs the add-in payload under `C:\ProgramData\Autodesk\Revit\Addins\2024\KanizuRevit\` with `KanizuRevit.addin` placed in `C:\ProgramData\Autodesk\Revit\Addins\2024\` (cleanly removing any legacy `RevitGeoSuite.addin` install). It registers a normal uninstall entry in Windows Apps. See [`install/README.md`](install/README.md) for parameters and dev-only direct copy install.
+The installer EXE is written to `install/output/` as `KanizuRevit-Setup-<year>-<version>.exe` and installs the add-in payload under `<root>\KanizuRevit\` with `KanizuRevit.addin` placed in `<root>`, where `<root>` is `C:\ProgramData\Autodesk\Revit\Addins\2024\` for Revit 2024 and `C:\Program Files\Autodesk\Revit\Addins\2027\` for Revit 2027, which no longer reads ProgramData (cleanly removing any legacy `RevitGeoSuite.addin` install). It registers a normal uninstall entry in Windows Apps. See [`install/README.md`](install/README.md) for parameters and dev-only direct copy install.
 
 ### Manual Install
 

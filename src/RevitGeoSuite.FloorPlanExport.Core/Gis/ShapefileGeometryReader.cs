@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using RevitGeoSuite.Core.Text;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Gis;
@@ -36,6 +37,7 @@ public sealed class ShapefileGeometryReader
         List<string> warnings = new();
         List<NtsGeometry> geometries = new();
         GeometryFactory geometryFactory = new();
+        CodePageEncodings.EnsureRegistered();
         using ShapefileDataReader reader = new(shapefilePath, geometryFactory);
         while (reader.Read())
         {

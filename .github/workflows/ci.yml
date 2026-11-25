@@ -69,3 +69,66 @@ jobs:
       continue-on-error: true
       working-directory: src/RevitGeoSuite.SharedUI.Web
       run: npm run check
+
+  # Revit 2027 loads add-ins on .NET 10. Builds and tests the add-in and its tests as
+  # net10.0-windows. The UI test tools under tests/RevitUiTests drive Revit 2024 on the build PC
+  # and stay out of this build (RevitGeoSuite.AddIn.slnf).
+  build-and-test-revit2027:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: src/RevitGeoSuite.SharedUI.Web/package-lock.json
+
+    - name: Provision Revit 2027 API
+      shell: pwsh
+      run: |
+        # Nice3point.Revit.Api.* carries RevitAPI.dll and RevitAPIUI.dll of a Revit 2027 update
+        # (2027.4.0: Revit 27.4.0.31). The source also builds for Revit 2024, so it uses no API
+        # added by a 2027 update; the newest update catches any API that 2027 removed.
+        $apiDir = Join-Path $env:RUNNER_TEMP 'revit-api'
+        $packages = @(
+          @{ Id = 'nice3point.revit.api.revitapi'; Sha256 = 'DCB7815656DBA80ADF69C83D73119F9BA00A45BBE5B4BAE2B2E260D99EED9255' },
+          @{ Id = 'nice3point.revit.api.revitapiui'; Sha256 = 'C280AC2BF65ADDFFC85503799BFAA7F5621611BCC93626BF08811D0B9F88119B' }
+        )
+        foreach ($p in $packages) {
+          $package = Join-Path $env:RUNNER_TEMP "$($p.Id).zip"
+          Invoke-WebRequest -Uri "https://api.nuget.org/v3-flatcontainer/$($p.Id)/2027.4.0/$($p.Id).2027.4.0.nupkg" -OutFile $package
+          if ((Get-FileHash $package -Algorithm SHA256).Hash -ne $p.Sha256) {
+            throw "$($p.Id) package checksum mismatch."
+          }
+          Expand-Archive -Path $package -DestinationPath $apiDir -Force
+        }
+        $revitApiDir = Join-Path $apiDir 'ref\net10.0-windows7.0'
+        "RevitInstallDir=$revitApiDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "RevitApiDir=$revitApiDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    - name: Restore .NET dependencies
+      run: dotnet restore RevitGeoSuite.AddIn.slnf -p:RevitYear=2027
+
+    - name: Build web assets
+      working-directory: src/RevitGeoSuite.SharedUI.Web
+      run: |
+        npm ci
+        npm run build
+
+    - name: Build .NET add-in
+      run: dotnet build RevitGeoSuite.AddIn.slnf --no-restore --configuration Release -p:RevitYear=2027
+
+    - name: Run .NET tests
+      run: dotnet test RevitGeoSuite.AddIn.slnf --no-build --configuration Release -p:RevitYear=2027 --verbosity normal
+
+    - name: Verify TypeScript contracts from the .NET 10 generator
+      run: git diff --exit-code -- src/RevitGeoSuite.SharedUI.Web/src/lib/bridge/contracts.generated.ts

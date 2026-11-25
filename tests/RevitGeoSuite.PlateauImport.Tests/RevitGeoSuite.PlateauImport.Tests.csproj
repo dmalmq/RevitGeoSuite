@@ -13,7 +13,7 @@
     <ProjectReference Include="..\..\src\RevitGeoSuite.Shell\RevitGeoSuite.Shell.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
     <Reference Include="System.Net.Http" />
   </ItemGroup>
 

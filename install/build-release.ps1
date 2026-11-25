@@ -13,6 +13,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "RevitAddinPaths.ps1")
+
 $excludedFilePatterns = @(
     ".msCoverageSourceRootsMapping*",
     "*.Tests.dll",
@@ -29,19 +31,6 @@ $excludedFilePatterns = @(
     "RevitGeoSuite.addin",
     "xunit*"
 )
-
-function Get-AddinManifestContents {
-    param(
-        [Parameter(Mandatory = $true)][string]$TemplatePath,
-        [Parameter(Mandatory = $true)][string]$TargetRevitYear
-    )
-
-    if (-not (Test-Path -LiteralPath $TemplatePath)) {
-        throw "Cannot find .addin template at $TemplatePath."
-    }
-
-    return (Get-Content -LiteralPath $TemplatePath -Raw).Replace("__REVIT_YEAR__", $TargetRevitYear)
-}
 
 function Test-IsExcludedFile {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -101,7 +90,7 @@ if (-not (Test-Path -LiteralPath $payloadDll)) {
 }
 
 $copiedCount = Copy-PayloadFiles -SourceRoot $sourceDirectoryFull -DestinationRoot $distDir
-Set-Content -LiteralPath $generatedAddinManifest -Value (Get-AddinManifestContents -TemplatePath $addinTemplate -TargetRevitYear $RevitYear) -Encoding UTF8
+Set-Content -LiteralPath $generatedAddinManifest -Value (Get-AddinManifestContents -TemplatePath $addinTemplate -RevitYear $RevitYear) -Encoding UTF8
 
 $fileCount = (Get-ChildItem -LiteralPath $distDir -Recurse -File).Count
 Write-Host ""

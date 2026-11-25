@@ -2,8 +2,8 @@
 .SYNOPSIS
     Uninstalls the Kanizu Revit add-in (and any legacy RevitGeoSuite install) for the selected Revit year.
 .DESCRIPTION
-    Removes the add-in payload and manifest from the system-wide Revit add-ins folder
-    for the selected Revit year.
+    Removes the add-in payload and manifest from both system-wide Revit add-ins folders
+    (ProgramData and Program Files; see RevitAddinPaths.ps1) for the selected Revit year.
     Must be run as Administrator.
 #>
 param(
@@ -12,6 +12,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "RevitAddinPaths.ps1")
 
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -22,13 +24,15 @@ if (-not $isAdmin) {
     exit 1
 }
 
-$addinsRoot = "C:\ProgramData\Autodesk\Revit\Addins\$RevitYear"
-$targets = @(
-    @{ Path = (Join-Path $addinsRoot "KanizuRevit"); IsDir = $true; Label = "Add-in folder" },
-    @{ Path = (Join-Path $addinsRoot "KanizuRevit.addin"); IsDir = $false; Label = ".addin manifest" },
-    @{ Path = (Join-Path $addinsRoot "RevitGeoSuite"); IsDir = $true; Label = "Legacy add-in folder" },
-    @{ Path = (Join-Path $addinsRoot "RevitGeoSuite.addin"); IsDir = $false; Label = "Legacy .addin manifest" }
-)
+$targets = @()
+foreach ($addinsRoot in @((Get-RevitAddinsRoot -RevitYear $RevitYear), (Get-StaleRevitAddinsRoot -RevitYear $RevitYear))) {
+    $targets += @(
+        @{ Path = (Join-Path $addinsRoot "KanizuRevit"); IsDir = $true; Label = "Add-in folder" },
+        @{ Path = (Join-Path $addinsRoot "KanizuRevit.addin"); IsDir = $false; Label = ".addin manifest" },
+        @{ Path = (Join-Path $addinsRoot "RevitGeoSuite"); IsDir = $true; Label = "Legacy add-in folder" },
+        @{ Path = (Join-Path $addinsRoot "RevitGeoSuite.addin"); IsDir = $false; Label = "Legacy .addin manifest" }
+    )
+}
 
 if ($env:APPDATA) {
     $userAddinsRoot = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear"

@@ -1,0 +1,34 @@
+{
+  "solution": {
+    "path": "RevitGeoSuite.sln",
+    "projects": [
+      "src\\RevitGeoSuite.CesiumHandoff\\RevitGeoSuite.CesiumHandoff.csproj",
+      "src\\RevitGeoSuite.CityGmlExport\\RevitGeoSuite.CityGmlExport.csproj",
+      "src\\RevitGeoSuite.Core.Plateau\\RevitGeoSuite.Core.Plateau.csproj",
+      "src\\RevitGeoSuite.Core\\RevitGeoSuite.Core.csproj",
+      "src\\RevitGeoSuite.FloorPlanExport.Core\\RevitGeoSuite.FloorPlanExport.Core.csproj",
+      "src\\RevitGeoSuite.FloorPlanExport\\RevitGeoSuite.FloorPlanExport.csproj",
+      "src\\RevitGeoSuite.Georeference\\RevitGeoSuite.Georeference.csproj",
+      "src\\RevitGeoSuite.MeshInspector\\RevitGeoSuite.MeshInspector.csproj",
+      "src\\RevitGeoSuite.PlateauImport\\RevitGeoSuite.PlateauImport.csproj",
+      "src\\RevitGeoSuite.RevitInterop\\RevitGeoSuite.RevitInterop.csproj",
+      "src\\RevitGeoSuite.SharedUI.Web.Contracts.Generator\\RevitGeoSuite.SharedUI.Web.Contracts.Generator.csproj",
+      "src\\RevitGeoSuite.SharedUI.Web.Contracts\\RevitGeoSuite.SharedUI.Web.Contracts.csproj",
+      "src\\RevitGeoSuite.SharedUI\\RevitGeoSuite.SharedUI.csproj",
+      "src\\RevitGeoSuite.Shell\\RevitGeoSuite.Shell.csproj",
+      "src\\RevitGeoSuite.Tiles3DExport\\RevitGeoSuite.Tiles3DExport.csproj",
+      "src\\RevitGeoSuite.Validation\\RevitGeoSuite.Validation.csproj",
+      "tests\\RevitGeoSuite.CesiumHandoff.Tests\\RevitGeoSuite.CesiumHandoff.Tests.csproj",
+      "tests\\RevitGeoSuite.CityGmlExport.Tests\\RevitGeoSuite.CityGmlExport.Tests.csproj",
+      "tests\\RevitGeoSuite.Core.Plateau.Tests\\RevitGeoSuite.Core.Plateau.Tests.csproj",
+      "tests\\RevitGeoSuite.Core.Tests\\RevitGeoSuite.Core.Tests.csproj",
+      "tests\\RevitGeoSuite.FloorPlanExport.Core.Tests\\RevitGeoSuite.FloorPlanExport.Core.Tests.csproj",
+      "tests\\RevitGeoSuite.Georeference.Tests\\RevitGeoSuite.Georeference.Tests.csproj",
+      "tests\\RevitGeoSuite.MeshInspector.Tests\\RevitGeoSuite.MeshInspector.Tests.csproj",
+      "tests\\RevitGeoSuite.PlateauImport.Tests\\RevitGeoSuite.PlateauImport.Tests.csproj",
+      "tests\\RevitGeoSuite.SharedUI.Tests\\RevitGeoSuite.SharedUI.Tests.csproj",
+      "tests\\RevitGeoSuite.Tiles3DExport.Tests\\RevitGeoSuite.Tiles3DExport.Tests.csproj",
+      "tests\\RevitGeoSuite.Validation.Tests\\RevitGeoSuite.Validation.Tests.csproj"
+    ]
+  }
+}

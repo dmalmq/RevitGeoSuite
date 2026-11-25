@@ -22,7 +22,16 @@
 #define AppPublisher "Kanizu"
 ; Keep the legacy AppId so upgrading from RevitGeoSuite replaces the Windows Installed Apps entry cleanly.
 #define AppId "RevitGeoSuite.Revit" + RevitYear
-#define AddinsRoot "{commonappdata}\Autodesk\Revit\Addins\" + RevitYear
+; Same rule as install\RevitAddinPaths.ps1: Revit 2026 and earlier read machine-wide add-ins from
+; ProgramData; Revit 2027 and later read them from Program Files only. StaleAddinsRoot is the folder
+; this year does not read, cleared in case an earlier install put a copy there.
+#if Int(RevitYear) >= 2027
+  #define AddinsRoot "{commonpf64}\Autodesk\Revit\Addins\" + RevitYear
+  #define StaleAddinsRoot "{commonappdata}\Autodesk\Revit\Addins\" + RevitYear
+#else
+  #define AddinsRoot "{commonappdata}\Autodesk\Revit\Addins\" + RevitYear
+  #define StaleAddinsRoot "{commonpf64}\Autodesk\Revit\Addins\" + RevitYear
+#endif
 #define InstallSubDir "KanizuRevit"
 
 [Setup]
@@ -54,6 +63,10 @@ Type: filesandordirs; Name: "{app}"
 Type: files; Name: "{#AddinsRoot}\RevitGeoSuite.addin"
 Type: filesandordirs; Name: "{#AddinsRoot}\RevitGeoSuite"
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\{#RevitYear}\RevitGeoSuite.addin"
+Type: files; Name: "{#StaleAddinsRoot}\KanizuRevit.addin"
+Type: filesandordirs; Name: "{#StaleAddinsRoot}\KanizuRevit"
+Type: files; Name: "{#StaleAddinsRoot}\RevitGeoSuite.addin"
+Type: filesandordirs; Name: "{#StaleAddinsRoot}\RevitGeoSuite"
 
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "KanizuRevit.addin,RevitGeoSuite.addin"

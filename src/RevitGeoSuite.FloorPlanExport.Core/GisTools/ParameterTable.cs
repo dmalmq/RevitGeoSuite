@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using RevitGeoSuite.Core.Text;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
@@ -185,7 +186,7 @@ public static class ParameterTable
         // Not every runtime honours the exception fallback for CP932 (Mono swaps in '?'), so the text
         // must also encode back to the same bytes. Excel writes the canonical CP932 bytes, so a file
         // it saved always round-trips.
-        Encoding cp932 = Encoding.GetEncoding(932, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        Encoding cp932 = CodePageEncodings.Cp932(EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
         try
         {
             string text = cp932.GetString(data);

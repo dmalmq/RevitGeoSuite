@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
     <RootNamespace>RevitGeoSuite.FloorPlanExport</RootNamespace>
     <AssemblyName>RevitGeoSuite.FloorPlanExport</AssemblyName>
     <UseWPF>true</UseWPF>
@@ -12,9 +11,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <RevitYear Condition="'$(RevitYear)' == ''">2024</RevitYear>
-    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitYear)</RevitApiDir>
-    <DefineConstants>$(DefineConstants);REVIT$(RevitYear)</DefineConstants>
+    <RevitApiDir Condition="'$(RevitApiDir)' == ''">$(RevitInstallDir)</RevitApiDir>
   </PropertyGroup>
 
   <ItemGroup>
