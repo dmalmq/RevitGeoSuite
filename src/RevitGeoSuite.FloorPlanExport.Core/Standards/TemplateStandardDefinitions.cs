@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Standards;
 
@@ -150,7 +151,19 @@ public sealed class TemplatePreparationPlan
 /// </summary>
 public static class TemplateStandardDefinitions
 {
-    public const string ExportPlanViewTemplateName = "Kanizu GIS Export Plan";
+    /// <summary>
+    /// The canonical Kanizu GIS Export view template name, matching
+    /// <see cref="RevitGeoSuite.FloorPlanExport.Core.GisTools.ExportViewPlanner.TemplateName"/>.
+    /// Prepare Template and Set up model create or repair exactly this one.
+    /// </summary>
+    public const string ExportPlanViewTemplateName = ExportViewPlanner.TemplateName;
+
+    /// <summary>
+    /// A Phase 4B name an older draft file may still carry. Readiness recognises it as an alias so an
+    /// existing draft is not flagged for a double create, but Prepare Template and Set up model never
+    /// write this name.
+    /// </summary>
+    public const string LegacyExportPlanViewTemplateName = "Kanizu GIS Export Plan";
 
     public const string FloorsScheduleName = "Kanizu GIS - Floors";
     public const string CirculationScheduleName = "Kanizu GIS - Circulation";
@@ -217,7 +230,8 @@ public static class TemplateStandardPlanner
     public static TemplatePreparationPlan Plan(
         IReadOnlyList<QaScheduleInfo> existingSchedules,
         IReadOnlyList<string> existingViewTemplateNames,
-        IReadOnlyList<string>? exportPlanTemplateIssues = null)
+        IReadOnlyList<string>? exportPlanTemplateIssues = null,
+        bool recognizeLegacyAlias = true)
     {
         Dictionary<string, QaScheduleInfo> schedulesByName = new(StringComparer.OrdinalIgnoreCase);
         foreach (QaScheduleInfo schedule in existingSchedules ?? Array.Empty<QaScheduleInfo>())
@@ -259,7 +273,12 @@ public static class TemplateStandardPlanner
         }
 
         bool hasExportPlanTemplate = (existingViewTemplateNames ?? Array.Empty<string>())
-            .Any(name => string.Equals((name ?? string.Empty).Trim(), TemplateStandardDefinitions.ExportPlanViewTemplateName, StringComparison.OrdinalIgnoreCase));
+            .Any(name =>
+            {
+                string trimmed = (name ?? string.Empty).Trim();
+                return string.Equals(trimmed, TemplateStandardDefinitions.ExportPlanViewTemplateName, StringComparison.OrdinalIgnoreCase)
+                    || (recognizeLegacyAlias && string.Equals(trimmed, TemplateStandardDefinitions.LegacyExportPlanViewTemplateName, StringComparison.OrdinalIgnoreCase));
+            });
         List<string> templateIssues = (exportPlanTemplateIssues ?? Array.Empty<string>())
             .Where(issue => !string.IsNullOrWhiteSpace(issue))
             .ToList();

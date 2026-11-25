@@ -10,7 +10,7 @@ namespace RevitGeoSuite.FloorPlanExport.GisTools;
 /// <summary>
 /// Idempotently prepares a Revit template (.rte) or project model in one single transaction:
 /// runs Set up model, creates or updates the standard QA schedules, and creates or repairs
-/// the <c>Kanizu GIS Export Plan</c> view template.
+/// the canonical <c>GIS Export</c> view template.
 /// </summary>
 public static class TemplateStandardWriter
 {
@@ -98,8 +98,7 @@ public static class TemplateStandardWriter
                 ExportViewSetup.EnsureNamedExportPlanTemplate(
                     document,
                     TemplateStandardDefinitions.ExportPlanViewTemplateName,
-                    log,
-                    BuiltInCategory.OST_MechanicalEquipment);
+                    log);
             }
         });
 

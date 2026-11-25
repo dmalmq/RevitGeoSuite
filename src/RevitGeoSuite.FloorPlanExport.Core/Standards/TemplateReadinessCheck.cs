@@ -230,28 +230,50 @@ public sealed class ReadinessCheckSnapshot
 
     public string HostModelId { get; set; } = string.Empty;
 
+    /// <summary>GeoProjectInfo.GisStationFolder baked into the document, or empty. Must be empty in Template mode.</summary>
+    public string HostStationFolder { get; set; } = string.Empty;
+
+    /// <summary>Number of levels carrying a non-empty <c>level_id</c>. Must be zero in Template mode (KZ-TPL-002).</summary>
+    public int LevelsWithBakedInIdCount { get; set; }
+
+    /// <summary>Element ids (first few) of levels carrying a non-empty <c>level_id</c>, for jumping to.</summary>
+    public IReadOnlyList<long> LevelsWithBakedInIdSample { get; set; } = Array.Empty<long>();
+
+    /// <summary>Number of placed elements carrying a baked-in <c>id</c> or <c>gis_key</c>. Must be zero in Template mode (KZ-TPL-002).</summary>
+    public int ElementsWithBakedInIdCount { get; set; }
+
+    /// <summary>Element ids (first few) of placed elements carrying baked-in <c>id</c>/<c>gis_key</c>.</summary>
+    public IReadOnlyList<long> ElementsWithBakedInIdSample { get; set; } = Array.Empty<long>();
+
+    /// <summary>
+    /// Names of <c>ParameterFilterElement</c>s attached to the <c>GIS Export</c> template or any
+    /// <c>GIS_*</c> export plan view with visibility set to <c>false</c>. Not including any
+    /// <c>[KANIZU_FORMA_RO]</c> or showcase-prefix filters (reserved for future use). Any entry
+    /// fails readiness (KZ-VIEW-004) because the export collects elements per view.
+    /// </summary>
+    public IReadOnlyList<string> ExportViewHideFilterNames { get; set; } = Array.Empty<string>();
+
     public IReadOnlyList<LinkedModelReadinessInfo> LinkedModels { get; set; } = Array.Empty<LinkedModelReadinessInfo>();
 
-    public ReadinessMode SuggestedMode
+    public ReadinessMode SuggestedMode => SuggestMode(DocumentPath, DocumentTitle, IsEmptyModel);
+
+    public static ReadinessMode SuggestMode(string? documentPath, string? documentTitle, bool isEmptyModel)
     {
-        get
+        string path = (documentPath ?? string.Empty).Trim();
+        string title = (documentTitle ?? string.Empty).Trim();
+        if (path.EndsWith(".rte", StringComparison.OrdinalIgnoreCase)
+            || title.EndsWith(".rte", StringComparison.OrdinalIgnoreCase))
         {
-            string path = (DocumentPath ?? string.Empty).Trim();
-            string title = (DocumentTitle ?? string.Empty).Trim();
-            if (path.EndsWith(".rte", StringComparison.OrdinalIgnoreCase)
-                || title.EndsWith(".rte", StringComparison.OrdinalIgnoreCase))
-            {
-                return ReadinessMode.Template;
-            }
-
-            if (path.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
-                || title.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase))
-            {
-                return ReadinessMode.Project;
-            }
-
-            return IsEmptyModel ? ReadinessMode.Template : ReadinessMode.Project;
+            return ReadinessMode.Template;
         }
+
+        if (path.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
+            || title.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReadinessMode.Project;
+        }
+
+        return isEmptyModel ? ReadinessMode.Template : ReadinessMode.Project;
     }
 }
 
@@ -271,9 +293,19 @@ public sealed class ReadinessCheckItem
         Detail = detail ?? string.Empty;
         Action = action;
         ElementIds = (elementIds ?? Array.Empty<long>()).ToList();
+        RuleId = RuleCatalog.TryLookupByLegacyItemId(id, out RuleCatalogEntry rule)
+            || RuleCatalog.TryLookup(id, out rule)
+            ? rule.RuleId
+            : throw new ArgumentException($"Readiness item '{id}' has no catalog rule.", nameof(id));
     }
 
+    /// <summary>Legacy Phase 4B ItemId used by the UI (backward-compatible).</summary>
     public string Id { get; }
+
+    public string ItemId => Id;
+
+    /// <summary>Canonical stable <see cref="RuleCatalog"/> <c>KZ-*</c> id.</summary>
+    public string RuleId { get; }
 
     public string Title { get; }
 
@@ -325,6 +357,15 @@ public sealed class ReadinessCheckGroup
 
 public sealed class ProjectReadinessReport
 {
+    private static readonly string[] MandatoryProjectItems =
+    {
+        "standard-version", "shared-parameters",
+        "gis-materials", "standard-floor-types", "circulation-families", "door-families",
+        "qa-schedule-floors", "qa-schedule-circulation", "qa-schedule-doors",
+        "view-template-export-plan", "view-template-hide-filter",
+        "project-crs", "model-ids", "level-metadata",
+    };
+
     public ProjectReadinessReport(
         ReadinessMode mode,
         ReadinessMode suggestedMode,
@@ -346,10 +387,17 @@ public sealed class ProjectReadinessReport
         FailCount = allItems.Count(item => item.Status == ReadinessCheckStatus.Fail);
         NotApplicableCount = allItems.Count(item => item.Status == ReadinessCheckStatus.NotApplicable);
         ApplicableCount = PassCount + WarnCount + FailCount;
-        ScorePercent = ApplicableCount == 0
-            ? 100
+
+        HashSet<string> completedIds = new(
+            allItems.Where(item => item.Status != ReadinessCheckStatus.NotApplicable).Select(item => item.Id),
+            StringComparer.Ordinal);
+        HasRunMandatoryChecks = ApplicableCount > 0
+            && (Mode != ReadinessMode.Project || MandatoryProjectItems.All(completedIds.Contains));
+        IsReady = HasRunMandatoryChecks && FailCount == 0 && WarnCount == 0;
+        int score = ApplicableCount == 0
+            ? 0
             : (int)Math.Round((100.0 * PassCount) / ApplicableCount, MidpointRounding.AwayFromZero);
-        IsReady = FailCount == 0 && WarnCount == 0;
+        ScorePercent = IsReady ? score : Math.Min(99, score);
         CanPrepareTemplate = canSetupModel || templatePlan.HasActionableSteps;
     }
 
@@ -372,6 +420,8 @@ public sealed class ProjectReadinessReport
     public int NotApplicableCount { get; }
 
     public int ScorePercent { get; }
+
+    public bool HasRunMandatoryChecks { get; }
 
     public bool IsReady { get; }
 
@@ -712,8 +762,9 @@ public static class ProjectReadinessEvaluator
         {
             EvaluateParametersGroup(modelSnapshot, effective),
             EvaluateFloorsAndMaterialsGroup(modelSnapshot, effective, proposals),
-            EvaluateFamiliesGroup(snapshot, modelSnapshot, effective),
-            EvaluateTemplateViewsGroup(templatePlan),
+            EvaluateFamiliesGroup(snapshot, modelSnapshot, effective, mode),
+            EvaluateTemplateHygieneGroup(snapshot, mode),
+            EvaluateTemplateViewsGroup(templatePlan, snapshot),
             EvaluateProjectOnlyGroup(snapshot, mode),
         };
 
@@ -1005,7 +1056,8 @@ public static class ProjectReadinessEvaluator
     private static ReadinessCheckGroup EvaluateFamiliesGroup(
         ReadinessCheckSnapshot snapshot,
         ModelSnapshot modelSnapshot,
-        GisToolStandard standard)
+        GisToolStandard standard,
+        ReadinessMode mode)
     {
         List<ReadinessCheckItem> items = new();
         IReadOnlyList<FamilyValidationItem> validated = FamilyStandardValidator.ValidateFamilies(snapshot.LoadedFamilies, standard);
@@ -1089,10 +1141,130 @@ public static class ProjectReadinessEvaluator
                 detail));
         }
 
+        if (mode == ReadinessMode.Project)
+        {
+            List<LoadedFamilyCheckInfo> placedDoors = snapshot.LoadedFamilies
+                .Where(family => family != null
+                    && string.Equals(family.CategoryName, FamilyStandardValidator.DoorsCategory, StringComparison.OrdinalIgnoreCase)
+                    && family.InstanceIds.Count > 0)
+                .ToList();
+
+            if (placedDoors.Any(door => !string.IsNullOrWhiteSpace(door.GisDoor)))
+            {
+                // The shipped opening.door field is open text, including station-specific values.
+                List<LoadedFamilyCheckInfo> invalidDoors = placedDoors
+                    .Where(door => !door.HasGisDoorParameter
+                        || string.IsNullOrWhiteSpace(door.GisDoor)
+                        || door.GisDoor.Any(character => char.IsControl(character) || character is '\u2028' or '\u2029'))
+                    .ToList();
+                bool passed = invalidDoors.Count == 0;
+                items.Add(new ReadinessCheckItem(
+                    "door-values",
+                    "Door gis_door values",
+                    passed ? ReadinessCheckStatus.Pass : ReadinessCheckStatus.Fail,
+                    passed
+                        ? $"All {placedDoors.Count} placed door type(s) carry valid gis_door values."
+                        : $"{invalidDoors.Count} placed door type(s) need non-empty, single-line gis_door values: "
+                            + DescribeList(invalidDoors.Select(door => $"{door.FamilyName} / {door.TypeName}").ToList()) + ".",
+                    elementIds: invalidDoors.SelectMany(door => door.InstanceIds)));
+            }
+        }
+
         return new ReadinessCheckGroup("families", "Families & .rfa standard", items);
     }
 
-    private static ReadinessCheckGroup EvaluateTemplateViewsGroup(TemplatePreparationPlan templatePlan)
+    private static ReadinessCheckGroup EvaluateTemplateHygieneGroup(ReadinessCheckSnapshot snapshot, ReadinessMode mode)
+    {
+        if (mode != ReadinessMode.Template)
+        {
+            return new ReadinessCheckGroup(
+                "template-hygiene",
+                "Template zero-identity hygiene",
+                new[]
+                {
+                    new ReadinessCheckItem(
+                        "template-identity",
+                        "No baked-in project identity",
+                        ReadinessCheckStatus.NotApplicable,
+                        "Not applicable in Project mode — identities belong on a per-project .rvt."),
+                    new ReadinessCheckItem(
+                        "template-element-ids",
+                        "No baked-in element or level identity",
+                        ReadinessCheckStatus.NotApplicable,
+                        "Not applicable in Project mode — elements and levels carry per-project ids."),
+                });
+        }
+
+        List<ReadinessCheckItem> items = new();
+
+        List<string> identityProblems = new();
+        if (!string.IsNullOrWhiteSpace(snapshot.HostModelId))
+        {
+            identityProblems.Add("GeoProjectInfo.ModelId is baked into the template");
+        }
+
+        if (!string.IsNullOrWhiteSpace(snapshot.HostStationFolder))
+        {
+            identityProblems.Add("GisStationFolder is baked into the template");
+        }
+
+        if (identityProblems.Count > 0)
+        {
+            items.Add(new ReadinessCheckItem(
+                "template-identity",
+                "No baked-in project identity",
+                ReadinessCheckStatus.Fail,
+                string.Join("; ", identityProblems) + ". Clear GeoProjectInfo on the .rte before shipping it as a template."));
+        }
+        else
+        {
+            items.Add(new ReadinessCheckItem(
+                "template-identity",
+                "No baked-in project identity",
+                ReadinessCheckStatus.Pass,
+                "Template has no baked-in GeoProjectInfo.ModelId or GisStationFolder."));
+        }
+
+        int levelBaked = Math.Max(0, snapshot.LevelsWithBakedInIdCount);
+        int elementBaked = Math.Max(0, snapshot.ElementsWithBakedInIdCount);
+        if (levelBaked > 0 || elementBaked > 0)
+        {
+            List<string> parts = new();
+            if (levelBaked > 0)
+            {
+                parts.Add($"{levelBaked} level(s) carry a non-empty level_id");
+            }
+
+            if (elementBaked > 0)
+            {
+                parts.Add($"{elementBaked} placed element(s) carry baked-in id or gis_key");
+            }
+
+            List<long> ids = new();
+            ids.AddRange(snapshot.LevelsWithBakedInIdSample ?? Array.Empty<long>());
+            ids.AddRange(snapshot.ElementsWithBakedInIdSample ?? Array.Empty<long>());
+
+            items.Add(new ReadinessCheckItem(
+                "template-element-ids",
+                "No baked-in element or level identity",
+                ReadinessCheckStatus.Fail,
+                string.Join("; ", parts) + ". Clear per-project ids from the .rte before shipping it as a template.",
+                ReadinessActionKind.None,
+                ids));
+        }
+        else
+        {
+            items.Add(new ReadinessCheckItem(
+                "template-element-ids",
+                "No baked-in element or level identity",
+                ReadinessCheckStatus.Pass,
+                "No level_id, element id, or gis_key values are baked into the template."));
+        }
+
+        return new ReadinessCheckGroup("template-hygiene", "Template zero-identity hygiene", items);
+    }
+
+    private static ReadinessCheckGroup EvaluateTemplateViewsGroup(TemplatePreparationPlan templatePlan, ReadinessCheckSnapshot snapshot)
     {
         List<ReadinessCheckItem> items = new();
         Dictionary<string, QaSchedulePlanStep> pendingById = templatePlan.Schedules
@@ -1163,8 +1335,37 @@ public static class ProjectReadinessEvaluator
                 $"View template '{TemplateStandardDefinitions.ExportPlanViewTemplateName}' is present and configured for GIS export."));
         }
 
+        List<string> hideFilters = (snapshot.ExportViewHideFilterNames ?? Array.Empty<string>())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Where(name => !IsReservedShowcaseFilter(name))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (hideFilters.Count > 0)
+        {
+            items.Add(new ReadinessCheckItem(
+                "view-template-hide-filter",
+                "Export view hide-filter guard",
+                ReadinessCheckStatus.Fail,
+                $"{hideFilters.Count} hide filter(s) attached to the GIS Export template or a GIS_* plan view would silently drop elements from the export: {DescribeList(hideFilters)}. Remove them before export."));
+        }
+        else
+        {
+            items.Add(new ReadinessCheckItem(
+                "view-template-hide-filter",
+                "Export view hide-filter guard",
+                ReadinessCheckStatus.Pass,
+                "No parameter hide-filter is attached to the GIS Export template or GIS_* plan views."));
+        }
+
         return new ReadinessCheckGroup("template-views", "QA schedules & export view template", items);
     }
+
+    private const string ShowcaseFilterPrefix = "[KANIZU_FORMA_RO]";
+
+    private static bool IsReservedShowcaseFilter(string name) =>
+        name.StartsWith(ShowcaseFilterPrefix, StringComparison.OrdinalIgnoreCase);
 
     private static ReadinessCheckGroup EvaluateProjectOnlyGroup(ReadinessCheckSnapshot snapshot, ReadinessMode mode)
     {

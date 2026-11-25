@@ -50,7 +50,39 @@ public static class GisStandardStateReader
         };
     }
 
-    public static ReadinessCheckSnapshot ReadReadiness(Document document, ModelSnapshot? existingSnapshot = null)
+    public static bool IsTemplateDocument(Document document) =>
+        (document.PathName ?? string.Empty).EndsWith(".rte", StringComparison.OrdinalIgnoreCase)
+        || (document.Title ?? string.Empty).EndsWith(".rte", StringComparison.OrdinalIgnoreCase);
+
+    public static ReadinessMode SuggestedReadinessMode(Document document, ModelSnapshot? existingSnapshot = null)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        string path = (document.PathName ?? string.Empty).Trim();
+        string title = (document.Title ?? string.Empty).Trim();
+        if (path.EndsWith(".rte", StringComparison.OrdinalIgnoreCase)
+            || title.EndsWith(".rte", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReadinessMode.Template;
+        }
+
+        if (path.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
+            || title.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReadinessMode.Project;
+        }
+
+        ModelSnapshot snapshot = existingSnapshot ?? ModelSnapshotReader.Read(document);
+        return IsGenuinelyEmptyModel(document, snapshot) ? ReadinessMode.Template : ReadinessMode.Project;
+    }
+
+    public static ReadinessCheckSnapshot ReadReadiness(
+        Document document,
+        ModelSnapshot? existingSnapshot = null,
+        ReadinessMode? modeOverride = null)
     {
         if (document is null)
         {
@@ -76,11 +108,27 @@ public static class GisStandardStateReader
             .Where(name => name.Length > 0)
             .ToList();
 
+        string readinessTemplateName = viewTemplateNames.Contains(
+            TemplateStandardDefinitions.ExportPlanViewTemplateName, StringComparer.OrdinalIgnoreCase)
+            ? TemplateStandardDefinitions.ExportPlanViewTemplateName
+            : TemplateStandardDefinitions.LegacyExportPlanViewTemplateName;
+
+        bool isEmptyModel = IsGenuinelyEmptyModel(document, snapshot);
+        ReadinessMode effectiveMode = modeOverride
+            ?? ReadinessCheckSnapshot.SuggestMode(document.PathName, document.Title, isEmptyModel);
+
+        (int levelBakedCount, List<long> levelBakedSample) = effectiveMode == ReadinessMode.Template
+            ? ReadLevelsWithBakedInIds(document)
+            : (0, new List<long>());
+        (int elementBakedCount, List<long> elementBakedSample) = effectiveMode == ReadinessMode.Template
+            ? ReadElementsWithBakedInIds(document)
+            : (0, new List<long>());
+
         return new ReadinessCheckSnapshot
         {
             DocumentTitle = document.Title ?? string.Empty,
             DocumentPath = document.PathName ?? string.Empty,
-            IsEmptyModel = IsGenuinelyEmptyModel(document, snapshot),
+            IsEmptyModel = isEmptyModel,
             StandardVersionText = snapshot.StandardVersion,
             BoundParameters = snapshot.BoundParameters.Values.ToList(),
             FloorTypes = snapshot.FloorTypes,
@@ -92,14 +140,171 @@ public static class GisStandardStateReader
             ViewTemplateNames = viewTemplateNames,
             ExportPlanTemplateIssues = ExportViewSetup.InspectTemplateIssues(
                 document,
-                TemplateStandardDefinitions.ExportPlanViewTemplateName,
-                BuiltInCategory.OST_MechanicalEquipment),
+                readinessTemplateName),
+            ExportViewHideFilterNames = ReadExportViewHideFilterNames(document),
             ProjectCrsEpsgCode = crsEpsg,
             ProjectCrsName = crsName,
             IsGeoreferenceVerified = geoInfo?.Confidence == GeoConfidenceLevel.Verified,
             HostModelId = geoInfo?.ModelId?.Trim() ?? string.Empty,
+            HostStationFolder = geoInfo?.GisStationFolder?.Trim() ?? string.Empty,
+            LevelsWithBakedInIdCount = levelBakedCount,
+            LevelsWithBakedInIdSample = levelBakedSample,
+            ElementsWithBakedInIdCount = elementBakedCount,
+            ElementsWithBakedInIdSample = elementBakedSample,
             LinkedModels = ReadLinkedModels(document),
         };
+    }
+
+    private const int BakedInSampleLimit = 8;
+
+    private static (int Count, List<long> Sample) ReadLevelsWithBakedInIds(Document document)
+    {
+        int count = 0;
+        List<long> sample = new();
+        foreach (Level level in new FilteredElementCollector(document).OfClass(typeof(Level)).Cast<Level>())
+        {
+            if (HasBakedInValue(level, GisSharedParameters.LevelId))
+            {
+                count++;
+                if (sample.Count < BakedInSampleLimit)
+                {
+                    sample.Add(level.Id.Value);
+                }
+            }
+        }
+
+        return (count, sample);
+    }
+
+    private static (int Count, List<long> Sample) ReadElementsWithBakedInIds(Document document)
+    {
+        int count = 0;
+        List<long> sample = new();
+        HashSet<BuiltInCategory> categories = BakedInIdCategories(document);
+        if (categories.Count == 0)
+        {
+            return (count, sample);
+        }
+
+        foreach (Element element in new FilteredElementCollector(document)
+            .WherePasses(new ElementMulticategoryFilter(categories))
+            .WhereElementIsNotElementType())
+        {
+            if (!HasBakedInValue(element, GisSharedParameters.Id)
+                && !HasBakedInValue(element, GisSharedParameters.GisKey))
+            {
+                continue;
+            }
+
+            count++;
+            if (sample.Count < BakedInSampleLimit)
+            {
+                sample.Add(element.Id.Value);
+            }
+        }
+
+        return (count, sample);
+    }
+
+    private static HashSet<BuiltInCategory> BakedInIdCategories(Document document)
+    {
+        HashSet<BuiltInCategory> categories = new();
+
+        DefinitionBindingMapIterator iterator = document.ParameterBindings.ForwardIterator();
+        iterator.Reset();
+        while (iterator.MoveNext())
+        {
+            if (iterator.Key is not Definition definition
+                || (!string.Equals(definition.Name, GisSharedParameters.Id, StringComparison.Ordinal)
+                    && !string.Equals(definition.Name, GisSharedParameters.GisKey, StringComparison.Ordinal))
+                || iterator.Current is not ElementBinding binding)
+            {
+                continue;
+            }
+
+            foreach (Category category in binding.Categories)
+            {
+                if (category.BuiltInCategory != BuiltInCategory.INVALID)
+                {
+                    categories.Add(category.BuiltInCategory);
+                }
+            }
+        }
+
+        foreach (string parameterName in new[] { GisSharedParameters.Id, GisSharedParameters.GisKey })
+        {
+            if (!GisSharedParameters.TryGet(parameterName, out GisParameterDefinition definition))
+            {
+                continue;
+            }
+
+            foreach (string categoryName in definition.Categories)
+            {
+                if (Enum.TryParse(categoryName, ignoreCase: false, out BuiltInCategory builtIn)
+                    && builtIn != BuiltInCategory.INVALID)
+                {
+                    categories.Add(builtIn);
+                }
+            }
+        }
+
+        return categories;
+    }
+
+    private static bool HasBakedInValue(Element element, string name) =>
+        element.GetParameters(name).Any(parameter => parameter.IsShared && ReadParameterText(parameter).Length > 0);
+
+    private static List<string> ReadExportViewHideFilterNames(Document document)
+    {
+        HashSet<string> hidden = new(StringComparer.Ordinal);
+        HashSet<ElementId> checkedViews = new();
+        ElementId filtersParameterId = new(BuiltInParameter.VIS_GRAPHICS_FILTERS);
+        foreach (ViewPlan view in new FilteredElementCollector(document).OfClass(typeof(ViewPlan)).Cast<ViewPlan>())
+        {
+            string name = (view.Name ?? string.Empty).Trim();
+            if (view.IsTemplate)
+            {
+                if ((string.Equals(name, TemplateStandardDefinitions.ExportPlanViewTemplateName, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, TemplateStandardDefinitions.LegacyExportPlanViewTemplateName, StringComparison.OrdinalIgnoreCase))
+                    && !view.GetNonControlledTemplateParameterIds().Contains(filtersParameterId))
+                {
+                    InspectFilters(view);
+                }
+            }
+            else if (view.ViewType == ViewType.FloorPlan && name.StartsWith(GisModelFile.GisViewPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                if (view.ViewTemplateId != ElementId.InvalidElementId
+                    && document.GetElement(view.ViewTemplateId) is ViewPlan template
+                    && !template.GetNonControlledTemplateParameterIds().Contains(filtersParameterId))
+                {
+                    InspectFilters(template);
+                }
+                else
+                {
+                    InspectFilters(view);
+                }
+            }
+        }
+
+        return hidden.OrderBy(name => name, StringComparer.Ordinal).ToList();
+
+        void InspectFilters(ViewPlan view)
+        {
+            if (!checkedViews.Add(view.Id))
+            {
+                return;
+            }
+
+            foreach (ElementId id in view.GetFilters())
+            {
+                if (document.GetElement(id) is ParameterFilterElement filter
+                    && view.GetIsFilterEnabled(id)
+                    && !view.GetFilterVisibility(id))
+                {
+                    hidden.Add(filter.Name);
+                }
+            }
+        }
     }
 
     private static bool IsGenuinelyEmptyModel(Document document, ModelSnapshot snapshot)
@@ -230,6 +435,8 @@ public static class GisStandardStateReader
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
+        GisSharedParameters.TryGet(GisSharedParameters.GisDoor, out GisParameterDefinition gisDoorDefinition);
+        Guid gisDoorGuid = gisDoorDefinition.Guid;
         List<LoadedFamilyCheckInfo> loaded = new();
         foreach (BuiltInCategory category in ReadinessFamilyCategories)
         {
@@ -240,7 +447,7 @@ public static class GisStandardStateReader
                 .Cast<FamilySymbol>())
             {
                 Parameter? gisKindParam = symbol.LookupParameter(GisSharedParameters.GisKind);
-                Parameter? gisDoorParam = symbol.LookupParameter(GisSharedParameters.GisDoor);
+                Parameter? gisDoorParam = symbol.get_Parameter(gisDoorGuid);
                 Parameter? gisAccessConParam = symbol.LookupParameter(GisSharedParameters.GisAccessCon);
 
                 Dictionary<string, string> requiredValues = new(StringComparer.Ordinal);
@@ -259,7 +466,7 @@ public static class GisStandardStateReader
                     categoryName,
                     gisKind: ReadParameterText(gisKindParam),
                     gisCategory: ReadText(symbol, GisSharedParameters.GisCategory),
-                    gisDoor: ReadParameterText(gisDoorParam),
+                    gisDoor: gisDoorParam?.StorageType == StorageType.String ? (gisDoorParam.AsString() ?? string.Empty) : ReadParameterText(gisDoorParam),
                     gisAccessCon: ReadParameterText(gisAccessConParam),
                     hasGisKindParameter: gisKindParam != null,
                     hasGisDoorParameter: gisDoorParam != null,

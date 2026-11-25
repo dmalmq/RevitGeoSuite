@@ -29,6 +29,7 @@ public static class ExportViewSetup
         BuiltInCategory.OST_StairsSupports,
         BuiltInCategory.OST_GenericModel,
         BuiltInCategory.OST_SpecialityEquipment,
+        BuiltInCategory.OST_MechanicalEquipment,
         BuiltInCategory.OST_Doors,
         BuiltInCategory.OST_Windows,
         BuiltInCategory.OST_Columns,

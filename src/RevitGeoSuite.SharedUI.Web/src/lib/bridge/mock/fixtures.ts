@@ -342,7 +342,7 @@ function gisStandard(scenario: MockScenario) {
           { id: 'qa-schedule-floors', title: 'Kanizu GIS - Floors', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'Present with required QA fields (gis_category, gis_restriction, category).' : 'Missing QA schedule.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] },
           { id: 'qa-schedule-circulation', title: 'Kanizu GIS - Circulation', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'Present with required QA fields (gis_kind, gis_direction, gis_levels_served).' : 'Missing QA schedule.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] },
           { id: 'qa-schedule-doors', title: 'Kanizu GIS - Doors', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'Present with required QA fields (gis_door, gis_access_con).' : 'Missing QA schedule.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] },
-          { id: 'view-template-export-plan', title: 'Kanizu GIS Export Plan', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'View template is present and configured for GIS export.' : 'Missing view template.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] }
+          { id: 'view-template-export-plan', title: 'GIS Export', status: templatePrepared ? 'pass' : 'fail', detail: templatePrepared ? 'View template is present and configured for GIS export.' : 'Missing view template.', action: templatePrepared ? 'none' : 'prepareTemplate', elementIds: [] }
         ]
       },
       {
@@ -438,7 +438,7 @@ function gisStandard(scenario: MockScenario) {
               'Create QA schedule Kanizu GIS - Floors (gis_category, gis_restriction, category)',
               'Create QA schedule Kanizu GIS - Circulation (gis_kind, gis_direction, gis_levels_served)',
               'Create QA schedule Kanizu GIS - Doors (gis_door, gis_access_con)',
-              'Create view template Kanizu GIS Export Plan'
+              'Create view template GIS Export'
             ],
         groups
       }
@@ -460,7 +460,7 @@ function gisStandard(scenario: MockScenario) {
           'Created QA schedule Kanizu GIS - Floors (gis_category, gis_restriction, category)',
           'Created QA schedule Kanizu GIS - Circulation (gis_kind, gis_direction, gis_levels_served)',
           'Created QA schedule Kanizu GIS - Doors (gis_door, gis_access_con)',
-          'Created view template Kanizu GIS Export Plan'
+          'Created view template GIS Export'
         ],
         skipped: []
       }

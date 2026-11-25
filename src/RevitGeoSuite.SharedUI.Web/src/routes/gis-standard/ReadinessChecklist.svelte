@@ -83,7 +83,9 @@
   function groupSummary(group: GisReadinessGroup): string {
     const applicable = group.passCount + group.warnCount + group.failCount
     if (applicable === 0) {
-      return $t('GisStandard.Readiness.GroupNotApplicable', 'Not required in Template mode')
+      return activeMode === 'project'
+        ? $t('GisStandard.Readiness.GroupNotApplicable.Project', 'Not required in Project mode')
+        : $t('GisStandard.Readiness.GroupNotApplicable', 'Not required in Template mode')
     }
     return format($t('GisStandard.Readiness.GroupCounts', '{0}/{1} passed'), group.passCount, applicable)
   }
@@ -202,7 +204,7 @@
         <p class="font-medium text-foreground">
           {$t(
             'GisStandard.Readiness.PrepareTemplate.Hint',
-            'Runs Set up model and creates any missing Kanizu QA schedules (3) and the Kanizu GIS Export Plan view template in one transaction.'
+            'Runs Set up model and creates any missing Kanizu QA schedules (3) and the GIS Export view template in one transaction.'
           )}
         </p>
         <ul class="mt-1 ml-4 list-disc text-muted-foreground">
