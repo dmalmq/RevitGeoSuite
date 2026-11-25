@@ -189,8 +189,12 @@ public sealed class StationSendRunHandler : IRpcHandler
                     .InvokeWithDocumentAsync(document => StationSend.Run(document, bound, documentKey, stationFolder, staging, attempt, warnings, ct))
                     .ConfigureAwait(false);
 
+                // Closing the shell cancels the job, also after the export's last check. Publishing is
+                // the point of no return, so a cancel up to here restores the folder like any failure.
+                ct.ThrowIfCancellationRequested();
                 progress.Report(new JobProgress { Phase = "manifest", Percent = 80, Message = Text("Send.Progress.Manifest") });
                 manifest = builder.WriteManifest(staging, step.Inputs);
+                ct.ThrowIfCancellationRequested();
                 layout = CesiumStationFolder.Publish(staging, stationFolder, manifest);
             }
             catch (Exception ex)
