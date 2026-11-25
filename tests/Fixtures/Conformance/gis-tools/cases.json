@@ -302,12 +302,12 @@
         ]
       },
       "expected_lines": [
-        "Add Stairs, GenericModel, SpecialityEquipment to parameter category (kept under its own GUID 11111111-2222-3333-4444-555555555555)",
+        "Add Stairs, GenericModel, SpecialityEquipment, MechanicalEquipment to parameter category (kept under its own GUID 11111111-2222-3333-4444-555555555555)",
         "Leave parameter gis_kind as it is: bound as instance parameter, the standard binds it as type",
         "Recolour material GIS_free_area, #000000 to #FFFFFF",
         "Update floor type j ラチ外コンコース_床: gis_category (empty) to walkway; material Concrete to GIS_free_area",
         "Clear the category of 2 floors that only repeats their type (written by an older export)",
-        "Set gis_standard_version (none) to 2"
+        "Set gis_standard_version (none) to 3"
       ]
     }
   ],

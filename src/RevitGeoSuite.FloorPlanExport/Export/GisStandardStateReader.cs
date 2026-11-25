@@ -23,6 +23,7 @@ public static class GisStandardStateReader
         BuiltInCategory.OST_SpecialityEquipment,
         BuiltInCategory.OST_MechanicalEquipment,
         BuiltInCategory.OST_Doors,
+        BuiltInCategory.OST_Windows,
     };
 
     public static GisStandardStatus Check(Document document)
@@ -437,6 +438,12 @@ public static class GisStandardStateReader
 
         GisSharedParameters.TryGet(GisSharedParameters.GisDoor, out GisParameterDefinition gisDoorDefinition);
         Guid gisDoorGuid = gisDoorDefinition.Guid;
+        GisSharedParameters.TryGet(GisSharedParameters.GisAccessCon, out GisParameterDefinition gisAccessConDefinition);
+        Guid gisAccessConGuid = gisAccessConDefinition.Guid;
+        GisSharedParameters.TryGet(GisSharedParameters.GisOpeningCategory, out GisParameterDefinition gisOpeningCategoryDefinition);
+        Guid gisOpeningCategoryGuid = gisOpeningCategoryDefinition.Guid;
+        GisSharedParameters.TryGet(GisSharedParameters.GisFixtureType, out GisParameterDefinition gisFixtureTypeDefinition);
+        Guid gisFixtureTypeGuid = gisFixtureTypeDefinition.Guid;
         List<LoadedFamilyCheckInfo> loaded = new();
         foreach (BuiltInCategory category in ReadinessFamilyCategories)
         {
@@ -448,7 +455,9 @@ public static class GisStandardStateReader
             {
                 Parameter? gisKindParam = symbol.LookupParameter(GisSharedParameters.GisKind);
                 Parameter? gisDoorParam = symbol.get_Parameter(gisDoorGuid);
-                Parameter? gisAccessConParam = symbol.LookupParameter(GisSharedParameters.GisAccessCon);
+                Parameter? gisAccessConParam = symbol.get_Parameter(gisAccessConGuid) ?? symbol.LookupParameter(GisSharedParameters.GisAccessCon);
+                Parameter? gisOpeningCategoryParam = symbol.get_Parameter(gisOpeningCategoryGuid) ?? symbol.LookupParameter(GisSharedParameters.GisOpeningCategory);
+                Parameter? gisFixtureTypeParam = symbol.get_Parameter(gisFixtureTypeGuid) ?? symbol.LookupParameter(GisSharedParameters.GisFixtureType);
 
                 Dictionary<string, string> requiredValues = new(StringComparer.Ordinal);
                 foreach (string paramName in requiredParamNames)
@@ -466,13 +475,17 @@ public static class GisStandardStateReader
                     categoryName,
                     gisKind: ReadParameterText(gisKindParam),
                     gisCategory: ReadText(symbol, GisSharedParameters.GisCategory),
-                    gisDoor: gisDoorParam?.StorageType == StorageType.String ? (gisDoorParam.AsString() ?? string.Empty) : ReadParameterText(gisDoorParam),
-                    gisAccessCon: ReadParameterText(gisAccessConParam),
+                    gisDoor: ReadRawOrDisplayText(gisDoorParam),
+                    gisAccessCon: ReadRawOrDisplayText(gisAccessConParam),
                     hasGisKindParameter: gisKindParam != null,
                     hasGisDoorParameter: gisDoorParam != null,
                     hasGisAccessConParameter: gisAccessConParam != null,
                     typeParameters: requiredValues,
-                    instanceIds: instancesBySymbol.TryGetValue(symbol.Id.Value, out List<long>? ids) ? ids : null));
+                    instanceIds: instancesBySymbol.TryGetValue(symbol.Id.Value, out List<long>? ids) ? ids : null,
+                    gisOpeningCategory: ReadRawOrDisplayText(gisOpeningCategoryParam),
+                    gisFixtureType: ReadRawOrDisplayText(gisFixtureTypeParam),
+                    hasGisOpeningCategoryParameter: gisOpeningCategoryParam != null,
+                    hasGisFixtureTypeParameter: gisFixtureTypeParam != null));
             }
         }
 
@@ -596,6 +609,9 @@ public static class GisStandardStateReader
     {
         return ReadParameterText(element?.LookupParameter(parameterName));
     }
+
+    private static string ReadRawOrDisplayText(Parameter? parameter) =>
+        parameter?.StorageType == StorageType.String ? (parameter.AsString() ?? string.Empty) : ReadParameterText(parameter);
 
     private static string ReadParameterText(Parameter? parameter)
     {

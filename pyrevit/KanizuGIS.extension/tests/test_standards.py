@@ -11,8 +11,8 @@ from kanizu_gis import standards
 class StandardsTests(unittest.TestCase):
     def test_loads_the_shipped_standard(self):
         standard = helpers.load_standard()
-        self.assertEqual(2, standard.version)
-        self.assertEqual(15, len(standard.parameters))
+        self.assertEqual(3, standard.version)
+        self.assertEqual(19, len(standard.parameters))
         self.assertEqual(21, len(standard.floor_types))
         self.assertTrue(os.path.isfile(standard.shared_parameter_file))
 

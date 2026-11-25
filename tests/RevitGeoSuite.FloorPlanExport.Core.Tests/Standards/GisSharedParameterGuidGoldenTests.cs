@@ -29,14 +29,18 @@ public sealed class GisSharedParameterGuidGoldenTests
         ["gis_access_con"] = "0156f4b3-7806-4033-baa0-09838c299ddb",
         ["gis_key"] = "0816cab3-3717-4632-854f-c6c7c11e0881",
         ["gis_standard_version"] = "a5edd0e8-7877-4498-91c6-29691a6a01f5",
+        ["gis_opening_category"] = "41d2586a-c48e-4dd1-a05b-fc247b619b88",
+        ["gis_fixture_type"] = "d94ee829-ecb1-4ba1-bd26-6981b2a51616",
+        ["gis_model_role"] = "90086db8-5f21-46cd-b4d5-5be2728a0e18",
+        ["gis_kit_version"] = "dffa7f89-f402-4a3a-8f1e-904e3fd31633",
     };
 
     [Fact]
-    public void All_15_parameter_guids_are_frozen()
+    public void All_19_parameter_guids_are_frozen()
     {
         Dictionary<string, Guid> actual = GisSharedParameters.All.ToDictionary(parameter => parameter.Name, parameter => parameter.Guid);
 
-        Assert.Equal(15, actual.Count);
+        Assert.Equal(19, actual.Count);
         Assert.Equal(Expected.Keys.OrderBy(name => name, StringComparer.Ordinal), actual.Keys.OrderBy(name => name, StringComparer.Ordinal));
         foreach (KeyValuePair<string, string> parameter in Expected)
         {

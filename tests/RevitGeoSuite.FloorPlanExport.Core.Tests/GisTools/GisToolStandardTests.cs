@@ -11,7 +11,7 @@ public sealed class GisToolStandardTests
     [Fact]
     public void LoadsTheShippedStandard()
     {
-        Assert.Equal(2, Standard.Version);
+        Assert.Equal(3, Standard.Version);
         Assert.Equal(GisSharedParameters.All.Count, Standard.Parameters.Count);
         Assert.Equal(21, Standard.FloorTypes.Count);
     }

@@ -32,7 +32,7 @@ public sealed class TemplateReadinessCheckTests
                 new LoadedFamilyCheckInfo(301, "j EV", "EV_1500", "OST_MechanicalEquipment", gisKind: "elevator", hasGisKindParameter: true),
                 new LoadedFamilyCheckInfo(302, "j エスカレータ-lightweight", "W1200", "OST_GenericModel", gisKind: "escalator", hasGisKindParameter: true),
                 new LoadedFamilyCheckInfo(303, "j 自動改札", "Standard", "OST_SpecialityEquipment", gisKind: "ticket_gate", hasGisKindParameter: true),
-                new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "public", hasGisDoorParameter: true, hasGisAccessConParameter: true),
+                new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true),
             },
             Schedules = TemplateStandardDefinitions.QaSchedules
                 .Select((s, idx) => new QaScheduleInfo(
@@ -420,5 +420,179 @@ public sealed class TemplateReadinessCheckTests
         rte.DocumentPath = @"C:\Templates\Master2024.rte";
         rte.IsEmptyModel = false;
         Assert.Equal(ReadinessMode.Template, ProjectReadinessEvaluator.Evaluate(rte).SuggestedMode);
+    }
+
+    [Fact]
+    public void FamilyValidatorRejectsOutOfDomainDoorAccessConOpeningCategoryAndFixtureType()
+    {
+        GisToolStandard standard = GisToolStandard.LoadEmbedded();
+        LoadedFamilyCheckInfo[] families =
+        {
+            new LoadedFamilyCheckInfo(
+                320,
+                "BadDoor",
+                "Hinged",
+                "OST_Doors",
+                gisDoor: "hinged",
+                gisAccessCon: "none",
+                hasGisDoorParameter: true,
+                hasGisAccessConParameter: true),
+            new LoadedFamilyCheckInfo(
+                321,
+                "BadAccessDoor",
+                "Sliding",
+                "OST_Doors",
+                gisDoor: "sliding",
+                gisAccessCon: "public",
+                hasGisDoorParameter: true,
+                hasGisAccessConParameter: true),
+            new LoadedFamilyCheckInfo(
+                322,
+                "BadOpeningCatDoor",
+                "Sliding",
+                "OST_Doors",
+                gisDoor: "sliding",
+                gisAccessCon: "none",
+                hasGisDoorParameter: true,
+                hasGisAccessConParameter: true,
+                gisOpeningCategory: "main_gate",
+                hasGisOpeningCategoryParameter: true),
+            new LoadedFamilyCheckInfo(
+                323,
+                "BadWindow",
+                "PassThrough",
+                "OST_Windows",
+                gisOpeningCategory: "invalid_window_cat",
+                hasGisOpeningCategoryParameter: true),
+            new LoadedFamilyCheckInfo(
+                324,
+                "BadFixture",
+                "Bench",
+                "OST_SpecialityEquipment",
+                gisFixtureType: "bench",
+                hasGisFixtureTypeParameter: true),
+        };
+
+        IReadOnlyList<FamilyValidationItem> results = FamilyStandardValidator.ValidateFamilies(families, standard);
+
+        Assert.Equal(5, results.Count);
+        Assert.All(results, item => Assert.Equal(ReadinessCheckStatus.Fail, item.Status));
+        Assert.Contains("gis_door", results[0].Detail);
+        Assert.Contains("gis_access_con", results[1].Detail);
+        Assert.Contains("gis_opening_category", results[2].Detail);
+        Assert.Contains("gis_opening_category", results[3].Detail);
+        Assert.Contains("gis_fixture_type", results[4].Detail);
+    }
+
+    [Fact]
+    public void FamilyValidatorAllowsValidV3DomainValuesAndPreservesV2ModelsWithoutV3Parameters()
+    {
+        GisToolStandard standard = GisToolStandard.LoadEmbedded();
+        LoadedFamilyCheckInfo[] families =
+        {
+            // V2 door without gis_opening_category parameter at all
+            new LoadedFamilyCheckInfo(
+                330,
+                "V2Door",
+                "Sliding",
+                "OST_Doors",
+                gisDoor: "sliding",
+                gisAccessCon: "employeesonly",
+                hasGisDoorParameter: true,
+                hasGisAccessConParameter: true,
+                hasGisOpeningCategoryParameter: false),
+            // V3 door with valid gis_opening_category
+            new LoadedFamilyCheckInfo(
+                331,
+                "V3Door",
+                "Principal",
+                "OST_Doors",
+                gisDoor: "automatic",
+                gisAccessCon: "none",
+                hasGisDoorParameter: true,
+                hasGisAccessConParameter: true,
+                gisOpeningCategory: "pedestrian.principal",
+                hasGisOpeningCategoryParameter: true),
+            // V3 window with valid gis_opening_category
+            new LoadedFamilyCheckInfo(
+                332,
+                "V3Window",
+                "TicketCounter",
+                "OST_Windows",
+                gisOpeningCategory: "service",
+                hasGisOpeningCategoryParameter: true),
+            // V3 fixture with valid gis_fixture_type
+            new LoadedFamilyCheckInfo(
+                333,
+                "TicketKiosk",
+                "Type1",
+                "OST_SpecialityEquipment",
+                gisFixtureType: "kiosk",
+                hasGisFixtureTypeParameter: true),
+            // V2 circulation family without gis_fixture_type parameter
+            new LoadedFamilyCheckInfo(
+                334,
+                "j EV",
+                "EV_1500",
+                "OST_MechanicalEquipment",
+                gisKind: "elevator",
+                hasGisKindParameter: true,
+                hasGisFixtureTypeParameter: false),
+        };
+
+        IReadOnlyList<FamilyValidationItem> results = FamilyStandardValidator.ValidateFamilies(families, standard);
+
+        Assert.Equal(5, results.Count);
+        Assert.All(results, item => Assert.Equal(ReadinessCheckStatus.Pass, item.Status));
+    }
+
+    [Fact]
+    public void FamilyValidatorRejectsWrongGuidOrInstanceBindingOnNewV3RfaParameters()
+    {
+        GisToolStandard standard = GisToolStandard.LoadEmbedded();
+        Guid openingCatGuid = standard.Parameter(GisSharedParameters.GisOpeningCategory)!.Guid;
+        Guid fixtureTypeGuid = standard.Parameter(GisSharedParameters.GisFixtureType)!.Guid;
+
+        LoadedFamilyCheckInfo[] families =
+        {
+            new LoadedFamilyCheckInfo(
+                340,
+                "WrongGuidOpeningDoor",
+                "D1",
+                "OST_Doors",
+                sourcePath: @"C:\Families\WrongGuidOpeningDoor.rfa",
+                parameterBindings: new Dictionary<string, FamilyParameterBindingInfo>
+                {
+                    [GisSharedParameters.GisOpeningCategory] = new(GisSharedParameters.GisOpeningCategory, isShared: true, guid: Guid.NewGuid(), isInstance: false),
+                }),
+            new LoadedFamilyCheckInfo(
+                341,
+                "InstanceOpeningWindow",
+                "W1",
+                "OST_Windows",
+                sourcePath: @"C:\Families\InstanceOpeningWindow.rfa",
+                parameterBindings: new Dictionary<string, FamilyParameterBindingInfo>
+                {
+                    [GisSharedParameters.GisOpeningCategory] = new(GisSharedParameters.GisOpeningCategory, isShared: true, guid: openingCatGuid, isInstance: true),
+                }),
+            new LoadedFamilyCheckInfo(
+                342,
+                "InstanceFixture",
+                "F1",
+                "OST_SpecialityEquipment",
+                sourcePath: @"C:\Families\InstanceFixture.rfa",
+                parameterBindings: new Dictionary<string, FamilyParameterBindingInfo>
+                {
+                    [GisSharedParameters.GisFixtureType] = new(GisSharedParameters.GisFixtureType, isShared: true, guid: fixtureTypeGuid, isInstance: true),
+                }),
+        };
+
+        IReadOnlyList<FamilyValidationItem> results = FamilyStandardValidator.ValidateFamilies(families, standard);
+
+        Assert.Equal(3, results.Count);
+        Assert.All(results, item => Assert.Equal(ReadinessCheckStatus.Fail, item.Status));
+        Assert.Contains("GUID", results[0].Detail);
+        Assert.Contains("instance", results[1].Detail);
+        Assert.Contains("instance", results[2].Detail);
     }
 }

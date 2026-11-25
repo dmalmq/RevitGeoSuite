@@ -354,7 +354,15 @@
       "name": "category",
       "aliasJa": "カテゴリ",
       "type": "text",
-      "values": [],
+      "values": [
+        "pedestrian",
+        "emergencyexit",
+        "service",
+        "automobile",
+        "bicycle",
+        "pedestrian.principal",
+        "pedestrian.transit"
+      ],
       "source": {
         "kind": "core"
       },
@@ -390,7 +398,15 @@
       "name": "door",
       "aliasJa": "ドア種別",
       "type": "text",
-      "values": [],
+      "values": [
+        "swinging",
+        "sliding",
+        "automatic",
+        "elevator",
+        "shutter",
+        "revolving",
+        "open"
+      ],
       "source": {
         "kind": "parameter",
         "parameter": "gis_door",
@@ -404,7 +420,14 @@
       "name": "access_con",
       "aliasJa": "入場管理",
       "type": "text",
-      "values": [],
+      "values": [
+        "none",
+        "employeesonly",
+        "emergency",
+        "scheduled",
+        "badgereader",
+        "restricted"
+      ],
       "source": {
         "kind": "parameter",
         "parameter": "gis_access_con",
@@ -456,7 +479,14 @@
       "name": "type",
       "aliasJa": "種別",
       "type": "text",
-      "values": [],
+      "values": [
+        "turnstile",
+        "wall",
+        "kiosk",
+        "equipment",
+        "furniture",
+        "obstruction"
+      ],
       "source": {
         "kind": "core"
       },

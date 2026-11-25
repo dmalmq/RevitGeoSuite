@@ -88,6 +88,10 @@ public static class GisSharedParameters
     public const string GisAccessCon = "gis_access_con";
     public const string GisKey = "gis_key";
     public const string GisStandardVersion = "gis_standard_version";
+    public const string GisOpeningCategory = "gis_opening_category";
+    public const string GisFixtureType = "gis_fixture_type";
+    public const string GisModelRole = "gis_model_role";
+    public const string GisKitVersion = "gis_kit_version";
 
     private const string Floors = "OST_Floors";
     private const string Rooms = "OST_Rooms";
@@ -96,14 +100,16 @@ public static class GisSharedParameters
     private const string SpecialtyEquipment = "OST_SpecialityEquipment";
     private const string Levels = "OST_Levels";
     private const string Doors = "OST_Doors";
+    private const string Windows = "OST_Windows";
     private const string MechanicalEquipment = "OST_MechanicalEquipment";
+    private const string ProjectInformation = "OST_ProjectInformation";
 
-    /// <summary>The categories that make unit features: floors, rooms, stairs and the escalator and fixture families.</summary>
-    private static readonly string[] UnitCategories = { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment };
+    /// <summary>The categories that make unit features: floors, rooms, stairs and the escalator, elevator and fixture families.</summary>
+    private static readonly string[] UnitCategories = { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, MechanicalEquipment };
 
-    /// <summary>Every category the export makes units of, columns included, so each can hold its gis_key.</summary>
+    /// <summary>Every category the export makes features of, columns and openings included, so each can hold its gis_key.</summary>
     private static readonly string[] KeyedCategories =
-        { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, "OST_Columns", "OST_StructuralColumns" };
+        { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, MechanicalEquipment, Doors, Windows, "OST_Columns", "OST_StructuralColumns" };
 
     public static IReadOnlyList<GisParameterDefinition> All { get; } = new[]
     {
@@ -112,7 +118,7 @@ public static class GisSharedParameters
             new Guid("64e7d743-c3ae-4831-a208-33c2762ac50a"),
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
-            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, Doors, "OST_Windows", "OST_Columns", "OST_StructuralColumns" },
+            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, MechanicalEquipment, Doors, Windows, "OST_Columns", "OST_StructuralColumns" },
             "Stable export id of the element."),
         new GisParameterDefinition(
             LevelId,
@@ -126,14 +132,14 @@ public static class GisSharedParameters
             new Guid("47b8db20-e756-4280-a842-f570dc847db5"),
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
-            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, Doors },
+            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, MechanicalEquipment, Doors },
             "Name of the unit or door in the GIS."),
         new GisParameterDefinition(
             ShortName,
             new Guid("03f1849b-ac06-42c8-aff7-51a973f0a730"),
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
-            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, Levels },
+            new[] { Floors, Rooms, Stairs, GenericModel, SpecialtyEquipment, MechanicalEquipment, Levels },
             "Short name of the unit or level in the GIS."),
         new GisParameterDefinition(
             Category,
@@ -154,14 +160,14 @@ public static class GisSharedParameters
             new Guid("d4ed1842-369c-4064-97fd-93fab33f0a87"),
             GisParameterDataType.Text,
             GisParameterBinding.Type,
-            new[] { Floors, GenericModel, SpecialtyEquipment },
+            new[] { Floors, GenericModel, SpecialtyEquipment, MechanicalEquipment },
             "Unit category of every element of this type."),
         new GisParameterDefinition(
             GisRestriction,
             new Guid("6df45ec8-c9ee-4b56-a038-c8c125b3ae1e"),
             GisParameterDataType.Text,
             GisParameterBinding.Type,
-            new[] { Floors, GenericModel, SpecialtyEquipment },
+            new[] { Floors, GenericModel, SpecialtyEquipment, MechanicalEquipment },
             "Restriction of every element of this type, such as rachi_nai. Empty means by location."),
         new GisParameterDefinition(
             GisKind,
@@ -175,7 +181,7 @@ public static class GisSharedParameters
             new Guid("343f3126-afff-422c-99c1-0d1d4f1b1c95"),
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
-            new[] { Stairs, GenericModel, SpecialtyEquipment },
+            new[] { Stairs, GenericModel, SpecialtyEquipment, MechanicalEquipment },
             "Travel direction of an escalator or moving walkway: up, down or both."),
         new GisParameterDefinition(
             GisLevelsServed,
@@ -211,8 +217,38 @@ public static class GisSharedParameters
             new Guid("a5edd0e8-7877-4498-91c6-29691a6a01f5"),
             GisParameterDataType.Text,
             GisParameterBinding.Instance,
-            new[] { "OST_ProjectInformation" },
+            new[] { ProjectInformation },
             "Version of the Kanizu GIS standard the model was set up with.",
+            userModifiable: false),
+        new GisParameterDefinition(
+            GisOpeningCategory,
+            new Guid("41d2586a-c48e-4dd1-a05b-fc247b619b88"),
+            GisParameterDataType.Text,
+            GisParameterBinding.Type,
+            new[] { Doors, Windows },
+            "Opening category of every door or window of this type: pedestrian, emergencyexit, service, automobile, bicycle, pedestrian.principal or pedestrian.transit."),
+        new GisParameterDefinition(
+            GisFixtureType,
+            new Guid("d94ee829-ecb1-4ba1-bd26-6981b2a51616"),
+            GisParameterDataType.Text,
+            GisParameterBinding.Type,
+            new[] { SpecialtyEquipment, GenericModel, MechanicalEquipment },
+            "Fixture type of every element of this type: turnstile, wall, kiosk, equipment, furniture or obstruction."),
+        new GisParameterDefinition(
+            GisModelRole,
+            new Guid("90086db8-5f21-46cd-b4d5-5be2728a0e18"),
+            GisParameterDataType.Text,
+            GisParameterBinding.Instance,
+            new[] { ProjectInformation },
+            "Role of this Revit model in the Kanizu workflow: authoring or showcase. Blank is treated as authoring.",
+            userModifiable: false),
+        new GisParameterDefinition(
+            GisKitVersion,
+            new Guid("dffa7f89-f402-4a3a-8f1e-904e3fd31633"),
+            GisParameterDataType.Text,
+            GisParameterBinding.Instance,
+            new[] { ProjectInformation },
+            "Starter Kit version stamped on the template or initialized project.",
             userModifiable: false),
     };
 

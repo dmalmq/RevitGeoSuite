@@ -1,0 +1,42 @@
+{
+  "standard_version": 3,
+  "note": "Generated from GisStandardDomains.cs. Do not edit by hand; see standards/README.md.",
+  "gis_door": [
+    "swinging",
+    "sliding",
+    "automatic",
+    "elevator",
+    "shutter",
+    "revolving",
+    "open"
+  ],
+  "gis_access_con": [
+    "none",
+    "employeesonly",
+    "emergency",
+    "scheduled",
+    "badgereader",
+    "restricted"
+  ],
+  "gis_opening_category": [
+    "pedestrian",
+    "emergencyexit",
+    "service",
+    "automobile",
+    "bicycle",
+    "pedestrian.principal",
+    "pedestrian.transit"
+  ],
+  "gis_fixture_type": [
+    "turnstile",
+    "wall",
+    "kiosk",
+    "equipment",
+    "furniture",
+    "obstruction"
+  ],
+  "gis_model_role": [
+    "authoring",
+    "showcase"
+  ]
+}

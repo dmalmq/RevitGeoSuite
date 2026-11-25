@@ -50,6 +50,15 @@ public sealed class GisStandardTests
     }
 
     [Fact]
+    public void OpeningTypesFile_MatchesTheGeneratedDomainsJson()
+    {
+        string expected = GisStandardDomains.ToOpeningTypesJson();
+
+        AssertShippedFile(GisStandardDomains.OpeningTypesFileName, expected);
+        Assert.Equal(expected, GisStandardFiles.ReadOpeningTypes());
+    }
+
+    [Fact]
     public void GisModelTemplate_HoldsTheDefaults()
     {
         string expected = GisModelFile.CreateDefault().ToJson();
@@ -67,6 +76,7 @@ public sealed class GisStandardTests
                 "id", "level_id", "name", "short_name", "category", "ordinal",
                 "gis_category", "gis_restriction", "gis_kind", "gis_direction",
                 "gis_levels_served", "gis_door", "gis_access_con", "gis_key", "gis_standard_version",
+                "gis_opening_category", "gis_fixture_type", "gis_model_role", "gis_kit_version",
             },
             GisSharedParameters.All.Select(definition => definition.Name));
         Assert.Equal(GisSharedParameters.All.Count, GisSharedParameters.All.Select(definition => definition.Guid).Distinct().Count());
@@ -89,10 +99,66 @@ public sealed class GisStandardTests
     [InlineData("gis_direction", GisParameterBinding.Instance)]
     [InlineData("category", GisParameterBinding.Instance)]
     [InlineData("gis_key", GisParameterBinding.Instance)]
+    [InlineData("gis_opening_category", GisParameterBinding.Type)]
+    [InlineData("gis_fixture_type", GisParameterBinding.Type)]
+    [InlineData("gis_model_role", GisParameterBinding.Instance)]
+    [InlineData("gis_kit_version", GisParameterBinding.Instance)]
     public void SharedParameters_BindTypeAndInstanceAsAgreed(string name, GisParameterBinding binding)
     {
         Assert.True(GisSharedParameters.TryGet(name, out GisParameterDefinition definition));
         Assert.Equal(binding, definition.Binding);
+    }
+
+    [Theory]
+    [InlineData("id")]
+    [InlineData("name")]
+    [InlineData("short_name")]
+    [InlineData("category")]
+    [InlineData("gis_category")]
+    [InlineData("gis_restriction")]
+    [InlineData("gis_direction")]
+    [InlineData("gis_key")]
+    public void V3ExtendedParameters_IncludeMechanicalEquipment(string name)
+    {
+        Assert.True(GisSharedParameters.TryGet(name, out GisParameterDefinition definition));
+        Assert.Contains("OST_MechanicalEquipment", definition.Categories);
+    }
+
+    [Fact]
+    public void GisKey_IsBoundToDoorsAndWindowsInStandardV3()
+    {
+        Assert.True(GisSharedParameters.TryGet(GisSharedParameters.GisKey, out GisParameterDefinition definition));
+        Assert.Contains("OST_Doors", definition.Categories);
+        Assert.Contains("OST_Windows", definition.Categories);
+    }
+
+    [Fact]
+    public void V3NewParameters_HaveExpectedCategoriesAndRfc4122V4Guids()
+    {
+        Assert.True(GisSharedParameters.TryGet(GisSharedParameters.GisOpeningCategory, out GisParameterDefinition openingCat));
+        Assert.Equal(new[] { "OST_Doors", "OST_Windows" }, openingCat.Categories);
+        Assert.Equal(GisParameterDataType.Text, openingCat.DataType);
+
+        Assert.True(GisSharedParameters.TryGet(GisSharedParameters.GisFixtureType, out GisParameterDefinition fixtureType));
+        Assert.Equal(new[] { "OST_SpecialityEquipment", "OST_GenericModel", "OST_MechanicalEquipment" }, fixtureType.Categories);
+        Assert.Equal(GisParameterDataType.Text, fixtureType.DataType);
+
+        Assert.True(GisSharedParameters.TryGet(GisSharedParameters.GisModelRole, out GisParameterDefinition modelRole));
+        Assert.Equal(new[] { "OST_ProjectInformation" }, modelRole.Categories);
+        Assert.Equal(GisParameterDataType.Text, modelRole.DataType);
+
+        Assert.True(GisSharedParameters.TryGet(GisSharedParameters.GisKitVersion, out GisParameterDefinition kitVersion));
+        Assert.Equal(new[] { "OST_ProjectInformation" }, kitVersion.Categories);
+        Assert.Equal(GisParameterDataType.Text, kitVersion.DataType);
+
+        foreach (GisParameterDefinition definition in new[] { openingCat, fixtureType, modelRole, kitVersion })
+        {
+            byte[] bytes = definition.Guid.ToByteArray();
+            int version = (bytes[7] >> 4) & 0x0F;
+            int variant = (bytes[8] >> 6) & 0x03;
+            Assert.Equal(4, version);
+            Assert.Equal(2, variant);
+        }
     }
 
     [Theory]

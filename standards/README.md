@@ -7,8 +7,9 @@ The files a Revit model needs so that its GDB export comes out right the first t
 | `color_theme.json` | Kanizu's area colour table (StaNavi map design), copied unchanged from Kanizu `crates/kanizu-core/src/recolor/color_theme.json` (dev `de67c3c`) | No, copy it again from Kanizu |
 | `families.json` | The closed list of families per `gis_kind`: the allowed family names for escalators, moving walkways, elevators and ticket gates, and the type parameters every type of them fills | Yes |
 | `floor-types.json` | The 21 standard floor types with `gis_category`, `gis_restriction`, a `GIS_<area>` material and its theme colour, the `former_names` they replace, plus one material per theme area, `GIS_unlisted` (#E5E5E5) and the list of unit categories the export accepts | No, generated |
-| `KanizuGIS.SharedParameters.txt` | The shared parameter file, with fixed GUIDs | No, generated |
+| `KanizuGIS.SharedParameters.txt` | The shared parameter file, with fixed GUIDs (19 parameters in standard v3) | No, generated |
 | `fields.json` | The field list: one row per GIS field with its layer, GDB name, Japanese alias, type, pick list, Revit source and owner ([contract](../docs/kanizu-link-contract.md)) | No, generated; a station copy gets rows added by hand |
+| `opening-types.json` | Closed pick-list domains for `gis_door`, `gis_access_con`, `gis_opening_category`, `gis_fixture_type` and `gis_model_role` | No, generated |
 | `gis-model.template.json` | The start of a model's `gis-model.json` in the station folder: the standard's stair drawing numbers and empty identity, levels and views ([contract](../docs/kanizu-link-contract.md)) | No, generated |
 | `shared-parameter-bindings.json` | The same parameters with their binding (type or instance) and categories, for the pyRevit tools | No, generated |
 
@@ -16,21 +17,25 @@ The files a Revit model needs so that its GDB export comes out right the first t
 
 | Name | Binding | Bound to |
 |---|---|---|
-| `id` | instance | floors, rooms, stairs, generic models, specialty equipment, doors, windows, columns |
+| `id` | instance | floors, rooms, stairs, generic models, specialty equipment, mechanical equipment, doors, windows, columns |
 | `level_id` | instance | levels, floors, rooms |
-| `name` | instance | floors, rooms, stairs, generic models, specialty equipment, doors |
-| `short_name` | instance | the same, and levels |
-| `category` | instance | floors, rooms, stairs, generic models, specialty equipment; overrides the type's `gis_category` |
+| `name` | instance | floors, rooms, stairs, generic models, specialty equipment, mechanical equipment, doors |
+| `short_name` | instance | the same (without doors), and levels |
+| `category` | instance | floors, rooms, stairs, generic models, specialty equipment, mechanical equipment; overrides the type's `gis_category` |
 | `ordinal` | instance (integer) | levels, floors, rooms |
-| `gis_category` | type | floors, generic models, specialty equipment |
-| `gis_restriction` | type | floors, generic models, specialty equipment; empty means by location |
+| `gis_category` | type | floors, generic models, specialty equipment, mechanical equipment |
+| `gis_restriction` | type | floors, generic models, specialty equipment, mechanical equipment; empty means by location |
 | `gis_kind` | type | generic models, specialty equipment, mechanical equipment (escalator, moving_walkway, elevator, ticket_gate) |
-| `gis_direction` | instance | stairs, generic models, specialty equipment (up, down, both) |
+| `gis_direction` | instance | stairs, generic models, specialty equipment, mechanical equipment (up, down, both) |
 | `gis_levels_served` | instance | generic models, specialty equipment, mechanical equipment; the levels an elevator stops at, by level name or `short_name`, separated by commas, set on any one floor's object of the shaft; empty means the levels of the elevator objects drawn in the same plan spot |
-| `gis_door` | type | doors; the opening's `door` field |
-| `gis_access_con` | type | doors; the opening's `access_con` field |
-| `gis_key` | instance, not user editable | floors, rooms, stairs, generic models, specialty equipment, columns; the export writes the element's first `revit_key` (part 0) here |
+| `gis_door` | type | doors; the opening's `door` field (`swinging`, `sliding`, `automatic`, `elevator`, `shutter`, `revolving`, `open`) |
+| `gis_access_con` | type | doors; the opening's `access_con` field (`none`, `employeesonly`, `emergency`, `scheduled`, `badgereader`, `restricted`) |
+| `gis_key` | instance, not user editable | floors, rooms, stairs, generic models, specialty equipment, mechanical equipment, doors, windows, columns; the export writes the element's first `revit_key` (part 0) here |
 | `gis_standard_version` | instance, not user editable | project information; the version of this standard the model was set up with |
+| `gis_opening_category` | type | doors, windows; explicit opening category (`pedestrian`, `emergencyexit`, `service`, `automobile`, `bicycle`, `pedestrian.principal`, `pedestrian.transit`) |
+| `gis_fixture_type` | type | specialty equipment, generic models, mechanical equipment; explicit fixture sub-type (`turnstile`, `wall`, `kiosk`, `equipment`, `furniture`, `obstruction`) |
+| `gis_model_role` | instance, not user editable | project information; model workflow role (`authoring`, `showcase`; blank treated as `authoring`) |
+| `gis_kit_version` | instance, not user editable | project information; Starter Kit semver stamp on templates and initialized projects |
 
 The first six names are the ones RevitGeoSuite has always used. Earlier versions created them from a separate file on each PC, so an existing model may hold them under other GUIDs. The export keeps those definitions, adds any missing categories to their binding, and lists them in a warning. It never rebinds a parameter that already holds values.
 

@@ -16,11 +16,11 @@ class SetupPlanTests(unittest.TestCase):
 
     def test_an_empty_model_gets_everything(self):
         plan = setup_plan.plan_setup(snapshot.ModelSnapshot(), self.standard)
-        self.assertEqual(15, len([step for step in plan.parameters if step.action == setup_plan.BIND]))
+        self.assertEqual(19, len([step for step in plan.parameters if step.action == setup_plan.BIND]))
         self.assertEqual(len(self.standard.materials), len(plan.materials))
         self.assertEqual(21, len([step for step in plan.floor_types if step.action == setup_plan.CREATE]))
         self.assertTrue(plan.sets_version)
-        self.assertIn("Set gis_standard_version (none) to 2", setup_plan.describe(plan))
+        self.assertIn("Set gis_standard_version (none) to 3", setup_plan.describe(plan))
 
     def test_legacy_guid_is_kept_and_only_extended(self):
         legacy = snapshot.BoundParameter("category", "11111111-2222-3333-4444-555555555555", "instance",
@@ -30,7 +30,7 @@ class SetupPlanTests(unittest.TestCase):
             bound_parameters=helpers.bound_as_standard(self.standard, skip=("category",)) + [legacy])
         step = [entry for entry in setup_plan.plan_setup(model, self.standard).parameters if entry.name == "category"][0]
         self.assertEqual(setup_plan.EXTEND_LEGACY, step.action)
-        self.assertEqual(["OST_Stairs", "OST_GenericModel", "OST_SpecialityEquipment"], step.missing_categories)
+        self.assertEqual(["OST_Stairs", "OST_GenericModel", "OST_SpecialityEquipment", "OST_MechanicalEquipment"], step.missing_categories)
 
     def test_legacy_guid_with_all_categories_is_kept_as_it_is(self):
         standard_category = self.standard.parameter("category")

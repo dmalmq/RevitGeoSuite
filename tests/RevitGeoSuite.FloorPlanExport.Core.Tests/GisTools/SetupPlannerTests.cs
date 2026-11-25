@@ -32,7 +32,7 @@ public sealed class SetupPlannerTests
         Assert.Equal(Standard.Materials.Count, plan.Materials.Count);
         Assert.Equal(21, plan.FloorTypes.Count(step => step.Action == SetupAction.Create));
         Assert.True(plan.SetsVersion);
-        Assert.Contains("Set gis_standard_version (none) to 2", SetupPlanner.Describe(plan));
+        Assert.Contains("Set gis_standard_version (none) to 3", SetupPlanner.Describe(plan));
     }
 
     [Fact]
@@ -44,7 +44,62 @@ public sealed class SetupPlannerTests
         ParameterSetupStep step = Step(SetupPlanner.Plan(ModelOnStandard(boundParameters: bound), Standard), "category");
 
         Assert.Equal(ParameterSetupAction.ExtendLegacy, step.Action);
-        Assert.Equal(new[] { "OST_Stairs", "OST_GenericModel", "OST_SpecialityEquipment" }, step.MissingCategories);
+        Assert.Equal(new[] { "OST_Stairs", "OST_GenericModel", "OST_SpecialityEquipment", "OST_MechanicalEquipment" }, step.MissingCategories);
+    }
+
+    [Fact]
+    public void UpgradesV2ModelToV3ByExtendingBindingsAndBindingNewParameters()
+    {
+        HashSet<string> v3New = new(StringComparer.Ordinal)
+        {
+            GisSharedParameters.GisOpeningCategory,
+            GisSharedParameters.GisFixtureType,
+            GisSharedParameters.GisModelRole,
+            GisSharedParameters.GisKitVersion,
+        };
+        HashSet<string> extendedMech = new(StringComparer.Ordinal)
+        {
+            GisSharedParameters.Id,
+            GisSharedParameters.Name,
+            GisSharedParameters.ShortName,
+            GisSharedParameters.Category,
+            GisSharedParameters.GisCategory,
+            GisSharedParameters.GisRestriction,
+            GisSharedParameters.GisDirection,
+            GisSharedParameters.GisKey,
+        };
+
+        List<BoundParameterInfo> v2Bound = Standard.Parameters
+            .Where(parameter => !v3New.Contains(parameter.Name))
+            .Select(parameter =>
+            {
+                IEnumerable<string> categories = parameter.Categories;
+                if (extendedMech.Contains(parameter.Name))
+                {
+                    categories = categories.Where(category => category != "OST_MechanicalEquipment");
+                }
+
+                if (parameter.Name == GisSharedParameters.GisKey)
+                {
+                    categories = categories.Where(category => category != "OST_Doors" && category != "OST_Windows");
+                }
+
+                return new BoundParameterInfo(parameter.Name, parameter.Guid, parameter.Binding, categories);
+            })
+            .ToList();
+
+        SetupPlan plan = SetupPlanner.Plan(ModelOnStandard(boundParameters: v2Bound, standardVersion: "2"), Standard);
+
+        Assert.True(plan.SetsVersion);
+        Assert.Equal("2", plan.VersionFrom);
+        Assert.Equal("3", plan.VersionTo);
+        Assert.Equal(4, plan.Parameters.Count(step => step.Action == ParameterSetupAction.Bind));
+        Assert.Equal(8, plan.Parameters.Count(step => step.Action == ParameterSetupAction.Extend));
+        Assert.Equal(7, plan.Parameters.Count(step => step.Action == ParameterSetupAction.Ok));
+        Assert.Equal(
+            new[] { "OST_MechanicalEquipment", "OST_Doors", "OST_Windows" },
+            Step(plan, GisSharedParameters.GisKey).MissingCategories);
+        Assert.Contains("Set gis_standard_version 2 to 3", SetupPlanner.Describe(plan));
     }
 
     [Fact]

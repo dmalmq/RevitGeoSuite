@@ -21,6 +21,8 @@ public sealed class RevitWriteTextTests
         // Type parameters cannot vary by group instance, and Project Information is never in a group.
         Assert.DoesNotContain(vary, name => GisSharedParameters.All.Single(definition => definition.Name == name).Binding == GisParameterBinding.Type);
         Assert.DoesNotContain(GisSharedParameters.GisStandardVersion, vary);
+        Assert.DoesNotContain(GisSharedParameters.GisModelRole, vary);
+        Assert.DoesNotContain(GisSharedParameters.GisKitVersion, vary);
     }
 
     [Fact]

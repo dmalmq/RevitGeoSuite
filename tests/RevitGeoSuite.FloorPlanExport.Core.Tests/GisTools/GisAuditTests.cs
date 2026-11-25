@@ -26,7 +26,18 @@ public sealed class GisAuditTests
     [Fact]
     public void FlagsAnOlderStandard()
     {
-        Assert.Contains("current one is 2", Audit(ModelOnStandard(standardVersion: "0"))[0].Message);
+        Assert.Contains("current one is 3", Audit(ModelOnStandard(standardVersion: "0"))[0].Message);
+    }
+
+    [Fact]
+    public void AV2ModelProducesOnlyNonBlockingUpdateWarnings()
+    {
+        IReadOnlyList<GisAuditFinding> findings = Audit(ModelOnStandard(standardVersion: "2"));
+
+        GisAuditFinding finding = Assert.Single(findings);
+        Assert.Equal(GisAuditSeverity.Warning, finding.Severity);
+        Assert.Contains("standard version 2; the current one is 3", finding.Message);
+        Assert.Empty(GisAudit.BlockingFindings(findings));
     }
 
     [Fact]
