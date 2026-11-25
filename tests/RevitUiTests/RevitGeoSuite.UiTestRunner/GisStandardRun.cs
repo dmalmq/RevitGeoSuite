@@ -37,24 +37,11 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
 
     private ShellPage Shell => shell ?? throw new InvalidOperationException("The page is not attached (step 1 failed).");
 
+    /// <summary>
+    /// Runs the scenario. An exception it cannot recover from propagates, so Program.cs records the STOP
+    /// step once and every later scenario reports that it did not run.
+    /// </summary>
     public async Task RunAsync(DateTime revitStartedUtc)
-    {
-        try
-        {
-            await RunStepsAsync(revitStartedUtc);
-        }
-        catch (Exception ex)
-        {
-            // A stopped run is a failed run: the report says FAIL and the runner exits non-zero.
-            report.Header.Add($"RUN STOPPED: {ex.Message}");
-            var stopped = new StepResult("STOP", "The run finished every step it was asked to run");
-            stopped.Check(false, $"The run stopped with {ex.GetType().Name}: {ex.Message}");
-            report.Steps.Add(stopped);
-            Console.Error.WriteLine($"Run stopped: {ex.Message}");
-        }
-    }
-
-    private async Task RunStepsAsync(DateTime revitStartedUtc)
     {
         PrepareModel();
         try
@@ -137,9 +124,11 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         string folder = Path.Combine(options.OutputFolder, "model");
         Directory.CreateDirectory(folder);
         modelCopy = Path.Combine(folder, Path.GetFileNameWithoutExtension(options.Model) + "-uitest.rvt");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         File.Copy(options.Model, modelCopy, overwrite: true);
         int beforeOpen = host.LastEvent();
         JsonObject opened = host.Call("open", new { path = modelCopy });
+        report.Header.Add($"Copying and opening the model took {clock.Elapsed.TotalSeconds:0} s.");
         report.Header.Add($"Revit links not on this PC, before opening the copy: {(opened["unloadedReferences"]?.AsArray().Count > 0 ? opened["unloadedReferences"]!.ToJsonString() : "none")}.");
         string dialogs = string.Join(" | ", host.EventsAfter(beforeOpen).Where(item => item.Kind == "dialog").Select(item => $"{item.DialogId}: {item.Message}"));
         report.Header.Add($"Dialogs while opening: {(dialogs.Length > 0 ? dialogs : "none")}.");
@@ -167,6 +156,7 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         Console.WriteLine($"Step {id}: {title}");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             RequireTestCopy(host.Call("state"));
@@ -184,7 +174,8 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
         }
 
         await ClearLeftovers(step);
-        Console.WriteLine($"  -> {step.Outcome}{(step.Failures.Count > 0 ? ": " + string.Join("; ", step.Failures) : string.Empty)}");
+        step.Seconds = clock.Elapsed.TotalSeconds;
+        Console.WriteLine($"  -> {step.Outcome} ({step.Seconds:0} s){(step.Failures.Count > 0 ? ": " + string.Join("; ", step.Failures) : string.Empty)}");
     }
 
     /// <summary>
@@ -244,9 +235,18 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
             step.Note($"Deleted {portFile} from an earlier Revit session.");
         }
 
+        // A port file from this Revit means an earlier scenario of the run opened the page already.
+        bool reused = File.Exists(portFile);
         host.Call("ribbon", new { tab = Tab, panel = Panel, button = "GisStandard" });
         int port = await WaitForPort(step, revitStartedUtc);
         shell = await ShellPage.AttachAsync(port, TimeSpan.FromSeconds(60));
+        if (reused)
+        {
+            // Start from a fresh page, as a Revit of its own would: nothing of the earlier scenario's page state stays.
+            await Shell.Page.ReloadAsync();
+            step.Note("The page was open from an earlier scenario in this Revit; reloaded it.");
+        }
+
         step.Note($"DevTools port {port} (127.0.0.1), page {Shell.Page.Url}.");
         await Shell.UseEnglishAsync();
         await Shell.GoToAsync("/gis-standard");
