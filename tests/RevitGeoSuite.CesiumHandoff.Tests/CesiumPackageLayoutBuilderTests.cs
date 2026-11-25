@@ -188,6 +188,39 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
     }
 
     [Fact]
+    public void WriteManifest_IgnoresArtifactsInNestedHandoffPackage()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.GisDirectory, "tower.gpkg"), "gpkg");
+        string nested = Path.Combine(layout.GisDirectory, "handoff-package-20260101-000000");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "tower.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(nested, "foo.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(nested, "package-manifest.json"), "{}");
+
+        CesiumPackageManifest manifest = builder.WriteManifest(layout, CreateInputs());
+
+        Assert.Equal("gis/tower.gpkg", Assert.Single(manifest.Gis!.Artifacts!).Path);
+        Assert.Null(manifest.Gis!.PackageManifest);
+    }
+
+    [Fact]
+    public void WriteManifest_WithOnlyNestedHandoffPackage_HasNoGisSection()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
+        string nested = Path.Combine(layout.GisDirectory, "handoff-package-20260101-000000");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "foo.gpkg"), "gpkg");
+
+        CesiumPackageManifest manifest = builder.WriteManifest(layout, CreateInputs());
+
+        Assert.Null(manifest.Gis);
+    }
+
+    [Fact]
     public void WriteManifest_WritesAnchorSourceNumbersAndModelId()
     {
         var builder = new CesiumPackageLayoutBuilder();
@@ -294,5 +327,42 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
         Assert.Equal("shapefile", manifest.Gis!.Format);
         CesiumPackageGisArtifact artifact = Assert.Single(manifest.Gis!.Artifacts!);
         Assert.Equal("gis/unit.shp", artifact.Path);
+    }
+
+
+    [Theory]
+    [InlineData("tiles", "elements.json")]
+    [InlineData("tiles", "rooms.json")]
+    [InlineData("tiles", "levels.json")]
+    [InlineData("gis", "gis-fields.json")]
+    public void WriteManifest_ContentHashCoversTheIndexesAndTheFieldList(string directory, string fileName)
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "levels.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "elements.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "rooms.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.GisDirectory, "tower.gpkg"), "gpkg");
+        File.WriteAllText(Path.Combine(layout.GisDirectory, "gis-fields.json"), "{}");
+
+        string? before = builder.WriteManifest(layout, CreateInputs()).ContentHash;
+        File.WriteAllText(Path.Combine(_root, directory, fileName), "{\"changed\":true}");
+        string? after = builder.WriteManifest(layout, CreateInputs()).ContentHash;
+
+        Assert.False(string.IsNullOrEmpty(before));
+        Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void WriteManifest_ContentHashIsTheSameWithoutAFieldList()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.GisDirectory, "tower.gpkg"), "gpkg");
+
+        string? hash = builder.WriteManifest(layout, CreateInputs()).ContentHash;
+
+        Assert.Equal(CesiumPackageContentHasher.Compute(_root, new[] { "gis/tower.gpkg" }), hash);
     }
 }

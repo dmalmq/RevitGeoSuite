@@ -32,6 +32,7 @@ const point = (name: string): GeoreferenceBasePointSnapshot => ({
 export function currentState(scenario: MockScenario): GeoreferenceCurrentStateResponse {
   const existing = scenario === 'existing'
   return {
+    documentId: 'mock-doc-tokyo-station',
     documentTitle: 'TokyoStation_Concourse.rvt',
     existingSetupDetected: existing,
     existingSetupMessage: '',
@@ -481,6 +482,10 @@ function gisDrift() {
       accepted = true
       return { log: (payload?.changes ?? []).map((change) => change.label), skipped: [] }
     },
+    'gisDrift.keep': (payload: { changes?: typeof changes }) => ({
+      log: (payload?.changes ?? []).map((change) => `${change.layer} ${change.field} of 8d7f3c1e-0000|${change.uniqueId}|0: Revit's ${change.oldValue || '(empty)'} is kept over the GDB's ${change.newValue || '(empty)'}; Kanizu takes it in at its next apply.`),
+      skipped: []
+    }),
     'gisDrift.showShape': () => ({ view: 'GIS_1FL' }),
     'gisDrift.clearShape': () => undefined,
     'gisDrift.applyShapes': (payload: { uniqueIds?: string[] }) => {

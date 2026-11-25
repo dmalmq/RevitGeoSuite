@@ -110,4 +110,93 @@ public sealed class PlateauGroundSurfaceBuilderTests
         Assert.Equal(0, result.PointCount);
         Assert.NotEmpty(result.Warnings);
     }
+
+    [Fact]
+    public void Build_with_geoid_model_matches_ecef_to_project_transformer_vertical_datum_in_tokyo()
+    {
+        const double tokyoLat = 35.681236d;
+        const double tokyoLon = 139.767125d;
+        const double orthometricAnchorMeters = 4.0d;
+        double geoidUndulation = Egm2008GeoidModel.Instance.GetUndulationMeters(tokyoLat, tokyoLon);
+        double ellipsoidalGroundHeight = orthometricAnchorMeters + geoidUndulation;
+
+        PlateauImportReferenceContext referenceContext = new PlateauImportReferenceContext
+        {
+            ProjectCrs = new CrsReference { EpsgCode = 6677, NameSnapshot = "JGD2011 Zone IX" },
+            AnchorLatitude = tokyoLat,
+            AnchorLongitude = tokyoLon,
+            AnchorProjectedCoordinate = new ProjectedCoordinate(0d, 0d),
+            AnchorElevationMeters = orthometricAnchorMeters,
+            AnchorXFeet = 0d,
+            AnchorYFeet = 0d,
+            AnchorZFeet = 0d,
+            SharedEastToLocalX = 1d,
+            SharedEastToLocalY = 0d,
+            SharedNorthToLocalX = 0d,
+            SharedNorthToLocalY = 1d
+        };
+
+        PlateauGroundSurfaceBuilder.GroundSurfaceResult ground = new PlateauGroundSurfaceBuilder()
+            .Build(FlatPlaneSampler(ellipsoidalGroundHeight), referenceContext, gridSpacingMeters: 50d, geoidModel: Egm2008GeoidModel.Instance);
+
+        EcefToProjectTransformer buildingTransformer = new EcefToProjectTransformer(
+            new ZeroCoordinateTransformer(),
+            referenceContext.ProjectCrs,
+            referenceContext.AnchorProjectedCoordinate,
+            referenceContext.AnchorElevationMeters,
+            referenceContext.AnchorXFeet,
+            referenceContext.AnchorYFeet,
+            referenceContext.AnchorZFeet,
+            referenceContext.SharedEastToLocalX,
+            referenceContext.SharedEastToLocalY,
+            referenceContext.SharedNorthToLocalX,
+            referenceContext.SharedNorthToLocalY);
+
+        Vector3d buildingBaseLocal = buildingTransformer.TransformEcefToProject(
+            EcefGeodeticConverter.ToEcef(new GeodeticCoordinate(tokyoLat, tokyoLon, ellipsoidalGroundHeight)));
+
+        Assert.NotEmpty(ground.Points);
+        double groundZMeters = ground.Points[0].ZFeet * 0.3048d;
+        Assert.InRange(Math.Abs(buildingBaseLocal.Z - groundZMeters), 0d, 0.01d);
+        Assert.InRange(groundZMeters, -0.01d, 0.01d);
+    }
+
+    [Fact]
+    public void Build_with_transformer_evaluates_the_geoid_at_each_sample()
+    {
+        PlateauGroundSurfaceBuilder.GroundSurfaceResult ground = new PlateauGroundSurfaceBuilder().Build(
+            FlatPlaneSampler(),
+            IdentityContext(),
+            gridSpacingMeters: 25d,
+            new LatitudeGeoidModel(),
+            new NorthingAsLatitudeTransformer());
+
+        Assert.Equal(25, ground.PointCount);
+        Assert.All(ground.Points, point =>
+        {
+            double northingMeters = point.YFeet * 0.3048d;
+            Assert.Equal((50d - (northingMeters / 10d)) * MetersToFeet, point.ZFeet, 6);
+        });
+    }
+
+    private sealed class LatitudeGeoidModel : IGeoidModel
+    {
+        public string Name => "Latitude";
+
+        public double GetUndulationMeters(double latitudeDegrees, double longitudeDegrees) => latitudeDegrees;
+    }
+
+    private sealed class NorthingAsLatitudeTransformer : ICoordinateTransformer
+    {
+        public ProjectedCoordinate Project(GeographicCoordinate coordinate, CrsReference targetCrs) => throw new NotSupportedException();
+
+        public GeographicCoordinate Unproject(ProjectedCoordinate coordinate, CrsReference sourceCrs) =>
+            new GeographicCoordinate(coordinate.Northing / 10d, coordinate.Easting / 10d);
+    }
+
+    private sealed class ZeroCoordinateTransformer : ICoordinateTransformer
+    {
+        public ProjectedCoordinate Project(GeographicCoordinate coordinate, CrsReference targetCrs) => new ProjectedCoordinate(0d, 0d);
+        public GeographicCoordinate Unproject(ProjectedCoordinate coordinate, CrsReference sourceCrs) => throw new NotSupportedException();
+    }
 }

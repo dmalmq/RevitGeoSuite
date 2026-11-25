@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { request } from '$lib/bridge/rpc'
+  import { on, request } from '$lib/bridge/rpc'
   import type { GeoreferenceCurrentStateResponse } from '$lib/bridge/contracts.generated'
   import type { MeshOverlayResponse } from '$lib/bridge/contracts.generated'
   import { PROJECT_CONTEXT_CHANGED_EVENT } from '$lib/projectContext'
@@ -36,10 +36,15 @@
       void refreshReadiness()
     }
     const onProjectContextChanged = () => { void refreshStatusBar() }
+    const offDocumentChanged = on('document.changed', (evt) => {
+      documentName = evt?.documentTitle ?? ''
+      void refreshStatusBar()
+    })
     window.addEventListener('hashchange', onHashChange)
     window.addEventListener(PROJECT_CONTEXT_CHANGED_EVENT, onProjectContextChanged)
     refreshStatusBar()
     return () => {
+      offDocumentChanged()
       window.removeEventListener('hashchange', onHashChange)
       window.removeEventListener(PROJECT_CONTEXT_CHANGED_EVENT, onProjectContextChanged)
     }

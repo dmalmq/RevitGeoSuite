@@ -13,8 +13,6 @@ internal static class WebShellHandlerRegistry
 {
     public static void RegisterAll(WebRpcBridge bridge, JobManager jobs)
     {
-        bridge.RegisterHandler(new EchoHandler());
-
         // Georeference route
         bridge.RegisterHandler(new GeoreferenceGetAvailableCrsHandler());
         bridge.RegisterHandler(new MeshGetOverlayHandler());
@@ -40,6 +38,7 @@ internal static class WebShellHandlerRegistry
         bridge.RegisterHandler(new GisDriftInspectHandler());
         bridge.RegisterHandler(new GisDriftWaitingHandler());
         bridge.RegisterHandler(new GisDriftApplyHandler());
+        bridge.RegisterHandler(new GisDriftKeepHandler());
         bridge.RegisterHandler(new GisShapeShowHandler());
         bridge.RegisterHandler(new GisShapeClearHandler());
         bridge.RegisterHandler(new GisShapeApplyHandler());

@@ -16,7 +16,7 @@ export const TONE_TEXT: Record<Tone, string> = {
   neutral: 'text-muted-foreground',
   info: 'text-info',
   success: 'text-success-text',
-  warning: 'text-warning-foreground',
+  warning: 'text-warning-text',
   danger: 'text-destructive-text'
 }
 

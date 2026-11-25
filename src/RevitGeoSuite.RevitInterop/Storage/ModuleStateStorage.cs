@@ -4,16 +4,18 @@ using System.Diagnostics;
 using Autodesk.Revit.DB.ExtensibleStorage;
 using Newtonsoft.Json;
 using RevitGeoSuite.Core.Storage;
+using RevitGeoSuite.Core.Versioning;
+using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop;
 
 namespace RevitGeoSuite.RevitInterop.Storage;
 
 public sealed class ModuleStateStorage : IModuleStateStore
 {
-    private static readonly Guid SchemaGuid = new("F6B06D1B-4A6A-4A51-912C-9EA4F61D565A");
+    private static readonly Guid SchemaGuid = new(RevitStorageContract.ModuleStateSchemaGuid);
     internal const int CurrentSchemaVersion = 1;
-    private const string SchemaVersionFieldName = "SchemaVersion";
-    private const string PayloadJsonFieldName = "PayloadJson";
+    private const string SchemaVersionFieldName = RevitStorageContract.SchemaVersionFieldName;
+    private const string PayloadJsonFieldName = RevitStorageContract.PayloadJsonFieldName;
 
     public void Save<TState>(IDocumentHandle document, string moduleId, TState state)
     {
@@ -29,11 +31,11 @@ public sealed class ModuleStateStorage : IModuleStateStore
 
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
         Schema schema = GetOrCreateSchema();
-        Dictionary<string, StorageEnvelope<string>> entries = LoadPayload(handle.Document, schema);
+        Dictionary<string, StorageEnvelope<string>> entries = LoadPayloadForWrite(handle.Document, schema);
         entries[moduleId] = new StorageEnvelope<string>
         {
             SchemaVersion = CurrentSchemaVersion,
-            PayloadType = typeof(TState).FullName ?? typeof(TState).Name,
+            PayloadType = ModuleStatePayloadTypes.ForModule(moduleId),
             Payload = JsonConvert.SerializeObject(state)
         };
 
@@ -51,6 +53,11 @@ public sealed class ModuleStateStorage : IModuleStateStore
         }
 
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return null;
+        }
+
         Schema? schema = Schema.Lookup(SchemaGuid);
         if (schema is null)
         {
@@ -63,7 +70,7 @@ public sealed class ModuleStateStorage : IModuleStateStore
             return null;
         }
 
-        if (!ModuleStateStorageSerializer.TryDeserializeState(entry, out TState? state, out string? reason))
+        if (!ModuleStateStorageSerializer.TryDeserializeState(entry, moduleId, out TState? state, out string? reason))
         {
             Trace.WriteLine($"Skipping stored module state for '{moduleId}' because {reason}.");
             return null;
@@ -80,6 +87,11 @@ public sealed class ModuleStateStorage : IModuleStateStore
         }
 
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return false;
+        }
+
         Schema? schema = Schema.Lookup(SchemaGuid);
         if (schema is null)
         {
@@ -89,6 +101,48 @@ public sealed class ModuleStateStorage : IModuleStateStore
         Dictionary<string, StorageEnvelope<string>> entries = LoadPayload(handle.Document, schema);
         return entries.TryGetValue(moduleId, out StorageEnvelope<string>? entry)
             && ModuleStateStorageSerializer.HasUsablePayload(entry);
+    }
+
+    public void Remove(IDocumentHandle document, string moduleId)
+    {
+        if (string.IsNullOrWhiteSpace(moduleId))
+        {
+            throw new ArgumentException("Module id cannot be empty.", nameof(moduleId));
+        }
+
+        RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
+        if (handle.Document.IsFamilyDocument || handle.Document.ProjectInformation is null)
+        {
+            return;
+        }
+
+        if (!handle.Document.IsModifiable)
+        {
+            throw new InvalidOperationException("Removing module state requires an active Revit transaction.");
+        }
+
+        Schema? schema = Schema.Lookup(SchemaGuid);
+        if (schema is null)
+        {
+            return;
+        }
+
+        Entity existingEntity = handle.Document.ProjectInformation.GetEntity(schema);
+        if (!existingEntity.IsValid())
+        {
+            return;
+        }
+
+        Dictionary<string, StorageEnvelope<string>> entries = LoadPayloadForWrite(handle.Document, schema);
+        if (!ModuleStateStorageSerializer.RemoveEntry(entries, moduleId))
+        {
+            return;
+        }
+
+        Entity entity = new Entity(schema);
+        entity.Set(schema.GetField(SchemaVersionFieldName), CurrentSchemaVersion);
+        entity.Set(schema.GetField(PayloadJsonFieldName), JsonConvert.SerializeObject(entries));
+        handle.Document.ProjectInformation.SetEntity(entity);
     }
 
     private static RevitDocumentHandle RequireRevitDocumentHandle(IDocumentHandle document)
@@ -109,6 +163,24 @@ public sealed class ModuleStateStorage : IModuleStateStore
         return ModuleStateStorageSerializer.DeserializeEntries(payloadJson);
     }
 
+    private static Dictionary<string, StorageEnvelope<string>> LoadPayloadForWrite(Autodesk.Revit.DB.Document document, Schema schema)
+    {
+        Entity entity = document.ProjectInformation.GetEntity(schema);
+        if (!entity.IsValid())
+        {
+            return new Dictionary<string, StorageEnvelope<string>>(StringComparer.Ordinal);
+        }
+
+        string payloadJson = entity.Get<string>(schema.GetField(PayloadJsonFieldName));
+        if (!ModuleStateStorageSerializer.TryDeserializeEntries(payloadJson, out Dictionary<string, StorageEnvelope<string>> entries))
+        {
+            throw new InvalidOperationException(
+                "Stored module state is corrupt. It was left unchanged because saving would erase the state of every module.");
+        }
+
+        return entries;
+    }
+
     private static Schema GetOrCreateSchema()
     {
         Schema? schema = Schema.Lookup(SchemaGuid);
@@ -118,7 +190,7 @@ public sealed class ModuleStateStorage : IModuleStateStore
         }
 
         SchemaBuilder builder = new SchemaBuilder(SchemaGuid);
-        builder.SetSchemaName("RevitGeoSuiteModuleState");
+        builder.SetSchemaName(RevitStorageSchemaNames.ModuleState);
         builder.SetReadAccessLevel(AccessLevel.Public);
         builder.SetWriteAccessLevel(AccessLevel.Public);
         builder.AddSimpleField(SchemaVersionFieldName, typeof(int));
@@ -131,21 +203,51 @@ internal static class ModuleStateStorageSerializer
 {
     public static Dictionary<string, StorageEnvelope<string>> DeserializeEntries(string? payloadJson)
     {
+        TryDeserializeEntries(payloadJson, out Dictionary<string, StorageEnvelope<string>> entries);
+        return entries;
+    }
+
+    public static bool TryDeserializeEntries(
+        string? payloadJson,
+        out Dictionary<string, StorageEnvelope<string>> entries)
+    {
+        entries = new Dictionary<string, StorageEnvelope<string>>(StringComparer.Ordinal);
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
-            return new Dictionary<string, StorageEnvelope<string>>(StringComparer.Ordinal);
+            return true;
         }
 
         try
         {
-            return JsonConvert.DeserializeObject<Dictionary<string, StorageEnvelope<string>>>(payloadJson)
-                ?? new Dictionary<string, StorageEnvelope<string>>(StringComparer.Ordinal);
+            Dictionary<string, StorageEnvelope<string>>? stored =
+                JsonConvert.DeserializeObject<Dictionary<string, StorageEnvelope<string>>>(payloadJson!);
+            if (stored is not null)
+            {
+                entries = stored;
+            }
+
+            return true;
         }
         catch (JsonException ex)
         {
             Trace.WriteLine($"Ignoring corrupt module state payload because it could not be deserialized: {ex}");
-            return new Dictionary<string, StorageEnvelope<string>>(StringComparer.Ordinal);
+            return false;
         }
+    }
+
+    public static bool RemoveEntry(Dictionary<string, StorageEnvelope<string>> entries, string moduleId)
+    {
+        if (entries is null)
+        {
+            throw new ArgumentNullException(nameof(entries));
+        }
+
+        if (string.IsNullOrWhiteSpace(moduleId))
+        {
+            throw new ArgumentException("Module id cannot be empty.", nameof(moduleId));
+        }
+
+        return entries.Remove(moduleId);
     }
 
     public static bool HasUsablePayload(StorageEnvelope<string>? entry)
@@ -158,6 +260,7 @@ internal static class ModuleStateStorageSerializer
 
     public static bool TryDeserializeState<TState>(
         StorageEnvelope<string>? entry,
+        string moduleId,
         out TState? state,
         out string? reason)
         where TState : class
@@ -176,9 +279,9 @@ internal static class ModuleStateStorageSerializer
             return false;
         }
 
-        if (!IsExpectedPayloadType<TState>(entry.PayloadType))
+        if (!ModuleStatePayloadTypes.Matches(moduleId, entry.PayloadType))
         {
-            reason = $"payload type '{entry.PayloadType}' does not match '{typeof(TState).FullName ?? typeof(TState).Name}'";
+            reason = $"payload type '{entry.PayloadType}' does not match module '{moduleId}'";
             return false;
         }
 
@@ -197,6 +300,11 @@ internal static class ModuleStateStorageSerializer
                 return false;
             }
 
+            if (state is GeoreferenceModuleState georeferenceState)
+            {
+                MigrationRunner.Migrate(georeferenceState);
+            }
+
             reason = null;
             return true;
         }
@@ -205,18 +313,5 @@ internal static class ModuleStateStorageSerializer
             reason = $"payload JSON could not be deserialized: {ex.Message}";
             return false;
         }
-    }
-
-    private static bool IsExpectedPayloadType<TState>(string payloadType)
-    {
-        if (string.IsNullOrWhiteSpace(payloadType))
-        {
-            return false;
-        }
-
-        string fullName = typeof(TState).FullName ?? typeof(TState).Name;
-        string name = typeof(TState).Name;
-        return string.Equals(payloadType, fullName, StringComparison.Ordinal)
-            || string.Equals(payloadType, name, StringComparison.Ordinal);
     }
 }

@@ -9,9 +9,10 @@
     activeOnlineAreas: any
     estimatedTime: any
     geometryMode: 'solids' | 'dxf' | 'ground'
-    groundGeoidOffsetMeters: number
+    groundGeoidOffsetMeters: number | null
     groundRadiusMeters: number
     groundSpacingMeters: number
+    ionToken: string
     onlineBasemapCategories: Set<OnlineBasemapCategory>
     onlineBasemapCategoryOptions: { id: OnlineBasemapCategory; label: string; description: string }[]
     removeOnlineArea: (...args: any[]) => any
@@ -24,7 +25,7 @@
     toggleOnlineBasemapCategory: (...args: any[]) => any
   }
 
-  let { activeOnlineAreas, estimatedTime, geometryMode = $bindable(), groundGeoidOffsetMeters = $bindable(), groundRadiusMeters = $bindable(), groundSpacingMeters = $bindable(), onlineBasemapCategories, onlineBasemapCategoryOptions, removeOnlineArea, runImport, selectedCount, selectedSize, selectedTiles, source, tiles, toggleOnlineBasemapCategory }: Props = $props()
+  let { activeOnlineAreas, estimatedTime, geometryMode = $bindable(), groundGeoidOffsetMeters = $bindable(), groundRadiusMeters = $bindable(), groundSpacingMeters = $bindable(), ionToken = $bindable(), onlineBasemapCategories, onlineBasemapCategoryOptions, removeOnlineArea, runImport, selectedCount, selectedSize, selectedTiles, source, tiles, toggleOnlineBasemapCategory }: Props = $props()
 
   const modes = $derived([
     {
@@ -118,14 +119,17 @@
         <Input id="ground-spacing" type="number" mono min="2" max="100" step="1" bind:value={groundSpacingMeters} />
       </Field>
       {#if source === 'online'}
+        <Field label={$t('Import.Osm.TokenLabel', 'Cesium Ion Access Token')} id="ground-ion-token" hint={$t('Import.Osm.TokenHelp', 'Get a free token at ion.cesium.com')}>
+          <Input id="ground-ion-token" type="password" mono bind:value={ionToken} placeholder={$t('Import.Osm.TokenPlaceholder', 'Paste your Cesium Ion token...')} />
+        </Field>
         <Field label={$t('Import.Ground.Radius', 'Radius around project (m)')} id="ground-radius">
           <Input id="ground-radius" type="number" mono min="100" max="5000" step="50" bind:value={groundRadiusMeters} />
         </Field>
         <Field label={$t('Import.Ground.GeoidOffset', 'Geoid undulation (m)')} id="ground-geoid">
-          <Input id="ground-geoid" type="number" mono min="-150" max="150" step="0.1" bind:value={groundGeoidOffsetMeters} />
+          <Input id="ground-geoid" type="number" mono min="-150" max="150" step="0.1" placeholder="EGM2008" bind:value={groundGeoidOffsetMeters} />
         </Field>
         <p class="text-small text-muted-foreground">
-          {$t('Import.Ground.OnlineHint', 'PLATEAU terrain is fetched around the georeferenced project. Cesium heights are ellipsoidal — the geoid undulation (Japan ≈ 36–42 m) is subtracted to meet the model datum; adjust if the surface sits too high or low.')}
+          {$t('Import.Ground.OnlineHint', 'PLATEAU terrain is fetched around the georeferenced project. Cesium heights are ellipsoidal — local EGM2008 geoid correction is applied automatically by default. Leave blank for EGM2008, or enter a manual override in metres.')}
         </p>
       {:else}
         <p class="text-small text-muted-foreground">

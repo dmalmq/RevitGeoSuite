@@ -200,7 +200,7 @@
       <div class="break-all font-mono text-small text-foreground">{result.linkFile}</div>
     {/if}
     {#if result.warnings.length}
-      <p class="mt-2 text-warning-foreground">{format($t('Import.Warnings', '{0} warning(s)'), result.warnings.length)}</p>
+      <p class="mt-2 text-warning-text">{format($t('Import.Warnings', '{0} warning(s)'), result.warnings.length)}</p>
       <ul class="ml-4 max-h-24 list-disc overflow-y-auto text-small">
         {#each result.warnings.slice(0, 10) as warning}<li>{warning}</li>{/each}
       </ul>
@@ -311,7 +311,7 @@
         {/if}
 
         {#if preview.warnings.length > 0}
-          <ul class="ml-4 list-disc text-small text-warning-foreground">
+          <ul class="ml-4 list-disc text-small text-warning-text">
             {#each preview.warnings.slice(0, 10) as warning}<li>{warning}</li>{/each}
           </ul>
         {/if}

@@ -185,12 +185,16 @@ public sealed class FloorPlanExportSession : IDisposable
             ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
             : settings.OutputDirectory.Trim();
 
+        int payloadTargetEpsg = settings.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs
+            ? settings.TargetEpsg
+            : (_coordinateInfo?.ResolvedSourceEpsg ?? ProjectInfo.DefaultTargetEpsg);
+
         return new ExporterSettingsPayload
         {
             OutputDirectory = outputDirectory,
-            TargetEpsg = settings.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs
-                ? settings.TargetEpsg
-                : (_coordinateInfo?.ResolvedSourceEpsg ?? ProjectInfo.DefaultTargetEpsg),
+            TargetEpsg = payloadTargetEpsg > 0
+                ? JapanPlaneRectangular.NormalizeEpsg(payloadTargetEpsg)
+                : ProjectInfo.DefaultTargetEpsg,
             CoordinateMode = settings.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs ? "convert" : "shared",
             OutputFormat = settings.OutputFormat == ExportFormat.Shapefile ? "shapefile" : "geopackage",
             IncrementalExportMode = settings.IncrementalExportMode == IncrementalExportMode.ChangedViewsOnly ? "changed" : "all",
@@ -273,7 +277,9 @@ public sealed class FloorPlanExportSession : IDisposable
         return new ExportDialogSettings
         {
             OutputDirectory = payload.OutputDirectory?.Trim() ?? string.Empty,
-            TargetEpsg = payload.TargetEpsg > 0 ? payload.TargetEpsg : ProjectInfo.DefaultTargetEpsg,
+            TargetEpsg = payload.TargetEpsg > 0
+                ? JapanPlaneRectangular.NormalizeEpsg(payload.TargetEpsg)
+                : ProjectInfo.DefaultTargetEpsg,
             FeatureTypes = ToFeatureTypes(payload),
             SelectedViewIds = payload.SelectedViewIds?.Distinct().ToList() ?? new List<long>(),
             IncrementalExportMode = payload.IncrementalExportMode == "changed"
@@ -908,7 +914,9 @@ public sealed class FloorPlanExportSession : IDisposable
         return new ExporterSettingsPayload
         {
             OutputDirectory = payload.OutputDirectory,
-            TargetEpsg = payload.TargetEpsg,
+            TargetEpsg = payload.TargetEpsg > 0
+                ? JapanPlaneRectangular.NormalizeEpsg(payload.TargetEpsg)
+                : payload.TargetEpsg,
             CoordinateMode = payload.CoordinateMode,
             OutputFormat = payload.OutputFormat,
             IncrementalExportMode = payload.IncrementalExportMode,

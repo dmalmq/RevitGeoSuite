@@ -75,6 +75,7 @@ internal sealed class FloorPlanExportSessionManager
         string projectKey = DocumentProjectKeyBuilder.Create(document);
         GisRulesSource rules = GisRulesSourceFactory.For(document);
         if (session != null &&
+            DocumentIdentity.IsSameDocument(sessionDocument, document) &&
             string.Equals(sessionProjectKey, projectKey, StringComparison.Ordinal) &&
             string.Equals(sessionStationFolder, rules.StationFolder, StringComparison.Ordinal))
         {

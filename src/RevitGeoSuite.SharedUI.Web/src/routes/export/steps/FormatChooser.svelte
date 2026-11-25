@@ -26,13 +26,8 @@
       description: $t('Export.Format.Tiles3dDesc', 'Export as 3D Tiles for web visualization'),
       run: () => selectFormat('tiles3d')
     },
-    {
-      id: 'citygml',
-      icon: 'building-2',
-      title: $t('Export.Format.CityGml', 'CityGML'),
-      description: $t('Export.Format.CityGmlDesc', 'Export as CityGML for semantic 3D city models'),
-      run: () => selectFormat('citygml')
-    },
+    // CityGML export is intentionally hidden from the UI navigation for Kanizu Revit v1
+    // (C# handlers and RevitGeoSuite.CityGmlExport remain intact for future re-enablement).
     {
       id: 'cesium',
       icon: 'globe',

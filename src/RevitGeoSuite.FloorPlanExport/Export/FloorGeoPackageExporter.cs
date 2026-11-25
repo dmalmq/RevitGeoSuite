@@ -118,7 +118,8 @@ public sealed class FloorGeoPackageExporter
         double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
         bool keep3DTempViewsForDebug = false,
         IReadOnlyList<string>? unitCategories = null,
-        GisRulesSource? rulesSource = null)
+        GisRulesSource? rulesSource = null,
+        bool requireCompleteLinkCoverage = false)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -145,6 +146,12 @@ public sealed class FloorGeoPackageExporter
             throw new InvalidOperationException("No valid plan views were selected for export.");
         }
 
+        ViewExportContextProvider contextProvider = new(_document);
+        if (requireCompleteLinkCoverage)
+        {
+            LinkCoverage.ThrowIfIncomplete(contextProvider.FindLinkCoverageProblems(linkExportOptions));
+        }
+
         Directory.CreateDirectory(outputDirectory);
 
         List<string> setupWarnings = new();
@@ -162,7 +169,6 @@ public sealed class FloorGeoPackageExporter
         setupWarnings.AddRange(GisAudit.ExportRecord(ModelSnapshotReader.AuditErrors(_document)));
         SharedParameterManager parameterManager = new(_document);
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
-        ViewExportContextProvider contextProvider = new(_document);
         string projectKey = DocumentProjectKeyBuilder.Create(_document);
         LoadResult<ProjectMappingRules> rulesLoad = (rulesSource ?? GisRulesSourceFactory.For(_document)).Load();
         setupWarnings.AddRange(rulesLoad.Warnings);
@@ -182,13 +188,20 @@ public sealed class FloorGeoPackageExporter
             ? new Temp3DViewScope(_document, exportViews, sectionBoxAboveFloorMeters, sectionBoxBelowFloorMeters, keep3DTempViewsForDebug)
             : null;
 
+        List<LinkCoverageProblem> linkReadFailures = new();
         IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
             exportViews,
             zoneCatalog,
             mappingRules.FamilyCategoryOverrides,
             mappingRules.AcceptedOpeningFamilies,
             effectiveLinkExportOptions,
-            threeDViewScope);
+            threeDViewScope,
+            linkReadFailures);
+        if (requireCompleteLinkCoverage)
+        {
+            LinkCoverage.ThrowIfIncomplete(linkReadFailures);
+        }
+
         EnsureSharedParameters(parameterManager, setupWarnings, fieldList.ExtraParameters());
         EnsureStableIds(parameterManager, contexts, setupWarnings);
         // Before any extractor reads the model key, and only here: the preview never writes the model.

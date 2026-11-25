@@ -324,8 +324,7 @@ public sealed class Tiles3DExportCoordinator
     {
         double[] bounds = BuildBoundingBox(meshes);
         double maxExtent = Math.Max(bounds[3] * 2d, Math.Max(bounds[7] * 2d, bounds[11] * 2d));
-        int stride = Tiles3DGeometrySimplifier.GetTriangleStride(levelOfDetail);
-        return Math.Round(maxExtent / stride, 3);
+        return Tiles3DGeometrySimplifier.GetGeometricError(maxExtent, levelOfDetail);
     }
 
     private static double[] BuildBoundingBox(IReadOnlyCollection<Tiles3DMeshPrimitive> meshes)

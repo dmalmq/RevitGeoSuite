@@ -125,6 +125,51 @@ public sealed class Tiles3DGlbWriterTests
         Assert.Equal(1u, accessors[secondFeatureAccessor]?["min"]?[0]?.Value<uint>());
     }
 
+    [Fact]
+    public void Write_uses_only_legal_vertex_attribute_types_and_a_schema_id()
+    {
+        string tempDirectory = Path.Combine(Path.GetTempPath(), "RevitGeoSuite", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        string outputPath = Path.Combine(tempDirectory, "content.glb");
+
+        new Tiles3DGlbWriter().Write(outputPath, CreatePackageWithTwoObjectsSameMaterial());
+
+        JObject json = JObject.Parse(ReadGlbJson(outputPath));
+        JArray accessors = Assert.IsType<JArray>(json["accessors"]);
+        JArray bufferViews = Assert.IsType<JArray>(json["bufferViews"]);
+        JArray primitives = Assert.IsType<JArray>(json["meshes"]?[0]?["primitives"]);
+        foreach (JToken primitive in primitives)
+        {
+            JObject attributes = Assert.IsType<JObject>(primitive["attributes"]);
+            foreach (JProperty attribute in attributes.Properties())
+            {
+                Assert.NotEqual(5125, accessors[attribute.Value.Value<int>()]?["componentType"]?.Value<int>());
+            }
+
+            JToken? featureIds = accessors[attributes["_FEATURE_ID_0"]!.Value<int>()];
+            Assert.Equal(5123, featureIds?["componentType"]?.Value<int>());
+            Assert.Equal(4, bufferViews[featureIds!["bufferView"]!.Value<int>()]?["byteStride"]?.Value<int>());
+        }
+
+        Assert.Equal("revit_elements", json["extensions"]?["EXT_structural_metadata"]?["schema"]?["id"]?.Value<string>());
+    }
+
+    [Theory]
+    [InlineData(1, 5123)]
+    [InlineData(65535, 5123)]
+    [InlineData(65536, 5126)]
+    [InlineData(1 << 24, 5126)]
+    public void Feature_id_component_type_is_never_unsigned_int(int featureCount, int expected)
+    {
+        Assert.Equal(expected, Tiles3DGlbWriter.SelectFeatureIdComponentType(featureCount));
+    }
+
+    [Fact]
+    public void Feature_counts_beyond_exact_float_range_fail_closed()
+    {
+        Assert.Throws<InvalidOperationException>(() => Tiles3DGlbWriter.SelectFeatureIdComponentType((1 << 24) + 1));
+    }
+
     private static string ReadGlbJson(string outputPath)
     {
         byte[] bytes = File.ReadAllBytes(outputPath);

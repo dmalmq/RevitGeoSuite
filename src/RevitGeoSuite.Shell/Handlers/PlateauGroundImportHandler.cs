@@ -4,10 +4,12 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Autodesk.Revit.DB;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.Plateau.Dem;
 using RevitGeoSuite.Core.Plateau.Terrain;
+using RevitGeoSuite.Core.Plateau.Tiles3D;
 using RevitGeoSuite.PlateauImport;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.GeoPlacement;
@@ -30,11 +32,6 @@ namespace RevitGeoSuite.Shell.Handlers;
 /// </summary>
 public sealed class PlateauGroundImportHandler : IRpcHandler
 {
-    // Public PLATEAU terrain token bundled with the reference cesium app (Cesium Ion asset 3258112).
-    // Overridable per request via "ionToken".
-    private const string DefaultPlateauTerrainToken =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJiODVhMmQ5OS1hOWZjLTQ3YmYtODlmNi1lNWUwY2MwOGUxYTMiLCJpZCI6MTQ5ODk3LCJpYXQiOjE2ODc5MzQ3NDN9.OG0mc3i7ZxGwHQjlMv3TRjiOvKWpzxglxmJRaUIykTY";
-
     private readonly JobManager jobs;
 
     public PlateauGroundImportHandler(JobManager jobs)
@@ -53,39 +50,49 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
         bool isOnline = string.Equals(source, "online", StringComparison.OrdinalIgnoreCase);
         double gridSpacingMeters = jobj?.Value<double?>("gridSpacingMeters") ?? PlateauGroundSurfaceBuilder.DefaultGridSpacingMeters;
         double radiusMeters = jobj?.Value<double?>("radiusMeters") ?? 600d;
-        double geoidOffsetMeters = jobj?.Value<double?>("geoidOffsetMeters") ?? 0d;
-        string ionToken = jobj?.Value<string>("ionToken") is string t && !string.IsNullOrWhiteSpace(t) ? t : DefaultPlateauTerrainToken;
+        double? manualGeoidOffsetMeters = jobj?.Value<double?>("geoidOffsetMeters");
+        IGeoidModel onlineGeoidModel = manualGeoidOffsetMeters.HasValue
+            ? new ConstantGeoidModel(manualGeoidOffsetMeters.Value, "Manual")
+            : Egm2008GeoidModel.Instance;
+        string? requestedDocumentId = jobj?.Value<string>("documentId")?.Trim();
+        string ionToken = ResolveCesiumIonToken(jobj?.Value<string>("ionToken"));
 
         if (!isOnline && !string.Equals(source, "local", StringComparison.OrdinalIgnoreCase))
         {
-            return Task.FromResult<object?>(new { error = $"Unknown ground source '{source}'." });
+            throw new InvalidOperationException($"Unknown ground source '{source}'.");
+        }
+        if (isOnline && string.IsNullOrWhiteSpace(ionToken))
+        {
+            throw new InvalidOperationException(
+                "A Cesium Ion access token is required for online PLATEAU terrain import. Enter your token in the import options or set REVITGEOSUITE_CESIUM_ION_TOKEN.");
         }
         if (!isOnline && string.IsNullOrWhiteSpace(path))
         {
-            return Task.FromResult<object?>(new { error = "Path is required" });
+            throw new InvalidOperationException("Path is required.");
         }
         if (!isOnline && (tileIds == null || tileIds.Count == 0))
         {
-            return Task.FromResult<object?>(new { error = "At least one tile ID is required" });
+            throw new InvalidOperationException("At least one tile ID is required.");
         }
 
         string jobId = jobs.Start(async (ct, progress) =>
         {
             var transformer = new CoordinateTransformer(new CrsRegistry());
 
-            // 1) Resolve the georeference anchor on the Revit API thread.
+            // 1) Resolve the georeference anchor on the Revit API thread and bind the job to this document.
             progress.Report(new JobProgress { Phase = "preparing", Percent = 0, Message = "Resolving georeference…" });
-            PlateauImportReferenceContext? referenceContext = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
-            {
-                var geoStore = new GeoProjectInfoStorage();
-                var moduleStateStore = new ModuleStateStorage();
-                var reader = new ProjectLocationReader(geoStore, moduleStateStore: moduleStateStore);
-                var currentState = reader.Read(doc);
-                var handle = new RevitDocumentHandle(doc);
-                var info = geoStore.Load(handle);
-                var resolver = new PlateauImportReferenceResolver(transformer, new RevitPlateauImportLocalBasisProvider(doc));
-                return resolver.Resolve(currentState, info, PlateauImportReferenceSource.WorkingProjectBasePoint);
-            }).ConfigureAwait(false);
+            (PlateauImportReferenceContext? referenceContext, string capturedDocumentId, Document capturedDocument) =
+                await RevitContext.Instance.InvokeWithExpectedDocumentAsync(requestedDocumentId, "PLATEAU ground import", doc =>
+                {
+                    var geoStore = new GeoProjectInfoStorage();
+                    var moduleStateStore = new ModuleStateStorage();
+                    var reader = new ProjectLocationReader(geoStore, moduleStateStore: moduleStateStore);
+                    var currentState = reader.Read(doc);
+                    var handle = new RevitDocumentHandle(doc);
+                    var info = geoStore.Load(handle);
+                    var resolver = new PlateauImportReferenceResolver(transformer, new RevitPlateauImportLocalBasisProvider(doc));
+                    return (resolver.Resolve(currentState, info, PlateauImportReferenceSource.WorkingProjectBasePoint), DocumentIdentity.Create(doc), doc);
+                }).ConfigureAwait(false);
 
             if (referenceContext is null)
             {
@@ -98,11 +105,8 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
             // 2) Build a DEM sampler from the chosen source (off the Revit thread).
             var warnings = new List<string>();
             DemSampler? sampler;
-            double effectiveGeoidOffset;
             if (isOnline)
             {
-                // Cesium/PLATEAU terrain heights are ellipsoidal — apply the geoid offset.
-                effectiveGeoidOffset = geoidOffsetMeters;
                 progress.Report(new JobProgress { Phase = "downloading", Percent = 15, Message = "Resolving PLATEAU terrain…" });
                 var transport = new CesiumTerrainHttpTransport();
                 CesiumTerrainSource terrainSource = await RunStageAsync("terrain-endpoint", () =>
@@ -125,8 +129,6 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
             }
             else
             {
-                // Local PLATEAU dem is orthometric (same datum as the model anchor), so no geoid offset.
-                effectiveGeoidOffset = 0d;
                 progress.Report(new JobProgress { Phase = "scanning", Percent = 10, Message = "Scanning folder…" });
                 PlateauFolderScanResult scanResult = RunStage("scan", () =>
                 {
@@ -160,8 +162,10 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
 
             // 3) Grid-sample the ground into Revit-frame points.
             progress.Report(new JobProgress { Phase = "building", Percent = 75, Message = "Sampling ground grid…" });
-            PlateauGroundSurfaceBuilder.GroundSurfaceResult ground = RunStage("ground-grid", () =>
-                new PlateauGroundSurfaceBuilder().Build(sampler, referenceContext, gridSpacingMeters, effectiveGeoidOffset));
+            // Cesium terrain is ellipsoidal and needs the geoid. Local PLATEAU DEM is already orthometric.
+            PlateauGroundSurfaceBuilder.GroundSurfaceResult ground = RunStage("ground-grid", () => isOnline
+                ? new PlateauGroundSurfaceBuilder().Build(sampler, referenceContext, gridSpacingMeters, onlineGeoidModel, transformer)
+                : new PlateauGroundSurfaceBuilder().Build(sampler, referenceContext, gridSpacingMeters, geoidOffsetMeters: 0d));
             warnings.AddRange(ground.Warnings);
 
             if (ground.PointCount < 3)
@@ -172,10 +176,13 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
 
             ct.ThrowIfCancellationRequested();
 
-            // 4) Create the TopographySurface on the Revit API thread.
+            // 4) Create the TopographySurface on the Revit API thread (bound to the captured document).
             progress.Report(new JobProgress { Phase = "importing", Percent = 88, Message = $"Creating topography from {ground.PointCount:N0} points…" });
-            PlateauTopographyImporter.TopographyImportResult result = await RevitContext.Instance.InvokeWithDocumentAsync(doc =>
-                RunStage("topography", () => new PlateauTopographyImporter().Import(doc, ground.Points, warnings))).ConfigureAwait(false);
+            PlateauTopographyImporter.TopographyImportResult result = await RevitContext.Instance.InvokeWithExpectedDocumentAsync(
+                capturedDocumentId,
+                "PLATEAU ground import",
+                doc => RunStage("topography", () => new PlateauTopographyImporter().Import(doc, ground.Points, warnings)),
+                capturedDocument).ConfigureAwait(false);
 
             progress.Report(new JobProgress { Phase = "completed", Percent = 100, Message = "Ground import complete" });
 
@@ -198,6 +205,23 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
         });
 
         return Task.FromResult<object?>(new JobStarted { JobId = jobId });
+    }
+
+    private static string ResolveCesiumIonToken(string? payloadToken)
+    {
+        if (!string.IsNullOrWhiteSpace(payloadToken))
+        {
+            return payloadToken!.Trim();
+        }
+
+        string? envToken = Environment.GetEnvironmentVariable("REVITGEOSUITE_CESIUM_ION_TOKEN");
+        if (!string.IsNullOrWhiteSpace(envToken))
+        {
+            return envToken!.Trim();
+        }
+
+        envToken = Environment.GetEnvironmentVariable("KANIZU_CESIUM_ION_TOKEN");
+        return string.IsNullOrWhiteSpace(envToken) ? string.Empty : envToken!.Trim();
     }
 
     // Tags failures with the stage and the first RevitGeoSuite stack frame so a low-context CLR

@@ -48,7 +48,13 @@ internal sealed partial class GisStandardRun
         }
 
         int beforeTransactions = host.LastEvent();
-        JsonNode? applied = await Shell.RpcAsync("georeference.apply", new { crsCode = $"EPSG:{LumineEpsg}", selectedMeshCodes = Array.Empty<string>(), confirmExistingSetup = true });
+        JsonNode? applied = await Shell.RpcAsync("georeference.apply", new
+        {
+            crsCode = $"EPSG:{LumineEpsg}",
+            documentId = (string?)before["documentId"],
+            selectedMeshCodes = Array.Empty<string>(),
+            confirmExistingSetup = true
+        });
         step.Note($"georeference.apply (confirm existing setup, EPSG:{LumineEpsg}): {applied?["message"]}");
         step.Note($"Transactions: {string.Join(", ", host.EventsAfter(beforeTransactions).Where(item => item.Kind == "commit"))}");
 

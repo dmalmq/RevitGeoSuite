@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { driftSource, initialShapeTypes, initiallyUnticked, modelMismatch, needsConfirm, outlineDrawing, shapesInitiallyUnticked } from '../driftReview'
+import { canKeepRevit, driftSource, initialShapeTypes, initiallyUnticked, modelMismatch, needsConfirm, outlineDrawing, shapesInitiallyUnticked } from '../driftReview'
 
 const change = (conflict: boolean) => ({
   uniqueId: 'u', layer: 'unit', field: 'name', feature: 'f', parameter: 'name', binding: 'instance',
@@ -33,6 +33,15 @@ describe('drift review ticks', () => {
     const drift = { modelKey: 'm1', fileModel: 'm1', source: 'picked', changes: [change(false)] }
     expect([...initiallyUnticked(drift)]).toEqual([])
     expect(needsConfirm(drift)).toBe(true)
+  })
+
+  it('allows keeping Revit values only for the open model own station drift file', () => {
+    expect(canKeepRevit({ modelKey: 'm1', fileModel: 'm1', source: 'station', changes: rows })).toBe(true)
+    expect(canKeepRevit({ modelKey: 'm1', fileModel: 'M1', source: 'station', changes: rows })).toBe(true)
+    expect(canKeepRevit({ modelKey: 'm1', fileModel: 'm1', source: 'picked', changes: rows })).toBe(false)
+    expect(canKeepRevit({ modelKey: 'm1', fileModel: 'm2', source: 'station', changes: rows })).toBe(false)
+    expect(canKeepRevit({ modelKey: '', fileModel: 'm1', source: 'station', changes: rows })).toBe(false)
+    expect(canKeepRevit({ modelKey: 'm1', fileModel: '', source: 'station', changes: rows })).toBe(false)
   })
 })
 

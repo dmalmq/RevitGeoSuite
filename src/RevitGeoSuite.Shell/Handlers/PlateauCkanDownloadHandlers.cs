@@ -278,6 +278,16 @@ public sealed class PlateauCkanDownloadHandler : IRpcHandler
             throw new InvalidOperationException("Select at least one CityGML resource to download.");
         }
 
+        foreach (string resourceUrl in resourceUrls)
+        {
+            if (!Uri.TryCreate(resourceUrl, UriKind.Absolute, out Uri? parsedUri) ||
+                !string.Equals(parsedUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                parsedUri.IsLoopback)
+            {
+                throw new InvalidOperationException($"Unsupported download URL '{resourceUrl}'. Only remote HTTPS dataset URLs are allowed.");
+            }
+        }
+
         string jobId = jobs.Start(async (ct, progress) =>
         {
             PlateauHttpClient httpClient = new PlateauHttpClient();

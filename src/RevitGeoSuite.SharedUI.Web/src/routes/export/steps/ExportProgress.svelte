@@ -40,7 +40,7 @@
     {/if}
     <p class="mt-1 break-all font-mono text-small">{outputFolder}</p>
     {#if exportProgress.warnings?.length > 0}
-      <p class="mt-2 text-warning-foreground">{fmt($t('Export.Warnings', '{0} warning(s)'), exportProgress.warnings.length)}</p>
+      <p class="mt-2 text-warning-text">{fmt($t('Export.Warnings', '{0} warning(s)'), exportProgress.warnings.length)}</p>
       <ul class="ml-4 max-h-32 list-disc overflow-y-auto text-small">
         {#each exportProgress.warnings.slice(0, 10) as w}<li>{w}</li>{/each}
       </ul>

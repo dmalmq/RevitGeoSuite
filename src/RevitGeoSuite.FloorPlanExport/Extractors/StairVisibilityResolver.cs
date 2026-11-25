@@ -8,6 +8,7 @@ using NetTopologySuite.Operation.Polygonize;
 using NetTopologySuite.Operation.Union;
 using NetTopologySuite.Precision;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using DocumentComparer = RevitGeoSuite.FloorPlanExport.Export.DocumentComparer;
 
 namespace RevitGeoSuite.FloorPlanExport.Extractors;
 
@@ -257,7 +258,7 @@ internal sealed class StairVisibilityResolver
         List<StairVisibilityCandidate> candidates = new();
         if (!useSectionBoxClipOnly &&
             view != null &&
-            ReferenceEquals(view.Document, _document) &&
+            DocumentComparer.IsSameDocument(view.Document, _document) &&
             TryExtractViewGraphicsPolygons(stairs, view, out List<Polygon2D> graphicsPolygons) &&
             TryCreateCandidate(VerticalCirculationVisibilitySourceKind.ViewGraphics, graphicsPolygons, evidence, out StairVisibilityCandidate? graphicsCandidate))
         {
@@ -272,7 +273,7 @@ internal sealed class StairVisibilityResolver
         }
 
         if (view != null &&
-            ReferenceEquals(view.Document, _document) &&
+            DocumentComparer.IsSameDocument(view.Document, _document) &&
             TryExtractElementPolygonsInView(stairs, view, out List<Polygon2D> viewPolygons) &&
             TryCreateCandidate(VerticalCirculationVisibilitySourceKind.ViewGeometry, viewPolygons, evidence, out StairVisibilityCandidate? viewCandidate))
         {
@@ -318,7 +319,7 @@ internal sealed class StairVisibilityResolver
 
     private VerticalCirculationVisibilityEvidence ExtractEvidence(Stairs stairs, ViewPlan? view)
     {
-        if (view == null || !ReferenceEquals(view.Document, _document))
+        if (view == null || !DocumentComparer.IsSameDocument(view.Document, _document))
         {
             return VerticalCirculationVisibilityEvidence.Empty;
         }
@@ -932,7 +933,7 @@ internal sealed class StairVisibilityResolver
             return null;
         }
 
-        if (view != null && ReferenceEquals(view.Document, element.Document))
+        if (view != null && DocumentComparer.IsSameDocument(view.Document, element.Document))
         {
             try
             {

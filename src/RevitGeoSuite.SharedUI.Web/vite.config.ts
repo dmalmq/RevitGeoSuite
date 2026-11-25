@@ -13,8 +13,34 @@ function devEntry(): Plugin {
   }
 }
 
+// Inject a strict Content Security Policy into the production WebView2 bundle while keeping
+// `vite dev` HMR unobstructed during local browser development.
+function buildCsp(): Plugin {
+  const policy = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'none'"
+  ].join('; ')
+
+  return {
+    name: 'revitgeosuite-build-csp',
+    apply: 'build',
+    transformIndexHtml: (html) =>
+      html.replace(
+        '<meta charset="UTF-8" />',
+        `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${policy}" />`
+      )
+  }
+}
+
 export default defineConfig({
-  plugins: [svelte(), tailwindcss(), devEntry()],
+  plugins: [svelte(), tailwindcss(), devEntry(), buildCsp()],
   resolve: {
     alias: {
       $lib: resolve('./src/lib')

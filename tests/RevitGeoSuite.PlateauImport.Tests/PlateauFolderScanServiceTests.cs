@@ -163,6 +163,87 @@ public sealed class PlateauFolderScanServiceTests
         }
     }
 
+    [Fact]
+    public void ScanFolder_parses_many_files_sharing_codelists_concurrently_without_races()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "RevitGeoSuiteConcurrentCodelistScanTests", Guid.NewGuid().ToString("N"));
+        string tranDir = Path.Combine(root, "udx", "tran");
+        string codelistDir = Path.Combine(root, "codelists");
+        try
+        {
+            Directory.CreateDirectory(tranDir);
+            Directory.CreateDirectory(codelistDir);
+            File.WriteAllText(
+                Path.Combine(codelistDir, "TrafficArea_function.xml"),
+                @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<gml:Dictionary xmlns:gml=""http://www.opengis.net/gml"">
+  <gml:dictionaryEntry>
+    <gml:Definition gml:id=""TrafficArea_function_2000"">
+      <gml:description>歩道部</gml:description>
+      <gml:name>2000</gml:name>
+    </gml:Definition>
+  </gml:dictionaryEntry>
+</gml:Dictionary>");
+
+            const int fileCount = 32;
+            for (int i = 0; i < fileCount; i++)
+            {
+                string tileId = $"533945{i:00}";
+                string xml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<core:CityModel xmlns:core=""http://www.opengis.net/citygml/2.0""
+                xmlns:gml=""http://www.opengis.net/gml""
+                xmlns:tran=""http://www.opengis.net/citygml/transportation/2.0""
+                srsName=""urn:ogc:def:crs:EPSG::6697"">
+  <core:cityObjectMember>
+    <tran:Road gml:id=""road-{i}"">
+      <gml:name>Road {i}</gml:name>
+      <tran:trafficArea>
+        <tran:TrafficArea gml:id=""traf-{i}"">
+          <tran:function codeSpace=""../../codelists/TrafficArea_function.xml"">2000</tran:function>
+          <tran:lod3MultiSurface>
+            <gml:MultiSurface>
+              <gml:surfaceMember>
+                <gml:Polygon>
+                  <gml:exterior>
+                    <gml:LinearRing>
+                      <gml:posList srsDimension=""3"">0 0 1 5 0 1 5 2 1 0 2 1 0 0 1</gml:posList>
+                    </gml:LinearRing>
+                  </gml:exterior>
+                </gml:Polygon>
+              </gml:surfaceMember>
+            </gml:MultiSurface>
+          </tran:lod3MultiSurface>
+        </tran:TrafficArea>
+      </tran:trafficArea>
+    </tran:Road>
+  </core:cityObjectMember>
+</core:CityModel>";
+                File.WriteAllText(Path.Combine(tranDir, $"{tileId}_tran_6697_op.gml"), xml);
+            }
+
+            List<PlateauScanProgress> progressEvents = new List<PlateauScanProgress>();
+            PlateauFolderScanService service = new PlateauFolderScanService(new CityGmlParser());
+
+            PlateauFolderScanResult result = service.ScanFolder(root, progressEvents.Add);
+
+            Assert.Empty(result.WarningMessages);
+            Assert.Equal(fileCount, result.CityModels.Count);
+            Assert.All(result.CityModels, model =>
+            {
+                PlateauContextFeature feature = Assert.Single(model.Features);
+                Assert.Equal(PlateauFeatureType.Sidewalk, feature.FeatureType);
+                Assert.Equal("歩道部", feature.ClassName);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     private static string GetWarningFileName(string warning)
     {
         int start = warning.IndexOf("'", StringComparison.Ordinal);

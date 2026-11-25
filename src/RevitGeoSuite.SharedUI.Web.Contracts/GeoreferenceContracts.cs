@@ -108,6 +108,9 @@ public sealed class GeoreferenceApplyRequest
 {
     public string CrsCode { get; set; } = string.Empty;
 
+    /// <summary>Identity of the Revit document reviewed before applying; rejects writes if the active model changed.</summary>
+    public string? DocumentId { get; set; }
+
     public string[] SelectedMeshCodes { get; set; } = Array.Empty<string>();
 
     public GeoreferenceManualProjectBasePoint? ManualProjectBasePoint { get; set; }
@@ -175,6 +178,8 @@ public sealed class GeoreferenceProjectPositionSnapshot
 [TsExport]
 public sealed class GeoreferenceCurrentStateResponse
 {
+    public string? DocumentId { get; set; }
+
     public string DocumentTitle { get; set; } = string.Empty;
 
     public bool IsSupportedDocument { get; set; } = true;
@@ -246,6 +251,8 @@ public sealed class AvailableCrsResponse
 [TsExport]
 public sealed class GeoreferenceRevertRequest
 {
+    /// <summary>Identity of the Revit document reviewed before reverting; rejects writes if the active model changed.</summary>
+    public string? DocumentId { get; set; }
 }
 
 /// <summary>Result of the <c>georeference.revert</c> request.</summary>

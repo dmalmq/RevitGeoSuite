@@ -49,6 +49,48 @@ public sealed class B3dmParserTests
         Assert.Empty(contents.BatchTableJson);
     }
 
+    [Theory]
+    [InlineData(12)]
+    [InlineData(16)]
+    [InlineData(20)]
+    [InlineData(24)]
+    public void Parse_rejects_negative_section_lengths(int headerFieldOffset)
+    {
+        byte[] payload = BuildB3dm("{\"BATCH_LENGTH\":0}", Array.Empty<byte>(), string.Empty, Array.Empty<byte>(), new byte[] { 1, 2, 3, 4 });
+        BitConverter.GetBytes(-16).CopyTo(payload, headerFieldOffset);
+
+        Assert.Throws<InvalidOperationException>(() => B3dmParser.Parse(payload));
+    }
+
+    [Fact]
+    public void Parse_rejects_overflowing_section_length_sum()
+    {
+        byte[] payload = new byte[32];
+        Encoding.ASCII.GetBytes("b3dm", 0, 4, payload, 0);
+        BitConverter.GetBytes(1).CopyTo(payload, 4);
+        BitConverter.GetBytes(32).CopyTo(payload, 8);
+        BitConverter.GetBytes(0x70000000).CopyTo(payload, 12);
+        BitConverter.GetBytes(0x70000000).CopyTo(payload, 16);
+        BitConverter.GetBytes(0).CopyTo(payload, 20);
+        BitConverter.GetBytes(0).CopyTo(payload, 24);
+
+        Assert.Throws<InvalidOperationException>(() => B3dmParser.Parse(payload));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(20)]
+    public void Parse_rejects_negative_or_short_byte_length(int badByteLength)
+    {
+        byte[] payload = new byte[32];
+        Encoding.ASCII.GetBytes("b3dm", 0, 4, payload, 0);
+        BitConverter.GetBytes(1).CopyTo(payload, 4);
+        BitConverter.GetBytes(badByteLength).CopyTo(payload, 8);
+
+        Assert.Throws<InvalidOperationException>(() => B3dmParser.Parse(payload));
+    }
+
     private static byte[] BuildB3dm(string featureTableJson, byte[] featureTableBinary, string batchTableJson, byte[] batchTableBinary, byte[] gltf)
     {
         byte[] featureTableJsonBytes = Encoding.UTF8.GetBytes(PadTo4(featureTableJson));

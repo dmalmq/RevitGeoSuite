@@ -26,7 +26,8 @@ public sealed class ViewExportContextProvider
         IReadOnlyDictionary<string, string>? familyCategoryOverrides = null,
         IReadOnlyList<string>? acceptedOpeningFamilies = null,
         LinkExportOptions? linkExportOptions = null,
-        Temp3DViewScope? threeDViewScope = null)
+        Temp3DViewScope? threeDViewScope = null,
+        ICollection<LinkCoverageProblem>? linkReadFailures = null)
     {
         if (selectedViews is null)
         {
@@ -89,7 +90,8 @@ public sealed class ViewExportContextProvider
                         linkExportOptions,
                         loadedLinkInstances,
                         selectedLinkIds,
-                        clipRegion),
+                        clipRegion,
+                        linkReadFailures),
                     geometryView,
                     CollectColumnsInView(view.Id, zoneCatalog, familyCategoryOverrides, clipRegion)));
         }
@@ -107,6 +109,39 @@ public sealed class ViewExportContextProvider
             .OrderBy(instance => GetLinkDisplayName(instance), StringComparer.OrdinalIgnoreCase)
             .ThenBy(instance => instance.Id.Value)
             .ToList();
+    }
+
+    /// <summary>
+    /// The selected links an export cannot fully and stably cover: those not loaded, and those
+    /// whose model has no model id. A selected link that no longer exists is not a problem here.
+    /// </summary>
+    public IReadOnlyList<LinkCoverageProblem> FindLinkCoverageProblems(LinkExportOptions? linkExportOptions)
+    {
+        List<LinkCoverageProblem> problems = new();
+        if (linkExportOptions?.IncludeLinkedModels != true || linkExportOptions.SelectedLinkInstanceIds == null)
+        {
+            return problems;
+        }
+
+        foreach (long linkInstanceId in linkExportOptions.SelectedLinkInstanceIds.Distinct())
+        {
+            if (_document.GetElement(new ElementId(linkInstanceId)) is not RevitLinkInstance linkInstance)
+            {
+                continue;
+            }
+
+            Document? linkedDocument = linkInstance.GetLinkDocument();
+            if (linkedDocument == null)
+            {
+                problems.Add(new LinkCoverageProblem(GetLinkDisplayName(linkInstance), LinkCoverageProblemKind.NotLoaded));
+            }
+            else if (RevitKey.IsDocumentModelKey(RevitModelKeyResolver.Resolve(linkedDocument)))
+            {
+                problems.Add(new LinkCoverageProblem(GetLinkDisplayName(linkInstance), LinkCoverageProblemKind.NoModelId));
+            }
+        }
+
+        return problems;
     }
 
     private List<Floor> CollectFloorsInView(ElementId viewId, ClipRegion2D? clipRegion)
@@ -251,7 +286,8 @@ public sealed class ViewExportContextProvider
         LinkExportOptions? linkExportOptions,
         IReadOnlyList<RevitLinkInstance> loadedLinkInstances,
         ISet<long> selectedLinkIds,
-        ClipRegion2D? clipRegion)
+        ClipRegion2D? clipRegion,
+        ICollection<LinkCoverageProblem>? linkReadFailures)
     {
         if (linkExportOptions == null || !linkExportOptions.IncludeLinkedModels)
         {
@@ -297,10 +333,15 @@ public sealed class ViewExportContextProvider
                         CollectDetailCurvesInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
                         CollectColumnsInLinkView(viewId, linkInstance.Id, zoneCatalog, familyCategoryOverrides, linkTransform, clipRegion)));
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Some host view/link combinations cannot be queried with Revit's linked-view
-                // collector. Skip that link for this view instead of aborting the whole export.
+                // collector. The link is skipped for this view; an export that must cover every
+                // link stops on the recorded failure.
+                linkReadFailures?.Add(new LinkCoverageProblem(
+                    GetLinkDisplayName(linkInstance),
+                    LinkCoverageProblemKind.ReadFailed,
+                    $"view '{_document.GetElement(viewId)?.Name}': {ex.Message}"));
             }
         }
 

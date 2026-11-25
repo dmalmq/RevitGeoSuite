@@ -69,7 +69,18 @@ public sealed class PlateauTilesetDownloader
         string datasetFolder = Path.Combine(
             cache.GetDatasetFolder("ion", sourceLabel.Replace(' ', '-').ToLowerInvariant(), null, null));
 
-        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(tilesetUrl, cancellationToken).ConfigureAwait(false);
+        Func<TilesetRegion, bool>? regionFilter = null;
+        if (bbox.HasValue)
+        {
+            BoundingBoxDegrees b = bbox.Value;
+            regionFilter = region => region.IntersectsDegrees(
+                b.WestLongitude,
+                b.SouthLatitude,
+                b.EastLongitude,
+                b.NorthLatitude);
+        }
+
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(tilesetUrl, regionFilter, cancellationToken).ConfigureAwait(false);
         if (bbox.HasValue)
         {
             BoundingBoxDegrees b = bbox.Value;
@@ -79,6 +90,8 @@ public sealed class PlateauTilesetDownloader
         }
 
         Dictionary<string, PlateauTilesetFeatureBuilder> byId = new(StringComparer.Ordinal);
+        JapanMeshCalculator meshCalculator = new JapanMeshCalculator();
+        HashSet<string> emptySelectedMeshIds = new HashSet<string>(StringComparer.Ordinal);
 
         for (int i = 0; i < leaves.Count; i++)
         {
@@ -115,7 +128,7 @@ public sealed class PlateauTilesetDownloader
                 continue;
             }
 
-            ProjectFeatures(leaf.Transform, meshes, byId);
+            ProjectFeatures(leaf.Id, leaf.Transform, meshes, emptySelectedMeshIds, meshCalculator, byId);
         }
 
         progress?.Report(new PlateauTilesetDownloadProgress(leaves.Count, leaves.Count, "completed"));
@@ -123,7 +136,11 @@ public sealed class PlateauTilesetDownloader
         List<PlateauTilesetFeature> features = new(byId.Count);
         foreach (var pair in byId)
         {
-            features.Add(new PlateauTilesetFeature(pair.Key, pair.Value.Attributes, pair.Value.Triangles));
+            features.Add(new PlateauTilesetFeature(
+                pair.Key,
+                pair.Value.Attributes,
+                pair.Value.Triangles,
+                pair.Value.GridId ?? pair.Value.FallbackLeafId));
         }
         return new PlateauTilesetModel(tilesetUrl.AbsoluteUri, sourceLabel, null, null, null, features);
     }
@@ -140,8 +157,16 @@ public sealed class PlateauTilesetDownloader
         Uri tilesetUri = new Uri(sourceUrl);
         string datasetFolder = cache.GetDatasetFolder(areaCode, entry.TypeEn ?? "unknown", entry.Lod, entry.Texture);
 
-        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(tilesetUri, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<SelectedMeshBounds> selectedBounds = BuildSelectedMeshBounds(selectedMeshIds);
+        Func<TilesetRegion, bool>? regionFilter = selectedBounds.Count > 0
+            ? region => selectedBounds.Any(bounds => region.IntersectsDegrees(
+                bounds.WestLongitude,
+                bounds.SouthLatitude,
+                bounds.EastLongitude,
+                bounds.NorthLatitude))
+            : null;
+
+        IReadOnlyList<TilesetLeaf> leaves = await walker.WalkAsync(tilesetUri, regionFilter, cancellationToken).ConfigureAwait(false);
         if (selectedBounds.Count > 0)
         {
             leaves = leaves
@@ -150,6 +175,10 @@ public sealed class PlateauTilesetDownloader
         }
 
         Dictionary<string, PlateauTilesetFeatureBuilder> byId = new(StringComparer.Ordinal);
+        JapanMeshCalculator meshCalculator = new JapanMeshCalculator();
+        HashSet<string> selectedMeshIdSet = new HashSet<string>(
+            selectedBounds.Select(bounds => bounds.MeshId),
+            StringComparer.Ordinal);
 
         for (int i = 0; i < leaves.Count; i++)
         {
@@ -186,7 +215,7 @@ public sealed class PlateauTilesetDownloader
                 continue;
             }
 
-            ProjectFeatures(leaf.Transform, meshes, byId);
+            ProjectFeatures(leaf.Id, leaf.Transform, meshes, selectedMeshIdSet, meshCalculator, byId);
         }
 
         progress?.Report(new PlateauTilesetDownloadProgress(leaves.Count, leaves.Count, "completed"));
@@ -194,7 +223,11 @@ public sealed class PlateauTilesetDownloader
         List<PlateauTilesetFeature> features = new(byId.Count);
         foreach (var pair in byId)
         {
-            features.Add(new PlateauTilesetFeature(pair.Key, pair.Value.Attributes, pair.Value.Triangles));
+            features.Add(new PlateauTilesetFeature(
+                pair.Key,
+                pair.Value.Attributes,
+                pair.Value.Triangles,
+                pair.Value.GridId ?? pair.Value.FallbackLeafId));
         }
         return new PlateauTilesetModel(sourceUrl, entry.TypeEn ?? string.Empty, entry.Lod, entry.Texture, areaCode, features);
     }
@@ -265,40 +298,103 @@ public sealed class PlateauTilesetDownloader
             bounds.NorthLatitude));
     }
 
-    private void ProjectFeatures(Matrix4x4d tileTransform, IReadOnlyList<PlateauTilesetFeatureMesh> meshes, Dictionary<string, PlateauTilesetFeatureBuilder> byId)
+    private void ProjectFeatures(
+        string leafId,
+        Matrix4x4d tileTransform,
+        IReadOnlyList<PlateauTilesetFeatureMesh> meshes,
+        HashSet<string> selectedMeshIds,
+        JapanMeshCalculator meshCalculator,
+        Dictionary<string, PlateauTilesetFeatureBuilder> byId)
     {
         foreach (PlateauTilesetFeatureMesh feature in meshes)
         {
-            string id = feature.GmlId ?? $"batch-{feature.BatchId}";
+            string id = !string.IsNullOrWhiteSpace(feature.GmlId)
+                ? feature.GmlId!
+                : $"tile-{leafId}-batch-{feature.BatchId}";
             if (!byId.TryGetValue(id, out PlateauTilesetFeatureBuilder? builder))
             {
-                builder = new PlateauTilesetFeatureBuilder(feature.Attributes);
+                builder = new PlateauTilesetFeatureBuilder(feature.Attributes, leafId);
                 byId[id] = builder;
             }
+
+            bool needsGridLookup = selectedMeshIds.Count > 0
+                ? !builder.HasMatchedSelectedGrid
+                : builder.GridId is null;
+
             foreach (PlateauTilesetTriangle tri in feature.Triangles)
             {
-                Vector3d a = ProjectVertex(tri.A, tileTransform);
-                Vector3d b = ProjectVertex(tri.B, tileTransform);
-                Vector3d c = ProjectVertex(tri.C, tileTransform);
+                Vector3d ecefA = tileTransform.TransformPoint(tri.A);
+                Vector3d ecefB = tileTransform.TransformPoint(tri.B);
+                Vector3d ecefC = tileTransform.TransformPoint(tri.C);
+
+                if (needsGridLookup)
+                {
+                    TryUpdateFeatureGridId(builder, ecefA, selectedMeshIds, meshCalculator);
+                    if (selectedMeshIds.Count > 0 && !builder.HasMatchedSelectedGrid)
+                    {
+                        TryUpdateFeatureGridId(builder, ecefB, selectedMeshIds, meshCalculator);
+                    }
+                    if (selectedMeshIds.Count > 0 && !builder.HasMatchedSelectedGrid)
+                    {
+                        TryUpdateFeatureGridId(builder, ecefC, selectedMeshIds, meshCalculator);
+                    }
+
+                    needsGridLookup = selectedMeshIds.Count > 0
+                        ? !builder.HasMatchedSelectedGrid
+                        : builder.GridId is null;
+                }
+
+                Vector3d a = ecefTransformer.TransformEcefToProject(ecefA);
+                Vector3d b = ecefTransformer.TransformEcefToProject(ecefB);
+                Vector3d c = ecefTransformer.TransformEcefToProject(ecefC);
                 builder.Triangles.Add(new PlateauTilesetTriangle(a, b, c));
             }
         }
     }
 
-    private Vector3d ProjectVertex(Vector3d local, Matrix4x4d tileTransform)
+    private static void TryUpdateFeatureGridId(
+        PlateauTilesetFeatureBuilder builder,
+        Vector3d ecef,
+        HashSet<string> selectedMeshIds,
+        JapanMeshCalculator meshCalculator)
     {
-        Vector3d ecef = tileTransform.TransformPoint(local);
-        return ecefTransformer.TransformEcefToProject(ecef);
+        GeodeticCoordinate geo = EcefGeodeticConverter.ToGeodetic(ecef);
+        if (!JapanMeshDomain.IsSupportedCoordinate(geo.LatitudeDegrees, geo.LongitudeDegrees))
+        {
+            return;
+        }
+
+        string meshId = meshCalculator.Calculate(geo.LatitudeDegrees, geo.LongitudeDegrees, JapanMeshLevel.Tertiary).Value;
+        if (selectedMeshIds.Count > 0)
+        {
+            if (selectedMeshIds.Contains(meshId))
+            {
+                builder.GridId = meshId;
+                builder.HasMatchedSelectedGrid = true;
+            }
+            else if (builder.GridId is null)
+            {
+                builder.GridId = meshId;
+            }
+        }
+        else if (builder.GridId is null)
+        {
+            builder.GridId = meshId;
+        }
     }
 
     private sealed class PlateauTilesetFeatureBuilder
     {
-        public PlateauTilesetFeatureBuilder(IReadOnlyDictionary<string, object?> attributes)
+        public PlateauTilesetFeatureBuilder(IReadOnlyDictionary<string, object?> attributes, string fallbackLeafId)
         {
             Attributes = attributes;
+            FallbackLeafId = fallbackLeafId;
         }
 
         public IReadOnlyDictionary<string, object?> Attributes { get; }
+        public string FallbackLeafId { get; }
+        public string? GridId { get; set; }
+        public bool HasMatchedSelectedGrid { get; set; }
         public List<PlateauTilesetTriangle> Triangles { get; } = new();
     }
 

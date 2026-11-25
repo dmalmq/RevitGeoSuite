@@ -118,7 +118,7 @@ public sealed class GltfMeshDecoder
         uint[]? batchIds = null;
         if (primitive.Attributes.TryGetValue("_BATCHID", out int batchAccessor))
         {
-            batchIds = ReadScalarUInt32Accessor(doc, bin, batchAccessor);
+            batchIds = ReadScalarUInt32Accessor(doc, bin, batchAccessor, allowFloat: true);
         }
         uint[] indices = primitive.Indices.HasValue
             ? ReadIndicesAccessor(doc, bin, primitive.Indices.Value)
@@ -128,57 +128,144 @@ public sealed class GltfMeshDecoder
 
     private static ArraySegment<byte> SliceBufferView(GltfDocument doc, byte[] bin, int bufferViewIndex)
     {
-        GltfBufferView view = doc.BufferViews?[bufferViewIndex] ?? throw new InvalidOperationException("Buffer view missing.");
+        if (doc.BufferViews is null || bufferViewIndex < 0 || bufferViewIndex >= doc.BufferViews.Count)
+        {
+            throw new InvalidOperationException("Buffer view missing or index out of range.");
+        }
+
+        GltfBufferView view = doc.BufferViews[bufferViewIndex];
         int start = view.ByteOffset ?? 0;
-        if (start < 0 || start + view.ByteLength > bin.Length)
+        if (start < 0 || view.ByteLength < 0 || (long)start + view.ByteLength > bin.Length)
         {
             throw new InvalidOperationException("Buffer view out of range.");
         }
         return new ArraySegment<byte>(bin, start, view.ByteLength);
     }
 
+    private static GltfAccessor GetAccessor(GltfDocument doc, int accessorIndex)
+    {
+        if (doc.Accessors is null || accessorIndex < 0 || accessorIndex >= doc.Accessors.Count)
+        {
+            throw new InvalidOperationException("Accessor missing or index out of range.");
+        }
+
+        GltfAccessor accessor = doc.Accessors[accessorIndex];
+        if (accessor.Count < 0)
+        {
+            throw new InvalidOperationException("Accessor count cannot be negative.");
+        }
+
+        if ((accessor.ByteOffset ?? 0) < 0)
+        {
+            throw new InvalidOperationException("Accessor byteOffset cannot be negative.");
+        }
+
+        return accessor;
+    }
+
+    private static void ValidateAccessorRange(int accessorByteOffset, int count, int elementSizeBytes, int strideBytes, int viewLength)
+    {
+        if (strideBytes < elementSizeBytes)
+        {
+            throw new InvalidOperationException($"Buffer view byteStride ({strideBytes}) is smaller than element size ({elementSizeBytes}).");
+        }
+
+        if (count == 0)
+        {
+            return;
+        }
+
+        long lastByteEnd = (long)accessorByteOffset + ((long)(count - 1) * strideBytes) + elementSizeBytes;
+        if (lastByteEnd > viewLength)
+        {
+            throw new InvalidOperationException("Accessor range exceeds buffer view length.");
+        }
+    }
+
     private static float[] ReadVec3FloatAccessor(GltfDocument doc, byte[] bin, int accessorIndex)
     {
-        GltfAccessor accessor = doc.Accessors?[accessorIndex] ?? throw new InvalidOperationException("Accessor missing.");
+        GltfAccessor accessor = GetAccessor(doc, accessorIndex);
         if (accessor.Type != "VEC3" || accessor.ComponentType != 5126)
         {
             throw new InvalidOperationException($"Expected VEC3 FLOAT accessor at {accessorIndex}.");
         }
-        ArraySegment<byte> view = SliceBufferView(doc, bin, accessor.BufferView ?? throw new InvalidOperationException("Accessor missing bufferView."));
-        int baseOffset = view.Offset + (accessor.ByteOffset ?? 0);
-        float[] result = new float[accessor.Count * 3];
-        Buffer.BlockCopy(view.Array!, baseOffset, result, 0, result.Length * sizeof(float));
-        return result;
-    }
 
-    private static uint[] ReadScalarUInt32Accessor(GltfDocument doc, byte[] bin, int accessorIndex)
-    {
-        GltfAccessor accessor = doc.Accessors?[accessorIndex] ?? throw new InvalidOperationException("Accessor missing.");
-        if (accessor.Type != "SCALAR") throw new InvalidOperationException("Expected SCALAR accessor.");
-        ArraySegment<byte> view = SliceBufferView(doc, bin, accessor.BufferView ?? throw new InvalidOperationException("Accessor missing bufferView."));
-        int baseOffset = view.Offset + (accessor.ByteOffset ?? 0);
-        uint[] result = new uint[accessor.Count];
-        switch (accessor.ComponentType)
+        int bufferViewIndex = accessor.BufferView ?? throw new InvalidOperationException("Accessor missing bufferView.");
+        ArraySegment<byte> view = SliceBufferView(doc, bin, bufferViewIndex);
+        GltfBufferView bufferView = doc.BufferViews![bufferViewIndex];
+        const int elementSize = 3 * sizeof(float);
+        int stride = (bufferView.ByteStride ?? 0) == 0 ? elementSize : bufferView.ByteStride!.Value;
+        int accessorOffset = accessor.ByteOffset ?? 0;
+        ValidateAccessorRange(accessorOffset, accessor.Count, elementSize, stride, view.Count);
+
+        int baseOffset = view.Offset + accessorOffset;
+        float[] result = new float[accessor.Count * 3];
+        if (stride == elementSize)
         {
-            case 5121: // UNSIGNED_BYTE
-                for (int i = 0; i < result.Length; i++) result[i] = view.Array![baseOffset + i];
-                break;
-            case 5123: // UNSIGNED_SHORT
-                for (int i = 0; i < result.Length; i++) result[i] = BitConverter.ToUInt16(view.Array!, baseOffset + i * 2);
-                break;
-            case 5125: // UNSIGNED_INT
-                for (int i = 0; i < result.Length; i++) result[i] = BitConverter.ToUInt32(view.Array!, baseOffset + i * 4);
-                break;
-            case 5126: // FLOAT (some encoders use float for batch IDs)
-                for (int i = 0; i < result.Length; i++) result[i] = (uint)BitConverter.ToSingle(view.Array!, baseOffset + i * 4);
-                break;
-            default:
-                throw new InvalidOperationException($"Unsupported scalar component type {accessor.ComponentType}.");
+            Buffer.BlockCopy(view.Array!, baseOffset, result, 0, result.Length * sizeof(float));
+        }
+        else
+        {
+            byte[] source = view.Array!;
+            for (int i = 0; i < accessor.Count; i++)
+            {
+                int elemOffset = baseOffset + (i * stride);
+                result[i * 3 + 0] = BitConverter.ToSingle(source, elemOffset);
+                result[i * 3 + 1] = BitConverter.ToSingle(source, elemOffset + 4);
+                result[i * 3 + 2] = BitConverter.ToSingle(source, elemOffset + 8);
+            }
         }
         return result;
     }
 
-    private static uint[] ReadIndicesAccessor(GltfDocument doc, byte[] bin, int accessorIndex) => ReadScalarUInt32Accessor(doc, bin, accessorIndex);
+    private static uint[] ReadScalarUInt32Accessor(GltfDocument doc, byte[] bin, int accessorIndex, bool allowFloat)
+    {
+        GltfAccessor accessor = GetAccessor(doc, accessorIndex);
+        if (accessor.Type != "SCALAR") throw new InvalidOperationException("Expected SCALAR accessor.");
+
+        if (!allowFloat && accessor.ComponentType == 5126)
+        {
+            throw new InvalidOperationException("Index accessor cannot use FLOAT component type (5126); expected UNSIGNED_BYTE, UNSIGNED_SHORT, or UNSIGNED_INT.");
+        }
+
+        int bufferViewIndex = accessor.BufferView ?? throw new InvalidOperationException("Accessor missing bufferView.");
+        ArraySegment<byte> view = SliceBufferView(doc, bin, bufferViewIndex);
+        GltfBufferView bufferView = doc.BufferViews![bufferViewIndex];
+        int elementSize = accessor.ComponentType switch
+        {
+            5121 => 1,
+            5123 => 2,
+            5125 => 4,
+            5126 => 4,
+            _ => throw new InvalidOperationException($"Unsupported scalar component type {accessor.ComponentType}.")
+        };
+        int stride = (bufferView.ByteStride ?? 0) == 0 ? elementSize : bufferView.ByteStride!.Value;
+        int accessorOffset = accessor.ByteOffset ?? 0;
+        ValidateAccessorRange(accessorOffset, accessor.Count, elementSize, stride, view.Count);
+
+        int baseOffset = view.Offset + accessorOffset;
+        byte[] source = view.Array!;
+        uint[] result = new uint[accessor.Count];
+        switch (accessor.ComponentType)
+        {
+            case 5121: // UNSIGNED_BYTE
+                for (int i = 0; i < result.Length; i++) result[i] = source[baseOffset + (i * stride)];
+                break;
+            case 5123: // UNSIGNED_SHORT
+                for (int i = 0; i < result.Length; i++) result[i] = BitConverter.ToUInt16(source, baseOffset + (i * stride));
+                break;
+            case 5125: // UNSIGNED_INT
+                for (int i = 0; i < result.Length; i++) result[i] = BitConverter.ToUInt32(source, baseOffset + (i * stride));
+                break;
+            case 5126: // FLOAT (some encoders use float for batch IDs)
+                for (int i = 0; i < result.Length; i++) result[i] = (uint)BitConverter.ToSingle(source, baseOffset + (i * stride));
+                break;
+        }
+        return result;
+    }
+
+    private static uint[] ReadIndicesAccessor(GltfDocument doc, byte[] bin, int accessorIndex) =>
+        ReadScalarUInt32Accessor(doc, bin, accessorIndex, allowFloat: false);
 
     private static uint[] BuildSequentialIndices(int vertexCount)
     {
@@ -192,16 +279,35 @@ public sealed class GltfMeshDecoder
         uint[] indices = primitive.Indices;
         float[] pos = primitive.Positions;
         uint[]? batchIds = primitive.BatchIds;
+        int maxVertexCount = Math.Min(primitive.VertexCount, pos.Length / 3);
         for (int t = 0; t + 2 < indices.Length; t += 3)
         {
             uint ia = indices[t + 0];
             uint ib = indices[t + 1];
             uint ic = indices[t + 2];
+            if (ia >= (uint)maxVertexCount || ib >= (uint)maxVertexCount || ic >= (uint)maxVertexCount)
+            {
+                throw new InvalidOperationException("glTF triangle vertex index is out of range.");
+            }
+
             Vector3d a = ReadVertex(pos, (int)ia, worldRtc);
             Vector3d b = ReadVertex(pos, (int)ib, worldRtc);
             Vector3d c = ReadVertex(pos, (int)ic, worldRtc);
 
-            int batchId = batchIds is null ? 0 : (int)batchIds[(int)ia];
+            int batchId;
+            if (batchIds is null)
+            {
+                batchId = 0;
+            }
+            else if (ia >= (uint)batchIds.Length)
+            {
+                throw new InvalidOperationException("glTF _BATCHID accessor is shorter than vertex index.");
+            }
+            else
+            {
+                batchId = (int)batchIds[(int)ia];
+            }
+
             if (!byBatch.TryGetValue(batchId, out List<PlateauTilesetTriangle>? list))
             {
                 list = new List<PlateauTilesetTriangle>();

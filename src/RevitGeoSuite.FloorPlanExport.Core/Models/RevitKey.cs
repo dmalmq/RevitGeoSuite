@@ -68,6 +68,84 @@ public static class RevitKey
         return modelKey != null && modelKey.StartsWith(DocumentKeyPrefix, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Reads a key strictly as <c>model|UniqueId|part</c>: exactly three parts, a model and a
+    /// UniqueId that are not blank, and a part that is a whole number written in digits only.
+    /// Anything else is not a key, so nothing can be read from it.
+    /// </summary>
+    public static bool TryParse(string? key, out string modelPart, out string uniqueId, out int partIndex)
+    {
+        modelPart = string.Empty;
+        uniqueId = string.Empty;
+        partIndex = 0;
+        if (string.IsNullOrEmpty(key))
+        {
+            return false;
+        }
+
+        string[] parts = key!.Split(Separator);
+        if (parts.Length != 3 ||
+            string.IsNullOrWhiteSpace(parts[0]) ||
+            string.IsNullOrWhiteSpace(parts[1]) ||
+            !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out int part))
+        {
+            return false;
+        }
+
+        modelPart = parts[0];
+        uniqueId = parts[1];
+        partIndex = part;
+        return true;
+    }
+
+    /// <summary>
+    /// The model part of a key: everything before its UniqueId, so <c>model</c> or
+    /// <c>model@LinkUniqueId</c>. Empty when <paramref name="key"/> does not read as a key
+    /// (<see cref="TryParse"/>).
+    /// </summary>
+    public static string ModelPartOf(string? key)
+    {
+        return TryParse(key, out string modelPart, out _, out _) ? modelPart : string.Empty;
+    }
+
+    /// <summary>
+    /// The name Kanizu files a model's drift and keep files under, from the model part of its
+    /// keys: the model id as it is, or the document key without its <c>doc:</c> prefix.
+    /// </summary>
+    public static string FilingKeyOf(string? modelKey)
+    {
+        string key = (modelKey ?? string.Empty).Trim();
+        return IsDocumentModelKey(key) ? key.Substring(DocumentKeyPrefix.Length).Trim() : key;
+    }
+
+    /// <summary>
+    /// Whether the feature a key names belongs to the model <paramref name="hostModelKey"/> itself,
+    /// not to a model linked into it or to another model. The model parts compare whole, so a
+    /// linked model's <c>model@LinkUniqueId</c> never matches its host. False when either side
+    /// names no model: a key that cannot be checked is never taken for the host's.
+    /// </summary>
+    public static bool BelongsToModel(string? key, string? hostModelKey)
+    {
+        string model = ModelPartOf(key).Trim();
+        string host = (hostModelKey ?? string.Empty).Trim();
+        return model.Length > 0 && host.Length > 0 && string.Equals(model, host, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The UniqueId of the link instance a model part names (<c>model@LinkUniqueId</c>), or empty
+    /// for a model part without one.
+    /// </summary>
+    public static string LinkInstanceOf(string? modelPart)
+    {
+        if (string.IsNullOrEmpty(modelPart))
+        {
+            return string.Empty;
+        }
+
+        int link = modelPart!.LastIndexOf(LinkSeparator);
+        return link < 0 ? string.Empty : modelPart.Substring(link + 1).Trim();
+    }
+
     /// <summary>The key, or null when the element has no UniqueId (a synthetic feature).</summary>
     public static string? Create(string? modelKey, string? uniqueId, int partIndex = 0)
     {
