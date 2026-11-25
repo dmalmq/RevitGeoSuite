@@ -1,5 +1,6 @@
 using System;
 using Autodesk.Revit.DB;
+using RevitGeoSuite.Core.Mesh;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.Core.Storage;
 using RevitGeoSuite.Core.Workflow;
@@ -13,20 +14,32 @@ public sealed class RevitGeoPlacementService : IRevitGeoPlacementService
     private readonly IGeoProjectInfoStore geoProjectInfoStore;
     private readonly PlacementAuditStorage placementAuditStorage;
     private readonly IModuleStateStore moduleStateStore;
+    private readonly GeoreferenceUndoStorage undoStorage;
 
     public RevitGeoPlacementService(
         ProjectLocationWriter? projectLocationWriter = null,
         IGeoProjectInfoStore? geoProjectInfoStore = null,
         PlacementAuditStorage? placementAuditStorage = null,
-        IModuleStateStore? moduleStateStore = null)
+        IModuleStateStore? moduleStateStore = null,
+        GeoreferenceUndoStorage? undoStorage = null)
     {
         this.projectLocationWriter = projectLocationWriter ?? new ProjectLocationWriter();
         this.geoProjectInfoStore = geoProjectInfoStore ?? new GeoProjectInfoStorage();
         this.placementAuditStorage = placementAuditStorage ?? new PlacementAuditStorage();
         this.moduleStateStore = moduleStateStore ?? new ModuleStateStorage();
+        this.undoStorage = undoStorage ?? new GeoreferenceUndoStorage();
     }
 
     public PlacementApplyResult ApplyPlacement(IDocumentHandle document, PlacementIntent intent)
+    {
+        return ApplyPlacement(document, intent, undoSnapshot: null, primaryMeshCode: null);
+    }
+
+    public PlacementApplyResult ApplyPlacement(
+        IDocumentHandle document,
+        PlacementIntent intent,
+        GeoreferenceUndoSnapshot? undoSnapshot,
+        MeshCode? primaryMeshCode = null)
     {
         if (intent is null)
         {
@@ -39,7 +52,7 @@ public sealed class RevitGeoPlacementService : IRevitGeoPlacementService
         EnsureSupportedDocument(revitDocument);
 
         double resolvedTrueNorthAngle = ResolveTrueNorthAngleDegrees(revitDocument, intent);
-        GeoProjectInfo geoProjectInfo = BuildGeoProjectInfo(intent, resolvedTrueNorthAngle);
+        GeoProjectInfo geoProjectInfo = BuildGeoProjectInfo(intent, resolvedTrueNorthAngle, primaryMeshCode);
         PlacementAuditRecord auditRecord = BuildAuditRecord(revitDocument, intent, resolvedTrueNorthAngle);
 
         using Transaction transaction = new Transaction(revitDocument, "Apply Georeference");
@@ -51,6 +64,10 @@ public sealed class RevitGeoPlacementService : IRevitGeoPlacementService
             geoProjectInfoStore.Save(handle, geoProjectInfo);
             SaveGeoreferenceModuleState(handle, intent);
             placementAuditStorage.Save(handle, auditRecord);
+            if (undoSnapshot is not null)
+            {
+                undoStorage.Save(handle, undoSnapshot);
+            }
 
             TransactionStatus status = transaction.Commit();
             if (status != TransactionStatus.Committed)
@@ -102,7 +119,10 @@ public sealed class RevitGeoPlacementService : IRevitGeoPlacementService
             : currentAngleDegrees;
     }
 
-    private static GeoProjectInfo BuildGeoProjectInfo(PlacementIntent intent, double resolvedTrueNorthAngle)
+    private static GeoProjectInfo BuildGeoProjectInfo(
+        PlacementIntent intent,
+        double resolvedTrueNorthAngle,
+        MeshCode? primaryMeshCode)
     {
         if (intent.SelectedOrigin is null)
         {
@@ -117,6 +137,11 @@ public sealed class RevitGeoPlacementService : IRevitGeoPlacementService
         };
 
         info.ApplyCanonicalLocation(intent.SelectedCrs, intent.SelectedOrigin, resolvedTrueNorthAngle);
+        if (primaryMeshCode is not null && !string.IsNullOrWhiteSpace(primaryMeshCode.Value))
+        {
+            info.PrimaryMeshCode = new MeshCode { Value = primaryMeshCode.Value };
+        }
+
         return info;
     }
 

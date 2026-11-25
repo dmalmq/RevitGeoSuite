@@ -15,6 +15,12 @@ public sealed class Tiles3DGlbWriter
     private const uint BinChunkType = 0x004E4942;
     private const string ExtMeshFeatures = "EXT_mesh_features";
     private const string ExtStructuralMetadata = "EXT_structural_metadata";
+    private const string StructuralMetadataSchemaId = "revit_elements";
+    private const int ComponentTypeUnsignedShort = 5123;
+    private const int ComponentTypeFloat = 5126;
+    private const int MaxUnsignedShortFeatureCount = 65535;
+    private const int MaxExactFloatFeatureCount = 1 << 24;
+    private const int VertexAttributeStride = 4;
     private static readonly double[] ZUpToYUpMatrix =
     {
         1d, 0d, 0d, 0d,
@@ -66,6 +72,7 @@ public sealed class Tiles3DGlbWriter
         MemoryStream binary = new MemoryStream();
 
         int featureCount = meshes.Count;
+        int featureIdComponentType = SelectFeatureIdComponentType(featureCount);
         for (int featureIndex = 0; featureIndex < meshes.Count; featureIndex++)
         {
             Tiles3DMeshPrimitive mesh = meshes[featureIndex];
@@ -73,7 +80,7 @@ public sealed class Tiles3DGlbWriter
             {
                 int materialIndex = GetMaterialIndex(group.MaterialColor, materialColors, materialIndexes);
                 AddPositionBufferView(binary, group.Triangles, bufferViews, out int positionAccessor, out int normalAccessor, accessors);
-                AddFeatureIdBufferView(binary, group.Triangles.Count * 3, featureIndex, bufferViews, out int featureIdAccessor, accessors);
+                AddFeatureIdBufferView(binary, group.Triangles.Count * 3, featureIndex, featureIdComponentType, bufferViews, out int featureIdAccessor, accessors);
                 AddIndexBufferView(binary, group.Triangles, bufferViews, out int indexAccessor, accessors);
 
                 Dictionary<string, object> primitive = new Dictionary<string, object>
@@ -252,10 +259,26 @@ public sealed class Tiles3DGlbWriter
         return positionViewIndex;
     }
 
+    /// <summary>
+    /// glTF forbids UNSIGNED_INT vertex attributes. UNSIGNED_SHORT holds ids up to 65534 here, and
+    /// FLOAT represents every integer id exactly up to 2^24.
+    /// </summary>
+    internal static int SelectFeatureIdComponentType(int featureCount)
+    {
+        if (featureCount > MaxExactFloatFeatureCount)
+        {
+            throw new InvalidOperationException(
+                $"GLB export supports at most {MaxExactFloatFeatureCount} features, but this export has {featureCount}.");
+        }
+
+        return featureCount <= MaxUnsignedShortFeatureCount ? ComponentTypeUnsignedShort : ComponentTypeFloat;
+    }
+
     private static int AddFeatureIdBufferView(
         MemoryStream binary,
         int vertexCount,
         int featureId,
+        int componentType,
         List<object> bufferViews,
         out int featureIdAccessorIndex,
         List<object> accessors)
@@ -264,7 +287,15 @@ public sealed class Tiles3DGlbWriter
         int featureIdOffset = (int)binary.Position;
         for (int index = 0; index < vertexCount; index++)
         {
-            WriteUInt32(binary, (uint)featureId);
+            if (componentType == ComponentTypeUnsignedShort)
+            {
+                // The low two bytes hold the id. The high two are the padding glTF's 4-byte stride needs.
+                WriteUInt32(binary, (ushort)featureId);
+            }
+            else
+            {
+                WriteFloat32(binary, featureId);
+            }
         }
 
         int featureIdByteLength = (int)binary.Position - featureIdOffset;
@@ -274,6 +305,7 @@ public sealed class Tiles3DGlbWriter
             buffer = 0,
             byteOffset = featureIdOffset,
             byteLength = featureIdByteLength,
+            byteStride = VertexAttributeStride,
             target = 34962
         });
 
@@ -281,11 +313,11 @@ public sealed class Tiles3DGlbWriter
         accessors.Add(new
         {
             bufferView = featureIdViewIndex,
-            componentType = 5125,
+            componentType,
             count = vertexCount,
             type = "SCALAR",
-            min = new[] { (uint)featureId },
-            max = new[] { (uint)featureId }
+            min = new[] { featureId },
+            max = new[] { featureId }
         });
 
         return featureIdViewIndex;
@@ -370,6 +402,7 @@ public sealed class Tiles3DGlbWriter
         {
             ["schema"] = new
             {
+                id = StructuralMetadataSchemaId,
                 classes = new Dictionary<string, object>
                 {
                     ["element"] = new

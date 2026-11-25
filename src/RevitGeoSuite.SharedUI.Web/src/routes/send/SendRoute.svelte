@@ -156,15 +156,15 @@
         </Button>
       </div>
       {#if folderKind === 'new'}
-        <p class="mt-2 text-small text-warning-foreground">{$t('Send.Folder.New', 'This folder has no Kanizu versions yet. Sending makes it this station\'s folder.')}</p>
+        <p class="mt-2 text-small text-warning-text">{$t('Send.Folder.New', 'This folder has no Kanizu versions yet. Sending makes it this station\'s folder.')}</p>
       {:else if folderKind === 'missing'}
         <p class="mt-2 text-small text-destructive-text">{$t('Send.Folder.Missing', 'This folder cannot be found. Check that the share is reachable, or choose another.')}</p>
       {/if}
       {#if sendState?.lastSentFromAnotherFile && phase !== 'sent'}
-        <p class="mt-2 text-small text-warning-foreground">{$t('Send.OtherFile', 'The last send of this model came from another file, as after Save As. Check that this file should become the newest version, then Send.')}</p>
+        <p class="mt-2 text-small text-warning-text">{$t('Send.OtherFile', 'The last send of this model came from another file, as after Save As. Check that this file should become the newest version, then Send.')}</p>
       {/if}
       {#if sendState && !sendState.profileName}
-        <p class="mt-2 text-small text-warning-foreground">{$t('Send.NoProfile', 'This model has no floor plan export profile yet. Save one on GeoPackage Export first.')}</p>
+        <p class="mt-2 text-small text-warning-text">{$t('Send.NoProfile', 'This model has no floor plan export profile yet. Save one on GeoPackage Export first.')}</p>
       {/if}
     </Card>
 
@@ -190,7 +190,7 @@
       <Result title={$t('Send.Done', 'Sent to Kanizu')}>
         <p>{changeLine(result, $t)}</p>
         {#if result.rulesDiffer}
-          <p class="mt-1 text-small text-warning-foreground">{$t('Send.RulesDiffer', 'The last send used other GIS rules or another profile, so some edits may come from the rules rather than the model.')}</p>
+          <p class="mt-1 text-small text-warning-text">{$t('Send.RulesDiffer', 'The last send used other GIS rules or another profile, so some edits may come from the rules rather than the model.')}</p>
         {/if}
         <p class="mt-1 truncate font-mono text-small text-muted-foreground" title={result.versionFolder}>
           {format($t('Send.Done.Where', 'In {0} s, to {1}'), result.seconds, result.versionFolder)}

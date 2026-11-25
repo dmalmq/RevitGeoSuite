@@ -148,14 +148,14 @@ public sealed class CesiumPackageTiles
     public string? Levels { get; set; }
 
     /// <summary>
-    /// Per-element geometry hashes (<c>tiles/elements.json</c>), for change lists. Not part of the
-    /// viewer push payload or <c>contentHash</c>; it is derived from the same geometry as the GLB.
+    /// Per-element geometry hashes (<c>tiles/elements.json</c>), for change lists. Part of the
+    /// viewer push payload and of <c>contentHash</c>.
     /// </summary>
     public string? Elements { get; set; }
 
     /// <summary>
-    /// Room footprints (<c>tiles/rooms.json</c>), which Kanizu pairs with the GDB's units. Not part
-    /// of the viewer push payload or <c>contentHash</c>.
+    /// Room footprints (<c>tiles/rooms.json</c>), which Kanizu pairs with the GDB's units. Part of
+    /// the viewer push payload and of <c>contentHash</c>.
     /// </summary>
     public string? Rooms { get; set; }
 }

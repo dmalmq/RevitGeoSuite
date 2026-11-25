@@ -12,18 +12,22 @@ namespace RevitGeoSuite.RevitInterop.GeoPlacement;
 public sealed class ProjectLocationReader : IProjectLocationReader
 {
     private const double FeetToMeters = 0.3048d;
+    private static readonly SharedCoordinateLocator Locator = new SharedCoordinateLocator(new CrsRegistry());
     private readonly ExistingSetupDetector existingSetupDetector;
     private readonly IGeoProjectInfoStore geoProjectInfoStore;
     private readonly IModuleStateStore moduleStateStore;
+    private readonly CrsReference? crsOverride;
 
     public ProjectLocationReader(
         IGeoProjectInfoStore geoProjectInfoStore,
         ExistingSetupDetector? existingSetupDetector = null,
-        IModuleStateStore? moduleStateStore = null)
+        IModuleStateStore? moduleStateStore = null,
+        CrsReference? crsOverride = null)
     {
         this.geoProjectInfoStore = geoProjectInfoStore ?? throw new ArgumentNullException(nameof(geoProjectInfoStore));
         this.existingSetupDetector = existingSetupDetector ?? new ExistingSetupDetector();
         this.moduleStateStore = moduleStateStore ?? new ModuleStateStorage();
+        this.crsOverride = crsOverride;
     }
 
     public CurrentProjectStateSummary Read(Document? document)
@@ -74,9 +78,7 @@ public sealed class ProjectLocationReader : IProjectLocationReader
                 : new GeographicCoordinate(
                     siteLocation.Latitude * (180.0 / Math.PI),
                     siteLocation.Longitude * (180.0 / Math.PI));
-            GeographicCoordinate? pointEstimateCoordinate = storedGeoInfo?.Origin is null
-                ? rawSiteCoordinate
-                : new GeographicCoordinate(storedGeoInfo.Origin.Latitude, storedGeoInfo.Origin.Longitude);
+            CrsReference? sharedCoordinateCrs = crsOverride ?? storedGeoInfo?.ProjectCrs;
 
             return new CurrentProjectStateSummary
             {
@@ -99,8 +101,8 @@ public sealed class ProjectLocationReader : IProjectLocationReader
                 SiteLongitudeDegrees = rawSiteCoordinate?.Longitude,
                 SiteTimeZoneHours = siteLocation?.TimeZone,
                 ProjectPosition = positionSnapshot,
-                SurveyPoint = CreateBasePointSnapshot("Survey Point", surveyPoint, projectLocation, pointEstimateCoordinate),
-                ProjectBasePoint = CreateBasePointSnapshot("Project Base Point", projectBasePoint, projectLocation, pointEstimateCoordinate)
+                SurveyPoint = CreateBasePointSnapshot("Survey Point", surveyPoint, projectLocation, sharedCoordinateCrs),
+                ProjectBasePoint = CreateBasePointSnapshot("Project Base Point", projectBasePoint, projectLocation, sharedCoordinateCrs)
             };
         }
         catch (Exception ex)
@@ -118,7 +120,7 @@ public sealed class ProjectLocationReader : IProjectLocationReader
         string name,
         BasePoint basePoint,
         ProjectLocation projectLocation,
-        GeographicCoordinate? siteCoordinate)
+        CrsReference? sharedCoordinateCrs)
     {
         XYZ position = basePoint.Position;
         BasePointSnapshot snapshot = new BasePointSnapshot
@@ -129,23 +131,22 @@ public sealed class ProjectLocationReader : IProjectLocationReader
             ZFeet = position.Z
         };
 
-        if (siteCoordinate is null)
-        {
-            return snapshot;
-        }
-
         ProjectPosition pointPosition = projectLocation.GetProjectPosition(position);
         snapshot.SharedEastWestFeet = pointPosition.EastWest;
         snapshot.SharedNorthSouthFeet = pointPosition.NorthSouth;
         snapshot.SharedElevationFeet = pointPosition.Elevation;
 
-        GeographicCoordinate estimatedCoordinate = LocalCoordinateOffsetProjector.Offset(
-            siteCoordinate.Value,
+        GeographicCoordinate? located = Locator.Locate(
+            sharedCoordinateCrs,
             pointPosition.EastWest * FeetToMeters,
             pointPosition.NorthSouth * FeetToMeters);
+        if (!located.HasValue)
+        {
+            return snapshot;
+        }
 
-        snapshot.EstimatedLatitudeDegrees = estimatedCoordinate.Latitude;
-        snapshot.EstimatedLongitudeDegrees = estimatedCoordinate.Longitude;
+        snapshot.EstimatedLatitudeDegrees = located.Value.Latitude;
+        snapshot.EstimatedLongitudeDegrees = located.Value.Longitude;
         return snapshot;
     }
 }

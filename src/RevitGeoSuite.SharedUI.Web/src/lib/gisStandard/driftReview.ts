@@ -27,6 +27,11 @@ export function needsConfirm(drift: Drift): boolean {
   return drift.source === 'picked' || modelMismatch(drift) !== null
 }
 
+/** "Keep Revit's" writes beside the model's own station drift file, never a picked or mismatched file. */
+export function canKeepRevit(drift: Drift): boolean {
+  return drift.source === 'station' && !!drift.modelKey && drift.modelKey.toLowerCase() === drift.fileModel.toLowerCase()
+}
+
 /** Shape edits start ticked for the open model's own file and unticked on a mismatch, by floor UniqueId. */
 export function shapesInitiallyUnticked(drift: Drift & Pick<GisDriftInspectResponse, 'shapes'>): Set<string> {
   return modelMismatch(drift) !== null ? new Set(drift.shapes.map((shape) => shape.uniqueId)) : new Set()

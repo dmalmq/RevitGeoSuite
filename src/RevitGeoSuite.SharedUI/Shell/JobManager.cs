@@ -17,7 +17,7 @@ namespace RevitGeoSuite.SharedUI.Shell;
 public sealed class JobManager
 {
     private readonly Action<string, object?> sendEvent;
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> jobs = new();
+    private readonly ConcurrentDictionary<string, JobEntry> jobs = new();
 
     /// <param name="sendEvent">Sink for job events — typically <c>WebRpcBridge.SendEvent</c>.</param>
     public JobManager(Action<string, object?> sendEvent)
@@ -35,8 +35,8 @@ public sealed class JobManager
         if (work == null) throw new ArgumentNullException(nameof(work));
 
         string jobId = Guid.NewGuid().ToString("N");
-        var cts = new CancellationTokenSource();
-        jobs[jobId] = cts;
+        var entry = new JobEntry();
+        jobs[jobId] = entry;
 
         // Capture the calling (UI) SynchronizationContext so every CoreWebView2 post happens on the
         // UI thread, even though the work runs on the thread pool.
@@ -79,7 +79,7 @@ public sealed class JobManager
         {
             try
             {
-                object? result = await work(cts.Token, progress).ConfigureAwait(false);
+                object? result = await work(entry.Token, progress).ConfigureAwait(false);
                 Send("job.completed", new JobCompleted { JobId = jobId, Result = result });
             }
             catch (OperationCanceledException)
@@ -105,12 +105,61 @@ public sealed class JobManager
     /// <summary>Requests cancellation of a running job. Returns false if the job is unknown/finished.</summary>
     public bool Cancel(string? jobId)
     {
-        if (!string.IsNullOrEmpty(jobId) && jobs.TryGetValue(jobId!, out var cts))
+        if (!string.IsNullOrEmpty(jobId) && jobs.TryGetValue(jobId!, out var entry))
         {
-            cts.Cancel();
-            return true;
+            return entry.TryCancel();
         }
         return false;
+    }
+
+    /// <summary>Requests cancellation of all running jobs (for example when the shell window closes).</summary>
+    public int CancelAll()
+    {
+        int cancelled = 0;
+        foreach (var pair in jobs)
+        {
+            if (pair.Value.TryCancel())
+            {
+                cancelled++;
+            }
+        }
+        return cancelled;
+    }
+
+    private sealed class JobEntry
+    {
+        private readonly object gate = new();
+        private readonly CancellationTokenSource cts = new();
+        private bool disposed;
+
+        public CancellationToken Token => cts.Token;
+
+        public bool TryCancel()
+        {
+            lock (gate)
+            {
+                if (disposed) return false;
+                try
+                {
+                    cts.Cancel();
+                    return true;
+                }
+                catch (ObjectDisposedException)
+                {
+                    return false;
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (gate)
+            {
+                if (disposed) return;
+                disposed = true;
+                cts.Dispose();
+            }
+        }
     }
 }
 

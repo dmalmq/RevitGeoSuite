@@ -1,4 +1,5 @@
 using RevitGeoSuite.Core.Storage;
+using RevitGeoSuite.Core.Workflow;
 using RevitGeoSuite.RevitInterop.Storage;
 using Xunit;
 
@@ -12,11 +13,11 @@ public sealed class ModuleStateStorageSerializerTests
         StorageEnvelope<string> entry = new StorageEnvelope<string>
         {
             SchemaVersion = ModuleStateStorage.CurrentSchemaVersion,
-            PayloadType = typeof(TestState).FullName!,
+            PayloadType = ModuleStatePayloadTypes.Georeference,
             Payload = "{\"Name\":\"sample\"}"
         };
 
-        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, out TestState? state, out string? reason);
+        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, ModuleStateIds.Georeference, out TestState? state, out string? reason);
 
         Assert.True(result);
         Assert.NotNull(state);
@@ -30,11 +31,11 @@ public sealed class ModuleStateStorageSerializerTests
         StorageEnvelope<string> entry = new StorageEnvelope<string>
         {
             SchemaVersion = ModuleStateStorage.CurrentSchemaVersion + 1,
-            PayloadType = typeof(TestState).FullName!,
+            PayloadType = ModuleStatePayloadTypes.Georeference,
             Payload = "{\"Name\":\"sample\"}"
         };
 
-        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, out TestState? state, out string? reason);
+        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, ModuleStateIds.Georeference, out TestState? state, out string? reason);
 
         Assert.False(result);
         Assert.Null(state);
@@ -51,7 +52,7 @@ public sealed class ModuleStateStorageSerializerTests
             Payload = "{\"Name\":\"sample\"}"
         };
 
-        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, out TestState? state, out string? reason);
+        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, ModuleStateIds.Georeference, out TestState? state, out string? reason);
 
         Assert.False(result);
         Assert.Null(state);
@@ -64,11 +65,11 @@ public sealed class ModuleStateStorageSerializerTests
         StorageEnvelope<string> entry = new StorageEnvelope<string>
         {
             SchemaVersion = ModuleStateStorage.CurrentSchemaVersion,
-            PayloadType = typeof(TestState).FullName!,
+            PayloadType = ModuleStatePayloadTypes.Georeference,
             Payload = "{ not valid json }"
         };
 
-        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, out TestState? state, out string? reason);
+        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, ModuleStateIds.Georeference, out TestState? state, out string? reason);
 
         Assert.False(result);
         Assert.Null(state);
@@ -81,6 +82,62 @@ public sealed class ModuleStateStorageSerializerTests
         var entries = ModuleStateStorageSerializer.DeserializeEntries("{ not valid json }");
 
         Assert.Empty(entries);
+    }
+
+    [Fact]
+    public void TryDeserializeEntries_reports_corrupt_outer_payload()
+    {
+        bool result = ModuleStateStorageSerializer.TryDeserializeEntries("{ not valid json }", out var entries);
+
+        Assert.False(result);
+        Assert.Empty(entries);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("{}")]
+    public void TryDeserializeEntries_accepts_empty_payloads(string? payloadJson)
+    {
+        bool result = ModuleStateStorageSerializer.TryDeserializeEntries(payloadJson, out var entries);
+
+        Assert.True(result);
+        Assert.Empty(entries);
+    }
+
+    [Theory]
+    [InlineData("RevitGeoSuite.Core.Workflow.GeoreferenceModuleState")]
+    [InlineData("GeoreferenceModuleState")]
+    public void TryDeserializeState_accepts_stored_names_regardless_of_the_clr_type(string payloadType)
+    {
+        StorageEnvelope<string> entry = new StorageEnvelope<string>
+        {
+            SchemaVersion = ModuleStateStorage.CurrentSchemaVersion,
+            PayloadType = payloadType,
+            Payload = "{\"Name\":\"sample\"}"
+        };
+
+        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, ModuleStateIds.Georeference, out TestState? state, out string? reason);
+
+        Assert.True(result, reason);
+        Assert.Equal("sample", state!.Name);
+    }
+
+    [Fact]
+    public void TryDeserializeState_migrates_legacy_crs_in_georeference_state()
+    {
+        StorageEnvelope<string> entry = new StorageEnvelope<string>
+        {
+            SchemaVersion = ModuleStateStorage.CurrentSchemaVersion,
+            PayloadType = ModuleStatePayloadTypes.Georeference,
+            Payload = "{\"WorkingProjectBasePoint\":{\"ProjectCrs\":{\"EpsgCode\":10275,\"NameSnapshot\":\"JGD2024 / Japan Plane Rectangular CS IX\"}}}"
+        };
+
+        bool result = ModuleStateStorageSerializer.TryDeserializeState(entry, ModuleStateIds.Georeference, out GeoreferenceModuleState? state, out string? reason);
+
+        Assert.True(result, reason);
+        Assert.Equal(6677, state!.WorkingProjectBasePoint!.ProjectCrs!.EpsgCode);
+        Assert.Equal("JGD2011 / Japan Plane Rectangular CS IX", state.WorkingProjectBasePoint.ProjectCrs.NameSnapshot);
     }
 
     private sealed class TestState

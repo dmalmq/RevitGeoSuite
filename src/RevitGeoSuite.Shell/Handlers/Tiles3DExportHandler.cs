@@ -234,7 +234,7 @@ public sealed class Tiles3DExportHandler : IRpcHandler
         var outputFolder = jobj?.Value<string>("outputFolder");
         if (string.IsNullOrWhiteSpace(outputFolder))
         {
-            return Task.FromResult<object?>(new { error = "Output folder is required" });
+            throw new InvalidOperationException("Output folder is required.");
         }
 
         (bool preciseCrs, double? geoidOffset, string scope, string[] selectedLinkUniqueIds, string? selectedViewUniqueId, Tiles3DLevelOfDetail levelOfDetail) =

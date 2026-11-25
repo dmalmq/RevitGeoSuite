@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 using System.Threading.Tasks;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -45,12 +46,26 @@ public sealed class RevitContext
         if (work == null) throw new ArgumentNullException(nameof(work));
 
         var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int cancelled = 0;
         handler.Enqueue(app =>
         {
-            try { tcs.SetResult(work(app)); }
-            catch (Exception ex) { tcs.SetException(ex); }
+            if (Volatile.Read(ref cancelled) != 0)
+            {
+                return;
+            }
+
+            try { tcs.TrySetResult(work(app)); }
+            catch (Exception ex) { tcs.TrySetException(ex); }
         });
-        externalEvent.Raise();
+
+        ExternalEventRequest raiseResult = externalEvent.Raise();
+        if (raiseResult != ExternalEventRequest.Accepted && raiseResult != ExternalEventRequest.Pending)
+        {
+            Interlocked.Exchange(ref cancelled, 1);
+            tcs.TrySetException(new InvalidOperationException(
+                $"Revit could not schedule the operation ({raiseResult}). Close any active Revit dialog or command and try again."));
+        }
+
         return tcs.Task;
     }
 
@@ -75,6 +90,32 @@ public sealed class RevitContext
             {
                 throw new InvalidOperationException("No active Revit document.");
             }
+            return work(doc);
+        });
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> on the API thread only if the active document still matches
+    /// <paramref name="expectedDocumentId"/> (and optional <paramref name="expectedDocument"/> instance).
+    /// </summary>
+    public Task<T> InvokeWithExpectedDocumentAsync<T>(
+        string? expectedDocumentId,
+        string operationDescription,
+        Func<Document, T> work,
+        Document? expectedDocument = null)
+    {
+        if (work == null) throw new ArgumentNullException(nameof(work));
+        return InvokeWithDocumentAsync(doc =>
+        {
+            if (expectedDocument != null && !DocumentIdentity.IsSameDocument(doc, expectedDocument))
+            {
+                string activeTitle = string.IsNullOrWhiteSpace(doc.Title) ? "another model" : doc.Title;
+                throw new InvalidOperationException(
+                    $"Active Revit model changed to '{activeTitle}' before {operationDescription} could be applied. " +
+                    "Switch back to the original model or reload the page to review the current model before retrying.");
+            }
+
+            DocumentIdentity.EnsureMatches(doc, expectedDocumentId, operationDescription);
             return work(doc);
         });
     }

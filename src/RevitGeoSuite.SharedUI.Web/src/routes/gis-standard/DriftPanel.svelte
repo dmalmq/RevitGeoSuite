@@ -10,21 +10,25 @@
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Dialog, Table } from '$lib/kit'
   import { format } from '$lib/shell'
-  import { driftSource, initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked, initialShapeTypes } from '$lib/gisStandard/driftReview'
+  import { canKeepRevit, driftSource, initiallyUnticked, modelMismatch, needsConfirm as confirmFirst, shapesInitiallyUnticked, initialShapeTypes } from '$lib/gisStandard/driftReview'
   import AppliedBanner from './AppliedBanner.svelte'
   import ProblemList from './ProblemList.svelte'
   import ShapeEditList from './ShapeEditList.svelte'
 
   let drift = $state<GisDriftInspectResponse | null>(null)
-  let working = $state<'read' | 'apply' | 'shapes' | null>(null)
+  let working = $state<'read' | 'apply' | 'keep' | 'shapes' | null>(null)
   let error = $state<string | null>(null)
   let unticked = $state<Set<number>>(new Set())
   let shapesUnticked = $state<Set<string>>(new Set())
-  let applied = $state<{ log: string[]; skipped: string[]; shapes?: boolean } | null>(null)
+  let applied = $state<{ log: string[]; skipped: string[]; kind: 'apply' | 'keep' | 'shapes' } | null>(null)
   let confirmOpen = $state(false)
   let confirmShapes = $state(false)
+  let confirmKeep = $state(false)
 
   const ticked = $derived((drift?.changes ?? []).filter((_, index) => !unticked.has(index)))
+  const tickedConflicts = $derived(ticked.filter((change) => change.conflict).length)
+  const tickedUncontested = $derived(ticked.length - tickedConflicts)
+  const appliedCount = $derived(applied ? applied.log.filter((line) => !line.startsWith(' ')).length : 0)
   const tickedShapes = $derived((drift?.shapes ?? []).filter((shape) => !shapesUnticked.has(shape.uniqueId)))
   // A hand-drawn unit's floor type: the one its GDB category names, until the user picks another.
   let shapeTypes = $state<Record<string, string>>({})
@@ -32,6 +36,7 @@
   const mismatch = $derived(drift ? modelMismatch(drift) : null)
   const otherModel = $derived(mismatch !== null)
   const needsConfirm = $derived(!!drift && confirmFirst(drift))
+  const keepAllowed = $derived(!!drift && canKeepRevit(drift))
   const source = $derived(drift ? driftSource(drift) : null)
 
   onMount(() => void inspect({ path: '', pick: false }))
@@ -39,6 +44,7 @@
   async function inspect(payload: { path: string; pick: boolean }) {
     working = 'read'
     error = null
+    confirmKeep = false
     try {
       const response = await request('gisDrift.inspect', payload)
       if (response.cancelled) return
@@ -54,15 +60,22 @@
   }
 
   function start() {
+    confirmKeep = false
     confirmShapes = false
     if (needsConfirm) confirmOpen = true
     else void apply()
   }
 
   function startShapes() {
+    confirmKeep = false
     confirmShapes = true
     if (needsConfirm) confirmOpen = true
     else void applyShapes()
+  }
+
+  function startKeep() {
+    if (!drift || !keepAllowed || ticked.length === 0) return
+    confirmKeep = true
   }
 
   async function applyShapes() {
@@ -75,7 +88,7 @@
       const types = tickedShapes
         .filter((shape) => shape.kind === 'create')
         .map((shape) => ({ uniqueId: shape.uniqueId, typeName: shapeTypes[shape.uniqueId] ?? '' }))
-      applied = { ...(await request('gisDrift.applyShapes', { path, uniqueIds: tickedShapes.map((shape) => shape.uniqueId), types })), shapes: true }
+      applied = { ...(await request('gisDrift.applyShapes', { path, uniqueIds: tickedShapes.map((shape) => shape.uniqueId), types })), kind: 'shapes' }
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
     } finally {
@@ -92,7 +105,7 @@
     const path = drift.path
     try {
       const response: GisStandardApplyResponse = await request('gisDrift.apply', { path, changes: ticked })
-      applied = response
+      applied = { ...response, kind: 'apply' }
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
     } finally {
@@ -101,7 +114,29 @@
     await inspect({ path, pick: false })
   }
 
+  async function keep() {
+    if (!drift || !keepAllowed) return
+    confirmKeep = false
+    working = 'keep'
+    error = null
+    const path = drift.path
+    let succeeded = false
+    try {
+      const response: GisStandardApplyResponse = await request('gisDrift.keep', { path, changes: ticked })
+      applied = { ...response, kind: 'keep' }
+      succeeded = true
+    } catch (err: any) {
+      error = err.message || $t('GisStandard.Drift.KeepError', 'Could not record the answer in the station keep file.')
+    } finally {
+      working = null
+    }
+    if (succeeded) {
+      await inspect({ path, pick: false })
+    }
+  }
+
   function toggle(index: number, checked: boolean) {
+    confirmKeep = false
     const next = new Set(unticked)
     if (checked) next.delete(index)
     else next.add(index)
@@ -123,15 +158,27 @@
   {#if error}<Banner tone="danger" onclose={() => (error = null)}>{error}</Banner>{/if}
   {#if applied}
     <AppliedBanner
-      title={applied.shapes
-        ? format($t('GisStandard.Shapes.Done', '{0} shape edit(s) applied, each one undo step. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)
-        : format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), applied.log.filter((line) => !line.startsWith(' ')).length)}
+      title={applied.kind === 'shapes'
+        ? format($t('GisStandard.Shapes.Done', '{0} shape edit(s) applied, each one undo step. Export again so Kanizu sees them.'), appliedCount)
+        : applied.kind === 'keep'
+          ? appliedCount === 0
+            ? $t('GisStandard.Drift.KeepNoneTitle', 'No Revit values were kept.')
+            : format($t('GisStandard.Drift.Kept', '{0} Revit value(s) kept. Kanizu will take them into the GDB at its next apply.'), appliedCount)
+          : format($t('GisStandard.Drift.Done', '{0} GDB value(s) accepted. Export again so Kanizu sees them.'), appliedCount)}
       log={applied.log}
       skipped={applied.skipped}
-      undoHint={applied.shapes ? $t('GisStandard.Shapes.UndoHint', 'Each edit is its own undo step in Revit.') : undefined}
-      skippedTitle={applied.shapes
+      undoHint={applied.kind === 'shapes'
+        ? $t('GisStandard.Shapes.UndoHint', 'Each edit is its own undo step in Revit.')
+        : applied.kind === 'keep'
+          ? appliedCount === 0
+            ? $t('GisStandard.Drift.KeepNoneHint', 'No keep file was written. Nothing changed in Revit or the station folder.')
+            : $t('GisStandard.Drift.KeepHint', 'Nothing changed in Revit. The answer is saved beside the station drift file.')
+          : undefined}
+      skippedTitle={applied.kind === 'shapes'
         ? format($t('GisStandard.Shapes.Skipped', '{0} ticked shape edit(s) were not applied:'), applied.skipped.length)
-        : format($t('GisStandard.Drift.Skipped', '{0} ticked change(s) were not written:'), applied.skipped.length)}
+        : applied.kind === 'keep'
+          ? format($t('GisStandard.Drift.KeepSkipped', '{0} ticked change(s) were not kept:'), applied.skipped.length)
+          : format($t('GisStandard.Drift.Skipped', '{0} ticked change(s) were not written:'), applied.skipped.length)}
       onclose={() => (applied = null)}
     />
   {/if}
@@ -221,6 +268,22 @@
         {/key}
       {/if}
       <ProblemList problems={drift.problems} />
+      {#if confirmKeep && keepAllowed && ticked.length > 0}
+        <div class="mt-3" data-testid="drift-keep-confirm">
+          <Banner
+            tone="warning"
+            title={format($t('GisStandard.Drift.KeepConfirmTitle', "Keep Revit's value for {0} ticked row(s)?"), ticked.length)}
+          >
+            <p>{format($t('GisStandard.Drift.KeepConfirmBody', "{0} uncontested GDB edit(s) and {1} conflict(s) will be recorded in the station keep file. Kanizu will overwrite those GDB values with Revit's values at its next apply."), tickedUncontested, tickedConflicts)}</p>
+            <div class="mt-2 flex gap-2">
+              <Button onclick={() => (confirmKeep = false)} disabled={working !== null}>{$t('Common.Cancel', 'Cancel')}</Button>
+              <Button variant="primary" icon="pin" onclick={keep} disabled={working !== null} busy={working === 'keep'}>
+                {$t('GisStandard.Drift.KeepConfirmAction', 'Confirm keep')}
+              </Button>
+            </div>
+          </Banner>
+        </div>
+      {/if}
     {/if}
     {#snippet actions()}
       <Button icon="refresh-cw" onclick={() => inspect({ path: drift?.source === 'picked' ? drift.path : '', pick: false })} disabled={working !== null} busy={working === 'read'}>
@@ -233,6 +296,15 @@
         </Button>
       {/if}
       {#if drift && drift.changes.length > 0}
+        <Button
+          icon="pin"
+          onclick={startKeep}
+          disabled={working !== null || ticked.length === 0 || !keepAllowed || confirmKeep}
+          busy={working === 'keep'}
+          title={!keepAllowed ? $t('GisStandard.Drift.KeepStationOnly', "Keep Revit's value is only available for this model's own station drift file.") : undefined}
+        >
+          {format($t('GisStandard.Drift.Keep', "Keep Revit's ({0})"), ticked.length)}
+        </Button>
         <Button variant="primary" icon="check" onclick={start} disabled={working !== null || ticked.length === 0} busy={working === 'apply'}>
           {applyLabel}
         </Button>

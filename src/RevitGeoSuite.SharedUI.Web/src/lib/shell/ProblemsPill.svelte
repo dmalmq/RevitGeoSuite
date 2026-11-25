@@ -70,7 +70,7 @@
       title={compact ? countLabel : undefined}
       class="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-chip border px-2 text-small font-medium transition-colors {errors > 0
         ? 'border-destructive/30 bg-destructive-muted text-destructive-text hover:bg-destructive-muted/70'
-        : 'border-warning/50 bg-warning-surface text-warning-foreground hover:bg-warning-surface/70'}"
+        : 'border-warning/50 bg-warning-surface text-warning-text hover:bg-warning-surface/70'}"
       onclick={() => (open = !open)}
     >
       <Icon name={errors > 0 ? 'circle-alert' : 'triangle-alert'} size={14} />
@@ -95,7 +95,7 @@
               <Icon
                 name={row.severity === 'error' ? 'circle-alert' : 'triangle-alert'}
                 size={14}
-                class="mt-0.5 shrink-0 {row.severity === 'error' ? 'text-destructive-text' : 'text-warning-foreground'}"
+                class="mt-0.5 shrink-0 {row.severity === 'error' ? 'text-destructive-text' : 'text-warning-text'}"
               />
               <div class="min-w-0 flex-1">
                 <p class="text-body font-medium text-foreground">{row.title}</p>

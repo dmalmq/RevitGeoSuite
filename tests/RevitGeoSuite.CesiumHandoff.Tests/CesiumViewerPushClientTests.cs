@@ -292,4 +292,43 @@ public sealed class CesiumViewerPushClientTests : IDisposable
             Directory.Delete(emptyRoot, recursive: true);
         }
     }
+
+
+    [Fact]
+    public async Task PushAsync_SendsTheIndexesAndTheFieldListOfTheGisExport()
+    {
+        var layout = new CesiumPackageLayout(_packageRoot);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "levels.json"), "LEVELSJSON");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "elements.json"), "ELEMENTSJSON");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "rooms.json"), "ROOMSJSON");
+        File.WriteAllText(Path.Combine(layout.GisDirectory, "gis-fields.json"), "FIELDSJSON");
+        new CesiumPackageLayoutBuilder().WriteManifest(layout, new CesiumPackageBuildInputs
+        {
+            BuildingId = "tower",
+            BuildingName = "Tower",
+            GeneratorVersion = "1.0.0",
+            ModelId = "8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a",
+        });
+        using var server = new StubServer(200, "{\"ok\":true}");
+        var client = new CesiumViewerPushClient();
+
+        CesiumViewerPushResult result = await client.PushAsync(
+            new CesiumViewerPushRequest
+            {
+                ViewerUrl = $"http://localhost:{server.Port}",
+                PackageRoot = _packageRoot,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(CesiumViewerPushStatus.Success, result.Status);
+        Assert.Contains("tiles/levels.json", server.RequestBody);
+        Assert.Contains("tiles/elements.json", server.RequestBody);
+        Assert.Contains("ELEMENTSJSON", server.RequestBody);
+        Assert.Contains("tiles/rooms.json", server.RequestBody);
+        Assert.Contains("ROOMSJSON", server.RequestBody);
+        Assert.Contains("gis/gis-fields.json", server.RequestBody);
+        Assert.Contains("FIELDSJSON", server.RequestBody);
+        Assert.Contains("8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a", server.RequestBody);
+        Assert.DoesNotContain("PRIVATE", server.RequestBody);
+    }
 }

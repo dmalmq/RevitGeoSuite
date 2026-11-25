@@ -63,6 +63,7 @@ public sealed class PlateauFolderScanService
 
         IndexedParseResult[] parseResults = new IndexedParseResult[supportedFiles.Length];
         int processedFileCount = 0;
+        object progressLock = new object();
         ParallelOptions parallelOptions = new ParallelOptions
         {
             MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1)
@@ -90,7 +91,13 @@ public sealed class PlateauFolderScanService
             {
                 parseResults[index] = new IndexedParseResult(model, warning);
                 int processed = Interlocked.Increment(ref processedFileCount);
-                reportProgress?.Invoke(new PlateauScanProgress(PlateauScanPhase.Parsing, processed, supportedFiles.Length, filePath));
+                if (reportProgress is not null)
+                {
+                    lock (progressLock)
+                    {
+                        reportProgress(new PlateauScanProgress(PlateauScanPhase.Parsing, processed, supportedFiles.Length, filePath));
+                    }
+                }
             }
         });
 

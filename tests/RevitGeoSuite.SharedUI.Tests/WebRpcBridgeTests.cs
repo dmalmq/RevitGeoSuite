@@ -212,6 +212,96 @@ public class WebRpcBridgeTests
         Assert.True(bridge.Handlers.ContainsKey("async.test"));
     }
 
+    [Fact]
+    public async Task DispatchRequest_ReturnsInvalidRequest_WhenMethodIsNullOrEmpty()
+    {
+        var bridge = new WebRpcBridge();
+
+        string responseJson = await bridge.DispatchRequestAsync("{\"kind\":\"req\",\"id\":\"bad-1\"}");
+        var response = JsonConvert.DeserializeObject<RpcEnvelope>(responseJson);
+
+        Assert.NotNull(response);
+        Assert.Equal("res", response!.Kind);
+        Assert.Equal("bad-1", response.Id);
+        Assert.NotNull(response.Error);
+        Assert.Equal("INVALID_REQUEST", response.Error!.Code);
+    }
+
+    [Fact]
+    public async Task DispatchRequest_ReturnsSerializationError_WhenPayloadCannotBeSerialized()
+    {
+        var bridge = new WebRpcBridge();
+        bridge.RegisterHandler(new UnserializableHandler());
+
+        var request = new RpcEnvelope
+        {
+            Kind = "req",
+            Id = "ser-1",
+            Method = "unserializable",
+            Payload = null
+        };
+
+        string responseJson = await bridge.DispatchRequestAsync(JsonConvert.SerializeObject(request));
+        var response = JsonConvert.DeserializeObject<RpcEnvelope>(responseJson);
+
+        Assert.NotNull(response);
+        Assert.Equal("res", response!.Kind);
+        Assert.Equal("ser-1", response.Id);
+        Assert.NotNull(response.Error);
+        Assert.Equal("SERIALIZATION_ERROR", response.Error!.Code);
+    }
+
+    [Theory]
+    [InlineData("https://ui.revitgeosuite.local/index.html", true)]
+    [InlineData("https://ui.revitgeosuite.local/index.html?v=abc#/import", true)]
+    [InlineData("http://ui.revitgeosuite.local/index.html", false)]
+    [InlineData("https://ui.revitgeosuite.local:8443/index.html", false)]
+    [InlineData("https://leafletjs.com/", false)]
+    [InlineData("file:///C:/Windows/System32/cmd.exe", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void NavigationPolicy_IsTrustedRpcSource_AllowsOnlyVirtualHostHttps(string? source, bool expected)
+    {
+        Assert.Equal(expected, WebShellNavigationPolicy.IsTrustedRpcSource(source));
+    }
+
+    [Theory]
+    [InlineData("https://ui.revitgeosuite.local/index.html#/export", true)]
+    [InlineData("about:blank", true)]
+    [InlineData("https://leafletjs.com/", false)]
+    [InlineData("javascript:alert(1)", false)]
+    public void NavigationPolicy_IsAllowedAppNavigation_BlocksExternalUrls(string uri, bool expected)
+    {
+        Assert.Equal(expected, WebShellNavigationPolicy.IsAllowedAppNavigation(uri));
+    }
+
+    [Theory]
+    [InlineData("https://leafletjs.com/", true)]
+    [InlineData("http://localhost:3001/", true)]
+    [InlineData("file:///C:/temp/test.exe", false)]
+    [InlineData("javascript:alert(1)", false)]
+    public void NavigationPolicy_IsSafeExternalUri_AllowsOnlyHttpAndHttps(string uri, bool expected)
+    {
+        Assert.Equal(expected, WebShellNavigationPolicy.IsSafeExternalUri(uri));
+    }
+
+    private class UnserializableHandler : IRpcHandler
+    {
+        public string Method => "unserializable";
+
+        public Task<object?> HandleAsync(object? payload)
+        {
+            var loop = new SelfReferencingNode();
+            loop.Self = loop;
+            return Task.FromResult<object?>(loop);
+        }
+
+        private sealed class SelfReferencingNode
+        {
+            public SelfReferencingNode? Self { get; set; }
+        }
+    }
+
     private class AsyncTestHandler : IRpcHandler
     {
         public string Method => "async.test";

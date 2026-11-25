@@ -134,7 +134,7 @@ public sealed class StationSendRunHandler : IRpcHandler
     /// this was its first send. Null when that worked or nothing had changed; otherwise a sentence
     /// for the error, so the user knows the model now points at the new folder. Never throws.
     /// </summary>
-    private static async Task<string?> RestoreFolderAsync(string documentKey, string? before, string attempted)
+    private static async Task<string?> RestoreFolderAsync(Document bound, string documentKey, string? before, string attempted)
     {
         string? previous = string.IsNullOrWhiteSpace(before) ? null : before!.Trim();
         if (previous is not null && string.Equals(previous, attempted, StringComparison.OrdinalIgnoreCase))
@@ -149,7 +149,7 @@ public sealed class StationSendRunHandler : IRpcHandler
         {
             var restoreWarnings = new List<string>();
             bool restored = await RevitContext.Instance
-                .InvokeWithDocumentAsync(document => StationSend.Restore(document, documentKey, previous, restoreWarnings))
+                .InvokeWithDocumentAsync(document => StationSend.Restore(document, bound, documentKey, previous, restoreWarnings))
                 .ConfigureAwait(false);
             return restored ? null : string.Format(message, shown, string.Join(" ", restoreWarnings));
         }
@@ -173,8 +173,10 @@ public sealed class StationSendRunHandler : IRpcHandler
             // model's gis-model.json from the folder the model remembers (and records its views,
             // EPSG and links there). Until the version is published, any failure puts back the folder
             // the model had; what the export wrote to the new folder's gis-model.json stays.
-            string? before = await RevitContext.Instance
-                .InvokeWithDocumentAsync(document => StationSend.RememberedFolder(document, documentKey))
+            // The send stays bound to this Document: every later step on Revit's thread checks it is
+            // still the active one by Document.Equals, as well as by its key.
+            (string? before, Document bound) = await RevitContext.Instance
+                .InvokeWithDocumentAsync(document => (StationSend.RememberedFolder(document, documentKey), document))
                 .ConfigureAwait(false);
             StationSend.Step step;
             CesiumPackageManifest manifest;
@@ -183,7 +185,7 @@ public sealed class StationSendRunHandler : IRpcHandler
             try
             {
                 step = await RevitContext.Instance
-                    .InvokeWithDocumentAsync(document => StationSend.Run(document, documentKey, stationFolder, staging, attempt, warnings, ct))
+                    .InvokeWithDocumentAsync(document => StationSend.Run(document, bound, documentKey, stationFolder, staging, attempt, warnings, ct))
                     .ConfigureAwait(false);
 
                 progress.Report(new JobProgress { Phase = "manifest", Percent = 80, Message = Text("Send.Progress.Manifest") });
@@ -195,7 +197,7 @@ public sealed class StationSendRunHandler : IRpcHandler
                 // The restore is its own invoke, after the export's transactions have ended. Only a
                 // send that got as far as recording the folder has anything to put back.
                 string? restoreFailure = attempt.Recorded
-                    ? await RestoreFolderAsync(documentKey, before, stationFolder).ConfigureAwait(false)
+                    ? await RestoreFolderAsync(bound, documentKey, before, stationFolder).ConfigureAwait(false)
                     : null;
                 if (restoreFailure is null)
                 {
@@ -290,14 +292,21 @@ internal static class StationSend
         _ => "station",
     };
 
-    /// <summary>The page read its state from one model; the shell is modeless, so another may be active now.</summary>
-    private static void RequireDocument(Document document, string documentKey)
+    /// <summary>
+    /// The page read its state from one model; the shell is modeless, so another may be active now.
+    /// Once a send has started, it is also bound to the Document it started on.
+    /// </summary>
+    private static void RequireDocument(Document document, string documentKey, Document? bound = null)
     {
-        if (!string.Equals(DocumentProjectKeyBuilder.Create(document), documentKey, StringComparison.Ordinal))
+        if (!IsDocument(document, documentKey, bound))
         {
             throw new InvalidOperationException(UiLocalizer.Instance.Get("Send.Error.OtherModel"));
         }
     }
+
+    private static bool IsDocument(Document document, string documentKey, Document? bound) =>
+        (bound is null || DocumentIdentity.IsSameDocument(document, bound))
+        && string.Equals(DocumentProjectKeyBuilder.Create(document), documentKey, StringComparison.Ordinal);
 
     /// <summary>The station folder the model remembers before this send, after checking it is the page's model.</summary>
     public static string? RememberedFolder(Document document, string documentKey)
@@ -312,9 +321,9 @@ internal static class StationSend
     /// the model's GeoSuite record (not gis-model.json). False, with its warning, when the model is no
     /// longer active or is read-only.
     /// </summary>
-    public static bool Restore(Document document, string documentKey, string? folder, List<string> warnings)
+    public static bool Restore(Document document, Document bound, string documentKey, string? folder, List<string> warnings)
     {
-        if (!string.Equals(DocumentProjectKeyBuilder.Create(document), documentKey, StringComparison.Ordinal))
+        if (!IsDocument(document, documentKey, bound))
         {
             warnings.Add(UiLocalizer.Instance.Get("Send.Error.OtherModel"));
             return false;
@@ -332,9 +341,9 @@ internal static class StationSend
         public bool Recorded;
     }
 
-    public static Step Run(Document document, string documentKey, string stationFolder, CesiumPackageLayout staging, Attempt attempt, List<string> warnings, CancellationToken ct)
+    public static Step Run(Document document, Document bound, string documentKey, string stationFolder, CesiumPackageLayout staging, Attempt attempt, List<string> warnings, CancellationToken ct)
     {
-        RequireDocument(document, documentKey);
+        RequireDocument(document, documentKey, bound);
 
         var (handle, currentState, info) = ExportHandlerSupport.ReadContext(document);
         // Resolve first: a model without a georeference fails here, before anything is written.

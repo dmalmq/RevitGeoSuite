@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Newtonsoft.Json;
 
 namespace RevitGeoSuite.CesiumHandoff;
 
@@ -10,6 +11,9 @@ namespace RevitGeoSuite.CesiumHandoff;
 /// bundle or a floor-plan GIS output) so the individual export dialogs' "Send to Cesium viewer"
 /// action can push a tiles-only or GIS-only package without the tiles/-gis/ layout the combined
 /// export produces. Artifacts are described wherever they actually are, path-relative to the folder.
+/// A station version folder keeps its own manifest and is never written to. A folder that already
+/// holds a manifest of the same model keeps what only its export knew: the model id and what the
+/// 3D Tiles export covered.
 /// </summary>
 public static class CesiumPackageFolderComposer
 {
@@ -26,6 +30,26 @@ public static class CesiumPackageFolderComposer
         }
 
         string root = folder.Trim();
+        if (CesiumStationFolder.IsVersionFolder(root))
+        {
+            // Kanizu reads this manifest, and a version never changes once published.
+            string manifestPath = Path.Combine(root, "cesium-package.json");
+            if (!File.Exists(manifestPath))
+            {
+                throw new InvalidOperationException(
+                    $"'{root}' is a station version folder without a manifest, so it cannot be sent.");
+            }
+
+            return CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath));
+        }
+
+        string? enclosingVersion = CesiumStationFolder.FindEnclosingVersionFolder(root);
+        if (enclosingVersion != null)
+        {
+            throw new InvalidOperationException(
+                $"'{root}' is inside the station version '{enclosingVersion}'. Send the version folder itself.");
+        }
+
         CesiumPackageTiles? tiles = FindTiles(root);
         CesiumPackageGis? gis = FindGis(root, inputs);
         if (tiles is null && gis is null)
@@ -34,12 +58,21 @@ public static class CesiumPackageFolderComposer
                 $"'{root}' contains neither a tileset.json nor GIS artifacts (.gpkg/.shp); nothing to send.");
         }
 
+        CesiumPackageManifest? previous = ReadPreviousManifestOfSameModel(root, inputs);
+        string? modelId = !string.IsNullOrWhiteSpace(previous?.Source?.ModelId)
+            ? previous!.Source!.ModelId
+            : inputs.ModelId;
         var manifest = new CesiumPackageManifest
         {
             PackageId = Guid.NewGuid().ToString(),
             CreatedUtc = DateTime.UtcNow,
             Generator = new CesiumPackageGenerator { Version = inputs.GeneratorVersion },
-            Source = new CesiumPackageSource { Model = inputs.SourceModel, DocumentKey = inputs.DocumentKey },
+            Source = new CesiumPackageSource
+            {
+                Model = inputs.SourceModel,
+                DocumentKey = inputs.DocumentKey,
+                ModelId = string.IsNullOrWhiteSpace(modelId) ? null : modelId,
+            },
             Building = new CesiumPackageBuilding
             {
                 Id = inputs.BuildingId,
@@ -51,6 +84,7 @@ public static class CesiumPackageFolderComposer
             Tiles = tiles,
             Gis = gis,
             LevelMap = inputs.LevelMap is { Count: > 0 } ? inputs.LevelMap : null,
+            Export = tiles is null ? null : inputs.Export ?? previous?.Export,
             ContentHash = CesiumPackageContentHasher.Compute(
                 root,
                 CesiumPackagePayloadResolver.Resolve(root, new CesiumPackageManifest { Tiles = tiles, Gis = gis })),
@@ -60,6 +94,36 @@ public static class CesiumPackageFolderComposer
             Path.Combine(root, "cesium-package.json"),
             CesiumPackageManifestSerializer.Serialize(manifest));
         return manifest;
+    }
+
+    /// <summary>
+    /// The manifest the folder already holds, when it reads as one and names the model of
+    /// <paramref name="inputs"/>; null otherwise, so a folder reused for another model takes
+    /// nothing from the model exported there before.
+    /// </summary>
+    private static CesiumPackageManifest? ReadPreviousManifestOfSameModel(string root, CesiumPackageBuildInputs inputs)
+    {
+        string manifestPath = Path.Combine(root, "cesium-package.json");
+        if (!File.Exists(manifestPath))
+        {
+            return null;
+        }
+
+        CesiumPackageManifest previous;
+        try
+        {
+            previous = CesiumPackageManifestSerializer.Deserialize(File.ReadAllText(manifestPath));
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        string previousDocument = previous.Source?.DocumentKey ?? string.Empty;
+        return previousDocument.Length > 0 &&
+               string.Equals(previousDocument, inputs.DocumentKey, StringComparison.OrdinalIgnoreCase)
+            ? previous
+            : null;
     }
 
     private static CesiumPackageTiles? FindTiles(string root)
@@ -75,10 +139,14 @@ public static class CesiumPackageFolderComposer
 
         string tilesetDir = Path.GetDirectoryName(tilesetPath)!;
         string levelsPath = Path.Combine(tilesetDir, "levels.json");
+        string elementsPath = Path.Combine(tilesetDir, "elements.json");
+        string roomsPath = Path.Combine(tilesetDir, "rooms.json");
         return new CesiumPackageTiles
         {
             Tileset = ToRelative(root, tilesetPath),
             Levels = File.Exists(levelsPath) ? ToRelative(root, levelsPath) : null,
+            Elements = File.Exists(elementsPath) ? ToRelative(root, elementsPath) : null,
+            Rooms = File.Exists(roomsPath) ? ToRelative(root, roomsPath) : null,
         };
     }
 

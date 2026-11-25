@@ -212,12 +212,12 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         CesiumExportRunRequest request = CesiumExportSupport.ReadPayload<CesiumExportRunRequest>(payload);
         if (string.IsNullOrWhiteSpace(request.OutputFolder))
         {
-            return Task.FromResult<object?>(new { error = "Output folder is required" });
+            throw new InvalidOperationException("Output folder is required.");
         }
 
         if (string.IsNullOrWhiteSpace(request.FloorPlanProfileName))
         {
-            return Task.FromResult<object?>(new { error = "Floor plan profile is required" });
+            throw new InvalidOperationException("Floor plan profile is required.");
         }
 
         string jobId = jobs.Start(async (ct, progress) =>
@@ -465,7 +465,7 @@ public sealed class CesiumPushHandler : IRpcHandler
         CesiumPushRequest request = CesiumExportSupport.ReadPayload<CesiumPushRequest>(payload);
         if (string.IsNullOrWhiteSpace(request.Folder) || !Directory.Exists(request.Folder))
         {
-            return Task.FromResult<object?>(new { error = "A valid export folder is required" });
+            throw new InvalidOperationException("A valid export folder is required.");
         }
 
         string jobId = jobs.Start(async (ct, progress) =>
@@ -478,12 +478,14 @@ public sealed class CesiumPushHandler : IRpcHandler
                 {
                     string projectKey = DocumentProjectKeyBuilder.Create(document);
                     string buildingName = DocumentProjectKeyBuilder.CreateDisplayName(document);
+                    string modelKey = RevitModelKeyResolver.Resolve(document);
                     return new CesiumPackageBuildInputs
                     {
                         BuildingId = CesiumBuildingIdentity.CreateId(projectKey, buildingName),
                         BuildingName = buildingName,
                         SourceModel = Path.GetFileName(document.PathName ?? string.Empty),
                         DocumentKey = projectKey,
+                        ModelId = RevitKey.IsDocumentModelKey(modelKey) ? null : modelKey,
                         GeneratorVersion = typeof(CesiumPushHandler).Assembly.GetName().Version?.ToString() ?? string.Empty,
                         LevelMap = CesiumExportSupport.BuildLevelMap(document),
                     };
@@ -546,14 +548,17 @@ public sealed class CesiumViewerSettingsSaveHandler : IRpcHandler
         var store = new CesiumViewerSettingsStore();
         CesiumViewerSettings existing = store.Load();
 
+        string nextViewerUrl = string.IsNullOrWhiteSpace(request.ViewerUrl)
+            ? CesiumViewerSettings.DefaultViewerUrl
+            : request.ViewerUrl.Trim();
+        bool sameOrigin = SameOrigin(existing.ViewerUrl, nextViewerUrl);
+
         var updated = new CesiumViewerSettings
         {
-            ViewerUrl = string.IsNullOrWhiteSpace(request.ViewerUrl)
-                ? CesiumViewerSettings.DefaultViewerUrl
-                : request.ViewerUrl.Trim(),
-            // null = keep the stored token; empty string = clear it.
+            ViewerUrl = nextViewerUrl,
+            // null = keep the stored token only when the viewer origin is unchanged; empty string = clear it.
             Token = request.Token is null
-                ? existing.Token
+                ? (sameOrigin ? existing.Token : null)
                 : (request.Token.Length == 0 ? null : request.Token),
         };
         store.Save(updated);
@@ -564,5 +569,18 @@ public sealed class CesiumViewerSettingsSaveHandler : IRpcHandler
             Token = null,
             HasToken = !string.IsNullOrEmpty(updated.Token),
         });
+    }
+
+    private static bool SameOrigin(string? leftUrl, string? rightUrl)
+    {
+        if (!Uri.TryCreate(leftUrl, UriKind.Absolute, out Uri? left) ||
+            !Uri.TryCreate(rightUrl, UriKind.Absolute, out Uri? right))
+        {
+            return false;
+        }
+
+        return string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
+            && left.Port == right.Port;
     }
 }

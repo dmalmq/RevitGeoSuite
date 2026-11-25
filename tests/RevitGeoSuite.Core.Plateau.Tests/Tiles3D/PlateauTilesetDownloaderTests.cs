@@ -28,7 +28,8 @@ public sealed class PlateauTilesetDownloaderTests
         EcefToProjectTransformer transformer = new EcefToProjectTransformer(
             new IdentityCoordinateTransformer(),
             new CrsReference { EpsgCode = 0 },
-            altitudeAnchorMeters: 0);
+            altitudeAnchorMeters: 0,
+            outputVerticalDatum: VerticalDatum.Ellipsoidal);
         PlateauTilesetDownloader downloader = new PlateauTilesetDownloader(
             httpClient,
             new GltfMeshDecoder(new MissingDracoMeshDecoder()),
@@ -75,7 +76,8 @@ public sealed class PlateauTilesetDownloaderTests
         EcefToProjectTransformer transformer = new EcefToProjectTransformer(
             new IdentityCoordinateTransformer(),
             new CrsReference { EpsgCode = 0 },
-            altitudeAnchorMeters: 0);
+            altitudeAnchorMeters: 0,
+            outputVerticalDatum: VerticalDatum.Ellipsoidal);
         PlateauTilesetDownloader downloader = new PlateauTilesetDownloader(
             httpClient,
             new GltfMeshDecoder(new MissingDracoMeshDecoder()),
@@ -96,6 +98,88 @@ public sealed class PlateauTilesetDownloaderTests
         Assert.Single(model.Features);
         Assert.Contains(selectedUrl, httpClient.ByteRequests);
         Assert.DoesNotContain(skippedUrl, httpClient.ByteRequests);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_does_not_duplicate_buildings_across_REPLACE_parent_and_child_tiles()
+    {
+        Uri rootUrl = new Uri("https://example.test/chiyoda/tileset.json");
+        Uri parentUrl = new Uri("https://example.test/chiyoda/parent.b3dm");
+        Uri childUrl = new Uri("https://example.test/chiyoda/child.b3dm");
+        string transformJson = string.Join(",", BuildEquatorEastNorthUpTransform().Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
+
+        FakeHttpClient httpClient = new FakeHttpClient();
+        httpClient.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"REPLACE\",\"transform\":[" + transformJson + "],\"content\":{\"uri\":\"parent.b3dm\"}," +
+            "\"children\":[{\"content\":{\"uri\":\"child.b3dm\"}}]}}";
+        httpClient.ByteResponses[parentUrl] = BuildSingleTriangleB3dm();
+        httpClient.ByteResponses[childUrl] = BuildSingleTriangleB3dm();
+
+        EcefToProjectTransformer transformer = new EcefToProjectTransformer(
+            new IdentityCoordinateTransformer(),
+            new CrsReference { EpsgCode = 0 },
+            altitudeAnchorMeters: 0,
+            outputVerticalDatum: VerticalDatum.Ellipsoidal);
+        PlateauTilesetDownloader downloader = new PlateauTilesetDownloader(
+            httpClient,
+            new GltfMeshDecoder(new MissingDracoMeshDecoder()),
+            transformer,
+            new PlateauTilesetCache(Path.Combine(Path.GetTempPath(), "RevitGeoSuiteTests", Guid.NewGuid().ToString("N"))));
+
+        PlateauDatasetEntry entry = new PlateauDatasetEntry
+        {
+            Url = rootUrl.AbsoluteUri,
+            TypeEn = "bldg",
+            Lod = "2",
+            Texture = false
+        };
+
+        PlateauTilesetModel model = await downloader.DownloadAsync(entry, "13101", progress: null, CancellationToken.None);
+
+        PlateauTilesetFeature feature = Assert.Single(model.Features);
+        Assert.Single(feature.Triangles);
+        Assert.Contains(childUrl, httpClient.ByteRequests);
+        Assert.DoesNotContain(parentUrl, httpClient.ByteRequests);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_scopes_fallback_batch_ids_per_tile_when_gml_id_is_missing()
+    {
+        Uri rootUrl = new Uri("https://example.test/osm/tileset.json");
+        Uri tileA = new Uri("https://example.test/osm/a.b3dm");
+        Uri tileB = new Uri("https://example.test/osm/b.b3dm");
+        string transformJson = string.Join(",", BuildEquatorEastNorthUpTransform().Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
+
+        FakeHttpClient httpClient = new FakeHttpClient();
+        httpClient.StringResponses[rootUrl] =
+            "{\"root\":{\"refine\":\"REPLACE\",\"transform\":[" + transformJson + "],\"children\":[" +
+            "{\"content\":{\"uri\":\"a.b3dm\"}}," +
+            "{\"content\":{\"uri\":\"b.b3dm\"}}" +
+            "]}}";
+        httpClient.ByteResponses[tileA] = BuildSingleTriangleB3dm(batchTableJson: string.Empty);
+        httpClient.ByteResponses[tileB] = BuildSingleTriangleB3dm(batchTableJson: string.Empty);
+
+        EcefToProjectTransformer transformer = new EcefToProjectTransformer(
+            new IdentityCoordinateTransformer(),
+            new CrsReference { EpsgCode = 0 },
+            altitudeAnchorMeters: 0,
+            outputVerticalDatum: VerticalDatum.Ellipsoidal);
+        PlateauTilesetDownloader downloader = new PlateauTilesetDownloader(
+            httpClient,
+            new GltfMeshDecoder(new MissingDracoMeshDecoder()),
+            transformer,
+            new PlateauTilesetCache(Path.Combine(Path.GetTempPath(), "RevitGeoSuiteTests", Guid.NewGuid().ToString("N"))));
+
+        PlateauTilesetModel model = await downloader.DownloadAsync(
+            rootUrl,
+            "OSM Buildings",
+            bbox: null,
+            progress: null,
+            CancellationToken.None);
+
+        Assert.Equal(2, model.Features.Count);
+        Assert.NotEqual(model.Features[0].Id, model.Features[1].Id);
+        Assert.All(model.Features, f => Assert.False(string.IsNullOrWhiteSpace(f.GridId)));
     }
 
     private static string BuildRootTilesetJson(double[] transform)
@@ -153,7 +237,7 @@ public sealed class PlateauTilesetDownloaderTests
         return degrees * Math.PI / 180.0;
     }
 
-    private static byte[] BuildSingleTriangleB3dm()
+    private static byte[] BuildSingleTriangleB3dm(string batchTableJson = "{\"gml_id\":[\"feature-a\"]}")
     {
         // glTF positions are Y-up (per the 3D Tiles / glTF spec), so a 10 m "up" vertex
         // is (0, 10, 0). The decoder rotates Y-up -> Z-up before the tile transform, so
@@ -189,7 +273,7 @@ public sealed class PlateauTilesetDownloaderTests
             "\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}],\"scene\":0" +
         "}";
 
-        return BuildB3dm("{\"BATCH_LENGTH\":1}", "{\"gml_id\":[\"feature-a\"]}", BuildGlb(json, bin));
+        return BuildB3dm("{\"BATCH_LENGTH\":1}", batchTableJson, BuildGlb(json, bin));
     }
 
     private static byte[] ConcatLE(float[] positions, ushort[] indices, ushort[] batchIds)

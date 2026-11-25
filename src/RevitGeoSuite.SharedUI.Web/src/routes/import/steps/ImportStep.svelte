@@ -36,7 +36,7 @@
       {importedCount} {importedCount === 1 ? $t('Import.Complete.ElementsOne', 'element imported') : $t('Import.Complete.ElementsOther', 'elements imported')}{importProgress.groups ? fmt($t('Import.Complete.InGroups', ' in {0} group(s)'), importProgress.groups) : ''}
     {/if}
     {#if importProgress.warnings?.length > 0}
-      <p class="mt-2 text-warning-foreground">{fmt($t('Import.Warnings', '{0} warning(s)'), importProgress.warnings.length)}</p>
+      <p class="mt-2 text-warning-text">{fmt($t('Import.Warnings', '{0} warning(s)'), importProgress.warnings.length)}</p>
       <ul class="ml-4 max-h-32 list-disc overflow-y-auto text-small">
         {#each importProgress.warnings.slice(0, 20) as warning}<li>{warning}</li>{/each}
       </ul>

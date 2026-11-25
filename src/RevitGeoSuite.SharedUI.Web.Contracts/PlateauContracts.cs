@@ -19,6 +19,9 @@ public sealed class PlateauImportRequest
 
     /// <summary>"solids" (default) builds 3D DirectShapes; "dxf" imports a lightweight 2D CAD basemap.</summary>
     public string Mode { get; set; } = "solids";
+
+    /// <summary>Optional active document identity captured before starting the import.</summary>
+    public string? DocumentId { get; set; }
 }
 
 /// <summary>Payload of the <c>gis.export</c> request.</summary>
@@ -163,6 +166,7 @@ public sealed class PlateauOnlineCatalogResponse
     public PlateauOnlineSuggestion? Suggestion { get; set; }
     public int AreaCount { get; set; }
     public int DatasetCount { get; set; }
+    public string? DocumentId { get; set; }
     public bool DracoAvailable { get; set; }
     public string DracoMessage { get; set; } = string.Empty;
 }
@@ -224,6 +228,9 @@ public sealed class PlateauOnlineImportRequest
 
     /// <summary>Online DXF basemap categories: "buildings", "roads", "landuse".</summary>
     public string[] Categories { get; set; } = Array.Empty<string>();
+
+    /// <summary>Optional active document identity captured before starting the import.</summary>
+    public string? DocumentId { get; set; }
 }
 
 /// <summary>Per-area result from a multi-area PLATEAU Online import.</summary>

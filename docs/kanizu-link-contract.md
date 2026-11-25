@@ -11,8 +11,9 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
     <model id>.gis-model.json     one model's GIS export settings
   gis-rules.json                RevitGeoSuite writes (any PC); Kanizu reads. The station's category rules and profiles
   gis-rules.lock                RevitGeoSuite, only while a PC saves gis-rules.json; readers ignore it
-  gis-drift/                    Kanizu writes; RevitGeoSuite's pyRevit tools read
-    <model id>.gis-drift.json     GDB edits to fields this model owns
+  gis-drift/                    Kanizu writes drift files; RevitGeoSuite writes keep files and reads drift files
+    <model id>.gis-drift.json     GDB edits to fields this model owns (Kanizu writes)
+    <model id>.gis-keep.json      "Keep Revit's" answers (RevitGeoSuite adds; Kanizu drops once applied or stale)
   gis-network/                  Kanizu writes; RevitGeoSuite reads and draws it read-only
     <model id>.gis-network.json   the walking network as this model sees it
   revit/                        RevitGeoSuite writes; Kanizu reads, and removes old versions
@@ -26,7 +27,7 @@ RevitGeoSuite exports Revit models into a station folder that Kanizu reads. This
 
 Every file has one writer, so two people on the share never overwrite each other.
 
-`gis-rules.json` is the one file several PCs write, as per-key operations that never replace each other's keys (see its section below).
+Two files have more than one writer: `gis-rules.json` (written from any PC as per-key operations behind `gis-rules.lock`, see its section below) and `gis-drift/<model id>.gis-keep.json` (RevitGeoSuite adds answers, Kanizu drops applied/stale answers or restores them on backup restore; both keep unknown fields and entries verbatim and refuse to replace a file that changed since it was read).
 
 - RevitGeoSuite builds a version in a hidden `revit/.tmp-<id>/` folder, writes the manifest last and renames the folder into place (`CesiumStationFolder.Publish`). A reader skips folders whose names start with `.`, and treats a visible folder without `cesium-package.json` as not RevitGeoSuite's: Kanizu lists it as skipped and says why.
 - The model folder is the building name's slug plus the first 8 hex digits of the model id (`CesiumStationFolder.ModelFolderName`), or the building id without a model id. It is for people reading the share. A reader groups versions by model id, not by folder: renaming the building in Revit starts a new folder for the same model. A version without a model id is counted with the model id other versions in its folder carry, or else by its folder.
@@ -195,6 +196,20 @@ Two rows that carry one `revit_key` read as a split that waits for Revit, not as
 
 A core field maps to its parameter by name: unit and fixture `name` to `name`, `alt_name` to `short_name`, unit `category` to `category`, `direction` to `gis_direction`, and level `ordinal` to `ordinal` and `short_name` to `short_name`. Fixture `category` and level `name` have no parameter: a fixture's category only marks it a fixture, and a level's name is the Revit level's own. Unit `restrict` has no parameter: the GDB holds IMDF restrictions there (`employeesonly`), while the type's `gis_restriction` is the side of the ticket gates and picks the category code. A unit `category` row writes `gdbCategory`, not the station code; when the element's floor type has another restriction than `gdbRestriction`, it is listed for a floor type change by hand. Other core fields have no parameter and are listed for a change by hand. The button leaves out rows the model already agrees with and leaves conflicts unticked.
 
+## `gis-drift/<model id>.gis-keep.json` (version 1)
+
+RevitGeoSuite's record of drift rows answered **"Keep Revit's"** in **Review GDB edits** (`gisDrift.keep`), stored beside the model's drift file under the same sanitized file stem (ASCII letters, digits and `-` kept; everything else `_`). Kanizu remains the sole writer of the GDB: it reads the file, lists each entry in its Revit models review, and writes Revit's value into the GDB only during an apply when the entry is ticked and both sides still match its recorded values exactly. The two implementations are [`GisKeep`](../src/RevitGeoSuite.FloorPlanExport.Core/Standards/GisKeep.cs) and Kanizu's `kanizu-core/src/revit/keep.rs`.
+
+| Field | Meaning |
+|---|---|
+| `schema`, `version` | `kanizu.gis-keep` and integer `1`. Both sides refuse any other schema, any version other than integer `1` (including `1.0` or `"1"`), and a file whose `model` does not match the expected model key. |
+| `model` | The model key, matching `<model id>.gis-drift.json`'s `model`. |
+| `entries[]` | One object per answered `(revitKey, layer, field, gdb)` conflict: `revitKey`, `layer` (`unit`, `opening`, `fixture`, `level`, ...), `field` (the GDB field), `revit` (Revit's value when kept), `gdb` (the GDB value being overridden), and `keptUtc` (ISO 8601 UTC to the second, e.g. `2026-11-21T09:30:00Z`). |
+
+- **Value comparison and identity.** Values compare as exact strings (no trimming or case folding). When reading, JSON `null` or an omitted value reads as `""`, and numbers or booleans coerce to their text representation; entries missing `revitKey` or `field`, or with array/object values, are ignored on read and preserved verbatim on rewrite. An entry's conflict identity is **`(revitKey, layer, field, gdb)`** — a split feature with several GDB values for one `(revitKey, layer, field)` gets one entry per distinct `gdb` value. Re-answering the same `(revitKey, layer, field, gdb)` conflict in RevitGeoSuite updates that entry's `revit` and `keptUtc` in place.
+- **Empty Revit values.** Kanizu never overwrites a non-empty GDB value with an empty `revit` value, even if a file contains such an entry; RevitGeoSuite skips recording entries where `revit` is empty over a non-empty `gdb`, or where `revit == gdb`.
+- **Two-writer merge and lifecycle.** Files are written as UTF-8 JSON without a byte order mark (readers strip an optional UTF-8 BOM). Both sides preserve unknown top-level fields, unknown per-entry fields, and unrecognized entries verbatim, write through a temporary file beside the target, and refuse to replace the file if its on-disk bytes changed since it was read (RevitGeoSuite retries up to 3 times; Kanizu fails and asks to compare again). After saving an apply, Kanizu drops entries that were **taken** (matching by identity `(revitKey, layer, field, gdb)`), **done** (the GDB already holds `revit`), or **stale** (compared on an export newer than `keptUtc` and either side moved on); both **done** and **stale** entries are dropped only when the on-disk entry still matches all fields verbatim, so a newer answer recorded meanwhile stays. Entries left unticked or not checked stay. Dropping the last entry removes the file. Restoring a GDB backup in Kanizu merges the backup's keep entries back beside any entries RevitGeoSuite added since. Non-interactive apply tools inspect `gis-drift/*.gis-keep.json` and refuse to overwrite values answered there.
+
 ## GIS exports: `revit_key`
 
 The floor plan export (GeoPackage, and the GDB built from it) carries `revit_key` on every feature, `parent_key` and `category` on detail lines. `revit_key` reads `model|UniqueId|part`, with `model@LinkUniqueId` for a feature read through a link. The rules are defined once, in the remarks on [`RevitKey`](../src/RevitGeoSuite.FloorPlanExport.Core/Models/RevitKey.cs); a reader follows those rather than a copy here. It is written only in the GIS export, not in the Cesium package's tiles.
@@ -271,6 +286,7 @@ Kanizu's own new-export notice judges a pending export against the GDB, so it ca
 | `gis-model.json` | 1 | an older RevitGeoSuite would misread it |
 | `gis-fields.json`, `fields.json` | 1 | an older reader would misread it |
 | `gis-drift/*.gis-drift.json` | 1 | as above (`epsg` and `shapes` were added in version 1: a reader that ignores them still reads every value row right) |
+| `gis-drift/*.gis-keep.json` | 1 | an older reader or writer would misread it; unknown top-level/entry fields and unkeyed entries are preserved verbatim |
 | `gis-network/*.gis-network.json` | 1 | an older reader would misread it; new connector kinds, passage codes and finding kinds need no new version |
 
 A reader refuses a file newer than it knows, naming the file and both versions, and reads a file without a version as it is.

@@ -52,8 +52,6 @@ public partial class WebShellWindow : Window
         Loaded += OnLoaded;
     }
 
-    public string? PendingModuleNavigationKey { get; private set; }
-
     public WebRpcBridge Bridge => rpcBridge;
 
     public JobManager Jobs => jobManager;
@@ -85,6 +83,7 @@ public partial class WebShellWindow : Window
             await ShellBrowser.EnsureCoreWebView2Async(environment);
 
             coreWebView = ShellBrowser.CoreWebView2;
+            ConfigureWebViewSettings(coreWebView);
             TryEnableNonClientRegionSupport(coreWebView);
 
             string assetFolder = WebShellEnvironment.EnsureWebAssets();
@@ -92,6 +91,9 @@ public partial class WebShellWindow : Window
                 WebShellEnvironment.HostName,
                 assetFolder,
                 CoreWebView2HostResourceAccessKind.Allow);
+
+            coreWebView.NavigationStarting += OnNavigationStarting;
+            coreWebView.NewWindowRequested += OnNewWindowRequested;
 
             rpcBridge.Attach(coreWebView);
 
@@ -111,6 +113,63 @@ public partial class WebShellWindow : Window
             {
                 ShowFallback(ex.Message);
             }
+        }
+    }
+
+    private static void ConfigureWebViewSettings(CoreWebView2 webView)
+    {
+        try
+        {
+            webView.Settings.AreDefaultContextMenusEnabled = false;
+            webView.Settings.IsStatusBarEnabled = false;
+            webView.Settings.IsSwipeNavigationEnabled = false;
+#if !DEBUG
+            webView.Settings.AreDevToolsEnabled = false;
+            webView.Settings.AreBrowserAcceleratorKeysEnabled = false;
+#endif
+        }
+        catch (Exception)
+        {
+            // Keep initialization resilient on older WebView2 runtimes.
+        }
+    }
+
+    private static void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (WebShellNavigationPolicy.IsAllowedAppNavigation(e.Uri))
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (e.IsUserInitiated && WebShellNavigationPolicy.IsSafeExternalUri(e.Uri))
+        {
+            TryOpenExternalUrl(e.Uri);
+        }
+    }
+
+    private static void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        if (e.IsUserInitiated && WebShellNavigationPolicy.IsSafeExternalUri(e.Uri))
+        {
+            TryOpenExternalUrl(e.Uri);
+        }
+    }
+
+    private static void TryOpenExternalUrl(string uri)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = uri,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception)
+        {
+            // Best-effort browser handoff — never crash Revit if no default browser is registered.
         }
     }
 
@@ -190,6 +249,13 @@ public partial class WebShellWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         isClosed = true;
+        jobManager.CancelAll();
+        if (coreWebView != null)
+        {
+            coreWebView.NavigationStarting -= OnNavigationStarting;
+            coreWebView.NewWindowRequested -= OnNewWindowRequested;
+            coreWebView = null;
+        }
         rpcBridge.Detach();
         ShellBrowser.Dispose();
         base.OnClosed(e);

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using RevitGeoSuite.FloorPlanExport.Core;
+using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.Utilities;
@@ -218,11 +219,33 @@ public sealed class ExportProfileStore
 
     private ExportProfileDocument LoadDocument()
     {
-        return JsonFileLoadHelper.Load(
+        ExportProfileDocument document = JsonFileLoadHelper.Load(
             ResolveLoadPath(),
             createDefaultValue: () => new ExportProfileDocument(),
             deserialize: json => JsonConvert.DeserializeObject<ExportProfileDocument>(json),
             documentLabel: "Export profiles").Value;
+        NormalizeDocument(document);
+        return document;
+    }
+
+    private static void NormalizeDocument(ExportProfileDocument document)
+    {
+        document.GlobalProfiles = (document.GlobalProfiles ?? new List<ExportProfile>())
+            .Where(profile => profile != null)
+            .Select(NormalizeProfile)
+            .Where(profile => profile.Name.Length > 0)
+            .ToList();
+        if (document.ProjectProfiles != null)
+        {
+            foreach (string key in document.ProjectProfiles.Keys.ToList())
+            {
+                document.ProjectProfiles[key] = (document.ProjectProfiles[key] ?? new List<ExportProfile>())
+                    .Where(profile => profile != null)
+                    .Select(NormalizeProfile)
+                    .Where(profile => profile.Name.Length > 0)
+                    .ToList();
+            }
+        }
     }
 
     private void SaveDocument(ExportProfileDocument document)
@@ -271,7 +294,9 @@ public sealed class ExportProfileStore
             Name = NormalizeName(profile.Name),
             Scope = profile.Scope,
             OutputDirectory = profile.OutputDirectory?.Trim() ?? string.Empty,
-            TargetEpsg = profile.TargetEpsg > 0 ? profile.TargetEpsg : ProjectInfo.DefaultTargetEpsg,
+            TargetEpsg = profile.TargetEpsg > 0
+                ? JapanPlaneRectangular.NormalizeEpsg(profile.TargetEpsg)
+                : ProjectInfo.DefaultTargetEpsg,
             FeatureTypes = profile.FeatureTypes == RevitGeoSuite.FloorPlanExport.Export.ExportFeatureType.None
                 ? RevitGeoSuite.FloorPlanExport.Export.ExportFeatureType.All
                 : profile.FeatureTypes,
@@ -292,11 +317,18 @@ public sealed class ExportProfileStore
             UnitAttributeSource = profile.UnitAttributeSource,
             RoomCategoryParameterName = string.IsNullOrWhiteSpace(profile.RoomCategoryParameterName) ? "Name" : profile.RoomCategoryParameterName.Trim(),
             LinkExportOptions = profile.LinkExportOptions?.Clone() ?? new RevitGeoSuite.FloorPlanExport.Export.LinkExportOptions(),
+            SimplifyStairUnits = profile.SimplifyStairUnits,
+            SimplifyEscalatorUnits = profile.SimplifyEscalatorUnits,
             UnitCategories = (profile.UnitCategories ?? new List<string>())
                 .Where(category => !string.IsNullOrWhiteSpace(category))
                 .Select(category => category.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList(),
+            Use3DSectionBoxExport = profile.Use3DSectionBoxExport,
+            SectionBoxAboveFloorMeters = profile.SectionBoxAboveFloorMeters,
+            SectionBoxBelowFloorMeters = profile.SectionBoxBelowFloorMeters,
+            Keep3DTempViewsForDebug = profile.Keep3DTempViewsForDebug,
+            OutputFormat = profile.OutputFormat,
             SchemaProfiles = SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(profile.SchemaProfiles, profile.ActiveSchemaProfileName),
             ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(profile.ValidationPolicyProfiles).Select(policy => policy.Clone()).ToList(),

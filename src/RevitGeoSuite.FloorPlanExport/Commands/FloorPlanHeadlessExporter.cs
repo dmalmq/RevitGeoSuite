@@ -96,7 +96,8 @@ public sealed class FloorPlanHeadlessExporter
             settings.FeatureTypes,
             settings.IncrementalExportMode,
             settings.GenerateDiagnosticsReport,
-            settings.GeneratePackageOutput,
+            // A handoff package nested in gis/ would be a second copy of every feature.
+            generatePackageOutput: false,
             settings.IncludePackageLegend,
             packagingModeOverride ?? settings.PackagingMode,
             settings.ValidateAfterWrite,
@@ -139,7 +140,8 @@ public sealed class FloorPlanHeadlessExporter
             cancellationToken,
             baselineKeyOverride,
             persistBaseline,
-            recordViewsInGisModel: true);
+            recordViewsInGisModel: true,
+            requireCompleteLinkCoverage: true);
         result.AddWarnings(viewWarnings);
         return result;
     }

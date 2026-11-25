@@ -32,7 +32,7 @@ public sealed class PersistentExportMetadataProvider : IExportMetadataProvider
             throw new ArgumentNullException(nameof(warnings));
         }
 
-        if (ReferenceEquals(element.Document, _parameterManager.Document))
+        if (DocumentComparer.IsSameDocument(element.Document, _parameterManager.Document))
         {
             string id = _parameterManager.GetOrCreateElementId(element, warnings);
             bool hasPersistedId = string.Equals(
@@ -98,7 +98,7 @@ public sealed class PersistentExportMetadataProvider : IExportMetadataProvider
 
     private string? ReadOptionalStringParameter(Element element, string parameterName)
     {
-        if (ReferenceEquals(element.Document, _parameterManager.Document))
+        if (DocumentComparer.IsSameDocument(element.Document, _parameterManager.Document))
         {
             return _parameterManager.GetOptionalStringParameter(element, parameterName);
         }
