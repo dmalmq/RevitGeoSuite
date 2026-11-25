@@ -11,6 +11,8 @@ vi.hoisted(() => {
 })
 import { flushSync, mount, unmount } from 'svelte'
 import Sidebar from '../Sidebar.svelte'
+import TitleBar from '../TitleBar.svelte'
+import FormatChooser from '../../../routes/export/steps/FormatChooser.svelte'
 import { ALL_ENTRIES, entryFor, format } from '../nav'
 import { stepNumber, workflow } from '../workflow'
 
@@ -18,7 +20,7 @@ describe('nav', () => {
   it('maps every route, including sub-routes, to its sidebar entry', () => {
     expect(entryFor('/georeference')?.labelKey).toBe('Nav.Georeference')
     expect(entryFor('/export/geopackage')?.route).toBe('/export/geopackage')
-    expect(entryFor('/export/citygml')?.route).toBe('/export')
+    expect(entryFor('/export/tiles3d')?.route).toBe('/export')
     expect(entryFor('/nowhere')).toBeUndefined()
     expect(new Set(ALL_ENTRIES.map((e) => e.route)).size).toBe(ALL_ENTRIES.length)
   })
@@ -60,5 +62,51 @@ describe('Sidebar', () => {
     expect(target.querySelector('[aria-current="page"]')?.textContent).toContain('Georeference')
     expect(target.querySelector('[aria-current="step"]')?.textContent).toContain('Apply')
     expect(target.querySelectorAll('ol li')).toHaveLength(2)
+  })
+})
+
+describe('TitleBar', () => {
+  let instance: ReturnType<typeof mount> | undefined
+  afterEach(() => {
+    if (instance) unmount(instance)
+    instance = undefined
+    document.body.innerHTML = ''
+  })
+
+  it('displays Kanizu Revit branding instead of RevitGeoSuite', () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    instance = mount(TitleBar, { target, props: { toolName: 'Georeference', documentName: 'Station.rvt' } })
+    flushSync()
+
+    expect(target.textContent).toContain('Kanizu Revit')
+    expect(target.textContent).not.toContain('RevitGeoSuite')
+  })
+})
+
+describe('FormatChooser', () => {
+  let instance: ReturnType<typeof mount> | undefined
+  afterEach(() => {
+    if (instance) unmount(instance)
+    instance = undefined
+    document.body.innerHTML = ''
+  })
+
+  it('hides CityGML export for Kanizu Revit v1', () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    instance = mount(FormatChooser, {
+      target,
+      props: {
+        openCesiumExport: () => {},
+        openFloorPlanExport: () => {},
+        selectFormat: () => {}
+      }
+    })
+    flushSync()
+
+    expect(target.textContent).not.toContain('CityGML')
+    expect(target.textContent).toContain('3D Tiles')
+    expect(target.textContent).toContain('GeoPackage / Shapefile')
   })
 })

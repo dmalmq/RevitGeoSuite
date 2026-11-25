@@ -13,9 +13,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="RevitGeoSuite.addin">
+    <None Include="KanizuRevit.addin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>RevitGeoSuite.addin</TargetPath>
+      <TargetPath>KanizuRevit.addin</TargetPath>
     </None>
   </ItemGroup>
 

@@ -9,7 +9,7 @@ namespace RevitGeoSuite.FloorPlanExport;
 internal static class ProjectInfo
 {
     public const string Name = "GeoPackage / Shapefile export";
-    public const string RibbonTabName = "Revit Geo Suite";
+    public const string RibbonTabName = "Kanizu Revit";
     public const int DefaultTargetEpsg = 6677;
 
     private static string? _displayVersion;

@@ -211,7 +211,12 @@ if ($StartRevit) {
     if (-not (Test-Path $staged)) { throw "No test host at $TestHost. Run Install-TestHost.ps1 first." }
     if ($RgsBuild) {
         if (-not (Test-Path (Join-Path $RgsBuild 'RevitGeoSuite.Shell.dll'))) { throw "No RevitGeoSuite.Shell.dll in $RgsBuild." }
-        $installed = @((Join-Path $env:ProgramData "Autodesk\Revit\Addins\$RevitYear\RevitGeoSuite.addin"), (Join-Path $addins 'RevitGeoSuite.addin')) | Where-Object { Test-Path $_ }
+        $installed = @(
+            (Join-Path $env:ProgramData "Autodesk\Revit\Addins\$RevitYear\KanizuRevit.addin"),
+            (Join-Path $addins 'KanizuRevit.addin'),
+            (Join-Path $env:ProgramData "Autodesk\Revit\Addins\$RevitYear\RevitGeoSuite.addin"),
+            (Join-Path $addins 'RevitGeoSuite.addin')
+        ) | Where-Object { Test-Path $_ }
         if ($installed) { throw "RevitGeoSuite is installed ($($installed -join ', ')). Remove it before running a build with -RgsBuild: Revit cannot load two RevitGeoSuite add-ins." }
     }
     if ($PyRevitExtension -and -not (Test-Path $PyRevitExtension)) { throw "No pyRevit extension folder at $PyRevitExtension." }

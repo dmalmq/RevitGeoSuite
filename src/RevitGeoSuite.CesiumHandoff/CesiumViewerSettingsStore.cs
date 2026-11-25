@@ -25,15 +25,34 @@ public sealed class CesiumViewerSettingsStore
     };
 
     private readonly string _settingsFilePath;
+    private readonly string? _legacySettingsFilePath;
 
-    public CesiumViewerSettingsStore(string? settingsFilePath = null)
+    public CesiumViewerSettingsStore(string? settingsFilePath = null, string? legacySettingsFilePath = null)
     {
-        _settingsFilePath = string.IsNullOrWhiteSpace(settingsFilePath)
-            ? DefaultSettingsFilePath
-            : settingsFilePath!.Trim();
+        if (string.IsNullOrWhiteSpace(settingsFilePath))
+        {
+            _settingsFilePath = DefaultSettingsFilePath;
+            _legacySettingsFilePath = string.IsNullOrWhiteSpace(legacySettingsFilePath)
+                ? LegacySettingsFilePath
+                : legacySettingsFilePath!.Trim();
+        }
+        else
+        {
+            _settingsFilePath = settingsFilePath!.Trim();
+            _legacySettingsFilePath = string.IsNullOrWhiteSpace(legacySettingsFilePath)
+                ? null
+                : legacySettingsFilePath!.Trim();
+        }
     }
 
     public static string DefaultSettingsFilePath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "KanizuRevit",
+            "CesiumHandoff",
+            "viewer-settings.json");
+
+    public static string LegacySettingsFilePath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "RevitGeoSuite",
@@ -44,13 +63,14 @@ public sealed class CesiumViewerSettingsStore
     {
         try
         {
-            if (!File.Exists(_settingsFilePath))
+            string? loadPath = ResolveLoadPath();
+            if (loadPath is null)
             {
                 return new CesiumViewerSettings();
             }
 
             CesiumViewerSettings? settings = JsonConvert.DeserializeObject<CesiumViewerSettings>(
-                File.ReadAllText(_settingsFilePath));
+                File.ReadAllText(loadPath));
             if (settings is null || string.IsNullOrWhiteSpace(settings.ViewerUrl))
             {
                 return new CesiumViewerSettings();
@@ -78,5 +98,20 @@ public sealed class CesiumViewerSettingsStore
         }
 
         File.WriteAllText(_settingsFilePath, JsonConvert.SerializeObject(settings, JsonSettings));
+    }
+
+    private string? ResolveLoadPath()
+    {
+        if (File.Exists(_settingsFilePath))
+        {
+            return _settingsFilePath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_legacySettingsFilePath) && File.Exists(_legacySettingsFilePath))
+        {
+            return _legacySettingsFilePath;
+        }
+
+        return null;
     }
 }

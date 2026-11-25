@@ -64,7 +64,7 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
         if (isOnline && string.IsNullOrWhiteSpace(ionToken))
         {
             throw new InvalidOperationException(
-                "A Cesium Ion access token is required for online PLATEAU terrain import. Enter your token in the import options or set REVITGEOSUITE_CESIUM_ION_TOKEN.");
+                "A Cesium Ion access token is required for online PLATEAU terrain import. Enter your token in the import options or set KANIZU_CESIUM_ION_TOKEN.");
         }
         if (!isOnline && string.IsNullOrWhiteSpace(path))
         {
@@ -214,13 +214,13 @@ public sealed class PlateauGroundImportHandler : IRpcHandler
             return payloadToken!.Trim();
         }
 
-        string? envToken = Environment.GetEnvironmentVariable("REVITGEOSUITE_CESIUM_ION_TOKEN");
+        string? envToken = Environment.GetEnvironmentVariable("KANIZU_CESIUM_ION_TOKEN");
         if (!string.IsNullOrWhiteSpace(envToken))
         {
             return envToken!.Trim();
         }
 
-        envToken = Environment.GetEnvironmentVariable("KANIZU_CESIUM_ION_TOKEN");
+        envToken = Environment.GetEnvironmentVariable("REVITGEOSUITE_CESIUM_ION_TOKEN");
         return string.IsNullOrWhiteSpace(envToken) ? string.Empty : envToken!.Trim();
     }
 

@@ -1,4 +1,4 @@
-# RevitGeoSuite Installer
+# Kanizu Revit Installer
 
 This folder supports two installation flows for a selected Revit year. The default target is Revit 2024.
 
@@ -8,7 +8,7 @@ This folder supports two installation flows for a selected Revit year. The defau
 ## Build a setup EXE
 
 Prerequisites:
-- A built RevitGeoSuite payload in `bin/Deploy/` or another output folder
+- A built Kanizu Revit payload in `bin/Deploy/` or another output folder
 - Inno Setup 6 (`ISCC.exe`)
 
 Command:
@@ -24,7 +24,7 @@ pwsh ./install/build-installer.ps1 -RevitYear <year> -SourceDirectory "C:\path\t
 ```
 
 Output:
-- `install/output/RevitGeoSuite-Setup-<year>-<version>.exe`
+- `install/output/KanizuRevit-Setup-<year>-<version>.exe`
 
 ## Stage release files
 
@@ -37,9 +37,10 @@ pwsh ./install/build-release.ps1 -RevitYear 2024
 ## Installer behavior
 
 - Installs add-in payload to:
-  - `C:\ProgramData\Autodesk\Revit\Addins\<year>\RevitGeoSuite\`
+  - `C:\ProgramData\Autodesk\Revit\Addins\<year>\KanizuRevit\`
 - Installs manifest to:
-  - `C:\ProgramData\Autodesk\Revit\Addins\<year>\RevitGeoSuite.addin`
+  - `C:\ProgramData\Autodesk\Revit\Addins\<year>\KanizuRevit.addin`
+- Cleanly removes any legacy `RevitGeoSuite.addin` and `RevitGeoSuite\` folder during install/upgrade so both add-ins never load side-by-side.
 - Registers a normal uninstall entry in Windows Apps/Programs.
 - Requires admin rights.
 

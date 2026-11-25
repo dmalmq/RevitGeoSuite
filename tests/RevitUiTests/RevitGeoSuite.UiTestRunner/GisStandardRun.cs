@@ -11,8 +11,8 @@ namespace RevitGeoSuite.UiTestRunner;
 /// </summary>
 internal sealed partial class GisStandardRun(RunOptions options, TestHostClient host, Report report)
 {
-    private const string Tab = "Revit Geo Suite";
-    private const string Panel = "Geo Suite";
+    private const string Tab = "Kanizu Revit";
+    private const string Panel = "Kanizu Revit";
     private const string SetupTransaction = "Kanizu GIS: Set up model";
     private const string FixTransaction = "Kanizu GIS: Fix floor types";
     private const string ParametersTransaction = "Kanizu GIS: Parameters";

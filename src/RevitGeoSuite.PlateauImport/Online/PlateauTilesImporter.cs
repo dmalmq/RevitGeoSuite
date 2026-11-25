@@ -18,7 +18,16 @@ namespace RevitGeoSuite.PlateauImport.Online;
 /// </summary>
 public sealed class PlateauTilesImporter
 {
+    // Keep writing the legacy RevitGeoSuite marker so mixed-version teams sharing .rvt models
+    // recognize imported elements without duplicating them; recognize KanizuRevit.* on read too.
     internal const string ApplicationId = "RevitGeoSuite.PlateauImport.Online";
+    internal const string KanizuApplicationId = "KanizuRevit.PlateauImport.Online";
+
+    internal static bool IsOwnedApplicationId(string? applicationId)
+    {
+        return string.Equals(applicationId, ApplicationId, StringComparison.Ordinal)
+            || string.Equals(applicationId, KanizuApplicationId, StringComparison.Ordinal);
+    }
     internal const int DefaultMaxFeaturesPerBatch = 250;
 
     /// <summary>
@@ -581,7 +590,7 @@ public sealed class PlateauTilesImporter
 
         foreach (DirectShape directShape in new FilteredElementCollector(document).OfClass(typeof(DirectShape)).Cast<DirectShape>())
         {
-            if (!string.Equals(directShape.ApplicationId, ApplicationId, StringComparison.Ordinal))
+            if (!IsOwnedApplicationId(directShape.ApplicationId))
             {
                 continue;
             }

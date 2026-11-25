@@ -172,7 +172,7 @@ public static class GisAudit
         }
         else if (modelVersion > standard.Version)
         {
-            yield return new GisAuditFinding(GisAuditSeverity.Warning, "standard", $"The model is on standard version {modelVersion}, newer than this RevitGeoSuite ({current}). Update RevitGeoSuite.");
+            yield return new GisAuditFinding(GisAuditSeverity.Warning, "standard", $"The model is on standard version {modelVersion}, newer than this Kanizu Revit ({current}). Update Kanizu Revit.");
         }
     }
 

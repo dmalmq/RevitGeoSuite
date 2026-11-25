@@ -142,7 +142,7 @@ public sealed class GisModelFile
         if (version < 1 || version > CurrentVersion)
         {
             throw new InvalidDataException(
-                $"{sourceLabel} has version {version}; this RevitGeoSuite reads version {CurrentVersion}. Update RevitGeoSuite.");
+                $"{sourceLabel} has version {version}; this Kanizu Revit reads version {CurrentVersion}. Update Kanizu Revit.");
         }
 
         GisModelFile file = root.ToObject<GisModelFile>() ?? new GisModelFile();

@@ -76,7 +76,7 @@ internal sealed class NetworkOverlay : IDirectContext3DServer
 
     public ExternalServiceId GetServiceId() => ExternalServices.BuiltInExternalServices.DirectContext3DService;
 
-    public string GetName() => "RevitGeoSuite walking network";
+    public string GetName() => "Kanizu Revit walking network";
 
     public string GetDescription() => "Draws Kanizu's walking network over review views, read-only.";
 
