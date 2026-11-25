@@ -115,7 +115,7 @@ public sealed class GisStandardStatus
         GisStandardState.Current => $"Kanizu GIS standard {CurrentVersion}: current.",
         GisStandardState.UpdateAvailable => $"Kanizu GIS standard {ModelVersion}: version {CurrentVersion} is available. Run Set up model.",
         GisStandardState.Unsupported => $"Kanizu GIS standard {ModelVersion}: below the oldest version these tools export ({OldestSupportedVersion}). Run Set up model.",
-        GisStandardState.NewerThanTools => $"Kanizu GIS standard {ModelVersion}: newer than this RevitGeoSuite ({CurrentVersion}). Update RevitGeoSuite.",
+        GisStandardState.NewerThanTools => $"Kanizu GIS standard {ModelVersion}: newer than this Kanizu Revit ({CurrentVersion}). Update Kanizu Revit.",
         GisStandardState.Unreadable => "Kanizu GIS standard: gis_standard_version is not a version number.",
         _ => "Kanizu GIS standard: not set up. Run Set up model.",
     };
@@ -185,7 +185,7 @@ public static class GisStandardCheck
                 state = GisStandardState.Unsupported;
                 issues.Add(new GisStandardIssue(
                     GisStandardIssueSeverity.Error,
-                    $"The model is on standard version {parsed}, below the oldest version this RevitGeoSuite exports ({GisStandard.OldestSupportedVersion}). Run Set up model first.",
+                    $"The model is on standard version {parsed}, below the oldest version this Kanizu Revit exports ({GisStandard.OldestSupportedVersion}). Run Set up model first.",
                     blocksExport: true));
             }
             else if (parsed < GisStandard.Version)
@@ -196,7 +196,7 @@ public static class GisStandardCheck
             else if (parsed > GisStandard.Version)
             {
                 state = GisStandardState.NewerThanTools;
-                issues.Add(new GisStandardIssue(GisStandardIssueSeverity.Warning, $"The model is on standard version {parsed}, newer than this RevitGeoSuite ({GisStandard.Version}). Update RevitGeoSuite."));
+                issues.Add(new GisStandardIssue(GisStandardIssueSeverity.Warning, $"The model is on standard version {parsed}, newer than this Kanizu Revit ({GisStandard.Version}). Update Kanizu Revit."));
             }
             else
             {

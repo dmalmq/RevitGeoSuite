@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Kanizu Revit</Name>
+    <Assembly>C:\ProgramData\Autodesk\Revit\Addins\__REVIT_YEAR__\KanizuRevit\RevitGeoSuite.Shell.dll</Assembly>
+    <AddInId>CB1ACDE0-83D9-4F26-9BFF-5ECF523EEFFE</AddInId>
+    <FullClassName>RevitGeoSuite.Shell.App</FullClassName>
+    <VendorId>Kanizu</VendorId>
+    <VendorDescription>Kanizu Revit</VendorDescription>
+  </AddIn>
+</RevitAddIns>

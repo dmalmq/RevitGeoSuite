@@ -356,7 +356,7 @@ public static class GisKeep
         // Kanizu reads the version as an unsigned integer, so 1.0 is not version 1 here.
         if (root["version"] is not JValue { Type: JTokenType.Integer, Value: long version } || version != Version)
         {
-            throw new FormatException($"The keep file is version {root["version"]}; this tool reads and writes version {Version}. Update RevitGeoSuite.");
+            throw new FormatException($"The keep file is version {root["version"]}; this tool reads and writes version {Version}. Update Kanizu Revit.");
         }
 
         string fileModel = root["model"] is JValue { Type: JTokenType.String } named ? (string)named! : string.Empty;

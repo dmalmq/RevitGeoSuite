@@ -24,7 +24,7 @@
       id: 'keep',
       override: false,
       label: $t('Georef.Wizard.Keep.Label', 'Keep this setup'),
-      description: $t('Georef.Wizard.Keep.Description', 'Save GeoSuite metadata so import and export use it. Nothing in Revit moves.')
+      description: $t('Georef.Wizard.Keep.Description', 'Save Kanizu Revit metadata so import and export use it. Nothing in Revit moves.')
     },
     {
       id: 'new',

@@ -14,59 +14,54 @@ namespace RevitGeoSuite.Core.Plateau.Catalog;
 public sealed class ResponseCache
 {
     private readonly string cacheRoot;
+    private readonly string? legacyCacheRoot;
 
-    public ResponseCache(string? rootOverride = null)
+    public ResponseCache(string? rootOverride = null, string? legacyRootOverride = null)
     {
-        cacheRoot = rootOverride ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "RevitGeoSuite", "Cache");
+        if (string.IsNullOrWhiteSpace(rootOverride))
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            cacheRoot = Path.Combine(localAppData, "KanizuRevit", "Cache");
+            legacyCacheRoot = string.IsNullOrWhiteSpace(legacyRootOverride)
+                ? Path.Combine(localAppData, "RevitGeoSuite", "Cache")
+                : legacyRootOverride!.Trim();
+        }
+        else
+        {
+            cacheRoot = rootOverride!.Trim();
+            legacyCacheRoot = string.IsNullOrWhiteSpace(legacyRootOverride)
+                ? null
+                : legacyRootOverride!.Trim();
+        }
+
         Directory.CreateDirectory(cacheRoot);
     }
 
     public Task<string?> TryGetAsync(string key, TimeSpan maxAge)
     {
-        string path = GetPath(key);
-        string metaPath = path + ".meta";
-
-        if (!File.Exists(path) || !File.Exists(metaPath))
-            return Task.FromResult<string?>(null);
-
-        try
+        string? content = TryReadFresh(cacheRoot, key, maxAge);
+        if (content is null && !string.IsNullOrWhiteSpace(legacyCacheRoot))
         {
-            string metaText = File.ReadAllText(metaPath).Trim();
-            if (DateTime.TryParse(metaText, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime fetchedUtc))
-            {
-                if (DateTime.UtcNow - fetchedUtc > maxAge)
-                    return Task.FromResult<string?>(null);
-            }
+            content = TryReadFresh(legacyCacheRoot!, key, maxAge);
+        }
 
-            return Task.FromResult<string?>(File.ReadAllText(path, Encoding.UTF8));
-        }
-        catch
-        {
-            return Task.FromResult<string?>(null);
-        }
+        return Task.FromResult(content);
     }
 
     public string? TryGetStale(string key)
     {
-        string path = GetPath(key);
-        if (!File.Exists(path))
-            return null;
+        string? content = TryReadStale(cacheRoot, key);
+        if (content is null && !string.IsNullOrWhiteSpace(legacyCacheRoot))
+        {
+            content = TryReadStale(legacyCacheRoot!, key);
+        }
 
-        try
-        {
-            return File.ReadAllText(path, Encoding.UTF8);
-        }
-        catch
-        {
-            return null;
-        }
+        return content;
     }
 
     public Task StoreAsync(string key, string content)
     {
-        string path = GetPath(key);
+        string path = GetPath(cacheRoot, key);
         string metaPath = path + ".meta";
 
         try
@@ -83,12 +78,53 @@ public sealed class ResponseCache
         return Task.CompletedTask;
     }
 
-    private string GetPath(string key)
+    private static string? TryReadFresh(string root, string key, TimeSpan maxAge)
+    {
+        string path = GetPath(root, key);
+        string metaPath = path + ".meta";
+
+        if (!File.Exists(path) || !File.Exists(metaPath))
+            return null;
+
+        try
+        {
+            string metaText = File.ReadAllText(metaPath).Trim();
+            if (DateTime.TryParse(metaText, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime fetchedUtc))
+            {
+                if (DateTime.UtcNow - fetchedUtc > maxAge)
+                    return null;
+            }
+
+            return File.ReadAllText(path, Encoding.UTF8);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryReadStale(string root, string key)
+    {
+        string path = GetPath(root, key);
+        if (!File.Exists(path))
+            return null;
+
+        try
+        {
+            return File.ReadAllText(path, Encoding.UTF8);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string GetPath(string root, string key)
     {
         using SHA256 sha = SHA256.Create();
         byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(key));
         StringBuilder sb = new(hash.Length * 2);
         foreach (byte b in hash) sb.Append(b.ToString("x2"));
-        return Path.Combine(cacheRoot, sb.ToString() + ".json");
+        return Path.Combine(root, sb.ToString() + ".json");
     }
 }

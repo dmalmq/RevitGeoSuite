@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Stages a RevitGeoSuite release payload from build output into install/dist/.
+    Stages a Kanizu Revit release payload from build output into install/dist/.
 .DESCRIPTION
     Run this script after building the solution or shell project.
     The resulting dist/ folder contains only the production payload required by the installer.
@@ -21,6 +21,7 @@ $excludedFilePatterns = @(
     "*.Tests.pdb",
     "*.pdb",
     "Castle.Core.dll",
+    "KanizuRevit.addin",
     "Microsoft.TestPlatform.*",
     "Microsoft.VisualStudio.CodeCoverage*",
     "Microsoft.VisualStudio.TestPlatform.ObjectModel*",
@@ -80,8 +81,8 @@ function Copy-PayloadFiles {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $repoRoot = Split-Path -Parent $scriptDir
 $distDir = Join-Path $scriptDir "dist"
-$addinTemplate = Join-Path $scriptDir "RevitGeoSuite.addin.template"
-$generatedAddinManifest = Join-Path $distDir "RevitGeoSuite.addin"
+$addinTemplate = Join-Path $scriptDir "KanizuRevit.addin.template"
+$generatedAddinManifest = Join-Path $distDir "KanizuRevit.addin"
 
 if ([string]::IsNullOrWhiteSpace($SourceDirectory)) {
     $SourceDirectory = Join-Path $repoRoot "bin\Deploy"

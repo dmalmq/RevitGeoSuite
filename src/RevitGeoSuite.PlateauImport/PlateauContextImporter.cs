@@ -10,7 +10,14 @@ namespace RevitGeoSuite.PlateauImport;
 
 public sealed class PlateauContextImporter
 {
-    private const string ApplicationId = "RevitGeoSuite.PlateauImport";
+    internal const string ApplicationId = "KanizuRevit.PlateauImport";
+    internal const string LegacyApplicationId = "RevitGeoSuite.PlateauImport";
+
+    internal static bool IsOwnedApplicationId(string? applicationId)
+    {
+        return string.Equals(applicationId, ApplicationId, StringComparison.Ordinal)
+            || string.Equals(applicationId, LegacyApplicationId, StringComparison.Ordinal);
+    }
     private readonly PlateauFootprintSanitizer footprintSanitizer;
     private readonly PlateauImportMaterialFactory materialFactory;
 
@@ -174,7 +181,7 @@ public sealed class PlateauContextImporter
 
         foreach (DirectShape directShape in new FilteredElementCollector(document).OfClass(typeof(DirectShape)).Cast<DirectShape>())
         {
-            if (!string.Equals(directShape.ApplicationId, ApplicationId, StringComparison.Ordinal))
+            if (!IsOwnedApplicationId(directShape.ApplicationId))
             {
                 continue;
             }

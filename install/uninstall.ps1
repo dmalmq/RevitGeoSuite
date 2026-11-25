@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Uninstalls the RevitGeoSuite add-in for the selected Revit year.
+    Uninstalls the Kanizu Revit add-in (and any legacy RevitGeoSuite install) for the selected Revit year.
 .DESCRIPTION
     Removes the add-in payload and manifest from the system-wide Revit add-ins folder
     for the selected Revit year.
@@ -23,27 +23,32 @@ if (-not $isAdmin) {
 }
 
 $addinsRoot = "C:\ProgramData\Autodesk\Revit\Addins\$RevitYear"
-$installDir = Join-Path $addinsRoot "RevitGeoSuite"
-$addinFile = Join-Path $addinsRoot "RevitGeoSuite.addin"
+$targets = @(
+    @{ Path = (Join-Path $addinsRoot "KanizuRevit"); IsDir = $true; Label = "Add-in folder" },
+    @{ Path = (Join-Path $addinsRoot "KanizuRevit.addin"); IsDir = $false; Label = ".addin manifest" },
+    @{ Path = (Join-Path $addinsRoot "RevitGeoSuite"); IsDir = $true; Label = "Legacy add-in folder" },
+    @{ Path = (Join-Path $addinsRoot "RevitGeoSuite.addin"); IsDir = $false; Label = "Legacy .addin manifest" }
+)
+
+if ($env:APPDATA) {
+    $userAddinsRoot = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear"
+    $targets += @{ Path = (Join-Path $userAddinsRoot "KanizuRevit.addin"); IsDir = $false; Label = "User .addin manifest" }
+    $targets += @{ Path = (Join-Path $userAddinsRoot "RevitGeoSuite.addin"); IsDir = $false; Label = "Legacy user .addin manifest" }
+}
 
 $removed = $false
 
-if (Test-Path -LiteralPath $installDir) {
-    Remove-Item -LiteralPath $installDir -Recurse -Force
-    Write-Host "Removed: $installDir" -ForegroundColor Cyan
-    $removed = $true
-}
-else {
-    Write-Host "Add-in folder not found: $installDir" -ForegroundColor Yellow
-}
-
-if (Test-Path -LiteralPath $addinFile) {
-    Remove-Item -LiteralPath $addinFile -Force
-    Write-Host "Removed: $addinFile" -ForegroundColor Cyan
-    $removed = $true
-}
-else {
-    Write-Host ".addin manifest not found: $addinFile" -ForegroundColor Yellow
+foreach ($target in $targets) {
+    if (Test-Path -LiteralPath $target.Path) {
+        if ($target.IsDir) {
+            Remove-Item -LiteralPath $target.Path -Recurse -Force
+        }
+        else {
+            Remove-Item -LiteralPath $target.Path -Force
+        }
+        Write-Host "Removed $($target.Label): $($target.Path)" -ForegroundColor Cyan
+        $removed = $true
+    }
 }
 
 Write-Host ""
@@ -52,5 +57,5 @@ if ($removed) {
     Write-Host "Please restart Revit $RevitYear to fully unload the add-in." -ForegroundColor Yellow
 }
 else {
-    Write-Host "Nothing to uninstall. RevitGeoSuite does not appear to be installed." -ForegroundColor Yellow
+    Write-Host "Nothing to uninstall. Kanizu Revit does not appear to be installed." -ForegroundColor Yellow
 }

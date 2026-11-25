@@ -7,23 +7,42 @@ namespace RevitGeoSuite.SharedUI.Localization;
 internal sealed class UiSettingsStore
 {
     private readonly string settingsPath;
+    private readonly string? legacySettingsPath;
 
     public UiSettingsStore()
+        : this(DefaultSettingsFilePath, LegacySettingsFilePath)
     {
-        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RevitGeoSuite");
-        settingsPath = Path.Combine(root, "ui-settings.json");
     }
+
+    internal UiSettingsStore(string settingsPath, string? legacySettingsPath = null)
+    {
+        this.settingsPath = settingsPath ?? throw new ArgumentNullException(nameof(settingsPath));
+        this.legacySettingsPath = string.IsNullOrWhiteSpace(legacySettingsPath) ? null : legacySettingsPath!.Trim();
+    }
+
+    internal static string DefaultSettingsFilePath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "KanizuRevit",
+            "ui-settings.json");
+
+    internal static string LegacySettingsFilePath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "RevitGeoSuite",
+            "ui-settings.json");
 
     public UiLanguage Load()
     {
         try
         {
-            if (!File.Exists(settingsPath))
+            string? loadPath = ResolveLoadPath();
+            if (loadPath is null)
             {
                 return UiLanguage.English;
             }
 
-            UiSettingsDocument? document = JsonConvert.DeserializeObject<UiSettingsDocument>(File.ReadAllText(settingsPath));
+            UiSettingsDocument? document = JsonConvert.DeserializeObject<UiSettingsDocument>(File.ReadAllText(loadPath));
             if (document is not null && Enum.TryParse(document.Language, ignoreCase: true, out UiLanguage parsed))
             {
                 return parsed;
@@ -56,6 +75,21 @@ internal sealed class UiSettingsStore
         catch
         {
         }
+    }
+
+    private string? ResolveLoadPath()
+    {
+        if (File.Exists(settingsPath))
+        {
+            return settingsPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(legacySettingsPath) && File.Exists(legacySettingsPath))
+        {
+            return legacySettingsPath;
+        }
+
+        return null;
     }
 
     private sealed class UiSettingsDocument

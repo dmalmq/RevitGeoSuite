@@ -13,12 +13,24 @@ namespace RevitGeoSuite.FloorPlanExport.Core.Standards;
 public sealed class GisStandardNoticeStore
 {
     private readonly string _path;
+    private readonly string? _legacyPath;
 
-    public GisStandardNoticeStore(string? path = null)
+    public GisStandardNoticeStore(string? path = null, string? legacyPath = null)
     {
-        _path = string.IsNullOrWhiteSpace(path)
-            ? Path.Combine(FloorPlanExportAppDataPaths.CurrentBaseDirectory, "gis-standard-notices.json")
-            : path!;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            _path = FloorPlanExportAppDataPaths.CurrentNoticesFilePath;
+            _legacyPath = string.IsNullOrWhiteSpace(legacyPath)
+                ? FloorPlanExportAppDataPaths.LegacyRevitGeoSuiteNoticesFilePath
+                : legacyPath!.Trim();
+        }
+        else
+        {
+            _path = path!.Trim();
+            _legacyPath = string.IsNullOrWhiteSpace(legacyPath)
+                ? null
+                : legacyPath!.Trim();
+        }
     }
 
     public bool IsSkipped(string modelKey, int standardVersion)
@@ -57,11 +69,15 @@ public sealed class GisStandardNoticeStore
 
     private Dictionary<string, int> Load()
     {
+        string loadPath = File.Exists(_path)
+            ? _path
+            : (!string.IsNullOrWhiteSpace(_legacyPath) && File.Exists(_legacyPath) ? _legacyPath! : _path);
+
         try
         {
-            if (File.Exists(_path))
+            if (File.Exists(loadPath))
             {
-                return JsonConvert.DeserializeObject<Dictionary<string, int>>(File.ReadAllText(_path, Encoding.UTF8))
+                return JsonConvert.DeserializeObject<Dictionary<string, int>>(File.ReadAllText(loadPath, Encoding.UTF8))
                     ?? new Dictionary<string, int>();
             }
         }

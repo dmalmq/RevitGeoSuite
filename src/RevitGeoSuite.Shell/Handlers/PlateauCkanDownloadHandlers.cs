@@ -370,20 +370,10 @@ internal static class CkanIndexCache
     public static async Task<IReadOnlyList<string>> GetOrFetchAsync(GeospatialCkanClient ckan, CancellationToken cancellationToken)
     {
         string path = CachePath();
-        try
+        IReadOnlyList<string>? cached = TryReadFreshCache(path) ?? TryReadFreshCache(LegacyCachePath());
+        if (cached is not null)
         {
-            if (File.Exists(path))
-            {
-                CacheFile? cached = JsonConvert.DeserializeObject<CacheFile>(File.ReadAllText(path));
-                if (cached?.Slugs is { Count: > 0 } && DateTime.UtcNow - cached.FetchedUtc < Ttl)
-                {
-                    return cached.Slugs;
-                }
-            }
-        }
-        catch
-        {
-            // Corrupt/unreadable cache — fall through and refetch.
+            return cached;
         }
 
         IReadOnlyList<string> slugs = await ckan.ListPlateauDatasetSlugsAsync(cancellationToken).ConfigureAwait(false);
@@ -405,10 +395,46 @@ internal static class CkanIndexCache
         return slugs;
     }
 
-    private static string CachePath()
+    private static IReadOnlyList<string>? TryReadFreshCache(string path)
     {
+        try
+        {
+            if (File.Exists(path))
+            {
+                CacheFile? cached = JsonConvert.DeserializeObject<CacheFile>(File.ReadAllText(path));
+                if (cached?.Slugs is { Count: > 0 } && DateTime.UtcNow - cached.FetchedUtc < Ttl)
+                {
+                    return cached.Slugs;
+                }
+            }
+        }
+        catch
+        {
+            // Corrupt/unreadable cache — fall through and refetch.
+        }
+
+        return null;
+    }
+
+    internal static string CachePath(string? localAppDataRoot = null)
+    {
+        string root = string.IsNullOrWhiteSpace(localAppDataRoot)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+            : localAppDataRoot!;
         return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            root,
+            "KanizuRevit",
+            "Ckan",
+            "plateau-index.json");
+    }
+
+    internal static string LegacyCachePath(string? localAppDataRoot = null)
+    {
+        string root = string.IsNullOrWhiteSpace(localAppDataRoot)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+            : localAppDataRoot!;
+        return Path.Combine(
+            root,
             "RevitGeoSuite",
             "Ckan",
             "plateau-index.json");

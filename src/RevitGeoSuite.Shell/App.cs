@@ -10,7 +10,7 @@ namespace RevitGeoSuite.Shell;
 
 public sealed class App : IExternalApplication
 {
-    internal const string TabName = "Revit Geo Suite";
+    internal const string TabName = "Kanizu Revit";
 
     public Result OnStartup(UIControlledApplication application)
     {
@@ -38,10 +38,10 @@ public sealed class App : IExternalApplication
     {
         try
         {
-            RibbonPanel panel = GetOrCreatePanel(application, "Geo Suite");
+            RibbonPanel panel = GetOrCreatePanel(application, "Kanizu Revit");
 
             // Separators between the three large buttons give a little horizontal breathing
-            // room (Revit has no per-button margin API) while keeping the single "Geo Suite"
+            // room (Revit has no per-button margin API) while keeping the single "Kanizu Revit"
             // panel label.
             panel.AddItem(CreateButton(
                 "GeoreferenceSetup",

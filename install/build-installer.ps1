@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds a distributable installer EXE for RevitGeoSuite.
+    Builds a distributable installer EXE for Kanizu Revit.
 .DESCRIPTION
     1) Builds Release output into install/dist (via build-release.ps1)
     2) Compiles install/RevitGeoSuite.iss with Inno Setup (ISCC.exe)
@@ -135,7 +135,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Installer compilation failed with exit code $LASTEXITCODE."
 }
 
-$expectedPrefix = "RevitGeoSuite-Setup-$RevitYear-$safeVersion"
+$expectedPrefix = "KanizuRevit-Setup-$RevitYear-$safeVersion"
 $installer = Get-ChildItem -LiteralPath $outputDir -File |
     Where-Object { $_.BaseName -eq $expectedPrefix } |
     Select-Object -First 1

@@ -6,7 +6,7 @@
   interface Props {
     openCesiumExport: () => void
     openFloorPlanExport: () => void
-    selectFormat: (format: 'plateau' | 'tiles3d' | 'citygml') => void
+    selectFormat: (format: 'plateau' | 'tiles3d') => void
   }
 
   let { openCesiumExport, openFloorPlanExport, selectFormat }: Props = $props()

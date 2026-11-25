@@ -20,7 +20,7 @@ public sealed class ExportProfileStore
     };
 
     private readonly string _settingsFilePath;
-    private readonly string? _legacySettingsFilePath;
+    private readonly string[] _legacySettingsFilePaths;
     private readonly GisRulesSource? _rules;
 
     /// <summary>
@@ -33,16 +33,20 @@ public sealed class ExportProfileStore
         if (string.IsNullOrWhiteSpace(settingsFilePath))
         {
             _settingsFilePath = FloorPlanExportAppDataPaths.CurrentProfilesFilePath;
-            _legacySettingsFilePath = string.IsNullOrWhiteSpace(legacySettingsFilePath)
-                ? FloorPlanExportAppDataPaths.LegacyProfilesFilePath
-                : legacySettingsFilePath!.Trim();
+            _legacySettingsFilePaths = string.IsNullOrWhiteSpace(legacySettingsFilePath)
+                ? new[]
+                {
+                    FloorPlanExportAppDataPaths.LegacyRevitGeoSuiteProfilesFilePath,
+                    FloorPlanExportAppDataPaths.LegacyProfilesFilePath,
+                }
+                : new[] { legacySettingsFilePath!.Trim() };
         }
         else
         {
             _settingsFilePath = settingsFilePath!.Trim();
-            _legacySettingsFilePath = string.IsNullOrWhiteSpace(legacySettingsFilePath)
-                ? null
-                : legacySettingsFilePath!.Trim();
+            _legacySettingsFilePaths = string.IsNullOrWhiteSpace(legacySettingsFilePath)
+                ? Array.Empty<string>()
+                : new[] { legacySettingsFilePath!.Trim() };
         }
     }
 
@@ -106,6 +110,12 @@ public sealed class ExportProfileStore
         if (!rules.MoveLocalIntoStation(localProfiles, warnings) || local.Count == 0)
         {
             return;
+        }
+
+        string? backupDirectory = Path.GetDirectoryName(_settingsFilePath);
+        if (!string.IsNullOrWhiteSpace(backupDirectory))
+        {
+            Directory.CreateDirectory(backupDirectory);
         }
 
         string backup = _settingsFilePath + "." + ShortHash(projectKey) + ".moved-to-station";
@@ -373,9 +383,12 @@ public sealed class ExportProfileStore
             return _settingsFilePath;
         }
 
-        if (!string.IsNullOrWhiteSpace(_legacySettingsFilePath) && File.Exists(_legacySettingsFilePath))
+        foreach (string legacyPath in _legacySettingsFilePaths)
         {
-            return _legacySettingsFilePath!;
+            if (!string.IsNullOrWhiteSpace(legacyPath) && File.Exists(legacyPath))
+            {
+                return legacyPath;
+            }
         }
 
         return _settingsFilePath;

@@ -16,23 +16,27 @@ public sealed class ExportBaselineStore
     };
 
     private readonly string _rootDirectory;
-    private readonly string? _legacyRootDirectory;
+    private readonly string[] _legacyRootDirectories;
 
     public ExportBaselineStore(string? rootDirectory = null, string? legacyRootDirectory = null)
     {
         if (string.IsNullOrWhiteSpace(rootDirectory))
         {
             _rootDirectory = FloorPlanExportAppDataPaths.CurrentBaselinesDirectory;
-            _legacyRootDirectory = string.IsNullOrWhiteSpace(legacyRootDirectory)
-                ? FloorPlanExportAppDataPaths.LegacyBaselinesDirectory
-                : legacyRootDirectory!.Trim();
+            _legacyRootDirectories = string.IsNullOrWhiteSpace(legacyRootDirectory)
+                ? new[]
+                {
+                    FloorPlanExportAppDataPaths.LegacyRevitGeoSuiteBaselinesDirectory,
+                    FloorPlanExportAppDataPaths.LegacyBaselinesDirectory,
+                }
+                : new[] { legacyRootDirectory!.Trim() };
         }
         else
         {
             _rootDirectory = rootDirectory!.Trim();
-            _legacyRootDirectory = string.IsNullOrWhiteSpace(legacyRootDirectory)
-                ? null
-                : legacyRootDirectory!.Trim();
+            _legacyRootDirectories = string.IsNullOrWhiteSpace(legacyRootDirectory)
+                ? Array.Empty<string>()
+                : new[] { legacyRootDirectory!.Trim() };
         }
     }
 
@@ -78,10 +82,13 @@ public sealed class ExportBaselineStore
             return _rootDirectory;
         }
 
-        if (!string.IsNullOrWhiteSpace(_legacyRootDirectory) &&
-            HasBaselineFiles(_legacyRootDirectory!, sanitizedBaselineKey))
+        foreach (string legacyDirectory in _legacyRootDirectories)
         {
-            return _legacyRootDirectory!;
+            if (!string.IsNullOrWhiteSpace(legacyDirectory) &&
+                HasBaselineFiles(legacyDirectory, sanitizedBaselineKey))
+            {
+                return legacyDirectory;
+            }
         }
 
         return _rootDirectory;

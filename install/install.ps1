@@ -1,9 +1,10 @@
 <#
 .SYNOPSIS
-    Installs the RevitGeoSuite add-in for the selected Revit year (all users).
+    Installs the Kanizu Revit add-in for the selected Revit year (all users).
 .DESCRIPTION
     Copies the add-in payload and manifest to the system-wide Revit add-ins folder
-    for the selected Revit year.
+    for the selected Revit year, and removes any legacy RevitGeoSuite installation
+    so both add-ins never load side-by-side.
     Must be run as Administrator.
 
     The script looks for build output in this order:
@@ -25,6 +26,7 @@ $excludedFilePatterns = @(
     "*.Tests.pdb",
     "*.pdb",
     "Castle.Core.dll",
+    "KanizuRevit.addin",
     "Microsoft.TestPlatform.*",
     "Microsoft.VisualStudio.CodeCoverage*",
     "Microsoft.VisualStudio.TestPlatform.ObjectModel*",
@@ -94,9 +96,17 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $repoRoot = Split-Path -Parent $scriptDir
 
 $addinsRoot = "C:\ProgramData\Autodesk\Revit\Addins\$RevitYear"
-$installDir = Join-Path $addinsRoot "RevitGeoSuite"
-$addinTemplate = Join-Path $scriptDir "RevitGeoSuite.addin.template"
-$addinFile = Join-Path $addinsRoot "RevitGeoSuite.addin"
+$installDir = Join-Path $addinsRoot "KanizuRevit"
+$addinTemplate = Join-Path $scriptDir "KanizuRevit.addin.template"
+$addinFile = Join-Path $addinsRoot "KanizuRevit.addin"
+
+$legacyInstallDir = Join-Path $addinsRoot "RevitGeoSuite"
+$legacyAddinFile = Join-Path $addinsRoot "RevitGeoSuite.addin"
+$legacyUserAddinFile = if ($env:APPDATA) {
+    Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear\RevitGeoSuite.addin"
+} else {
+    $null
+}
 
 $distDir = Join-Path $scriptDir "dist"
 $deployDir = Join-Path $repoRoot "bin\Deploy"
@@ -124,6 +134,20 @@ if (-not (Test-Path -LiteralPath $addinsRoot)) {
     New-Item -ItemType Directory -Path $addinsRoot -Force | Out-Null
 }
 
+# Cleanly remove any legacy RevitGeoSuite installation so both add-ins never load side-by-side.
+if (Test-Path -LiteralPath $legacyAddinFile) {
+    Remove-Item -LiteralPath $legacyAddinFile -Force
+    Write-Host "Removed legacy manifest: $legacyAddinFile" -ForegroundColor Cyan
+}
+if ($legacyUserAddinFile -and (Test-Path -LiteralPath $legacyUserAddinFile)) {
+    Remove-Item -LiteralPath $legacyUserAddinFile -Force
+    Write-Host "Removed legacy user manifest: $legacyUserAddinFile" -ForegroundColor Cyan
+}
+if (Test-Path -LiteralPath $legacyInstallDir) {
+    Remove-Item -LiteralPath $legacyInstallDir -Recurse -Force
+    Write-Host "Removed legacy add-in folder: $legacyInstallDir" -ForegroundColor Cyan
+}
+
 if (Test-Path -LiteralPath $installDir) {
     Remove-Item -LiteralPath $installDir -Recurse -Force
 }
@@ -140,4 +164,4 @@ Write-Host "Installation complete! ($copied files installed)" -ForegroundColor G
 Write-Host "  Add-in folder: $installDir" -ForegroundColor Green
 Write-Host "  Manifest:      $addinFile" -ForegroundColor Green
 Write-Host ""
-Write-Host "Please restart Revit $RevitYear to load the add-in." -ForegroundColor Yellow
+Write-Host "Please restart Revit $RevitYear to load Kanizu Revit." -ForegroundColor Yellow

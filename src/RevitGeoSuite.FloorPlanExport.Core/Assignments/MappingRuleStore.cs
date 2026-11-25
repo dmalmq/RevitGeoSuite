@@ -19,13 +19,26 @@ public sealed class MappingRuleStore
     public const string MovedSuffix = ".moved-to-station";
 
     private readonly string _rootDirectory;
+    private readonly string? _legacyCombinedDirectory;
     private readonly string _legacyBaseDirectory;
 
-    public MappingRuleStore(string? rootDirectory = null, string? legacyBaseDirectory = null)
+    public MappingRuleStore(string? rootDirectory = null, string? legacyBaseDirectory = null, string? legacyCombinedDirectory = null)
     {
-        _rootDirectory = string.IsNullOrWhiteSpace(rootDirectory)
-            ? GetDefaultRootDirectory()
-            : rootDirectory!.Trim();
+        if (string.IsNullOrWhiteSpace(rootDirectory))
+        {
+            _rootDirectory = GetDefaultRootDirectory();
+            _legacyCombinedDirectory = string.IsNullOrWhiteSpace(legacyCombinedDirectory)
+                ? FloorPlanExportAppDataPaths.LegacyRevitGeoSuiteMappingRulesDirectory
+                : legacyCombinedDirectory!.Trim();
+        }
+        else
+        {
+            _rootDirectory = rootDirectory!.Trim();
+            _legacyCombinedDirectory = string.IsNullOrWhiteSpace(legacyCombinedDirectory)
+                ? null
+                : legacyCombinedDirectory!.Trim();
+        }
+
         _legacyBaseDirectory = string.IsNullOrWhiteSpace(legacyBaseDirectory)
             ? GetDefaultBaseDirectory()
             : legacyBaseDirectory!.Trim();
@@ -41,18 +54,29 @@ public sealed class MappingRuleStore
         string path = GetFilePath(projectKey);
         if (File.Exists(path))
         {
-            return JsonFileLoadHelper.Load(
-                path,
-                createDefaultValue: () => ProjectMappingRules.Empty,
-                deserialize: json =>
-                {
-                    MappingRuleDocument? document = JsonConvert.DeserializeObject<MappingRuleDocument>(json);
-                    return ProjectMappingRules.FromRules(document?.Rules);
-                },
-                documentLabel: "Project mapping rules");
+            return LoadCombinedRulesFile(path);
+        }
+
+        string? legacyCombinedPath = GetLegacyCombinedFilePath(projectKey);
+        if (!string.IsNullOrWhiteSpace(legacyCombinedPath) && File.Exists(legacyCombinedPath))
+        {
+            return LoadCombinedRulesFile(legacyCombinedPath!);
         }
 
         return LoadLegacyProjectRules(projectKey);
+    }
+
+    private static LoadResult<ProjectMappingRules> LoadCombinedRulesFile(string path)
+    {
+        return JsonFileLoadHelper.Load(
+            path,
+            createDefaultValue: () => ProjectMappingRules.Empty,
+            deserialize: json =>
+            {
+                MappingRuleDocument? document = JsonConvert.DeserializeObject<MappingRuleDocument>(json);
+                return ProjectMappingRules.FromRules(document?.Rules);
+            },
+            documentLabel: "Project mapping rules");
     }
 
     public void Save(string projectKey, ProjectMappingRules rules)
@@ -96,13 +120,20 @@ public sealed class MappingRuleStore
     public void MarkMovedToStation(string projectKey)
     {
         string name = GetHashedFileName(projectKey);
-        foreach (string path in new[]
+        List<string> candidates = new()
         {
             GetFilePath(projectKey),
             Path.Combine(GetLegacyRootDirectory("floor-category-overrides"), name),
             Path.Combine(GetLegacyRootDirectory("family-category-overrides"), name),
             Path.Combine(GetLegacyRootDirectory("accepted-opening-families"), name),
-        })
+        };
+        string? legacyCombined = GetLegacyCombinedFilePath(projectKey);
+        if (!string.IsNullOrWhiteSpace(legacyCombined))
+        {
+            candidates.Insert(1, legacyCombined!);
+        }
+
+        foreach (string path in candidates)
         {
             if (!File.Exists(path))
             {
@@ -185,6 +216,13 @@ public sealed class MappingRuleStore
     private string GetFilePath(string projectKey)
     {
         return Path.Combine(_rootDirectory, GetHashedFileName(projectKey));
+    }
+
+    private string? GetLegacyCombinedFilePath(string projectKey)
+    {
+        return string.IsNullOrWhiteSpace(_legacyCombinedDirectory)
+            ? null
+            : Path.Combine(_legacyCombinedDirectory!, GetHashedFileName(projectKey));
     }
 
     private static Dictionary<string, string> LoadLegacyMappingDictionary(

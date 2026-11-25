@@ -17,7 +17,7 @@
     <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-chip bg-primary text-primary-foreground" aria-hidden="true">
       <Icon name="map-pin" size={13} />
     </span>
-    <span class="shrink-0 text-body font-semibold text-foreground">RevitGeoSuite</span>
+    <span class="shrink-0 text-body font-semibold text-foreground">{$t('App.ProductTitle', 'Kanizu Revit')}</span>
     {#if toolName}
       <span class="text-muted-foreground" aria-hidden="true">/</span>
       <span class="truncate text-body text-foreground">{toolName}</span>

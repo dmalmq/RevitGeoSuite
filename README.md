@@ -1,13 +1,13 @@
 <div align="center">
 
-# RevitGeoSuite
+# Kanizu Revit
 
 ### Modular Revit Add-in for Georeferencing, Mesh Inspection & Geospatial Export
 
 <p>
 A suite of independent tools built on a shared geospatial core,<br />
 designed to close the gap between BIM authoring in Revit and downstream spatial data workflows.<br />
-From coordinate system setup to CityGML, 3D Tiles, and indoor floor-plan GIS export — without the legacy conversion chains.
+From coordinate system setup to 3D Tiles, Cesium viewer handoff, and indoor floor-plan GIS export — without the legacy conversion chains.
 </p>
 
 <p>
@@ -31,7 +31,7 @@ From coordinate system setup to CityGML, 3D Tiles, and indoor floor-plan GIS exp
 
 ## About
 
-Revit handles geometry well but leaves georeferencing, coordinate systems, and spatial export as an exercise for the user. Setup mistakes propagate silently into every downstream deliverable. RevitGeoSuite provides a visual, guided workflow for coordinate reference system selection, map-based placement, and export — with validation at every step.
+Revit handles geometry well but leaves georeferencing, coordinate systems, and spatial export as an exercise for the user. Setup mistakes propagate silently into every downstream deliverable. Kanizu Revit provides a visual, guided workflow for coordinate reference system selection, map-based placement, and export — with validation at every step.
 
 The suite is especially focused on Japanese coordinate reference systems and [PLATEAU](https://www.mlit.go.jp/plateau/) digital twin interoperability, including JIS X 0410 mesh code inspection and CityGML tile alignment.
 
@@ -50,7 +50,7 @@ One status language runs through every screen. The pill at the top right counts 
 
 ## Modules
 
-All functionality is reached through three web-shell entry points on a single **Geo Suite** ribbon panel — **Georef**, **Import**, and **Export**. Each button opens a shared **WebView2** window hosting a Svelte single-page app, navigated by a left rail (`/georeference`, `/import`, `/export`). C# and the web UI communicate over a typed RPC bridge whose TypeScript contracts are generated from the .NET contract assembly at build time. The UI ships in English and Japanese with a runtime language toggle.
+All functionality is reached through web-shell entry points on a single **Kanizu Revit** ribbon tab and panel — **Georeference**, **Import**, **Export**, **Send to Kanizu**, and **GIS standard**. Each button opens a shared **WebView2** window hosting a Svelte single-page app, navigated by a left rail (`/georeference`, `/gis-standard`, `/import`, `/export`, `/export/geopackage`, `/send`). C# and the web UI communicate over a typed RPC bridge whose TypeScript contracts are generated from the .NET contract assembly at build time. The UI ships in English and Japanese with a runtime language toggle.
 
 | Module | Entry | Description |
 |--------|-------|-------------|
@@ -61,7 +61,7 @@ All functionality is reached through three web-shell entry points on a single **
 | **Ground / Terrain Import** | Import | Native Revit topography surface built from a local DEM (Kiban GML) or online Cesium Ion quantized-mesh terrain, with configurable radius/spacing and geoid-undulation offset to ellipsoidal height |
 | **3D Tiles Export** | Export | Scoped export (whole model or selected 3D view) with per-object metadata, RGBA material colors, level grouping with a manifest, optional precise CRS anchor rebasing, and automatic EGM2008 or manual geoid offset to convert orthometric anchors to WGS84 ellipsoidal height |
 | **Cesium Viewer Handoff** | Export | Combined 3D Tiles and per-building floor-plan GeoPackage packaging from a saved floor-plan profile, with a `cesium-package.json` manifest and optional push to a configured viewer; standalone exports can also be sent to the viewer |
-| **CityGML Export** | Export | Lightweight CityGML export with semantic and attribute mapping, codelist assignment, and a separate module export state |
+| **CityGML Export** | *(hidden in v1)* | Lightweight CityGML export library and RPC contracts retained in C# for future re-enablement (hidden from the Kanizu Revit v1 UI) |
 | **Floor Plan Export** | Export | Indoor floor-plan GIS export to GeoPackage / Shapefile using an IMDF-style schema (units, zones, openings, levels, vertical circulation), with an interactive map preview, category/floor assignment, optional unit-category filtering, validation policies, reusable export profiles, and an export diagnostics manifest |
 
 ---
@@ -71,7 +71,7 @@ All functionality is reached through three web-shell entry points on a single **
 Modules are independent over a shared foundation — no module depends on another; they communicate through a small, stable shared-state contract (`GeoProjectInfo`). The C# layers expose their workflows to a single Svelte web UI over a typed RPC bridge whose TypeScript contracts are generated from the .NET contract assembly at build time.
 
 ```text
- Shell — Revit add-in · "Geo Suite" ribbon · hosts the WebView2 window
+ Shell — Revit add-in · "Kanizu Revit" ribbon · hosts the WebView2 window
    │
  SharedUI.Web — Svelte SPA · routes: /georeference · /import · /export
    │   ↕ typed RPC bridge (TypeScript contracts generated from .NET)
@@ -155,13 +155,13 @@ After building the solution, create a distributable installer `.exe` (requires I
 pwsh ./install/build-installer.ps1 -RevitYear 2024
 ```
 
-The installer EXE is written to `install/output/` and installs the add-in payload under `C:\ProgramData\Autodesk\Revit\Addins\2024\RevitGeoSuite\` with `RevitGeoSuite.addin` placed in `C:\ProgramData\Autodesk\Revit\Addins\2024\`. It registers a normal uninstall entry in Windows Apps. See [`install/README.md`](install/README.md) for parameters and dev-only direct copy install.
+The installer EXE is written to `install/output/` as `KanizuRevit-Setup-<year>-<version>.exe` and installs the add-in payload under `C:\ProgramData\Autodesk\Revit\Addins\2024\KanizuRevit\` with `KanizuRevit.addin` placed in `C:\ProgramData\Autodesk\Revit\Addins\2024\` (cleanly removing any legacy `RevitGeoSuite.addin` install). It registers a normal uninstall entry in Windows Apps. See [`install/README.md`](install/README.md) for parameters and dev-only direct copy install.
 
 ### Manual Install
 
 1. Build the solution
-2. Copy `bin/Deploy/` contents to a folder (e.g. `C:\RevitGeoSuite\`)
-3. Copy `RevitGeoSuite.addin` to `%AppData%\Autodesk\Revit\Addins\2024\`
+2. Copy `bin/Deploy/` contents to a folder (e.g. `C:\KanizuRevit\`)
+3. Copy `KanizuRevit.addin` to `%AppData%\Autodesk\Revit\Addins\2024\` (and remove any legacy `RevitGeoSuite.addin` if present)
 4. Update the `<Assembly>` path in the `.addin` file to point to `RevitGeoSuite.Shell.dll`
 5. Launch Revit 2024
 

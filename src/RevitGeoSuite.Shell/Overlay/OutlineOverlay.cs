@@ -81,7 +81,7 @@ internal sealed class OutlineOverlay : IDirectContext3DServer
 
     public ExternalServiceId GetServiceId() => ExternalServices.BuiltInExternalServices.DirectContext3DService;
 
-    public string GetName() => "RevitGeoSuite outline preview";
+    public string GetName() => "Kanizu Revit outline preview";
 
     public string GetDescription() => "Draws GDB outlines over review views, read-only.";
 

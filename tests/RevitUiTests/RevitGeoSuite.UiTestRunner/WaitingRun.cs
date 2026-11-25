@@ -13,7 +13,7 @@ namespace RevitGeoSuite.UiTestRunner;
 /// </summary>
 internal sealed partial class GisStandardRun
 {
-    private const string RibbonTab = "Revit Geo Suite";
+    private const string RibbonTab = "Kanizu Revit";
     private static readonly TimeSpan RibbonWait = TimeSpan.FromSeconds(20);
 
     private string waitingDrift = string.Empty;

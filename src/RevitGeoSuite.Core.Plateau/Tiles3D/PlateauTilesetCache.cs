@@ -12,12 +12,26 @@ namespace RevitGeoSuite.Core.Plateau.Tiles3D;
 public sealed class PlateauTilesetCache
 {
     private readonly string root;
+    private readonly string? legacyRoot;
 
-    public PlateauTilesetCache(string? rootOverride = null)
+    public PlateauTilesetCache(string? rootOverride = null, string? legacyRootOverride = null)
     {
-        root = rootOverride ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "RevitGeoSuite", "PlateauOnline");
+        if (string.IsNullOrWhiteSpace(rootOverride))
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            root = Path.Combine(localAppData, "KanizuRevit", "PlateauOnline");
+            legacyRoot = string.IsNullOrWhiteSpace(legacyRootOverride)
+                ? Path.Combine(localAppData, "RevitGeoSuite", "PlateauOnline")
+                : legacyRootOverride!.Trim();
+        }
+        else
+        {
+            root = rootOverride!.Trim();
+            legacyRoot = string.IsNullOrWhiteSpace(legacyRootOverride)
+                ? null
+                : legacyRootOverride!.Trim();
+        }
+
         Directory.CreateDirectory(root);
     }
 
@@ -39,14 +53,50 @@ public sealed class PlateauTilesetCache
 
     public bool TryGet(string datasetFolder, Uri url, out string path)
     {
-        path = GetFilePath(datasetFolder, url);
-        return File.Exists(path);
+        string currentPath = GetFilePath(datasetFolder, url);
+        if (File.Exists(currentPath))
+        {
+            path = currentPath;
+            return true;
+        }
+
+        if (TryResolveLegacyFilePath(datasetFolder, url, out string legacyPath) && File.Exists(legacyPath))
+        {
+            path = legacyPath;
+            return true;
+        }
+
+        path = currentPath;
+        return false;
     }
 
     public void Store(string path, byte[] bytes)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllBytes(path, bytes);
+    }
+
+    private bool TryResolveLegacyFilePath(string datasetFolder, Uri url, out string legacyPath)
+    {
+        legacyPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(legacyRoot))
+        {
+            return false;
+        }
+
+        string normalizedRoot = Path.GetFullPath(root)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        string normalizedFolder = Path.GetFullPath(datasetFolder);
+        if (!normalizedFolder.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string relativeFolder = normalizedFolder.Substring(normalizedRoot.Length);
+        string legacyDatasetFolder = Path.Combine(legacyRoot!, relativeFolder);
+        legacyPath = GetFilePath(legacyDatasetFolder, url);
+        return true;
     }
 
     private static string ComputeHash(string text)

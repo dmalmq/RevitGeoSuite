@@ -50,16 +50,26 @@ public sealed class CityGmlPackageDownloader
 {
     private readonly IPlateauHttpClient http;
     private readonly string downloadsRoot;
+    private readonly string? legacyDownloadsRoot;
 
-    public CityGmlPackageDownloader(IPlateauHttpClient http, string? downloadsRoot = null)
+    public CityGmlPackageDownloader(IPlateauHttpClient http, string? downloadsRoot = null, string? legacyDownloadsRoot = null)
     {
         this.http = http ?? throw new ArgumentNullException(nameof(http));
-        this.downloadsRoot = string.IsNullOrWhiteSpace(downloadsRoot)
-            ? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "RevitGeoSuite",
-                "CityGmlDownloads")
-            : downloadsRoot!;
+        if (string.IsNullOrWhiteSpace(downloadsRoot))
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            this.downloadsRoot = Path.Combine(localAppData, "KanizuRevit", "CityGmlDownloads");
+            this.legacyDownloadsRoot = string.IsNullOrWhiteSpace(legacyDownloadsRoot)
+                ? Path.Combine(localAppData, "RevitGeoSuite", "CityGmlDownloads")
+                : legacyDownloadsRoot!.Trim();
+        }
+        else
+        {
+            this.downloadsRoot = downloadsRoot!.Trim();
+            this.legacyDownloadsRoot = string.IsNullOrWhiteSpace(legacyDownloadsRoot)
+                ? null
+                : legacyDownloadsRoot!.Trim();
+        }
     }
 
     public async Task<CityGmlPackageDownloadResult> DownloadAsync(
@@ -81,8 +91,7 @@ public sealed class CityGmlPackageDownloader
             throw new ArgumentException("At least one resource URL is required.", nameof(resourceUrls));
         }
 
-        string folderLabel = SanitizeName(BuildFolderLabel(code, year, areaName));
-        string root = Path.Combine(downloadsRoot, folderLabel);
+        string root = ResolvePackageFolder(code, year, areaName);
         Directory.CreateDirectory(root);
         string markerDir = Path.Combine(root, ".rgs-cache");
         Directory.CreateDirectory(markerDir);
@@ -156,7 +165,23 @@ public sealed class CityGmlPackageDownloader
     /// <summary>Resolves the package folder a download would target (without creating it).</summary>
     public string ResolvePackageFolder(string code, string? year, string? areaName)
     {
-        return Path.Combine(downloadsRoot, SanitizeName(BuildFolderLabel(code, year, areaName)));
+        string folderLabel = SanitizeName(BuildFolderLabel(code, year, areaName));
+        string currentFolder = Path.Combine(downloadsRoot, folderLabel);
+        if (Directory.Exists(currentFolder))
+        {
+            return currentFolder;
+        }
+
+        if (!string.IsNullOrWhiteSpace(legacyDownloadsRoot))
+        {
+            string legacyFolder = Path.Combine(legacyDownloadsRoot!, folderLabel);
+            if (Directory.Exists(legacyFolder))
+            {
+                return legacyFolder;
+            }
+        }
+
+        return currentFolder;
     }
 
     /// <summary>

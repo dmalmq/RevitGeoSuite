@@ -184,7 +184,7 @@ public sealed class GisFieldList
         int version = root["version"]?.Type == JTokenType.Integer ? root.Value<int>("version") : 0;
         if (version < 1 || version > CurrentVersion)
         {
-            throw new InvalidDataException($"{sourceLabel} has version {version}; this RevitGeoSuite reads version {CurrentVersion}. Update RevitGeoSuite.");
+            throw new InvalidDataException($"{sourceLabel} has version {version}; this Kanizu Revit reads version {CurrentVersion}. Update Kanizu Revit.");
         }
 
         List<GisField> fields = new();

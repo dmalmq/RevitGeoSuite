@@ -221,7 +221,7 @@ public partial class WebShellWindow : Window
         FallbackOverlay.Visibility = Visibility.Visible;
         FallbackTitle.Text = "WebView2 runtime is not installed";
         FallbackMessage.Text =
-            "RevitGeoSuite requires the Microsoft Edge WebView2 runtime to display its interface. " +
+            "Kanizu Revit requires the Microsoft Edge WebView2 runtime to display its interface. " +
             "Please install the Evergreen Standalone Bootstrapper and restart Revit." +
             (string.IsNullOrWhiteSpace(detail) ? "" : "\n\n" + detail);
         DownloadRuntimeButton.Visibility = Visibility.Visible;

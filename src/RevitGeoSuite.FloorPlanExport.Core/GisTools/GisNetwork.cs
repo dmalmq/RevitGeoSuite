@@ -330,7 +330,7 @@ public static class GisNetwork
 
             if (value > Version)
             {
-                throw new FormatException($"The network file{file} is version {value.ToString(CultureInfo.InvariantCulture)}; this tool reads version {Version}. Update RevitGeoSuite.");
+                throw new FormatException($"The network file{file} is version {value.ToString(CultureInfo.InvariantCulture)}; this tool reads version {Version}. Update Kanizu Revit.");
             }
         }
 

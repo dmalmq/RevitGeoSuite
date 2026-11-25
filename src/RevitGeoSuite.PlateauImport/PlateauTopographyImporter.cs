@@ -14,7 +14,14 @@ namespace RevitGeoSuite.PlateauImport;
 /// </summary>
 public sealed class PlateauTopographyImporter
 {
-    private const string GroundMarker = "RevitGeoSuite.PlateauGround";
+    internal const string GroundMarker = "KanizuRevit.PlateauGround";
+    internal const string LegacyGroundMarker = "RevitGeoSuite.PlateauGround";
+
+    internal static bool IsOwnedGroundMarker(string? comments)
+    {
+        return string.Equals(comments, GroundMarker, StringComparison.Ordinal)
+            || string.Equals(comments, LegacyGroundMarker, StringComparison.Ordinal);
+    }
 
     public TopographyImportResult Import(
         Document document,
@@ -106,7 +113,7 @@ public sealed class PlateauTopographyImporter
         List<ElementId> toDelete = new FilteredElementCollector(document)
             .OfClass(typeof(TopographySurface))
             .Cast<TopographySurface>()
-            .Where(surface => string.Equals(ReadComments(surface), GroundMarker, StringComparison.Ordinal))
+            .Where(surface => IsOwnedGroundMarker(ReadComments(surface)))
             .Select(surface => surface.Id)
             .ToList();
 
