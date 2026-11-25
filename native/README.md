@@ -25,10 +25,10 @@ cmake -S . -B build -A x64 -DDRACO_ROOT=C:\src\draco
 cmake --build build --config Release
 
 # 3. Copy the DLL next to the add-in.
-copy build\Release\draco_dec.dll ..\bin\Deploy\draco_dec.dll
+copy build\Release\draco_dec.dll ..\bin\Deploy\2024\draco_dec.dll
 ```
 
-After the DLL is in `bin\Deploy\`, restart Revit. The Import PLATEAU Online
+After the DLL is in `bin\Deploy\<RevitYear>\`, restart Revit. The Import PLATEAU Online
 command auto-detects the DLL via `NativeDracoMeshDecoder.IsAvailable()`. If the
 DLL is missing the command will show a clear in-dialog warning pointing back at
 this README.

@@ -13,6 +13,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "RevitAddinPaths.ps1")
+
 $excludedFilePatterns = @(
     ".msCoverageSourceRootsMapping*",
     "*.Tests.dll",
@@ -29,19 +31,6 @@ $excludedFilePatterns = @(
     "RevitGeoSuite.addin",
     "xunit*"
 )
-
-function Get-AddinManifestContents {
-    param(
-        [Parameter(Mandatory = $true)][string]$TemplatePath,
-        [Parameter(Mandatory = $true)][string]$TargetRevitYear
-    )
-
-    if (-not (Test-Path -LiteralPath $TemplatePath)) {
-        throw "Cannot find .addin template at $TemplatePath."
-    }
-
-    return (Get-Content -LiteralPath $TemplatePath -Raw).Replace("__REVIT_YEAR__", $TargetRevitYear)
-}
 
 function Test-IsExcludedFile {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -85,23 +74,20 @@ $addinTemplate = Join-Path $scriptDir "KanizuRevit.addin.template"
 $generatedAddinManifest = Join-Path $distDir "KanizuRevit.addin"
 
 if ([string]::IsNullOrWhiteSpace($SourceDirectory)) {
-    $SourceDirectory = Join-Path $repoRoot "bin\Deploy"
+    $SourceDirectory = Get-RevitDeployDirectory -RepoRoot $repoRoot -RevitYear $RevitYear
 }
+
+$sourceDirectoryFull = [System.IO.Path]::GetFullPath($SourceDirectory)
+Assert-RevitPayloadMatchesYear -SourceDirectory $sourceDirectoryFull -RevitYear $RevitYear
 
 if (Test-Path -LiteralPath $distDir) {
     Remove-Item -LiteralPath $distDir -Recurse -Force
 }
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 
-$sourceDirectoryFull = [System.IO.Path]::GetFullPath($SourceDirectory)
-$payloadDll = Join-Path $sourceDirectoryFull "RevitGeoSuite.Shell.dll"
-if (-not (Test-Path -LiteralPath $payloadDll)) {
-    Write-Error "Expected build output was not found at $payloadDll. Build the solution first, or pass -SourceDirectory to a different build output folder."
-    exit 1
-}
-
 $copiedCount = Copy-PayloadFiles -SourceRoot $sourceDirectoryFull -DestinationRoot $distDir
-Set-Content -LiteralPath $generatedAddinManifest -Value (Get-AddinManifestContents -TemplatePath $addinTemplate -TargetRevitYear $RevitYear) -Encoding UTF8
+Set-Content -LiteralPath $generatedAddinManifest -Value (Get-AddinManifestContents -TemplatePath $addinTemplate -RevitYear $RevitYear) -Encoding UTF8
+$yearMarkerPath = Write-RevitYearStamp -Directory $distDir -RevitYear $RevitYear
 
 $fileCount = (Get-ChildItem -LiteralPath $distDir -Recurse -File).Count
 Write-Host ""
@@ -109,6 +95,7 @@ Write-Host "Release staging complete. $fileCount files copied to:" -ForegroundCo
 Write-Host "  Source: $sourceDirectoryFull" -ForegroundColor Green
 Write-Host "  $distDir" -ForegroundColor Green
 Write-Host "  Generated manifest: $generatedAddinManifest" -ForegroundColor Green
+Write-Host "  Year marker: $yearMarkerPath" -ForegroundColor Green
 Write-Host "  Payload files copied: $copiedCount" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next step options:" -ForegroundColor Yellow

@@ -1,15 +1,53 @@
 <Project>
+  <!--
+    Revit year selects the target framework. Build with -p:RevitYear=<year>; 2024 is the default.
+    To support another year, add one PropertyGroup below (Revit 2025 and 2026 run on
+    net8.0-windows), a provisioning step in .github/workflows/ci.yml, and the year's add-ins
+    folder rule in install/RevitAddinPaths.ps1 and install/RevitGeoSuite.iss.
+  -->
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
+    <RevitYear Condition="'$(RevitYear)' == ''">2024</RevitYear>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RevitYear)' == '2024'">
+    <RevitTargetFramework>net48</RevitTargetFramework>
+    <!-- Runtime for build-time tools that load the add-in's own assemblies (the contracts generator). -->
+    <BuildToolTargetFramework>net8.0</BuildToolTargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RevitYear)' == '2027'">
+    <RevitTargetFramework>net10.0-windows</RevitTargetFramework>
+    <BuildToolTargetFramework>net10.0</BuildToolTargetFramework>
+  </PropertyGroup>
+
+  <!--
+    Revit 2025 and later run add-ins on .NET (Core), which resolves NuGet native assets (e_sqlite3,
+    WebView2Loader) from runtimes\<rid>\native\ through a deps.json that Revit never reads. Revit is
+    x64 only, so restore for win-x64: the SDK then places those native files beside the managed
+    ones, where the flat copy into bin\Deploy\$(RevitYear)\ keeps exactly one of each.
+  -->
+  <PropertyGroup Condition="'$(RevitTargetFramework)' != '' and '$(RevitTargetFramework)' != 'net48'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>$(RevitTargetFramework)</TargetFramework>
+    <DefineConstants>$(DefineConstants);REVIT$(RevitYear)</DefineConstants>
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <Deterministic>true</Deterministic>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitInstallDir>
+    <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitYear)</RevitInstallDir>
     <RepositoryRoot>$(MSBuildThisFileDirectory)</RepositoryRoot>
-    <OutputPath>$(RepositoryRoot)bin\Deploy\</OutputPath>
+    <OutputPath>$(RepositoryRoot)bin\Deploy\$(RevitYear)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <UseCommonOutputDirectory>true</UseCommonOutputDirectory>
   </PropertyGroup>
+
+  <Target Name="CheckRevitYear" BeforeTargets="_CheckForUnsupportedTargetFramework;CollectPackageReferences" Condition="'$(RevitTargetFramework)' == ''">
+    <Error Text="RevitYear '$(RevitYear)' is not supported. Supported years: 2024, 2027. Add a block for it in Directory.Build.props." />
+  </Target>
 </Project>

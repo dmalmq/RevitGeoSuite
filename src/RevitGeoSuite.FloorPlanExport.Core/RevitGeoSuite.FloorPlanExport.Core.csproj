@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
     <RootNamespace>RevitGeoSuite.FloorPlanExport.Core</RootNamespace>
     <AssemblyName>RevitGeoSuite.FloorPlanExport.Core</AssemblyName>
   </PropertyGroup>
@@ -15,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RevitGeoSuite.CesiumHandoff\RevitGeoSuite.CesiumHandoff.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\RevitGeoSuite.Core\RevitGeoSuite.Core.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <ItemGroup>

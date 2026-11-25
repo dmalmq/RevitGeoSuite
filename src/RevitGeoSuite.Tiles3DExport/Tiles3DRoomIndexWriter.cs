@@ -31,11 +31,7 @@ public sealed class Tiles3DRoomIndexWriter
             throw new ArgumentNullException(nameof(rooms));
         }
 
-        return JsonConvert.SerializeObject(Build(rooms), Formatting.None, new JsonSerializerSettings
-        {
-            ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver(),
-            Culture = CultureInfo.InvariantCulture,
-        });
+        return Tiles3DJson.Serialize(Build(rooms), Formatting.None, camelCase: true);
     }
 
     /// <summary>Writes <c>rooms.json</c> when the package has rooms; returns its path, or null.</summary>

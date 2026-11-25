@@ -19,6 +19,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "RevitAddinPaths.ps1")
+
 function Resolve-IsccPath {
     param([string]$ExplicitPath)
 
@@ -93,10 +95,8 @@ if (-not $SkipBuild) {
     & $buildReleaseScript @buildReleaseArgs
 }
 
+Assert-RevitPayloadMatchesYear -SourceDirectory $distDir -RevitYear $RevitYear -RequireYearStamp
 $payloadDll = Join-Path $distDir "RevitGeoSuite.Shell.dll"
-if (-not (Test-Path -LiteralPath $payloadDll)) {
-    throw "Payload missing: $payloadDll. Run build-release.ps1 first or remove -SkipBuild."
-}
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = Resolve-VersionFromAssembly -AssemblyPath $payloadDll

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using RevitGeoSuite.Core.Text;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using Xunit;
 using static RevitGeoSuite.FloorPlanExport.Core.Tests.GisTools.GisToolsFixtures;
@@ -72,7 +73,7 @@ public sealed class ParameterTableTests
             Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF }, written.Take(3));
             Assert.Equal("ホーム", ParameterTable.ReadCsv(path)[0]["name"]);
 
-            File.WriteAllBytes(path, Encoding.GetEncoding(932).GetBytes("element_id,name\r\n1,ホーム\r\n"));
+            File.WriteAllBytes(path, CodePageEncodings.Cp932().GetBytes("element_id,name\r\n1,ホーム\r\n"));
             Assert.Equal("ホーム", ParameterTable.ReadCsv(path)[0]["name"]);
         }
         finally
@@ -86,7 +87,7 @@ public sealed class ParameterTableTests
     {
         string text = "element_id,kind,name,short_name\r\n1,floor,ラチ内コンコース,改札内\r\n2,room,みどりの窓口,窓口\r\n3,level,東口（地下1階）,B1\r\n";
 
-        IReadOnlyList<Dictionary<string, string>> rows = ParameterTable.ParseCsvText(ParameterTable.DecodeCsv(Encoding.GetEncoding(932).GetBytes(text)));
+        IReadOnlyList<Dictionary<string, string>> rows = ParameterTable.ParseCsvText(ParameterTable.DecodeCsv(CodePageEncodings.Cp932().GetBytes(text)));
 
         Assert.Equal(new[] { "ラチ内コンコース", "みどりの窓口", "東口（地下1階）" }, rows.Select(row => row["name"]));
         Assert.Equal(new[] { "改札内", "窓口", "B1" }, rows.Select(row => row["short_name"]));

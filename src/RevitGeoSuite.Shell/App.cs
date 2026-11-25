@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using Autodesk.Revit.UI;
 using RevitGeoSuite.Core.Modules;
+using RevitGeoSuite.Core.Text;
 using RevitGeoSuite.Shell.Commands;
 using RevitGeoSuite.Shell.Standards;
 
@@ -14,6 +15,9 @@ public sealed class App : IExternalApplication
 
     public Result OnStartup(UIControlledApplication application)
     {
+        // Before any CSV or shapefile is read: Revit 2025+ runs on .NET, which lacks CP932 until registered.
+        CodePageEncodings.EnsureRegistered();
+
         // Create the shared ExternalEvent marshaller while we're in a valid Revit API context.
         RevitContext.Initialize();
 

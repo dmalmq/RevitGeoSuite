@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
     <RootNamespace>RevitGeoSuite.FloorPlanExport.Core.Tests</RootNamespace>
     <AssemblyName>RevitGeoSuite.FloorPlanExport.Core.Tests</AssemblyName>
     <IsPackable>false</IsPackable>

@@ -172,7 +172,7 @@ public sealed class Tiles3DGlbWriter
 
         return new GlbDocument
         {
-            Json = JsonConvert.SerializeObject(document, Formatting.None),
+            Json = Tiles3DJson.Serialize(document, Formatting.None),
             Binary = binary
         };
     }

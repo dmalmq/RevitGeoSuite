@@ -2,10 +2,11 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <!-- Build-time tool: target net8.0 (overriding the repo-wide net48) so it can use
-         NullabilityInfoContext to emit correct TS optionality. Loads the net48 Contracts DLL
-         (pure DTOs) via reflection. -->
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- Build-time tool on modern .NET (overriding the Revit year's framework) so it can use
+         NullabilityInfoContext to emit correct TS optionality. It loads the Contracts DLL (pure
+         DTOs) via reflection, so its runtime must be at least as new as the Revit year's
+         (Directory.Build.props). -->
+    <TargetFramework>$(BuildToolTargetFramework)</TargetFramework>
     <RootNamespace>RevitGeoSuite.SharedUI.Web.Contracts.Generator</RootNamespace>
     <AssemblyName>RevitGeoSuite.SharedUI.Web.Contracts.Generator</AssemblyName>
   </PropertyGroup>

@@ -170,7 +170,10 @@ public sealed class AuthenticatedPlateauHttpClient : IPlateauHttpClient, IDispos
 
     private static HttpClient CreateClient()
     {
+#if NETFRAMEWORK
+        // .NET Framework may default to TLS 1.0; .NET leaves the protocol to the OS and ignores ServicePointManager.
         ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11;
+#endif
         HttpClientHandler handler = new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
