@@ -33,7 +33,10 @@ internal static class CesiumPackagePayloadResolver
             AddPath(fullRoot, paths, manifest.Tiles.Levels);
             AddPath(fullRoot, paths, manifest.Tiles.Elements);
             AddPath(fullRoot, paths, manifest.Tiles.Rooms);
-            AddTilesetReferences(fullRoot, paths, manifest.Tiles.Tileset, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(manifest.Tiles.Tileset))
+            {
+                AddTilesetReferences(fullRoot, paths, manifest.Tiles.Tileset!, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            }
         }
 
         if (manifest.Gis is not null)

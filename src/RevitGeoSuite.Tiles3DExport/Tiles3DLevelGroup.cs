@@ -16,7 +16,14 @@ public sealed class Tiles3DLevelGroup
     /// </summary>
     public List<string> LevelUniqueIds { get; set; } = new List<string>();
 
-    public int ElementCount => Meshes.Count;
+    private int? elementCount;
+
+    /// <summary>The group's meshes, unless set: a levels-only package counts its GIS features instead.</summary>
+    public int ElementCount
+    {
+        get => elementCount ?? Meshes.Count;
+        set => elementCount = value;
+    }
 
     public double MinZMeters { get; set; }
 

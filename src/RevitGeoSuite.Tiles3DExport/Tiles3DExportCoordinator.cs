@@ -109,6 +109,48 @@ public sealed class Tiles3DExportCoordinator
     }
 
     /// <summary>
+    /// The levels and rooms of a package without tiles (see <see cref="Tiles3DIndexPackage"/>):
+    /// the host levels whose UniqueIds are listed, and every placed room of the host and of the
+    /// listed link instances (those the GIS export took).
+    /// </summary>
+    public Tiles3DIndexPackage PrepareIndexes(
+        IDocumentHandle document,
+        Tiles3DExportReferenceContext referenceContext,
+        IReadOnlyCollection<string> levelUniqueIds,
+        IReadOnlyCollection<long> linkInstanceIds,
+        double? geoidHeightOffsetMeters,
+        ICollection<string>? warnings = null)
+    {
+        RevitDocumentHandle handle = document as RevitDocumentHandle
+            ?? throw new InvalidOperationException("Send to Kanizu requires a RevitDocumentHandle.");
+        if (referenceContext is null)
+        {
+            throw new ArgumentNullException(nameof(referenceContext));
+        }
+
+        double geoid = ResolveGeoidOffset(geoidHeightOffsetMeters, referenceContext.AnchorLatitude, referenceContext.AnchorLongitude);
+        Tiles3DGeoidHeightOffsetValidator.ValidateOrThrow(geoid);
+        Tiles3DExportReferenceContext context = referenceContext.Copy();
+        context.AnchorElevationMeters += geoid;
+        var links = new HashSet<long>(linkInstanceIds ?? Array.Empty<long>());
+        var scope = new Tiles3DExportScopeSelection
+        {
+            SelectedLinkedModels = Tiles3DExportDocumentCatalog.CreateLinkOptions(handle.Document)
+                .Where(link => links.Contains(link.LinkInstanceId))
+                .ToArray(),
+        };
+        return new Tiles3DIndexPackage
+        {
+            ReferenceContext = context,
+            GeoidHeightOffsetMeters = geoid,
+            GeoidModel = ResolveGeoidModel(geoidHeightOffsetMeters),
+            // The frame is taken from the context as resolved, before the geoid lift, as Prepare does.
+            Levels = geometryExtractor.ExtractLevels(handle.Document, referenceContext, levelUniqueIds),
+            Rooms = geometryExtractor.ExtractRooms(handle.Document, referenceContext, scope, warnings),
+        };
+    }
+
+    /// <summary>
     /// The geoid undulation added to the anchor's orthometric height: the typed value when there
     /// is one, otherwise EGM2008 at the anchor. Applies with and without precise CRS projection.
     /// </summary>

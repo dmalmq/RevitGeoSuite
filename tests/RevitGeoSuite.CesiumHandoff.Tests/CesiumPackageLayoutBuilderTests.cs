@@ -188,6 +188,38 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
     }
 
     [Fact]
+    public void WriteManifest_APackageWithoutTilesKeepsItsLevelsAndRoomsAndNoTileset()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "levels.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "rooms.json"), "{}");
+        File.WriteAllText(Path.Combine(layout.GisDirectory, "tower.gpkg"), "gpkg");
+        CesiumPackageBuildInputs inputs = CreateInputs();
+        inputs.Export = new CesiumPackageExport { Scope = "whole" };
+
+        CesiumPackageManifest manifest = builder.WriteManifest(layout, inputs);
+
+        Assert.Null(manifest.Tiles!.Tileset);
+        Assert.Equal("tiles/levels.json", manifest.Tiles!.Levels);
+        Assert.Equal("tiles/rooms.json", manifest.Tiles!.Rooms);
+        Assert.Null(manifest.Export);
+        string json = File.ReadAllText(layout.ManifestPath);
+        Assert.DoesNotContain("tileset", json);
+        Assert.Null(CesiumPackageManifestSerializer.Deserialize(json).Tiles!.Tileset);
+    }
+
+    [Fact]
+    public void WriteManifest_LevelsAloneAreNotAPackage()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "levels.json"), "{}");
+
+        Assert.Throws<InvalidOperationException>(() => builder.WriteManifest(layout, CreateInputs()));
+    }
+
+    [Fact]
     public void WriteManifest_IgnoresArtifactsInNestedHandoffPackage()
     {
         var builder = new CesiumPackageLayoutBuilder();

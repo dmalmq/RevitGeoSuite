@@ -139,7 +139,11 @@ public static class CesiumHeightDatums
 
 public sealed class CesiumPackageTiles
 {
-    public string Tileset { get; set; } = string.Empty;
+    /// <summary>
+    /// <c>tiles/tileset.json</c>. Absent on a package Send to Kanizu wrote, which has GIS and the
+    /// level and room indexes but no 3D Tiles.
+    /// </summary>
+    public string? Tileset { get; set; }
 
     public string? Levels { get; set; }
 
@@ -223,6 +227,21 @@ public sealed class CesiumPackageGisRules
     public string Profile { get; set; } = string.Empty;
 
     public string Hash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when both versions recorded their rules and the rules hash or the profile differ. A
+    /// version without a hash (an older export) says nothing, so no difference is claimed.
+    /// </summary>
+    public static bool Differ(CesiumPackageGisRules? previous, CesiumPackageGisRules? current)
+    {
+        if (string.IsNullOrEmpty(previous?.Hash) || string.IsNullOrEmpty(current?.Hash))
+        {
+            return false;
+        }
+
+        return !string.Equals(previous!.Hash, current!.Hash, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(previous.Profile, current.Profile, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed class CesiumPackageGisArtifact

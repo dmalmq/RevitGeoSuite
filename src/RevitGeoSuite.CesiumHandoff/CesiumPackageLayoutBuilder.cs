@@ -244,7 +244,7 @@ public sealed class CesiumPackageLayoutBuilder
 
         CesiumPackageTiles? tiles = ScanTiles(layout);
         CesiumPackageGis? gis = ScanGis(layout, inputs);
-        if (tiles is null && gis is null)
+        if (tiles?.Tileset is null && gis is null)
         {
             throw new InvalidOperationException(
                 $"The package at '{layout.RootDirectory}' contains neither a tileset nor GIS artifacts; nothing to describe.");
@@ -275,7 +275,7 @@ public sealed class CesiumPackageLayoutBuilder
             Tiles = tiles,
             Gis = gis,
             LevelMap = inputs.LevelMap is { Count: > 0 } ? inputs.LevelMap : null,
-            Export = tiles is null ? null : inputs.Export,
+            Export = tiles?.Tileset is null ? null : inputs.Export,
             ContentHash = CesiumPackageContentHasher.Compute(layout.RootDirectory, payloadPaths),
         };
 
@@ -315,18 +315,20 @@ public sealed class CesiumPackageLayoutBuilder
 
     private static CesiumPackageTiles? ScanTiles(CesiumPackageLayout layout)
     {
-        string tilesetPath = Path.Combine(layout.TilesDirectory, "tileset.json");
-        if (!File.Exists(tilesetPath))
+        // Send to Kanizu writes levels.json and rooms.json without a tileset; anything else
+        // without a tileset has no tiles section.
+        bool hasTileset = File.Exists(Path.Combine(layout.TilesDirectory, "tileset.json"));
+        bool hasLevels = File.Exists(Path.Combine(layout.TilesDirectory, "levels.json"));
+        if (!hasTileset && !hasLevels)
         {
             return null;
         }
 
-        bool hasLevels = File.Exists(Path.Combine(layout.TilesDirectory, "levels.json"));
         bool hasElements = File.Exists(Path.Combine(layout.TilesDirectory, "elements.json"));
         bool hasRooms = File.Exists(Path.Combine(layout.TilesDirectory, "rooms.json"));
         return new CesiumPackageTiles
         {
-            Tileset = "tiles/tileset.json",
+            Tileset = hasTileset ? "tiles/tileset.json" : null,
             Levels = hasLevels ? "tiles/levels.json" : null,
             Elements = hasElements ? "tiles/elements.json" : null,
             Rooms = hasRooms ? "tiles/rooms.json" : null,
