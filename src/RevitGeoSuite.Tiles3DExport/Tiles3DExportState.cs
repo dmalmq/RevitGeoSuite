@@ -39,4 +39,10 @@ public sealed class Tiles3DExportState
     public string LastHeightDatum { get; set; } = "unknown";
 
     public bool LastKeepVersions { get; set; }
+
+    /// <summary>
+    /// Material palette of the last export. States saved before the palette existed have no such
+    /// field and load as <see cref="Tiles3DMaterialPalette.Source"/>, the authored Revit colours.
+    /// </summary>
+    public Tiles3DMaterialPalette LastMaterialPalette { get; set; } = Tiles3DMaterialPalette.Source;
 }

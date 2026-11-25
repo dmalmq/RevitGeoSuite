@@ -121,6 +121,7 @@ public sealed class Tiles3DGlbWriter
             materialColors.Add(Tiles3DMaterialColor.Default);
         }
 
+        bool useLinearSrgb = package.MaterialPalette != Tiles3DMaterialPalette.Source;
         object structuralMetadata = BuildStructuralMetadataExtension(binary, bufferViews, meshes.Select(mesh => mesh.Metadata).ToList());
         Dictionary<string, object> document = new Dictionary<string, object>
         {
@@ -158,7 +159,7 @@ public sealed class Tiles3DGlbWriter
                     primitives
                 }
             },
-            ["materials"] = materialColors.Select(BuildMaterial).ToArray(),
+            ["materials"] = materialColors.Select(color => BuildMaterial(color, useLinearSrgb)).ToArray(),
             ["accessors"] = accessors,
             ["bufferViews"] = bufferViews,
             ["buffers"] = new object[]
@@ -371,6 +372,7 @@ public sealed class Tiles3DGlbWriter
         List<object> bufferViews,
         IReadOnlyList<Tiles3DObjectMetadata> metadata)
     {
+        bool includeGisMetadata = metadata.Any(item => item.HasGisMetadata);
         Dictionary<string, object> properties = new Dictionary<string, object>
         {
             ["revitElementId"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.RevitElementId)),
@@ -391,6 +393,43 @@ public sealed class Tiles3DGlbWriter
             ["sourceLinkInstanceUniqueId"] = AddStringProperty(binary, bufferViews, metadata.Select(item => item.SourceLinkInstanceUniqueId))
         };
 
+        Dictionary<string, object> schemaProperties = new Dictionary<string, object>
+        {
+            ["revitElementId"] = StringPropertySchema(),
+            ["revitUniqueId"] = StringPropertySchema(),
+            ["name"] = StringPropertySchema(),
+            ["category"] = StringPropertySchema(),
+            ["familyName"] = StringPropertySchema(),
+            ["typeName"] = StringPropertySchema(),
+            ["levelName"] = StringPropertySchema(),
+            ["levelKey"] = StringPropertySchema(),
+            ["levelUniqueId"] = StringPropertySchema(),
+            ["levelElevationMeters"] = Float32PropertySchema(),
+            ["heightMeters"] = Float32PropertySchema(),
+            ["minZMeters"] = Float32PropertySchema(),
+            ["maxZMeters"] = Float32PropertySchema(),
+            ["sourceDocument"] = StringPropertySchema(),
+            ["sourceLinkName"] = StringPropertySchema(),
+            // With sourceDocument and revitUniqueId, the key of the element in
+            // elements.json: one linked file placed twice repeats its UniqueIds.
+            ["sourceLinkInstanceUniqueId"] = StringPropertySchema()
+        };
+
+        if (includeGisMetadata)
+        {
+            properties["gisId"] = AddStringProperty(binary, bufferViews, metadata.Select(item => TrimOrEmpty(item.GisId)));
+            properties["gisRevitKey"] = AddStringProperty(binary, bufferViews, metadata.Select(item => TrimOrEmpty(item.GisRevitKey)));
+            properties["gisKind"] = AddStringProperty(binary, bufferViews, metadata.Select(item => TrimOrEmpty(item.GisKind)));
+            properties["gisCategory"] = AddStringProperty(binary, bufferViews, metadata.Select(item => TrimOrEmpty(item.GisCategory)));
+            properties["gisLevelId"] = AddStringProperty(binary, bufferViews, metadata.Select(item => TrimOrEmpty(item.GisLevelId)));
+
+            schemaProperties["gisId"] = StringPropertySchema();
+            schemaProperties["gisRevitKey"] = StringPropertySchema();
+            schemaProperties["gisKind"] = StringPropertySchema();
+            schemaProperties["gisCategory"] = StringPropertySchema();
+            schemaProperties["gisLevelId"] = StringPropertySchema();
+        }
+
         Dictionary<string, object> propertyTable = new Dictionary<string, object>
         {
             ["class"] = "element",
@@ -407,32 +446,17 @@ public sealed class Tiles3DGlbWriter
                 {
                     ["element"] = new
                     {
-                        properties = new Dictionary<string, object>
-                        {
-                            ["revitElementId"] = StringPropertySchema(),
-                            ["revitUniqueId"] = StringPropertySchema(),
-                            ["name"] = StringPropertySchema(),
-                            ["category"] = StringPropertySchema(),
-                            ["familyName"] = StringPropertySchema(),
-                            ["typeName"] = StringPropertySchema(),
-                            ["levelName"] = StringPropertySchema(),
-                            ["levelKey"] = StringPropertySchema(),
-                            ["levelUniqueId"] = StringPropertySchema(),
-                            ["levelElevationMeters"] = Float32PropertySchema(),
-                            ["heightMeters"] = Float32PropertySchema(),
-                            ["minZMeters"] = Float32PropertySchema(),
-                            ["maxZMeters"] = Float32PropertySchema(),
-                            ["sourceDocument"] = StringPropertySchema(),
-                            ["sourceLinkName"] = StringPropertySchema(),
-                            // With sourceDocument and revitUniqueId, the key of the element in
-                            // elements.json: one linked file placed twice repeats its UniqueIds.
-                            ["sourceLinkInstanceUniqueId"] = StringPropertySchema()
-                        }
+                        properties = schemaProperties
                     }
                 }
             },
             ["propertyTables"] = new object[] { propertyTable }
         };
+    }
+
+    private static string TrimOrEmpty(string? value)
+    {
+        return value?.Trim() ?? string.Empty;
     }
 
     private static object AddStringProperty(
@@ -575,13 +599,13 @@ public sealed class Tiles3DGlbWriter
         return materialIndex;
     }
 
-    private static object BuildMaterial(Tiles3DMaterialColor color)
+    private static object BuildMaterial(Tiles3DMaterialColor color, bool useLinearSrgb)
     {
         Dictionary<string, object> material = new Dictionary<string, object>
         {
             ["pbrMetallicRoughness"] = new
             {
-                baseColorFactor = color.ToBaseColorFactor(),
+                baseColorFactor = useLinearSrgb ? color.ToLinearBaseColorFactor() : color.ToBaseColorFactor(),
                 metallicFactor = 0d,
                 roughnessFactor = 0.95d
             },

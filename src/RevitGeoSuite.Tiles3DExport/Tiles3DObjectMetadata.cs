@@ -45,6 +45,28 @@ public sealed class Tiles3DObjectMetadata
     /// </summary>
     public string SourceLinkInstanceUniqueId { get; set; } = string.Empty;
 
+    /// <summary>Optional Kanizu GIS <c>id</c> shared parameter value for 2D/3D joins.</summary>
+    public string GisId { get; set; } = string.Empty;
+
+    /// <summary>Optional Kanizu GIS <c>gis_key</c> shared parameter value (exported <c>revit_key</c>).</summary>
+    public string GisRevitKey { get; set; } = string.Empty;
+
+    /// <summary>Optional Kanizu GIS <c>gis_kind</c> shared parameter value (e.g. escalator, elevator).</summary>
+    public string GisKind { get; set; } = string.Empty;
+
+    /// <summary>Optional Kanizu GIS category (<c>category</c> instance override or <c>gis_category</c> type value).</summary>
+    public string GisCategory { get; set; } = string.Empty;
+
+    /// <summary>Optional Kanizu GIS <c>level_id</c> shared parameter value from the element's level.</summary>
+    public string GisLevelId { get; set; } = string.Empty;
+
+    public bool HasGisMetadata =>
+        !string.IsNullOrWhiteSpace(GisId)
+        || !string.IsNullOrWhiteSpace(GisRevitKey)
+        || !string.IsNullOrWhiteSpace(GisKind)
+        || !string.IsNullOrWhiteSpace(GisCategory)
+        || !string.IsNullOrWhiteSpace(GisLevelId);
+
     public Tiles3DObjectMetadata Clone()
     {
         return new Tiles3DObjectMetadata
@@ -64,7 +86,12 @@ public sealed class Tiles3DObjectMetadata
             MaxZMeters = MaxZMeters,
             SourceDocument = SourceDocument,
             SourceLinkName = SourceLinkName,
-            SourceLinkInstanceUniqueId = SourceLinkInstanceUniqueId
+            SourceLinkInstanceUniqueId = SourceLinkInstanceUniqueId,
+            GisId = GisId,
+            GisRevitKey = GisRevitKey,
+            GisKind = GisKind,
+            GisCategory = GisCategory,
+            GisLevelId = GisLevelId
         };
     }
 }
