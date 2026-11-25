@@ -126,7 +126,10 @@ public sealed class CityGmlPackageDownloader
                 continue;
             }
 
-            string tempZip = Path.Combine(Path.GetTempPath(), "rgs-" + SanitizeName(code + "-" + fileName));
+            // Inside the package folder, not %TEMP%: concurrent downloads of the same package into
+            // different roots must not share a file, and the path stays stable so the client's
+            // "<tempZip>.partial" resumes after a cancel.
+            string tempZip = Path.Combine(markerDir, SanitizeName(fileName));
             try
             {
                 int index = i;

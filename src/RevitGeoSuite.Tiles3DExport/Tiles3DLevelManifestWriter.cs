@@ -45,7 +45,7 @@ public sealed class Tiles3DLevelManifestWriter
                 .ToArray()
         };
 
-        return JsonConvert.SerializeObject(document, Formatting.Indented);
+        return Tiles3DJson.Serialize(document, Formatting.Indented);
     }
 
     /// <summary>
@@ -68,7 +68,7 @@ public sealed class Tiles3DLevelManifestWriter
             levels,
         };
 
-        return JsonConvert.SerializeObject(document, Formatting.Indented);
+        return Tiles3DJson.Serialize(document, Formatting.Indented);
     }
 
     private static object BuildLevelEntry(Tiles3DLevelGroup group) => new

@@ -10,7 +10,7 @@ Build the payload for the same year you install: `dotnet build -c Release -p:Rev
 ## Build a setup EXE
 
 Prerequisites:
-- A built Kanizu Revit payload in `bin/Deploy/` or another output folder
+- A built Kanizu Revit payload in `bin/Deploy/<year>/` or another output folder
 - Inno Setup 6 (`ISCC.exe`)
 
 Command:

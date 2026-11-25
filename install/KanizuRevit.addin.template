@@ -2,7 +2,7 @@
 <RevitAddIns>
   <AddIn Type="Application">
     <Name>Kanizu Revit</Name>
-    <Assembly>__ADDINS_ROOT__\KanizuRevit\RevitGeoSuite.Shell.dll</Assembly>
+    <Assembly>KanizuRevit\RevitGeoSuite.Shell.dll</Assembly>
     <AddInId>CB1ACDE0-83D9-4F26-9BFF-5ECF523EEFFE</AddInId>
     <FullClassName>RevitGeoSuite.Shell.App</FullClassName>
     <VendorId>Kanizu</VendorId>

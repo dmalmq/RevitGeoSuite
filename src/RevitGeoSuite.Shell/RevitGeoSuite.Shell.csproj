@@ -47,4 +47,16 @@
     <ProjectReference Include="..\RevitGeoSuite.FloorPlanExport.Core\RevitGeoSuite.FloorPlanExport.Core.csproj" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\RevitGeoSuite.CesiumHandoff\RevitGeoSuite.CesiumHandoff.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
+
+  <Target Name="WriteRevitYearStamp" AfterTargets="Build">
+    <WriteLinesToFile
+      File="$(OutDir)RevitYear.txt"
+      Lines="$(RevitYear)"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true"
+      Encoding="ASCII" />
+    <ItemGroup>
+      <FileWrites Include="$(OutDir)RevitYear.txt" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -46,7 +46,7 @@ public sealed class TilesetJsonWriter
             }
         };
 
-        return JsonConvert.SerializeObject(document, Formatting.Indented);
+        return Tiles3DJson.Serialize(document, Formatting.Indented);
     }
 
 }

@@ -24,7 +24,7 @@
     Revit 2025 and later run add-ins on .NET (Core), which resolves NuGet native assets (e_sqlite3,
     WebView2Loader) from runtimes\<rid>\native\ through a deps.json that Revit never reads. Revit is
     x64 only, so restore for win-x64: the SDK then places those native files beside the managed
-    ones, where the flat copy into bin\Deploy keeps exactly one of each.
+    ones, where the flat copy into bin\Deploy\$(RevitYear)\ keeps exactly one of each.
   -->
   <PropertyGroup Condition="'$(RevitTargetFramework)' != '' and '$(RevitTargetFramework)' != 'net48'">
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -42,7 +42,7 @@
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitYear)</RevitInstallDir>
     <RepositoryRoot>$(MSBuildThisFileDirectory)</RepositoryRoot>
-    <OutputPath>$(RepositoryRoot)bin\Deploy\</OutputPath>
+    <OutputPath>$(RepositoryRoot)bin\Deploy\$(RevitYear)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <UseCommonOutputDirectory>true</UseCommonOutputDirectory>
   </PropertyGroup>

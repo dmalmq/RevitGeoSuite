@@ -140,9 +140,9 @@ msbuild RevitGeoSuite.sln /p:Configuration=Release
 dotnet build RevitGeoSuite.AddIn.slnf -c Release -p:RevitYear=2027
 ```
 
-`RevitYear` picks the target framework in `Directory.Build.props`: 2024 builds `net48`, 2027 builds `net10.0-windows`. Both write to `bin/Deploy/`, so build the year you are about to install.
+`RevitYear` picks the target framework and output folder in `Directory.Build.props`: 2024 builds `net48` into `bin/Deploy/2024/`, and 2027 builds `net10.0-windows` into `bin/Deploy/2027/`.
 
-The solution build regenerates the TypeScript RPC contracts and runs the web build (`npm ci` + `vite build`) before compiling the WebView2 host, then embeds the bundle. Use `-p:SkipWebBuild=true` to reuse the committed `dist/` bundle when Node.js is unavailable. All output DLLs are written to `bin/Deploy/`.
+The solution build regenerates the TypeScript RPC contracts and runs the web build (`npm ci` + `vite build`) before compiling the WebView2 host, then embeds the bundle. Use `-p:SkipWebBuild=true` to reuse the committed `dist/` bundle when Node.js is unavailable. All output DLLs are written to `bin/Deploy/<RevitYear>/`.
 
 ### Working on the UI without Revit
 
@@ -165,7 +165,7 @@ The installer EXE is written to `install/output/` as `KanizuRevit-Setup-<year>-<
 ### Manual Install
 
 1. Build the solution
-2. Copy `bin/Deploy/` contents to a folder (e.g. `C:\KanizuRevit\`)
+2. Copy `bin/Deploy/<RevitYear>/` contents to a folder (e.g. `C:\KanizuRevit\`)
 3. Copy `KanizuRevit.addin` to `%AppData%\Autodesk\Revit\Addins\2024\` (and remove any legacy `RevitGeoSuite.addin` if present)
 4. Update the `<Assembly>` path in the `.addin` file to point to `RevitGeoSuite.Shell.dll`
 5. Launch Revit 2024

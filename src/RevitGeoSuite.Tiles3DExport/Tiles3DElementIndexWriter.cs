@@ -76,11 +76,7 @@ public sealed class Tiles3DElementIndexWriter
 
     private static string Serialize(Tiles3DElementIndex document)
     {
-        return JsonConvert.SerializeObject(document, Formatting.None, new JsonSerializerSettings
-        {
-            ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver(),
-            Culture = CultureInfo.InvariantCulture,
-        });
+        return Tiles3DJson.Serialize(document, Formatting.None, camelCase: true);
     }
 
     public string Write(string outputDirectory, Tiles3DExportPackage package)

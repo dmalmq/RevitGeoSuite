@@ -7,17 +7,21 @@
     Use this in CI to catch silent contract drift.
 #>
 
+param(
+    [string]$RevitYear = '2024'
+)
+
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $generatorDir = Join-Path $repoRoot 'src\RevitGeoSuite.SharedUI.Web.Contracts.Generator'
-$contractsAssembly = Join-Path $repoRoot 'bin\Deploy\RevitGeoSuite.SharedUI.Web.Contracts.dll'
+$contractsAssembly = Join-Path $repoRoot "bin\Deploy\$RevitYear\RevitGeoSuite.SharedUI.Web.Contracts.dll"
 $committedFile = Join-Path $repoRoot 'src\RevitGeoSuite.SharedUI.Web\src\lib\bridge\contracts.generated.ts'
 $tempFile = Join-Path $env:TEMP "contracts.generated.$(Get-Random).ts"
 
 try {
     Write-Host "Building contracts assembly..." -ForegroundColor Cyan
-    & dotnet build (Join-Path $repoRoot 'src\RevitGeoSuite.SharedUI.Web.Contracts\RevitGeoSuite.SharedUI.Web.Contracts.csproj') -c Release --nologo -v q
+    & dotnet build (Join-Path $repoRoot 'src\RevitGeoSuite.SharedUI.Web.Contracts\RevitGeoSuite.SharedUI.Web.Contracts.csproj') -c Release -p:RevitYear=$RevitYear --nologo -v q
     if ($LASTEXITCODE -ne 0) { throw "Failed to build contracts assembly" }
 
     Write-Host "Generating contracts to temp file..." -ForegroundColor Cyan

@@ -34,6 +34,18 @@
 #endif
 #define InstallSubDir "KanizuRevit"
 
+; Refuse to compile an installer from a dist folder staged for a different Revit year.
+#define DistRevitYearFile AddBackslash(DistDir) + "RevitYear.txt"
+#define YearFileHandle FileOpen(DistRevitYearFile)
+#if !YearFileHandle
+  #error Missing RevitYear.txt in DistDir. Run build-release.ps1 -RevitYear <year> first.
+#endif
+#define DistRevitYear Trim(FileRead(YearFileHandle))
+#expr FileClose(YearFileHandle)
+#if DistRevitYear != RevitYear
+  #error DistDir payload RevitYear.txt does not match RevitYear. Rebuild and run build-release.ps1 for the requested Revit year.
+#endif
+
 [Setup]
 AppId={#AppId}
 AppName={#AppName}

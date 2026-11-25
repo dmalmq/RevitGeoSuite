@@ -10,7 +10,7 @@
 
     The script looks for build output in this order:
       1. install/dist/ folder (from build-release.ps1)
-      2. bin/Deploy/ (direct build output)
+      2. bin/Deploy/<RevitYear>/ (direct build output)
 #>
 param(
     [string]$RevitYear = "2024"
@@ -100,19 +100,21 @@ $legacyUserAddinFile = if ($env:APPDATA) {
 }
 
 $distDir = Join-Path $scriptDir "dist"
-$deployDir = Join-Path $repoRoot "bin\Deploy"
+$deployDir = Get-RevitDeployDirectory -RepoRoot $repoRoot -RevitYear $RevitYear
 
 if (Test-Path -LiteralPath (Join-Path $distDir "RevitGeoSuite.Shell.dll")) {
+    Assert-RevitPayloadMatchesYear -SourceDirectory $distDir -RevitYear $RevitYear -RequireYearStamp
     $sourceDir = $distDir
     Write-Host "Using pre-built dist/ folder for Revit $RevitYear." -ForegroundColor Cyan
 }
 elseif (Test-Path -LiteralPath (Join-Path $deployDir "RevitGeoSuite.Shell.dll")) {
+    Assert-RevitPayloadMatchesYear -SourceDirectory $deployDir -RevitYear $RevitYear
     $sourceDir = $deployDir
-    Write-Host "Using build output from bin/Deploy for Revit $RevitYear." -ForegroundColor Cyan
+    Write-Host "Using build output from bin/Deploy/$RevitYear for Revit $RevitYear." -ForegroundColor Cyan
 }
 else {
-    Write-Host "ERROR: No build output found." -ForegroundColor Red
-    Write-Host "Run build-release.ps1 -RevitYear $RevitYear first, or build the shell project in Release configuration." -ForegroundColor Yellow
+    Write-Host "ERROR: No build output found for Revit $RevitYear." -ForegroundColor Red
+    Write-Host "Run build-release.ps1 -RevitYear $RevitYear first, or build with -p:RevitYear=$RevitYear in Release configuration." -ForegroundColor Yellow
     exit 1
 }
 

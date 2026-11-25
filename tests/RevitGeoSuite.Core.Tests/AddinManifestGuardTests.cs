@@ -54,13 +54,18 @@ public sealed class AddinManifestGuardTests
     }
 
     [Theory]
-    [InlineData(2024, @"C:\ProgramData\Autodesk\Revit\Addins\2024", @"C:\Program Files\Autodesk\Revit\Addins\2024")]
-    [InlineData(2026, @"C:\ProgramData\Autodesk\Revit\Addins\2026", @"C:\Program Files\Autodesk\Revit\Addins\2026")]
-    [InlineData(2027, @"C:\Program Files\Autodesk\Revit\Addins\2027", @"C:\ProgramData\Autodesk\Revit\Addins\2027")]
-    public void Install_scripts_put_the_addin_where_that_revit_year_loads_it(int revitYear, string addinsRoot, string staleRoot)
+    [InlineData(2024, true)]
+    [InlineData(2026, true)]
+    [InlineData(2027, false)]
+    public void Install_scripts_put_the_addin_where_that_revit_year_loads_it(int revitYear, bool usesProgramData)
     {
         string helper = TestPaths.GetRepoPath(Path.Combine("install", "RevitAddinPaths.ps1"));
         string template = TestPaths.GetRepoPath(Path.Combine("install", "KanizuRevit.addin.template"));
+        string programFiles = Environment.GetEnvironmentVariable("ProgramFiles") is { Length: > 0 } pf ? pf : @"C:\Program Files";
+        string programData = Environment.GetEnvironmentVariable("ProgramData") is { Length: > 0 } pd ? pd : @"C:\ProgramData";
+        string yearText = revitYear.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string addinsRoot = Path.Combine(usesProgramData ? programData : programFiles, "Autodesk", "Revit", "Addins", yearText);
+        string staleRoot = Path.Combine(usesProgramData ? programFiles : programData, "Autodesk", "Revit", "Addins", yearText);
 
         string[] output = RunPowerShell(
             $". '{helper}'; " +
@@ -68,7 +73,31 @@ public sealed class AddinManifestGuardTests
             $"Get-StaleRevitAddinsRoot -RevitYear {revitYear}; " +
             $"([xml](Get-AddinManifestContents -TemplatePath '{template}' -RevitYear {revitYear})).RevitAddIns.AddIn.Assembly");
 
-        Assert.Equal(new[] { addinsRoot, staleRoot, addinsRoot + @"\KanizuRevit\RevitGeoSuite.Shell.dll" }, output);
+        Assert.Equal(new[] { addinsRoot, staleRoot, @"KanizuRevit\RevitGeoSuite.Shell.dll" }, output);
+    }
+
+    [Fact]
+    public void Install_scripts_resolve_program_files_and_program_data_from_environment()
+    {
+        string helper = TestPaths.GetRepoPath(Path.Combine("install", "RevitAddinPaths.ps1"));
+        string[] output = RunPowerShell(
+            "$env:ProgramFiles = 'D:\\Program Files'; " +
+            "$env:ProgramData = 'D:\\ProgramData'; " +
+            $". '{helper}'; " +
+            "Get-RevitAddinsRoot -RevitYear 2024; " +
+            "Get-StaleRevitAddinsRoot -RevitYear 2024; " +
+            "Get-RevitAddinsRoot -RevitYear 2027; " +
+            "Get-StaleRevitAddinsRoot -RevitYear 2027");
+
+        Assert.Equal(
+            new[]
+            {
+                @"D:\ProgramData\Autodesk\Revit\Addins\2024",
+                @"D:\Program Files\Autodesk\Revit\Addins\2024",
+                @"D:\Program Files\Autodesk\Revit\Addins\2027",
+                @"D:\ProgramData\Autodesk\Revit\Addins\2027",
+            },
+            output);
     }
 
     [Fact]
@@ -81,6 +110,33 @@ public sealed class AddinManifestGuardTests
             Assert.DoesNotContain(@"C:\ProgramData", text, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(@"C:\Program Files", text, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public void Build_output_path_is_isolated_per_revit_year()
+    {
+        XDocument props = XDocument.Load(TestPaths.GetRepoPath("Directory.Build.props"));
+        string? outputPath = props.Root?.Elements("PropertyGroup")
+            .Select(group => group.Element("OutputPath")?.Value)
+            .SingleOrDefault(value => value is not null);
+        Assert.Equal(@"$(RepositoryRoot)bin\Deploy\$(RevitYear)\", outputPath);
+
+        string helper = TestPaths.GetRepoPath(Path.Combine("install", "RevitAddinPaths.ps1"));
+        string[] deployDirs = RunPowerShell(
+            $". '{helper}'; " +
+            @"Get-RevitDeployDirectory -RepoRoot 'C:\repo' -RevitYear 2024; " +
+            @"Get-RevitDeployDirectory -RepoRoot 'C:\repo' -RevitYear 2027");
+        Assert.Equal(new[] { @"C:\repo\bin\Deploy\2024", @"C:\repo\bin\Deploy\2027" }, deployDirs);
+
+        string buildRelease = File.ReadAllText(TestPaths.GetRepoPath(Path.Combine("install", "build-release.ps1")));
+        string installScript = File.ReadAllText(TestPaths.GetRepoPath(Path.Combine("install", "install.ps1")));
+        string verifyContracts = File.ReadAllText(TestPaths.GetRepoPath(Path.Combine("tools", "VerifyContracts.ps1")));
+
+        Assert.Contains("Get-RevitDeployDirectory", buildRelease, StringComparison.Ordinal);
+        Assert.Contains("Get-RevitDeployDirectory", installScript, StringComparison.Ordinal);
+        Assert.Contains(@"bin\Deploy\$RevitYear\", verifyContracts, StringComparison.Ordinal);
+        Assert.DoesNotContain(@"bin\Deploy""", buildRelease, StringComparison.Ordinal);
+        Assert.DoesNotContain(@"bin\Deploy""", installScript, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -105,6 +161,88 @@ public sealed class AddinManifestGuardTests
         Assert.Contains(@"Type: files; Name: ""{#StaleAddinsRoot}\KanizuRevit.addin""", iss, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Inno_setup_refuses_mismatched_dist_revit_year()
+    {
+        string iss = File.ReadAllText(TestPaths.GetRepoPath(Path.Combine("install", "RevitGeoSuite.iss")));
+        Assert.Contains("RevitYear.txt", iss, StringComparison.Ordinal);
+        Assert.Contains("FileOpen(DistRevitYearFile)", iss, StringComparison.Ordinal);
+        Assert.Contains("DistRevitYear != RevitYear", iss, StringComparison.Ordinal);
+        Assert.Contains("#error", iss, StringComparison.Ordinal);
+
+        string buildInstaller = File.ReadAllText(TestPaths.GetRepoPath(Path.Combine("install", "build-installer.ps1")));
+        Assert.Contains(". (Join-Path $PSScriptRoot \"RevitAddinPaths.ps1\")", buildInstaller, StringComparison.Ordinal);
+        Assert.Contains("Assert-RevitPayloadMatchesYear", buildInstaller, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Payload_validation_accepts_matching_year_and_refuses_mismatched_year()
+    {
+#if NETFRAMEWORK
+        const int matchingYear = 2024;
+        const int wrongYear = 2027;
+        const string expectedTfm = ".NETFramework,Version=v4.8";
+#else
+        const int matchingYear = 2027;
+        const int wrongYear = 2024;
+        const string expectedTfm = ".NETCoreApp,Version=v10.0";
+#endif
+
+        string helper = TestPaths.GetRepoPath(Path.Combine("install", "RevitAddinPaths.ps1"));
+        string tempDir = Path.Combine(Path.GetTempPath(), "rgs-payload-guard-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            string fakeShellDll = Path.Combine(tempDir, "RevitGeoSuite.Shell.dll");
+            File.Copy(typeof(AddinManifestGuardTests).Assembly.Location, fakeShellDll, overwrite: true);
+
+            string[] detected = RunPowerShell(
+                $". '{helper}'; " +
+                $"Get-AssemblyTargetFramework -AssemblyPath '{fakeShellDll}'; " +
+                $"Assert-RevitPayloadMatchesYear -SourceDirectory '{tempDir}' -RevitYear {matchingYear}; " +
+                $"Write-RevitYearStamp -Directory '{tempDir}' -RevitYear {matchingYear} | Out-Null; " +
+                $"Assert-RevitPayloadMatchesYear -SourceDirectory '{tempDir}' -RevitYear {matchingYear} -RequireYearStamp; " +
+                "'OK'");
+            Assert.Equal(new[] { expectedTfm, "OK" }, detected);
+
+            // RevitYear.txt must be plain ASCII/UTF-8 without BOM so Inno Setup ISPP FileRead matches cleanly.
+            byte[] stampBytes = File.ReadAllBytes(Path.Combine(tempDir, "RevitYear.txt"));
+            Assert.Equal(
+                System.Text.Encoding.ASCII.GetBytes(matchingYear.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                stampBytes);
+
+            // Mismatched RevitYear.txt stamp is refused.
+            (int wrongStampExit, _, string wrongStampErr) = RunPowerShellResult(
+                $". '{helper}'; " +
+                $"Write-RevitYearStamp -Directory '{tempDir}' -RevitYear {wrongYear} | Out-Null; " +
+                $"Assert-RevitPayloadMatchesYear -SourceDirectory '{tempDir}' -RevitYear {matchingYear}");
+            Assert.NotEqual(0, wrongStampExit);
+            Assert.Contains("RevitYear.txt", Regex.Replace(wrongStampErr, @"\s+", " "), StringComparison.OrdinalIgnoreCase);
+
+            // Missing stamp is refused when -RequireYearStamp is passed (protects dist/ installs).
+            File.Delete(Path.Combine(tempDir, "RevitYear.txt"));
+            (int missingStampExit, _, string missingStampErr) = RunPowerShellResult(
+                $". '{helper}'; " +
+                $"Assert-RevitPayloadMatchesYear -SourceDirectory '{tempDir}' -RevitYear {matchingYear} -RequireYearStamp");
+            Assert.NotEqual(0, missingStampExit);
+            Assert.Contains("missing RevitYear.txt", Regex.Replace(missingStampErr, @"\s+", " "), StringComparison.OrdinalIgnoreCase);
+
+            // Mismatched TargetFrameworkAttribute on the DLL itself is refused even without RevitYear.txt.
+            (int wrongTfmExit, _, string wrongTfmErr) = RunPowerShellResult(
+                $". '{helper}'; " +
+                $"Assert-RevitPayloadMatchesYear -SourceDirectory '{tempDir}' -RevitYear {wrongYear}");
+            Assert.NotEqual(0, wrongTfmExit);
+            Assert.Contains("target framework mismatch", Regex.Replace(wrongTfmErr, @"\s+", " "), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
     [Theory]
     [InlineData("2024", "net48")]
     [InlineData("2027", "net10.0-windows")]
@@ -119,6 +257,13 @@ public sealed class AddinManifestGuardTests
     }
 
     private static string[] RunPowerShell(string command)
+    {
+        (int exitCode, string[] output, string error) = RunPowerShellResult(command);
+        Assert.True(exitCode == 0, $"PowerShell failed: {error}");
+        return output;
+    }
+
+    private static (int ExitCode, string[] StdOut, string StdErr) RunPowerShellResult(string command)
     {
         foreach (string shell in new[] { "pwsh", "powershell" })
         {
@@ -146,8 +291,10 @@ public sealed class AddinManifestGuardTests
                 string output = process!.StandardOutput.ReadToEnd();
                 string error = process.StandardError.ReadToEnd();
                 process.WaitForExit();
-                Assert.True(process.ExitCode == 0, $"{shell} failed: {error}");
-                return output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                return (
+                    process.ExitCode,
+                    output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries),
+                    error);
             }
         }
 
