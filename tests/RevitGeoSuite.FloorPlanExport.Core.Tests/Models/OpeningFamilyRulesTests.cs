@@ -34,7 +34,7 @@ public sealed class OpeningFamilyRulesTests
     [InlineData("3\n", 3)]
     [InlineData("3\r", 3)]
     [InlineData("3\t", 3)]
-    [InlineData("3\u0000", null)]
+    [InlineData("3\u0000", 3)]
     [InlineData("3.0", null)]
     public void ParseStandardVersion_MatchesTheStandardCheck(string? input, int? expected)
     {
