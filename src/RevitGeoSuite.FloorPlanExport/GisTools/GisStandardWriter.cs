@@ -24,15 +24,24 @@ public static class GisStandardWriter
     /// <summary>Applies <paramref name="plan"/> and returns what it did, one line per change.</summary>
     public static IReadOnlyList<string> ApplySetup(Document document, GisToolStandard standard, SetupPlan plan, ExportViewPlan views)
     {
-        RequireOwnable(document, plan.FloorTypes.Where(step => step.ElementId.HasValue).Select(step => step.ElementId!.Value)
+        RequireOwnable(document, SetupTargetElementIds(document, plan, views));
+        List<string> log = new();
+        InTransaction(document, SetupTransactionName, log, () => ApplySetupCore(document, standard, plan, views, log));
+        return log;
+    }
+
+    internal static IEnumerable<long> SetupTargetElementIds(Document document, SetupPlan plan, ExportViewPlan views) =>
+        plan.FloorTypes.Where(step => step.ElementId.HasValue).Select(step => step.ElementId!.Value)
             .Concat(plan.EchoFloorIds)
             .Concat(views.Crops.Select(crop => crop.ViewId))
             .Concat(views.LevelIds.Select(level => level.ElementId))
             .Concat(views.Repair is TemplateRepair repair ? new[] { repair.TemplateId } : Array.Empty<long>())
             .Concat(plan.Materials.Select(step => MaterialId(document, step.Name)).Where(id => id.HasValue).Select(id => id!.Value))
-            .Concat(plan.SetsVersion ? new[] { document.ProjectInformation.Id.Value } : Array.Empty<long>()));
-        List<string> log = new();
-        InTransaction(document, SetupTransactionName, log, () =>
+            .Concat(plan.SetsVersion ? new[] { document.ProjectInformation.Id.Value } : Array.Empty<long>());
+
+    internal static void ApplySetupCore(Document document, GisToolStandard standard, SetupPlan plan, ExportViewPlan views, List<string> log)
+    {
+        if (!plan.IsEmpty)
         {
             BindParameters(document, plan, log);
             document.Regenerate();
@@ -43,17 +52,16 @@ public static class GisStandardWriter
                 ClearFloorCategories(document, plan.EchoFloorIds);
                 log.Add($"Cleared the repeated category of {plan.EchoFloorIds.Count} floors");
             }
+        }
 
-            ExportViewSetup.Apply(document, views, log);
-            if (plan.SetsVersion)
-            {
-                Parameter parameter = document.ProjectInformation.LookupParameter(GisSharedParameters.GisStandardVersion)
-                    ?? throw new InvalidOperationException("gis_standard_version is not bound to Project Information.");
-                parameter.Set(plan.VersionTo);
-                log.Add($"gis_standard_version = {plan.VersionTo}");
-            }
-        });
-        return log;
+        ExportViewSetup.Apply(document, views, log);
+        if (plan.SetsVersion)
+        {
+            Parameter parameter = document.ProjectInformation.LookupParameter(GisSharedParameters.GisStandardVersion)
+                ?? throw new InvalidOperationException("gis_standard_version is not bound to Project Information.");
+            parameter.Set(plan.VersionTo);
+            log.Add($"gis_standard_version = {plan.VersionTo}");
+        }
     }
 
     /// <summary>
@@ -359,7 +367,7 @@ public static class GisStandardWriter
     /// In a workshared model, refuses before any change when another user borrows an element the
     /// run would edit, so the user learns which ones instead of meeting a rolled-back transaction.
     /// </summary>
-    private static void RequireOwnable(Document document, IEnumerable<long> elementIds)
+    internal static void RequireOwnable(Document document, IEnumerable<long> elementIds)
     {
         if (!document.IsWorkshared)
         {
@@ -390,7 +398,7 @@ public static class GisStandardWriter
         new FilteredElementCollector(document).OfClass(typeof(Material)).FirstOrDefault(material => material.Name == name)?.Id.Value;
 
     /// <summary>Runs <paramref name="work"/> in one transaction. Revit's warnings join <paramref name="log"/> instead of a dialog; an error rolls it back and throws.</summary>
-    private static void InTransaction(Document document, string name, List<string> log, Action work)
+    internal static void InTransaction(Document document, string name, List<string> log, Action work)
     {
         using Transaction transaction = new(document, name);
         TransactionFailures failures = TransactionFailures.Attach(transaction);

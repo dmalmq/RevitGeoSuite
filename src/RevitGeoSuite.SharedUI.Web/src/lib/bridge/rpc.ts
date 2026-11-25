@@ -48,6 +48,7 @@ const NO_TIMEOUT_METHODS = new Set<string>([
   'floorplan.preview.discardAssignments',
   'unitFloors.create',
   'gisStandard.setup',
+  'gisStandard.prepareTemplate',
   'gisStandard.fixFloorTypes',
   'gisStandard.resetFloorType',
   'gisParameters.apply',
@@ -71,6 +72,7 @@ function resolveTimeoutMs(method: string): number | null {
     method.startsWith('floorplan.') ||
     method.startsWith('unitFloors.') ||
     method === 'gisStandard.inspect' ||
+    method === 'gisStandard.validateRfaFolder' ||
     method === 'gisDrift.waiting' ||
     method === 'gisNetwork.inspect'
   ) {

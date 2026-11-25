@@ -1,3 +1,5 @@
+@layer ui-sdk;
+
 @import "tailwindcss";
 
 /* Dev-only code (mock bridge fixtures, capture script) must not add classes to the bundle. */

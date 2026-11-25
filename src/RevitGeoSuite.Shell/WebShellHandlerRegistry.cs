@@ -29,6 +29,8 @@ internal static class WebShellHandlerRegistry
         // GIS standard route
         bridge.RegisterHandler(new GisStandardInspectHandler());
         bridge.RegisterHandler(new GisStandardSetupHandler());
+        bridge.RegisterHandler(new GisStandardPrepareTemplateHandler());
+        bridge.RegisterHandler(new GisStandardValidateRfaFolderHandler());
         bridge.RegisterHandler(new GisFixFloorTypesHandler());
         bridge.RegisterHandler(new GisResetFloorTypeHandler());
         bridge.RegisterHandler(new GisSelectElementsHandler());

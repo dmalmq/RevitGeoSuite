@@ -6,8 +6,14 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { request } from '$lib/bridge/rpc'
-  import type { GisAuditFindingItem, GisFloorTypeProposalItem, GisStandardApplyResponse, GisStandardInspectResponse } from '$lib/bridge/contracts.generated'
+  import { on, request } from '$lib/bridge/rpc'
+  import type {
+    GisAuditFindingItem,
+    GisFloorTypeProposalItem,
+    GisRfaValidationResponse,
+    GisStandardApplyResponse,
+    GisStandardInspectResponse
+  } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
   import { Banner, Button, Card, Checkbox, Chip, Segmented, SummaryStrip, Table, type Tone } from '$lib/kit'
   import { ToolSheet, format, refreshReadiness } from '$lib/shell'
@@ -16,17 +22,25 @@
   import DriftPanel from './DriftPanel.svelte'
   import NetworkPanel from './NetworkPanel.svelte'
   import ParametersPanel from './ParametersPanel.svelte'
+  import ReadinessChecklist from './ReadinessChecklist.svelte'
 
   type Tab = 'standard' | 'parameters' | 'drift' | 'network'
   // #/gis-standard/drift opens on the GDB edits tab: the export page links there.
   let tab = $state<Tab>(window.location.hash.endsWith('/gis-standard/drift') ? 'drift' : 'standard')
 
   let model = $state<GisStandardInspectResponse | null>(null)
+  let selectedMode = $state<'template' | 'project' | null>(null)
   let loading = $state(false)
-  let applying = $state<'setup' | 'fix' | 'reset' | null>(null)
+  let applying = $state<'setup' | 'prepareTemplate' | 'fix' | 'reset' | null>(null)
+  let validatingRfa = $state(false)
+  let rfaResult = $state<GisRfaValidationResponse | null>(null)
+  let rfaError = $state<string | null>(null)
   let error = $state<string | null>(null)
   let applied = $state<{ title: string; log: string[]; skipped: string[] } | null>(null)
   let ticked = $state<Set<string>>(new Set())
+  let documentGeneration = 0
+  let inspectGeneration = 0
+  let rfaGeneration = 0
 
   const findings = $derived(model?.findings ?? [])
   const count = (severity: string) => findings.filter((finding) => finding.severity === severity).length
@@ -36,7 +50,7 @@
     for (const proposal of model?.proposals ?? []) counts.set(proposal.floorTypeId, (counts.get(proposal.floorTypeId) ?? 0) + 1)
     return counts
   })
-  const busy = $derived(loading || applying !== null)
+  const busy = $derived(loading || applying !== null || validatingRfa)
 
   const SEVERITY: Record<string, { tone: Tone; key: string; fallback: string }> = {
     error: { tone: 'danger', key: 'GisStandard.Severity.Error', fallback: 'Error' },
@@ -44,22 +58,54 @@
     info: { tone: 'info', key: 'GisStandard.Severity.Info', fallback: 'Note' }
   }
 
-  onMount(() => void inspect())
+  onMount(() => {
+    void inspect()
+    return on('document.changed', () => {
+      documentGeneration += 1
+      inspectGeneration += 1
+      rfaGeneration += 1
+      model = null
+      selectedMode = null
+      applied = null
+      rfaResult = null
+      rfaError = null
+      error = null
+      ticked = new Set()
+      validatingRfa = false
+      void inspect(null)
+    })
+  })
 
-  async function inspect() {
+  async function inspect(modeOverride?: 'template' | 'project' | null) {
+    const gen = ++inspectGeneration
+    const explicitMode = modeOverride !== undefined ? modeOverride : selectedMode
     loading = true
     error = null
     try {
-      model = await request('gisStandard.inspect', { stationFolder: '' })
-      ticked = initiallyTicked(model.proposals)
+      const next = await request(
+        'gisStandard.inspect',
+        explicitMode ? { stationFolder: '', mode: explicitMode } : { stationFolder: '' }
+      )
+      if (gen !== inspectGeneration) return
+      model = next
+      ticked = initiallyTicked(next.proposals)
     } catch (err: any) {
+      if (gen !== inspectGeneration) return
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
     } finally {
-      loading = false
+      if (gen === inspectGeneration) {
+        loading = false
+      }
     }
   }
 
-  async function apply(kind: 'setup' | 'fix') {
+  async function changeReadinessMode(next: 'template' | 'project') {
+    selectedMode = next
+    await inspect(next)
+  }
+
+  async function apply(kind: 'setup' | 'prepareTemplate' | 'fix') {
+    const docGen = documentGeneration
     applying = kind
     error = null
     applied = null
@@ -67,31 +113,70 @@
       const response: GisStandardApplyResponse =
         kind === 'setup'
           ? await request('gisStandard.setup', {})
-          : await request('gisStandard.fixFloorTypes', { accepted: accepted.map((proposal) => ({ floorTypeId: proposal.floorTypeId, standardTypeName: proposal.standardTypeName })) })
+          : kind === 'prepareTemplate'
+            ? await request('gisStandard.prepareTemplate', {})
+            : await request('gisStandard.fixFloorTypes', { accepted: accepted.map((proposal) => ({ floorTypeId: proposal.floorTypeId, standardTypeName: proposal.standardTypeName })) })
+      if (docGen !== documentGeneration) return
       applied = {
         title:
           kind === 'setup'
             ? $t('GisStandard.Setup.Done', 'Set up model applied')
-            : format($t('GisStandard.Fix.Done', '{0} floor type(s) fixed'), accepted.length - response.skipped.length),
+            : kind === 'prepareTemplate'
+              ? $t('GisStandard.Readiness.PrepareTemplate.Done', 'Template prepared')
+              : format($t('GisStandard.Fix.Done', '{0} floor type(s) fixed'), accepted.length - response.skipped.length),
         log: response.log,
         skipped: response.skipped
       }
       void refreshReadiness()
     } catch (err: any) {
+      if (docGen !== documentGeneration) return
       error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
     } finally {
       applying = null
     }
-    await inspect()
+    if (docGen === documentGeneration) {
+      await inspect()
+    }
+  }
+
+  async function validateRfaFolder() {
+    const gen = ++rfaGeneration
+    validatingRfa = true
+    rfaError = null
+    try {
+      const picked = await request('dialog.openFolder', {
+        title: $t('GisStandard.Readiness.ValidateRfa.Title', 'Select a folder of .rfa family files')
+      })
+      if (gen !== rfaGeneration) return
+      if (picked.error) {
+        rfaError = picked.error
+        return
+      }
+      if (!picked.path) {
+        return
+      }
+      const next = await request('gisStandard.validateRfaFolder', { folderPath: picked.path })
+      if (gen !== rfaGeneration) return
+      rfaResult = next
+    } catch (err: any) {
+      if (gen !== rfaGeneration) return
+      rfaError = err.message || $t('GisStandard.Readiness.ValidateRfa.Error', 'Could not validate the .rfa folder.')
+    } finally {
+      if (gen === rfaGeneration) {
+        validatingRfa = false
+      }
+    }
   }
 
   // The audit's one-click repair: writes the standard type's values back onto a floor type with a standard name.
   async function resetFloorType(floorTypeId: number) {
+    const docGen = documentGeneration
     applying = 'reset'
     error = null
     applied = null
     try {
       const response = await request('gisStandard.resetFloorType', { floorTypeId })
+      if (docGen !== documentGeneration) return
       applied = {
         title: response.log.length
           ? $t('GisStandard.ResetFloorType.Done', 'Floor type reset to the standard')
@@ -101,11 +186,14 @@
       }
       void refreshReadiness()
     } catch (err: any) {
+      if (docGen !== documentGeneration) return
       error = err.message || $t('GisStandard.Error.Apply', 'Revit did not apply the change. The model is unchanged.')
     } finally {
       applying = null
     }
-    await inspect()
+    if (docGen === documentGeneration) {
+      await inspect()
+    }
   }
 
   function toggle(proposal: GisFloorTypeProposalItem, checked: boolean) {
@@ -130,7 +218,7 @@
   promise={$t('GisStandard.Promise', 'Check the model against the Kanizu GIS standard and bring it there. Nothing changes until you apply it.')}
 >
   {#snippet actions()}
-    <Button icon="refresh-cw" onclick={inspect} disabled={busy} busy={loading}>{$t('GisStandard.Refresh', 'Check again')}</Button>
+    <Button icon="refresh-cw" onclick={() => inspect()} disabled={busy} busy={loading}>{$t('GisStandard.Refresh', 'Check again')}</Button>
   {/snippet}
   {#snippet summary()}
     {#if model}
@@ -190,6 +278,22 @@
               {#each model.exportBlockers as blocker, index (index)}<li>{blocker}</li>{/each}
             </ul>
           </Banner>
+        {/if}
+
+        {#if model.readiness}
+          <ReadinessChecklist
+            readiness={model.readiness}
+            {busy}
+            preparingTemplate={applying === 'prepareTemplate'}
+            {validatingRfa}
+            {rfaResult}
+            {rfaError}
+            onModeChange={changeReadinessMode}
+            onPrepareTemplate={() => apply('prepareTemplate')}
+            onValidateRfaFolder={validateRfaFolder}
+            onSelectElements={select}
+            onDismissRfaError={() => (rfaError = null)}
+          />
         {/if}
 
         <Card title={$t('GisStandard.Setup.Title', 'Set up model')} description={$t('GisStandard.Setup.Description', 'Binds the shared parameters and adds the GIS_ materials and standard floor types. Nothing is deleted and no floor changes type.')}>

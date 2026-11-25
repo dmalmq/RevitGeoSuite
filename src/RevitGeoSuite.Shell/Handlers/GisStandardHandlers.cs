@@ -15,18 +15,20 @@ using RevitGeoSuite.Shell.Standards;
 
 namespace RevitGeoSuite.Shell.Handlers;
 
-/// <summary>Audits the active model and previews what Set up model and Fix floor types would change. Reads only.</summary>
+/// <summary>Audits the active model and previews what Set up model, Prepare Template and Fix floor types would change. Reads only.</summary>
 public sealed class GisStandardInspectHandler : IRpcHandler
 {
     public string Method => "gisStandard.inspect";
 
     public Task<object?> HandleAsync(object? payload)
     {
-        string stationFolder = ((payload as JObject)?.ToObject<GisStandardInspectRequest>()?.StationFolder ?? string.Empty).Trim();
+        GisStandardInspectRequest request = (payload as JObject)?.ToObject<GisStandardInspectRequest>() ?? new GisStandardInspectRequest();
+        string stationFolder = (request.StationFolder ?? string.Empty).Trim();
+        string? mode = string.IsNullOrWhiteSpace(request.Mode) ? null : request.Mode!.Trim();
         return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
         {
             using IDisposable? scope = stationFolder.Length > 0 ? GisRulesSourceFactory.ReadFrom(stationFolder) : null;
-            return (object?)GisStandardWork.Inspect(doc);
+            return (object?)GisStandardWork.Inspect(doc, mode);
         });
     }
 }
@@ -47,6 +49,64 @@ public sealed class GisStandardSetupHandler : IRpcHandler
             GisStandardNotifier.Instance.Refresh(doc, force: true);
             return (object?)new GisStandardApplyResponse { Log = log.ToArray() };
         });
+}
+
+/// <summary>Prepare Template: runs Set up model plus creates/updates the 4 QA schedules and Kanizu GIS Export Plan view template in one transaction.</summary>
+public sealed class GisStandardPrepareTemplateHandler : IRpcHandler
+{
+    public string Method => "gisStandard.prepareTemplate";
+
+    public Task<object?> HandleAsync(object? payload) =>
+        RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+        {
+            GisStandardWork.RequireEditable(doc);
+            GisToolStandard standard = GisToolStandard.LoadEmbedded();
+            ModelSnapshot snapshot = ModelSnapshotReader.Read(doc);
+            SetupPlan plan = SetupPlanner.Plan(snapshot, standard);
+            ExportViewPlan views = ExportViewPlanner.Plan(ExportViewSetup.Read(doc));
+            ReadinessCheckSnapshot readiness = GisStandardStateReader.ReadReadiness(doc, snapshot);
+            TemplatePreparationPlan templatePlan = TemplateStandardPlanner.Plan(
+                readiness.Schedules,
+                readiness.ViewTemplateNames,
+                readiness.ExportPlanTemplateIssues);
+            IReadOnlyList<string> log = TemplateStandardWriter.PrepareTemplate(doc, standard, plan, views, templatePlan);
+            GisStandardNotifier.Instance.Refresh(doc, force: true);
+            return (object?)new GisStandardApplyResponse { Log = log.ToArray() };
+        });
+}
+
+/// <summary>Validates a folder of .rfa family files against standards/families.json and door opening parameter rules.</summary>
+public sealed class GisStandardValidateRfaFolderHandler : IRpcHandler
+{
+    public string Method => "gisStandard.validateRfaFolder";
+
+    public Task<object?> HandleAsync(object? payload)
+    {
+        GisRfaValidationRequest request = (payload as JObject)?.ToObject<GisRfaValidationRequest>() ?? new GisRfaValidationRequest();
+        string folderPath = (request.FolderPath ?? string.Empty).Trim();
+        return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
+        {
+            RfaFolderValidationResult result = RfaFamilyValidator.ValidateFolder(doc, folderPath, GisToolStandard.LoadEmbedded());
+            return (object?)new GisRfaValidationResponse
+            {
+                FolderPath = folderPath,
+                TotalFilesFound = result.TotalFilesFound,
+                InspectedFileCount = result.InspectedFileCount,
+                Truncated = result.Truncated,
+                PassCount = result.Items.Count(item => item.Status == ReadinessCheckStatus.Pass),
+                WarnCount = result.Items.Count(item => item.Status == ReadinessCheckStatus.Warn),
+                FailCount = result.Items.Count(item => item.Status == ReadinessCheckStatus.Fail),
+                Items = result.Items.Select(item => new GisRfaValidationItem
+                {
+                    FamilyName = item.FamilyName,
+                    Category = item.Category,
+                    Status = GisStandardWork.StatusToken(item.Status),
+                    Detail = item.Detail,
+                    FilePath = item.FilePath,
+                }).ToArray(),
+            };
+        });
+    }
 }
 
 /// <summary>Fix floor types: applies the accepted proposals, matched again from the model as it is now.</summary>
@@ -145,7 +205,7 @@ public sealed class GisSelectElementsHandler : IRpcHandler
 
 internal static class GisStandardWork
 {
-    public static GisStandardInspectResponse Inspect(Document document)
+    public static GisStandardInspectResponse Inspect(Document document, string? modeText = null)
     {
         RequireProject(document);
         GisToolStandard standard = GisToolStandard.LoadEmbedded();
@@ -154,6 +214,17 @@ internal static class GisStandardWork
         SetupPlan plan = SetupPlanner.Plan(snapshot, standard);
         ExportViewSnapshot viewSnapshot = ExportViewSetup.Read(document);
         ExportViewPlan views = ExportViewPlanner.Plan(viewSnapshot);
+        GisReadinessSummary? readiness = null;
+        try
+        {
+            ReadinessCheckSnapshot readinessSnapshot = GisStandardStateReader.ReadReadiness(document, snapshot);
+            ProjectReadinessReport readinessReport = ProjectReadinessEvaluator.Evaluate(readinessSnapshot, ParseMode(modeText), standard);
+            readiness = MapReadiness(readinessReport);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            System.Diagnostics.Trace.WriteLine($"Reading GIS readiness failed: {ex}");
+        }
         return new GisStandardInspectResponse
         {
             DocumentTitle = document.Title ?? string.Empty,
@@ -202,8 +273,76 @@ internal static class GisStandardWork
                 })
                 .ToArray(),
             FixBlocker = FloorTypeMatcher.WriteBlocker(snapshot),
+            Readiness = readiness,
         };
     }
+
+    internal static string StatusToken(ReadinessCheckStatus status) => status switch
+    {
+        ReadinessCheckStatus.Pass => "pass",
+        ReadinessCheckStatus.Warn => "warn",
+        ReadinessCheckStatus.Fail => "fail",
+        _ => "not_applicable",
+    };
+
+    private static string ActionToken(ReadinessActionKind action) => action switch
+    {
+        ReadinessActionKind.PrepareTemplate => "prepareTemplate",
+        ReadinessActionKind.SetupModel => "setupModel",
+        ReadinessActionKind.FixFloorTypes => "fixFloorTypes",
+        _ => "none",
+    };
+
+    private static ReadinessMode? ParseMode(string? modeText)
+    {
+        if (string.Equals(modeText, "template", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReadinessMode.Template;
+        }
+
+        if (string.Equals(modeText, "project", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReadinessMode.Project;
+        }
+
+        return null;
+    }
+
+    private static GisReadinessSummary MapReadiness(ProjectReadinessReport report) => new()
+    {
+        Mode = report.Mode == ReadinessMode.Template ? "template" : "project",
+        SuggestedMode = report.SuggestedMode == ReadinessMode.Template ? "template" : "project",
+        ScorePercent = report.ScorePercent,
+        IsReady = report.IsReady,
+        ApplicableCount = report.ApplicableCount,
+        PassCount = report.PassCount,
+        WarnCount = report.WarnCount,
+        FailCount = report.FailCount,
+        NotApplicableCount = report.NotApplicableCount,
+        CanPrepareTemplate = report.CanPrepareTemplate,
+        CanSetupModel = report.CanSetupModel,
+        CanFixFloorTypes = report.CanFixFloorTypes,
+        PrepareTemplateLines = TemplateStandardPlanner.Describe(report.TemplatePlan).ToArray(),
+        Groups = report.Groups.Select(group => new GisReadinessGroup
+        {
+            Id = group.Id,
+            Title = group.Title,
+            Status = StatusToken(group.Status),
+            PassCount = group.PassCount,
+            WarnCount = group.WarnCount,
+            FailCount = group.FailCount,
+            NotApplicableCount = group.NotApplicableCount,
+            Items = group.Items.Select(item => new GisReadinessItem
+            {
+                Id = item.Id,
+                Title = item.Title,
+                Status = StatusToken(item.Status),
+                Detail = item.Detail,
+                Action = ActionToken(item.Action),
+                ElementIds = item.ElementIds.ToArray(),
+            }).ToArray(),
+        }).ToArray(),
+    };
 
     public static void RequireProject(Document document)
     {
