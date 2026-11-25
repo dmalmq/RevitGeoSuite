@@ -134,6 +134,26 @@ public sealed class CesiumStationFolderTests : IDisposable
     }
 
     [Fact]
+    public void Previous_version_skips_a_tiles_only_version_with_an_empty_gis_folder()
+    {
+        DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);
+        CesiumPackageLayout gis = PublishGis("model-a", start);
+
+        CesiumPackageLayout staging = CesiumStationFolder.CreateStagingLayout(_station);
+        File.WriteAllText(Path.Combine(staging.TilesDirectory, "tileset.json"), "{}");
+        CesiumPackageManifest tilesOnly = new CesiumPackageLayoutBuilder().WriteManifest(staging, Inputs("model-a"));
+        tilesOnly.CreatedUtc = start.AddHours(1);
+        File.WriteAllText(staging.ManifestPath, CesiumPackageManifestSerializer.Serialize(tilesOnly));
+        CesiumPackageLayout tiles = CesiumStationFolder.Publish(staging, _station, tilesOnly);
+
+        CesiumPackageLayout newest = PublishGis("model-a", start.AddHours(2));
+
+        Assert.True(Directory.Exists(tiles.GisDirectory));
+        Assert.Null(tilesOnly.Gis);
+        Assert.Equal(gis.RootDirectory, CesiumStationFolder.PreviousVersion(newest.RootDirectory));
+    }
+
+    [Fact]
     public void Previous_version_follows_the_model_id_into_the_folder_a_Save_As_left()
     {
         DateTime start = new(2026, 11, 15, 1, 0, 0, DateTimeKind.Utc);

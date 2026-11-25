@@ -18,6 +18,7 @@ using RevitGeoSuite.RevitInterop.Storage;
 using RevitGeoSuite.SharedUI.Localization;
 using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Web.Contracts;
+using RevitGeoSuite.Shell.Standards;
 using RevitGeoSuite.Tiles3DExport;
 
 namespace RevitGeoSuite.Shell.Handlers;
@@ -204,15 +205,13 @@ public sealed class StationSendRunHandler : IRpcHandler
                     throw;
                 }
 
-                if (ex is OperationCanceledException)
-                {
-                    throw new OperationCanceledException($"{ex.Message} {restoreFailure}", ex, ct);
-                }
-
+                // Not an OperationCanceledException even when cancelled: JobManager reports those as
+                // a bare "Cancelled", and the user must learn the model still points at the new folder.
                 throw new InvalidOperationException($"{ex.Message} {restoreFailure}", ex);
             }
 
             // The version is on the share from here on: a failed count must not read as a failed send.
+            GisStandardNotifier.Instance.NoteExportPublished();
             progress.Report(new JobProgress { Phase = "compare", Percent = 90, Message = Text("Send.Progress.Compare") });
             var response = new StationSendRunResponse { VersionFolder = layout.RootDirectory };
             try

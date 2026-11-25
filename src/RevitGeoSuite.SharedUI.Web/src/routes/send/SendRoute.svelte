@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { request } from '$lib/bridge/rpc'
+  import { on, request } from '$lib/bridge/rpc'
   import { startJob, type JobProgress } from '$lib/bridge/jobs'
   import type { GisAuditFindingItem, GisStandardInspectResponse, StationSendRunResponse, StationSendStateResponse } from '$lib/bridge/contracts.generated'
   import { t } from '$lib/i18n'
@@ -28,6 +28,16 @@
   let failure = $state<string | null>(null)
 
   const busy = $derived(phase === 'loading' || phase === 'auditing' || phase === 'sending')
+  /** Another Revit model became active while the page was busy; read it once the page is idle. */
+  let documentChanged = $state(false)
+
+  $effect(() => {
+    if (busy || !documentChanged) return
+    documentChanged = false
+    // A send that finished keeps its outcome on screen; an audit's error list belonged to the old model.
+    if (phase === 'blocked') void load(false)
+    else void readState()
+  })
 
   onMount(() => {
     void load(takeSendNow())
@@ -36,7 +46,15 @@
       if (takeSendNow() && !busy) void load(true)
     }
     window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
+    // The page's state, and the document key a send is bound to, belong to the model it read.
+    const offDocumentChanged = on('document.changed', () => {
+      if (busy) documentChanged = true
+      else void load(false)
+    })
+    return () => {
+      window.removeEventListener('hashchange', onHashChange)
+      offDocumentChanged()
+    }
   })
 
   /** True on #/send/now, which the ribbon opens; leaves the address at #/send so a reload does not send again. */
@@ -58,6 +76,17 @@
     } catch (err: any) {
       failure = err?.message ?? $t('Send.Error.Read', 'Could not read the model.')
       phase = 'ready'
+    }
+  }
+
+  /** Reads the active model's state again without leaving the current phase. */
+  async function readState() {
+    try {
+      sendState = await request<StationSendStateResponse>('station.send.getState', {})
+      folder = sendState.stationFolder
+      folderKind = sendState.folderKind
+    } catch (err: any) {
+      failure = err?.message ?? $t('Send.Error.Read', 'Could not read the model.')
     }
   }
 

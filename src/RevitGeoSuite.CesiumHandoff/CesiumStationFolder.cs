@@ -160,14 +160,15 @@ public static class CesiumStationFolder
                 continue;
             }
 
+            // Every package has a gis/ folder, empty in a tiles-only one, so the manifest decides.
             CesiumPackageManifest? manifest = TryReadManifest(candidate);
-            if (manifest is null
-                || (!sameFolder && !string.Equals(manifest.Source?.ModelId?.Trim(), modelId, StringComparison.OrdinalIgnoreCase)))
+            if (manifest?.Gis?.Artifacts is not { Count: > 0 }
+                || (!sameFolder && !string.Equals(manifest!.Source?.ModelId?.Trim(), modelId, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
 
-            DateTime created = manifest.CreatedUtc.ToUniversalTime();
+            DateTime created = manifest!.CreatedUtc.ToUniversalTime();
             if (created > selfCreated)
             {
                 continue;
