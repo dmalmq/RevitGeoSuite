@@ -15,6 +15,8 @@ public enum HandoverVerificationStatus
     NumberOfSavesMismatch,
     MalformedJson,
     SchemaMismatch,
+    UnreadableDocument,
+    InvalidDocumentVersion,
 }
 
 /// <summary>Result of a <see cref="HandoverReceiptVerifier"/> run.</summary>
@@ -91,6 +93,13 @@ public static class HandoverReceiptVerifier
             || !TryReadNonNegativeInteger(model["numberOfSaves"], out int expectedSaves))
         {
             return Malformed("Receipt model requires a document version GUID and a non-negative save count.");
+        }
+
+        if (documentVersionGuid == Guid.Empty || numberOfSaves < 0)
+        {
+            return new HandoverVerificationResult(
+                HandoverVerificationStatus.InvalidDocumentVersion,
+                "The target .rvt did not report a valid document version GUID and non-negative save count.");
         }
 
         if (expectedGuid != documentVersionGuid)

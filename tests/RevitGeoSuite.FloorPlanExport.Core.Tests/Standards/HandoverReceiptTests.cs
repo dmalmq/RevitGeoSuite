@@ -116,6 +116,20 @@ public sealed class HandoverReceiptTests
     }
 
     [Fact]
+    public void EmptyDocumentVersionGuidOrNegativeSaveCountReportsInvalidDocumentVersion()
+    {
+        HandoverReceipt receipt = SampleReceipt();
+
+        HandoverVerificationResult emptyGuid = HandoverReceiptVerifier.Verify(receipt.ToJson(), Guid.Empty, 42);
+        Assert.False(emptyGuid.IsValid);
+        Assert.Equal(HandoverVerificationStatus.InvalidDocumentVersion, emptyGuid.Status);
+
+        HandoverVerificationResult negativeSaves = HandoverReceiptVerifier.Verify(receipt.ToJson(), DocVersion, -1);
+        Assert.False(negativeSaves.IsValid);
+        Assert.Equal(HandoverVerificationStatus.InvalidDocumentVersion, negativeSaves.Status);
+    }
+
+    [Fact]
     public void MalformedJsonAndSchemaMismatchAreReported()
     {
         HandoverVerificationResult malformed = HandoverReceiptVerifier.Verify("not json", DocVersion, 42);

@@ -254,6 +254,51 @@ describe('GisStandardRoute readiness checklist & Prepare Template', () => {
     expect(target.textContent).toContain('57%')
   })
 
+  it('shows mode-aware not-applicable label for template-hygiene in Project mode', async () => {
+    const { flushSync, mount, unmount } = await import('svelte')
+    const { default: GisStandardRoute } = await import('../GisStandardRoute.svelte')
+
+    const flush = async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      flushSync()
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const instance = mount(GisStandardRoute, { target })
+    cleanupInstance = () => unmount(instance)
+    flushSync()
+
+    const payload = sampleInspect('project', true)
+    payload.readiness.groups.splice(2, 0, {
+      id: 'template-hygiene',
+      title: 'Template zero-identity hygiene',
+      status: 'not_applicable',
+      passCount: 0,
+      warnCount: 0,
+      failCount: 0,
+      notApplicableCount: 2,
+      items: [
+        {
+          id: 'template-identity',
+          title: 'No baked-in project identity',
+          status: 'not_applicable',
+          detail: 'Not applicable in Project mode — identities belong on a per-project .rvt.',
+          action: 'none',
+          elementIds: []
+        }
+      ]
+    })
+
+    reply(sent('gisStandard.inspect')[0], payload)
+    await flush()
+
+    expect(target.textContent).toContain('Template zero-identity hygiene')
+    expect(target.textContent).toContain('Not required in Project mode')
+    expect(target.textContent).not.toContain('Not required in Template mode')
+  })
+
   it('toggles readiness checklist accordion sections with Enter and preserves ARIA expanded state', async () => {
     const { target, flush } = await mountRoute('template', false)
 

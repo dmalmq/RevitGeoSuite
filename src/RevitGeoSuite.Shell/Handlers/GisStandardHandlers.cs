@@ -43,10 +43,11 @@ public sealed class GisStandardSetupHandler : IRpcHandler
         {
             GisStandardWork.RequireEditable(doc);
             GisToolStandard standard = GisToolStandard.LoadEmbedded();
-            SetupPlan plan = SetupPlanner.Plan(ModelSnapshotReader.Read(doc), standard);
+            ModelSnapshot snapshot = ModelSnapshotReader.Read(doc);
+            SetupPlan plan = SetupPlanner.Plan(snapshot, standard);
             ExportViewPlan views = ExportViewPlanner.Plan(
                 ExportViewSetup.Read(doc),
-                assignLevelIds: !GisStandardStateReader.IsTemplateDocument(doc));
+                assignLevelIds: GisStandardStateReader.SuggestedReadinessMode(doc, snapshot) == ReadinessMode.Project);
             IReadOnlyList<string> log = plan.IsEmpty && views.IsEmpty ? Array.Empty<string>() : GisStandardWriter.ApplySetup(doc, standard, plan, views);
             GisStandardNotifier.Instance.Refresh(doc, force: true);
             return (object?)new GisStandardApplyResponse { Log = log.ToArray() };
@@ -218,12 +219,14 @@ internal static class GisStandardWork
         GisStandardStatus status = GisStandardStateReader.Check(document);
         SetupPlan plan = SetupPlanner.Plan(snapshot, standard);
         ExportViewSnapshot viewSnapshot = ExportViewSetup.Read(document);
-        ExportViewPlan views = ExportViewPlanner.Plan(viewSnapshot, assignLevelIds: !GisStandardStateReader.IsTemplateDocument(document));
+        ReadinessMode? modeOverride = ParseMode(modeText);
+        ReadinessMode effectiveMode = modeOverride ?? GisStandardStateReader.SuggestedReadinessMode(document, snapshot);
+        ExportViewPlan views = ExportViewPlanner.Plan(viewSnapshot, assignLevelIds: effectiveMode == ReadinessMode.Project);
         GisReadinessSummary? readiness = null;
         try
         {
-            ReadinessCheckSnapshot readinessSnapshot = GisStandardStateReader.ReadReadiness(document, snapshot);
-            ProjectReadinessReport readinessReport = ProjectReadinessEvaluator.Evaluate(readinessSnapshot, ParseMode(modeText), standard);
+            ReadinessCheckSnapshot readinessSnapshot = GisStandardStateReader.ReadReadiness(document, snapshot, modeOverride);
+            ProjectReadinessReport readinessReport = ProjectReadinessEvaluator.Evaluate(readinessSnapshot, modeOverride, standard);
             readiness = MapReadiness(readinessReport);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

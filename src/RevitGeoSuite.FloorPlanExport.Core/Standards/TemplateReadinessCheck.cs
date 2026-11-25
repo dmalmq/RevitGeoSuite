@@ -255,26 +255,25 @@ public sealed class ReadinessCheckSnapshot
 
     public IReadOnlyList<LinkedModelReadinessInfo> LinkedModels { get; set; } = Array.Empty<LinkedModelReadinessInfo>();
 
-    public ReadinessMode SuggestedMode
+    public ReadinessMode SuggestedMode => SuggestMode(DocumentPath, DocumentTitle, IsEmptyModel);
+
+    public static ReadinessMode SuggestMode(string? documentPath, string? documentTitle, bool isEmptyModel)
     {
-        get
+        string path = (documentPath ?? string.Empty).Trim();
+        string title = (documentTitle ?? string.Empty).Trim();
+        if (path.EndsWith(".rte", StringComparison.OrdinalIgnoreCase)
+            || title.EndsWith(".rte", StringComparison.OrdinalIgnoreCase))
         {
-            string path = (DocumentPath ?? string.Empty).Trim();
-            string title = (DocumentTitle ?? string.Empty).Trim();
-            if (path.EndsWith(".rte", StringComparison.OrdinalIgnoreCase)
-                || title.EndsWith(".rte", StringComparison.OrdinalIgnoreCase))
-            {
-                return ReadinessMode.Template;
-            }
-
-            if (path.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
-                || title.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase))
-            {
-                return ReadinessMode.Project;
-            }
-
-            return IsEmptyModel ? ReadinessMode.Template : ReadinessMode.Project;
+            return ReadinessMode.Template;
         }
+
+        if (path.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
+            || title.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReadinessMode.Project;
+        }
+
+        return isEmptyModel ? ReadinessMode.Template : ReadinessMode.Project;
     }
 }
 
