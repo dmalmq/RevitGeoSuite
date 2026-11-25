@@ -14,6 +14,9 @@ internal sealed class StepResult(string id, string title)
     public List<string> Failures { get; } = new();
     public List<string> Screenshots { get; } = new();
 
+    /// <summary>How long the step took, its leftover-dialog check included; null for a step that never ran.</summary>
+    public double? Seconds { get; set; }
+
     public void Note(string text) => Notes.Add(text);
 
     /// <summary>Records a failed expectation and carries on, so one run reports every problem it can see.</summary>
@@ -76,10 +79,10 @@ internal sealed class Report(string folder)
         int known = Steps.Count(step => step.Outcome == Outcome.KnownFail);
         string knownText = known == 0 ? string.Empty : $", {known} known product failure(s)";
         text.AppendLine().AppendLine($"**{(failed == 0 ? "PASS" : "FAIL")}**: {passed} passed, {failed} failed{knownText}, {notRun} not run.").AppendLine();
-        text.AppendLine("| Step | What | Result |").AppendLine("|---|---|---|");
+        text.AppendLine("| Step | What | Result | Seconds |").AppendLine("|---|---|---|---|");
         foreach (StepResult step in Steps)
         {
-            text.AppendLine($"| {step.Id} | {Cell(step.Title)} | {Label(step.Outcome)} |");
+            text.AppendLine($"| {step.Id} | {Cell(step.Title)} | {Label(step.Outcome)} | {Seconds(step.Seconds)} |");
         }
 
         foreach (StepResult step in Steps)
@@ -122,6 +125,8 @@ internal sealed class Report(string folder)
         Outcome.KnownFail => "known product failure",
         _ => "not run",
     };
+
+    internal static string Seconds(double? seconds) => seconds is { } value ? value.ToString("0", System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
 
     private static string Cell(string text) => text.Replace("|", "\\|");
 }

@@ -17,14 +17,24 @@ internal static class JournalScan
             ? Directory.GetFiles(folder, "journal.*.txt").Where(file => File.GetLastWriteTimeUtc(file) >= sinceUtc).OrderBy(file => file).ToList()
             : Array.Empty<string>();
 
-    /// <summary>Every line of the journals written since <paramref name="sinceUtc"/>, read shared (Revit keeps the journal open).</summary>
-    public static List<string> LinesSince(string folder, DateTime sinceUtc) =>
-        JournalsSince(folder, sinceUtc).SelectMany(file =>
-        {
-            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var reader = new StreamReader(stream);
-            return reader.ReadToEnd().Split('\n').Select(line => line.TrimEnd('\r')).ToList();
-        }).ToList();
+    /// <summary>
+    /// Where each journal ends now. Several scenarios share one Revit and so one journal: a scenario reads only
+    /// the lines written after its mark (<see cref="JournalMark.LinesAfter"/>), never an earlier scenario's.
+    /// </summary>
+    public static JournalMark Mark(string folder)
+    {
+        DateTime nowUtc = DateTime.UtcNow;
+        var ends = JournalsSince(folder, nowUtc.AddDays(-1)).ToDictionary(file => file, file => Read(file).Count(c => c == '\n'), StringComparer.OrdinalIgnoreCase);
+        return new JournalMark(folder, nowUtc, ends);
+    }
+
+    /// <summary>A journal's text, read shared: Revit keeps the journal open.</summary>
+    internal static string Read(string file)
+    {
+        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
 
     public static JournalResult Scan(IEnumerable<string> lines, IEnumerable<string> requiredNames)
     {
@@ -40,3 +50,17 @@ internal sealed record JournalResult(IReadOnlyList<string> MissingNames, IReadOn
 {
     public bool Passed => MissingNames.Count == 0 && BadLines.Count == 0;
 }
+
+/// <summary>The end of each journal at one moment (<see cref="JournalScan.Mark"/>).</summary>
+internal sealed record JournalMark(string Folder, DateTime TakenUtc, IReadOnlyDictionary<string, int> Ends)
+{
+    /// <summary>The journals written since the mark, and their lines after it: complete lines only were counted, so none is lost.</summary>
+    public (IReadOnlyList<string> Journals, List<string> Lines) LinesAfter()
+    {
+        IReadOnlyList<string> journals = JournalScan.JournalsSince(Folder, TakenUtc.AddMinutes(-1));
+        List<string> lines = journals.SelectMany(file =>
+            JournalScan.Read(file).Split('\n').Skip(Ends.TryGetValue(file, out int end) ? end : 0).Select(line => line.TrimEnd('\r'))).ToList();
+        return (journals, lines);
+    }
+}
+

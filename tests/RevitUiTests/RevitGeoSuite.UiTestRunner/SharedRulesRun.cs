@@ -55,13 +55,13 @@ internal sealed partial class GisStandardRun
     {
         string? inRevit = host.Call("ping")["floorPlanData"]?.GetValue<string>();
         step.Note($"{Sandbox.Variable} in Revit: {inRevit ?? "(not reported by this test host)"}.");
-        string? problem = Sandbox.Problem(inRevit, options.OutputFolder);
+        string? problem = Sandbox.Problem(inRevit, options.RunFolder);
         if (!step.Check(problem == null, problem ?? string.Empty))
         {
             return Task.CompletedTask;
         }
 
-        string store = Sandbox.Store(options.OutputFolder);
+        string store = Sandbox.Store(options.RunFolder);
         Directory.CreateDirectory(store);
         string real = Sandbox.RealStore();
         if (!step.Check(!TestPaths.IsUnder(store, real) && !TestPaths.IsUnder(real, store), $"The sandbox store {store} and the real folder {real} are different folders."))
@@ -69,7 +69,7 @@ internal sealed partial class GisStandardRun
             return Task.CompletedTask;
         }
 
-        string beforeFile = Path.Combine(options.OutputFolder, Sandbox.BeforeFile);
+        string beforeFile = Path.Combine(options.RunFolder, Sandbox.BeforeFile);
         if (!step.Check(File.Exists(beforeFile), $"{beforeFile} records the real folder from before the run (Run-UiTests.ps1 -FloorPlanDataSandbox writes it)."))
         {
             return Task.CompletedTask;
@@ -423,7 +423,7 @@ internal sealed partial class GisStandardRun
 
     private Task RealFolderUnchanged(StepResult step)
     {
-        string beforeFile = Path.Combine(options.OutputFolder, Sandbox.BeforeFile);
+        string beforeFile = Path.Combine(options.RunFolder, Sandbox.BeforeFile);
         if (!File.Exists(beforeFile))
         {
             step.Check(false, $"{beforeFile} is missing, so the real folder cannot be compared. It is written only by Run-UiTests.ps1 -FloorPlanDataSandbox.");

@@ -59,6 +59,25 @@ public class JournalScanTests
     }
 }
 
+public class JournalMarkTests
+{
+    [Fact]
+    public void A_scenario_reads_only_the_journal_lines_written_after_its_mark()
+    {
+        string folder = Directory.CreateTempSubdirectory().FullName;
+        string journal = Path.Combine(folder, "journal.0042.txt");
+        File.WriteAllText(journal, "'C earlier scenario\r\nHANDLER_ERROR from the earlier scenario\r\n'C half a li");
+
+        JournalMark mark = JournalScan.Mark(folder);
+        File.AppendAllText(journal, "ne\r\n'C Kanizu GIS: Set up model\r\n");
+        (IReadOnlyList<string> journals, List<string> lines) = mark.LinesAfter();
+
+        Assert.Equal(new[] { journal }, journals);
+        Assert.Equal(new[] { "'C half a line", "'C Kanizu GIS: Set up model", "" }, lines);
+        Assert.True(JournalScan.Scan(lines, new[] { "Kanizu GIS: Set up model" }).Passed);
+    }
+}
+
 public class RunOptionsTests
 {
     [Fact]
@@ -92,6 +111,67 @@ public class RunOptionsTests
         Assert.All(GisStandardRun.Scenarios, scenario => Assert.Contains(scenario.Name, RunOptions.Usage));
         Assert.Equal(Path.GetFullPath("/tmp/revit-test/before"), RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--baseline-export", "/tmp/revit-test/before" }).BaselineExport);
         Assert.Throws<ArgumentException>(() => RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--script", "everything" }));
+    }
+
+    private const string SandboxSettings = "/tmp/revit-test/auto/9/appdata/RevitGeoSuite/FloorPlanExport/settings.json";
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("/tmp/appdata/RevitGeoSuite/FloorPlanExport/settings.json")]
+    public void Several_scenarios_refuse_an_export_store_outside_the_run(string? settings)
+    {
+        var args = new List<string> { "--model", "/tmp/revit-test/a.rvt", "--out", "/tmp/revit-test/auto/9", "--scenario", "b1,b2a" };
+        if (settings != null)
+        {
+            args.AddRange(new[] { "--export-settings", settings });
+        }
+
+        Assert.Contains("-FloorPlanDataSandbox", Assert.Throws<ArgumentException>(() => RunOptions.Parse(args.ToArray())).Message);
+    }
+
+    [Fact]
+    public void Several_scenarios_run_in_order_each_in_a_folder_of_its_own()
+    {
+        RunOptions options = RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--out", "/tmp/revit-test/auto/9", "--scenario", "b1, c3a-reshape", "--export-settings", SandboxSettings });
+
+        Assert.Equal(new[] { "b1", "c3a-reshape" }, options.ScenarioNames);
+        RunOptions reshape = options.ForScenario("c3a-reshape");
+        Assert.Equal("c3a-reshape", reshape.Script);
+        Assert.Equal(Path.Combine(Path.GetFullPath("/tmp/revit-test/auto/9"), "c3a-reshape"), reshape.OutputFolder);
+        Assert.Equal(Path.GetFullPath("/tmp/revit-test/auto/9"), reshape.RunFolder);
+    }
+
+    [Fact]
+    public void One_scenario_writes_into_out_itself()
+    {
+        RunOptions options = RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--out", "/tmp/revit-test/auto/9", "--scenario", "b1" });
+
+        Assert.Equal(Path.GetFullPath("/tmp/revit-test/auto/9"), options.ForScenario("b1").OutputFolder);
+    }
+
+    [Fact]
+    public void All_names_known_scenarios_with_h4_last()
+    {
+        RunOptions options = RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--out", "/tmp/revit-test/auto/9", "--scenario", "all", "--export-settings", SandboxSettings });
+
+        Assert.Equal(RunOptions.AllScenarios, options.ScenarioNames);
+        Assert.All(options.ScenarioNames, name => Assert.Contains(GisStandardRun.Scenarios, scenario => scenario.Name == name));
+        Assert.Equal("h4-shared-rules", options.ScenarioNames[^1]);
+        Assert.DoesNotContain("undo-probe", options.ScenarioNames);
+    }
+
+    [Theory]
+    [InlineData("b1,b1")]
+    [InlineData("b1,everything")]
+    [InlineData(",")]
+    public void Refuses_a_repeated_unknown_or_empty_scenario_list(string value) =>
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--scenario", value }));
+
+    [Fact]
+    public void Export_settings_must_be_the_pages_settings_file()
+    {
+        Assert.Equal(Path.GetFullPath("/tmp/appdata/settings.json"), RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--export-settings", "/tmp/appdata/settings.json" }).ExportSettings);
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(new[] { "--model", "/tmp/revit-test/a.rvt", "--export-settings", "/tmp/appdata/profiles.json" }));
     }
 
     [Fact]
