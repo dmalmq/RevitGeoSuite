@@ -317,7 +317,7 @@ public static class ExportViewPlanner
     /// <summary>Space between the floors and the crop, 5 m in feet.</summary>
     public const double CropMarginFeet = 5.0 / 0.3048;
 
-    public static ExportViewPlan Plan(ExportViewSnapshot snapshot)
+    public static ExportViewPlan Plan(ExportViewSnapshot snapshot, bool assignLevelIds = true)
     {
         HashSet<long> levelsWithGisView = new(snapshot.PlanViews.Where(view => view.IsGisView).Select(view => view.LevelId));
         HashSet<string> names = new(snapshot.ViewNames, StringComparer.OrdinalIgnoreCase);
@@ -343,7 +343,7 @@ public static class ExportViewPlanner
             !snapshot.HasTemplate,
             newViews,
             crops,
-            snapshot.Levels.Where(level => !level.HasLevelId),
+            assignLevelIds ? snapshot.Levels.Where(level => !level.HasLevelId) : Array.Empty<ExportViewLevel>(),
             CropFor(new ViewFrame(new Point2D(0, 0), 1, 0), snapshot.FloorPoints),
             RepairFor(snapshot.Template));
     }

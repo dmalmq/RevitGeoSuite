@@ -202,7 +202,7 @@
         <p class="font-medium text-foreground">
           {$t(
             'GisStandard.Readiness.PrepareTemplate.Hint',
-            'Runs Set up model and creates any missing Kanizu QA schedules (3) and the Kanizu GIS Export Plan view template in one transaction.'
+            'Runs Set up model and creates any missing Kanizu QA schedules (3) and the GIS Export view template in one transaction.'
           )}
         </p>
         <ul class="mt-1 ml-4 list-disc text-muted-foreground">

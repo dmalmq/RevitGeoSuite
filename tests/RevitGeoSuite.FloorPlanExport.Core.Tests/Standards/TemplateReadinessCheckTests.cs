@@ -103,7 +103,8 @@ public sealed class TemplateReadinessCheckTests
         Assert.Equal(ReadinessMode.Project, report.Mode);
         Assert.False(report.IsReady);
         Assert.Equal(3, report.FailCount);
-        Assert.Equal(0, report.NotApplicableCount);
+        // Template-hygiene emits 2 NotApplicable items in Project mode (KZ-TPL-001/002).
+        Assert.Equal(2, report.NotApplicableCount);
 
         ReadinessCheckGroup projectGroup = Assert.Single(report.Groups, g => g.Id == "project-setup");
         Assert.Equal(ReadinessCheckStatus.Fail, projectGroup.Status);
@@ -123,7 +124,8 @@ public sealed class TemplateReadinessCheckTests
         Assert.Equal(100, report.ScorePercent);
         Assert.Equal(0, report.FailCount);
         Assert.Equal(0, report.WarnCount);
-        Assert.Equal(0, report.NotApplicableCount);
+        // Template-hygiene emits 2 NotApplicable items in Project mode (KZ-TPL-001/002).
+        Assert.Equal(2, report.NotApplicableCount);
     }
 
     [Fact]

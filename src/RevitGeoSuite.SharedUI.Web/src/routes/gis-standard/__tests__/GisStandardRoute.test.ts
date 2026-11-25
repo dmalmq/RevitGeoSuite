@@ -117,7 +117,7 @@ function sampleInspect(mode: 'template' | 'project', prepared = false) {
         },
         {
           id: 'view-template-export-plan',
-          title: 'Kanizu GIS Export Plan',
+          title: 'GIS Export',
           status: prepared ? 'pass' : 'fail',
           detail: prepared ? 'Present.' : 'Missing view template.',
           action: prepared ? 'none' : 'prepareTemplate',
@@ -178,7 +178,7 @@ function sampleInspect(mode: 'template' | 'project', prepared = false) {
         ? []
         : [
             'Create QA schedule Kanizu GIS - Floors (gis_category, gis_restriction, category)',
-            'Create view template Kanizu GIS Export Plan'
+            'Create view template GIS Export'
           ],
       groups
     }
@@ -288,7 +288,7 @@ describe('GisStandardRoute readiness checklist & Prepare Template', () => {
     const prepReq = sent('gisStandard.prepareTemplate')[0]
     expect(prepReq).toBeDefined()
     reply(prepReq, {
-      log: ['Created QA schedule Kanizu GIS - Floors', 'Created view template Kanizu GIS Export Plan'],
+      log: ['Created QA schedule Kanizu GIS - Floors', 'Created view template GIS Export'],
       skipped: []
     })
     await flush()
@@ -299,7 +299,7 @@ describe('GisStandardRoute readiness checklist & Prepare Template', () => {
     await flush()
 
     expect(target.textContent).toContain('Template prepared')
-    expect(target.textContent).toContain('Created view template Kanizu GIS Export Plan')
+    expect(target.textContent).toContain('Created view template GIS Export')
     expect(target.textContent).toContain('100%')
   })
 

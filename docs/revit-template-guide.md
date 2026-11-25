@@ -21,7 +21,7 @@ This guide defines how to author and maintain the single master **Revit 2024 `.r
      - `Kanizu GIS - Floors` (`OST_Floors`: `gis_category`, `gis_restriction`, `category`, `name`, `id`)
      - `Kanizu GIS - Circulation` (multi-category: `gis_kind`, `gis_direction`, `gis_levels_served`, `name`, `id`)
      - `Kanizu GIS - Doors` (`OST_Doors`: `gis_door`, `gis_access_con`, `name`, `id`)
-   - Creates/repairs the **`Kanizu GIS Export Plan`** view template (coarse detail, Coordination discipline, cut plane 1200 mm / top clip 2300 mm, export-read model categories visible, only `GIS_*` line styles visible).
+   - Creates/repairs the **`GIS Export`** view template (coarse detail, Coordination discipline, cut plane 1200 mm / top clip 2300 mm, export-read model categories visible, only `GIS_*` line styles visible). A pre-T1 draft file may still carry a `Kanizu GIS Export Plan` template; readiness recognises it as a legacy alias so an existing draft is not flagged for a double create, but Prepare Template and Set up model never write that name.
 4. Load your approved station `.rfa` families (see Section 3).
 5. Confirm **Template** mode reaches **100% Ready** (all project-only checks — Japan CRS, `ModelId`, and level ordinals — are marked `N/A` in Template mode).
 6. Save the `.rte` file.
@@ -64,7 +64,8 @@ Use **Validate .rfa folder…** in `#/gis-standard` to inspect an external folde
 | Shared parameters (15 frozen GUIDs) & `gis_standard_version` | Required | Required |
 | 21 standard floor types & `GIS_*` materials | Required | Required |
 | Loaded families (`families.json` `gis_kind` + door `gis_door`/`gis_access_con`) | Required | Required |
-| 3 QA schedules & `Kanizu GIS Export Plan` view template | Required | Required |
+| 3 QA schedules, `GIS Export` view template & hide-filter guard (`KZ-VIEW-004`) | Required | Required |
+| Zero-identity template hygiene — no baked-in `ModelId`, `GisStationFolder`, `level_id`, `id`, or `gis_key` (`KZ-TPL-001`/`002`) | Required | **N/A** |
 | Japan Plane Rectangular CRS (`EPSG:6669`–`6687`) verified | **N/A** | Required |
 | Host `ModelId` & all loaded Revit links have stable `ModelId` | **N/A** | Required |
 | Project levels have complete, non-duplicate `ordinal` & `short_name` | **N/A** | Required |

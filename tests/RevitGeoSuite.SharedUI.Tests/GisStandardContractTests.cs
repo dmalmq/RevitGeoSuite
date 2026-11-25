@@ -89,7 +89,7 @@ public sealed class GisStandardContractTests
                 Log = new[]
                 {
                     "Created QA schedule Kanizu GIS - Floors (gis_category, gis_restriction, category)",
-                    "Created view template Kanizu GIS Export Plan",
+                    "Created view template GIS Export",
                 },
             });
     }
@@ -137,7 +137,7 @@ public sealed class GisStandardContractTests
 
         JObject prepResponse = await Dispatch(bridge, "gisStandard.prepareTemplate", new JObject());
         Assert.Contains(
-            "Created view template Kanizu GIS Export Plan",
+            "Created view template GIS Export",
             prepResponse["payload"]!["log"]!.Values<string>());
 
         JObject rfaResponse = await Dispatch(bridge, "gisStandard.validateRfaFolder", new JObject
