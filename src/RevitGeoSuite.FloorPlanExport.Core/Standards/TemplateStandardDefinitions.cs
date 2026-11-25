@@ -40,16 +40,20 @@ public sealed class QaScheduleDefinition
 /// <summary>Current state of one QA schedule read from a Revit document.</summary>
 public sealed class QaScheduleInfo
 {
-    public QaScheduleInfo(long elementId, string name, IEnumerable<string>? fieldNames = null)
+    public QaScheduleInfo(long elementId, string name, IEnumerable<string>? fieldNames = null, string categoryName = "")
     {
         ElementId = elementId;
         Name = name ?? string.Empty;
         FieldNames = (fieldNames ?? Array.Empty<string>()).ToList();
+        CategoryName = categoryName ?? string.Empty;
     }
 
     public long ElementId { get; }
 
     public string Name { get; }
+
+    /// <summary>Revit BuiltInCategory name (such as OST_Floors), or empty for a multi-category schedule.</summary>
+    public string CategoryName { get; }
 
     public IReadOnlyList<string> FieldNames { get; }
 }
@@ -57,12 +61,20 @@ public sealed class QaScheduleInfo
 /// <summary>One QA schedule action planned by <see cref="TemplateStandardPlanner"/>.</summary>
 public sealed class QaSchedulePlanStep
 {
-    public QaSchedulePlanStep(QaScheduleDefinition definition, bool createSchedule, IReadOnlyList<string> missingFields, long? existingScheduleId = null)
+    public QaSchedulePlanStep(
+        QaScheduleDefinition definition,
+        bool createSchedule,
+        IReadOnlyList<string> missingFields,
+        long? existingScheduleId = null,
+        bool categoryMismatch = false,
+        string actualCategoryName = "")
     {
         Definition = definition ?? throw new ArgumentNullException(nameof(definition));
         CreateSchedule = createSchedule;
         MissingFields = missingFields ?? throw new ArgumentNullException(nameof(missingFields));
         ExistingScheduleId = existingScheduleId;
+        CategoryMismatch = categoryMismatch;
+        ActualCategoryName = actualCategoryName ?? string.Empty;
     }
 
     public QaScheduleDefinition Definition { get; }
@@ -72,6 +84,12 @@ public sealed class QaSchedulePlanStep
     public IReadOnlyList<string> MissingFields { get; }
 
     public long? ExistingScheduleId { get; }
+
+    public bool CategoryMismatch { get; }
+
+    public string ActualCategoryName { get; }
+
+    public bool IsActionable => !CategoryMismatch;
 }
 
 /// <summary>What Prepare Template creates or repairs beyond Set up model.</summary>
@@ -97,6 +115,9 @@ public sealed class TemplatePreparationPlan
 
     public IReadOnlyList<string> ExportPlanTemplateIssues { get; }
 
+    public bool HasActionableSteps =>
+        Schedules.Any(step => step.IsActionable) || CreateExportPlanTemplate || RepairExportPlanTemplate;
+
     public bool IsEmpty => Schedules.Count == 0 && !CreateExportPlanTemplate && !RepairExportPlanTemplate;
 }
 
@@ -111,8 +132,10 @@ public static class TemplateStandardDefinitions
     public const string FloorsScheduleName = "Kanizu GIS - Floors";
     public const string CirculationScheduleName = "Kanizu GIS - Circulation";
     public const string DoorsScheduleName = "Kanizu GIS - Doors";
-    public const string LevelsScheduleName = "Kanizu GIS - Levels";
 
+    // Levels (OST_Levels) cannot be scheduled by Revit ViewSchedule.CreateSchedule; level
+    // ordinal/short_name checks live in ProjectReadinessEvaluator's level-metadata check and the
+    // Parameters CSV workflow.
     public static IReadOnlyList<QaScheduleDefinition> QaSchedules { get; } = new[]
     {
         new QaScheduleDefinition(
@@ -159,17 +182,10 @@ public static class TemplateStandardDefinitions
                 GisSharedParameters.Name,
                 GisSharedParameters.Id,
             }),
-        new QaScheduleDefinition(
-            "qa-schedule-levels",
-            LevelsScheduleName,
-            "OST_Levels",
-            new[]
-            {
-                GisSharedParameters.Ordinal,
-                GisSharedParameters.ShortName,
-                GisSharedParameters.LevelId,
-            }),
     };
+
+    public static string CategoryLabel(string categoryName) =>
+        string.IsNullOrWhiteSpace(categoryName) ? "Multi-Category" : categoryName.Trim();
 }
 
 /// <summary>Plans the idempotent QA schedule and view template steps for Prepare Template.</summary>
@@ -195,6 +211,18 @@ public static class TemplateStandardPlanner
             if (!schedulesByName.TryGetValue(definition.Name, out QaScheduleInfo? existing))
             {
                 scheduleSteps.Add(new QaSchedulePlanStep(definition, createSchedule: true, definition.RequiredFields));
+                continue;
+            }
+
+            if (!string.Equals(existing.CategoryName.Trim(), definition.CategoryName.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                scheduleSteps.Add(new QaSchedulePlanStep(
+                    definition,
+                    createSchedule: false,
+                    definition.RequiredFields,
+                    existing.ElementId,
+                    categoryMismatch: true,
+                    actualCategoryName: existing.CategoryName));
                 continue;
             }
 
@@ -231,6 +259,11 @@ public static class TemplateStandardPlanner
         List<string> lines = new();
         foreach (QaSchedulePlanStep step in plan.Schedules)
         {
+            if (step.CategoryMismatch)
+            {
+                continue;
+            }
+
             if (step.CreateSchedule)
             {
                 lines.Add($"Create QA schedule {step.Definition.Name} ({string.Join(", ", step.Definition.RequiredFields)})");

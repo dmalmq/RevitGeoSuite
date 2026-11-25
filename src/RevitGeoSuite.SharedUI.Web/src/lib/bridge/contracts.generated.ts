@@ -640,8 +640,11 @@ export interface GisRfaValidationRequest {
 export interface GisRfaValidationResponse {
   failCount: number
   folderPath: string
+  inspectedFileCount: number
   items: GisRfaValidationItem[]
   passCount: number
+  totalFilesFound: number
+  truncated: boolean
   warnCount: number
 }
 

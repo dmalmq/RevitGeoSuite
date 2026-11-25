@@ -196,9 +196,51 @@ public static class ExportViewSetup
             return Array.Empty<string>();
         }
 
+        List<string> issues = new();
         TemplateRepair? repair = ExportViewPlanner.RepairFor(
             new ExportTemplate(template.Id.Value, OwnedCategories(document, template, extraVisibleCategories)));
-        return repair is null ? Array.Empty<string>() : new[] { repair.Changes() };
+        if (repair is not null)
+        {
+            issues.Add(repair.Changes());
+        }
+
+        if (!template.AreImportCategoriesHidden)
+        {
+            issues.Add("hide import categories");
+        }
+
+        if (template.DetailLevel != ViewDetailLevel.Coarse)
+        {
+            issues.Add("set detail level to Coarse");
+        }
+
+        if (template.Discipline != ViewDiscipline.Coordination)
+        {
+            issues.Add("set discipline to Coordination");
+        }
+
+        if (template is ViewPlan planTemplate)
+        {
+            if (!HasExpectedViewRange(planTemplate))
+            {
+                issues.Add("reset view range (cut 1200 mm, top 2300 mm)");
+            }
+
+            if (HasUnderlay(planTemplate))
+            {
+                issues.Add("clear underlay");
+            }
+        }
+
+        ElementId showComplete = ShowCompletePhaseFilter(document);
+        if (showComplete != ElementId.InvalidElementId
+            && template.get_Parameter(BuiltInParameter.VIEW_PHASE_FILTER) is { IsReadOnly: false } phaseFilter
+            && phaseFilter.AsElementId() != showComplete)
+        {
+            issues.Add("set phase filter to Show Complete");
+        }
+
+        return issues;
     }
 
     internal static bool EnsureNamedExportPlanTemplate(
@@ -210,24 +252,72 @@ public static class ExportViewSetup
         View? existing = FindTemplateByName(document, templateName);
         if (existing is not null)
         {
+            List<string> changes = new();
             TemplateRepair? repair = ExportViewPlanner.RepairFor(
                 new ExportTemplate(existing.Id.Value, OwnedCategories(document, existing, extraVisibleCategories)));
-            if (repair is null)
+            if (repair is not null)
+            {
+                foreach (TemplateCategory category in repair.Show)
+                {
+                    existing.SetCategoryHidden(new ElementId(category.ElementId), false);
+                }
+
+                foreach (TemplateCategory category in repair.Hide)
+                {
+                    existing.SetCategoryHidden(new ElementId(category.ElementId), true);
+                }
+
+                changes.Add(repair.Changes());
+            }
+
+            if (!existing.AreImportCategoriesHidden)
+            {
+                existing.AreImportCategoriesHidden = true;
+                changes.Add("hide import categories");
+            }
+
+            if (existing.DetailLevel != ViewDetailLevel.Coarse)
+            {
+                existing.DetailLevel = ViewDetailLevel.Coarse;
+                changes.Add("set detail level to Coarse");
+            }
+
+            if (existing.Discipline != ViewDiscipline.Coordination)
+            {
+                existing.Discipline = ViewDiscipline.Coordination;
+                changes.Add("set discipline to Coordination");
+            }
+
+            if (existing is ViewPlan planTemplate)
+            {
+                if (!HasExpectedViewRange(planTemplate))
+                {
+                    SetViewRange(planTemplate);
+                    changes.Add("reset view range (cut 1200 mm, top 2300 mm)");
+                }
+
+                if (HasUnderlay(planTemplate))
+                {
+                    TryClearUnderlay(planTemplate);
+                    changes.Add("clear underlay");
+                }
+            }
+
+            ElementId showComplete = ShowCompletePhaseFilter(document);
+            if (showComplete != ElementId.InvalidElementId
+                && existing.get_Parameter(BuiltInParameter.VIEW_PHASE_FILTER) is { IsReadOnly: false } phaseFilter
+                && phaseFilter.AsElementId() != showComplete)
+            {
+                phaseFilter.Set(showComplete);
+                changes.Add("set phase filter to Show Complete");
+            }
+
+            if (changes.Count == 0)
             {
                 return false;
             }
 
-            foreach (TemplateCategory category in repair.Show)
-            {
-                existing.SetCategoryHidden(new ElementId(category.ElementId), false);
-            }
-
-            foreach (TemplateCategory category in repair.Hide)
-            {
-                existing.SetCategoryHidden(new ElementId(category.ElementId), true);
-            }
-
-            log.Add($"Updated view template {templateName}: {repair.Changes()}");
+            log.Add($"Updated view template {templateName}: {string.Join("; ", changes)}");
             return true;
         }
 
@@ -240,6 +330,39 @@ public static class ExportViewSetup
         CreateTemplateCore(document, templateName, levelId, extraVisibleCategories);
         log.Add($"Created view template {templateName}");
         return true;
+    }
+
+    private static bool HasExpectedViewRange(ViewPlan template)
+    {
+        const double toleranceFeet = 1e-4;
+        try
+        {
+            PlanViewRange range = template.GetViewRange();
+            return range.GetLevelId(PlanViewPlane.CutPlane) == PlanViewRange.Current
+                && range.GetLevelId(PlanViewPlane.TopClipPlane) == PlanViewRange.Current
+                && range.GetLevelId(PlanViewPlane.BottomClipPlane) == PlanViewRange.Current
+                && range.GetLevelId(PlanViewPlane.ViewDepthPlane) == PlanViewRange.Current
+                && Math.Abs(range.GetOffset(PlanViewPlane.CutPlane) - CutPlaneFeet) <= toleranceFeet
+                && Math.Abs(range.GetOffset(PlanViewPlane.TopClipPlane) - TopClipFeet) <= toleranceFeet
+                && Math.Abs(range.GetOffset(PlanViewPlane.BottomClipPlane)) <= toleranceFeet
+                && Math.Abs(range.GetOffset(PlanViewPlane.ViewDepthPlane)) <= toleranceFeet;
+        }
+        catch (Autodesk.Revit.Exceptions.ApplicationException)
+        {
+            return true;
+        }
+    }
+
+    private static bool HasUnderlay(ViewPlan template)
+    {
+        try
+        {
+            return template.GetUnderlayBaseLevel() != ElementId.InvalidElementId;
+        }
+        catch (Autodesk.Revit.Exceptions.ApplicationException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

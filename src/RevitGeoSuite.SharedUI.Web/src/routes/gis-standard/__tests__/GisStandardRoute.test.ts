@@ -57,6 +57,13 @@ function reply(req: RpcEnvelope, payload: unknown): void {
   messageHandlers.forEach((handler) => handler(event))
 }
 
+function emitEvent(method: string, payload: unknown): void {
+  const event = new MessageEvent('message', {
+    data: { kind: 'evt', method, payload } satisfies RpcEnvelope
+  })
+  messageHandlers.forEach((handler) => handler(event))
+}
+
 function sent(method: string): RpcEnvelope[] {
   return postedMessages.filter((message) => message.method === method)
 }
@@ -316,6 +323,9 @@ describe('GisStandardRoute readiness checklist & Prepare Template', () => {
     expect(rfaReq.payload).toEqual({ folderPath: 'C:\\Families' })
     reply(rfaReq, {
       folderPath: 'C:\\Families',
+      totalFilesFound: 245,
+      inspectedFileCount: 200,
+      truncated: true,
       passCount: 1,
       warnCount: 0,
       failCount: 1,
@@ -340,8 +350,39 @@ describe('GisStandardRoute readiness checklist & Prepare Template', () => {
 
     const results = target.querySelector('[data-testid="rfa-validation-results"]')
     expect(results).not.toBeNull()
+    expect(results!.textContent).toContain('Only the first 200 of 245 .rfa files were inspected.')
     expect(results!.textContent).toContain('C:\\Families: 1 passed, 0 warning(s), 1 failed')
     expect(results!.textContent).toContain('BadLift : A')
+  })
+
+  it('keeps auto-detection on Check again and resets explicit mode override on document.changed', async () => {
+    const { target, flush } = await mountRoute('template', true)
+
+    const refreshButton = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((btn) =>
+      /Check again/.test(btn.textContent ?? '')
+    )
+    expect(refreshButton).toBeDefined()
+    refreshButton!.click()
+    await flush()
+
+    expect(sent('gisStandard.inspect')).toHaveLength(2)
+    expect(sent('gisStandard.inspect')[1].payload).toEqual({ stationFolder: '' })
+    reply(sent('gisStandard.inspect')[1], sampleInspect('template', true))
+    await flush()
+
+    const projectRadio = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-slot="segmented-control-item"]')).find(
+      (btn) => btn.textContent?.trim() === 'Project'
+    )!
+    projectRadio.click()
+    await flush()
+    expect(sent('gisStandard.inspect')[2].payload).toEqual({ stationFolder: '', mode: 'project' })
+    reply(sent('gisStandard.inspect')[2], sampleInspect('project', true))
+    await flush()
+
+    emitEvent('document.changed', { documentId: 'doc-2', documentTitle: 'StationB.rvt' })
+    await flush()
+    expect(sent('gisStandard.inspect')).toHaveLength(4)
+    expect(sent('gisStandard.inspect')[3].payload).toEqual({ stationFolder: '' })
   })
 
   it('exposes named ui-sdk controls to createAgent and allows switching mode via agent.act', async () => {

@@ -161,9 +161,15 @@ public sealed class GisRfaValidationResponse
 
     public string FolderPath { get; set; } = string.Empty;
 
+    public int InspectedFileCount { get; set; }
+
     public GisRfaValidationItem[] Items { get; set; } = Array.Empty<GisRfaValidationItem>();
 
     public int PassCount { get; set; }
+
+    public int TotalFilesFound { get; set; }
+
+    public bool Truncated { get; set; }
 
     public int WarnCount { get; set; }
 }

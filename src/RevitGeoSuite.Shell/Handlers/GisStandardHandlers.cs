@@ -86,14 +86,17 @@ public sealed class GisStandardValidateRfaFolderHandler : IRpcHandler
         string folderPath = (request.FolderPath ?? string.Empty).Trim();
         return RevitContext.Instance.InvokeWithDocumentAsync(doc =>
         {
-            IReadOnlyList<FamilyValidationItem> items = RfaFamilyValidator.ValidateFolder(doc, folderPath, GisToolStandard.LoadEmbedded());
+            RfaFolderValidationResult result = RfaFamilyValidator.ValidateFolder(doc, folderPath, GisToolStandard.LoadEmbedded());
             return (object?)new GisRfaValidationResponse
             {
                 FolderPath = folderPath,
-                PassCount = items.Count(item => item.Status == ReadinessCheckStatus.Pass),
-                WarnCount = items.Count(item => item.Status == ReadinessCheckStatus.Warn),
-                FailCount = items.Count(item => item.Status == ReadinessCheckStatus.Fail),
-                Items = items.Select(item => new GisRfaValidationItem
+                TotalFilesFound = result.TotalFilesFound,
+                InspectedFileCount = result.InspectedFileCount,
+                Truncated = result.Truncated,
+                PassCount = result.Items.Count(item => item.Status == ReadinessCheckStatus.Pass),
+                WarnCount = result.Items.Count(item => item.Status == ReadinessCheckStatus.Warn),
+                FailCount = result.Items.Count(item => item.Status == ReadinessCheckStatus.Fail),
+                Items = result.Items.Select(item => new GisRfaValidationItem
                 {
                     FamilyName = item.FamilyName,
                     Category = item.Category,
@@ -211,8 +214,17 @@ internal static class GisStandardWork
         SetupPlan plan = SetupPlanner.Plan(snapshot, standard);
         ExportViewSnapshot viewSnapshot = ExportViewSetup.Read(document);
         ExportViewPlan views = ExportViewPlanner.Plan(viewSnapshot);
-        ReadinessCheckSnapshot readinessSnapshot = GisStandardStateReader.ReadReadiness(document, snapshot);
-        ProjectReadinessReport readinessReport = ProjectReadinessEvaluator.Evaluate(readinessSnapshot, ParseMode(modeText), standard);
+        GisReadinessSummary? readiness = null;
+        try
+        {
+            ReadinessCheckSnapshot readinessSnapshot = GisStandardStateReader.ReadReadiness(document, snapshot);
+            ProjectReadinessReport readinessReport = ProjectReadinessEvaluator.Evaluate(readinessSnapshot, ParseMode(modeText), standard);
+            readiness = MapReadiness(readinessReport);
+        }
+        catch (Exception)
+        {
+            // Keep existing Standard tab audit/setup working even if readiness inspection fails.
+        }
         return new GisStandardInspectResponse
         {
             DocumentTitle = document.Title ?? string.Empty,
@@ -261,7 +273,7 @@ internal static class GisStandardWork
                 })
                 .ToArray(),
             FixBlocker = FloorTypeMatcher.WriteBlocker(snapshot),
-            Readiness = MapReadiness(readinessReport),
+            Readiness = readiness,
         };
     }
 

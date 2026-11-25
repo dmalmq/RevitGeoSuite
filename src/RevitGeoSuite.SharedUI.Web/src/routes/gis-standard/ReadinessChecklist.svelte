@@ -202,7 +202,7 @@
         <p class="font-medium text-foreground">
           {$t(
             'GisStandard.Readiness.PrepareTemplate.Hint',
-            'Runs Set up model and creates any missing Kanizu QA schedules (4) and the Kanizu GIS Export Plan view template in one transaction.'
+            'Runs Set up model and creates any missing Kanizu QA schedules (3) and the Kanizu GIS Export Plan view template in one transaction.'
           )}
         </p>
         <ul class="mt-1 ml-4 list-disc text-muted-foreground">
@@ -279,6 +279,20 @@
 
     {#if rfaResult}
       <div class="rounded-control border border-border bg-muted/20 px-3 py-2 text-small" data-testid="rfa-validation-results">
+        {#if rfaResult.truncated}
+          <div class="mb-2">
+            <Banner tone="warning">
+              {format(
+                $t(
+                  'GisStandard.Readiness.ValidateRfa.Truncated',
+                  'Only the first {0} of {1} .rfa files were inspected. Validate subfolders separately for full coverage.'
+                ),
+                rfaResult.inspectedFileCount,
+                rfaResult.totalFilesFound
+              )}
+            </Banner>
+          </div>
+        {/if}
         {#if rfaResult.items.length === 0}
           <p class="text-muted-foreground">
             {format($t('GisStandard.Readiness.ValidateRfa.Empty', 'No .rfa family files were found in {0}.'), rfaResult.folderPath)}

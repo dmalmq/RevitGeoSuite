@@ -17,11 +17,10 @@ This guide defines how to author and maintain the single master **Revit 2024 `.r
    - Creates/updates all **7 `GIS_*` theme materials** matching `standards/color_theme.json`.
    - Creates/updates all **21 standard `j *_床` floor types** with `gis_category`, `gis_restriction`, and top-layer material.
    - Stamps `gis_standard_version = 2` on Project Information.
-   - Creates/updates the **4 standard QA schedules**:
-     - `Kanizu GIS - Floors` (`gis_category`, `gis_restriction`, `category`, `name`, `id`)
+   - Creates/updates the **3 standard QA schedules** (Revit cannot schedule `OST_Levels`; level `ordinal`/`short_name` completeness and uniqueness are validated in Project mode's `level-metadata` check and editable via the Parameters CSV tab):
+     - `Kanizu GIS - Floors` (`OST_Floors`: `gis_category`, `gis_restriction`, `category`, `name`, `id`)
      - `Kanizu GIS - Circulation` (multi-category: `gis_kind`, `gis_direction`, `gis_levels_served`, `name`, `id`)
-     - `Kanizu GIS - Doors` (`gis_door`, `gis_access_con`, `name`, `id`)
-     - `Kanizu GIS - Levels` (`ordinal`, `short_name`, `level_id`)
+     - `Kanizu GIS - Doors` (`OST_Doors`: `gis_door`, `gis_access_con`, `name`, `id`)
    - Creates/repairs the **`Kanizu GIS Export Plan`** view template (coarse detail, Coordination discipline, cut plane 1200 mm / top clip 2300 mm, export-read model categories visible, only `GIS_*` line styles visible).
 4. Load your approved station `.rfa` families (see Section 3).
 5. Confirm **Template** mode reaches **100% Ready** (all project-only checks — Japan CRS, `ModelId`, and level ordinals — are marked `N/A` in Template mode).
@@ -47,7 +46,7 @@ Every family listed in `standards/families.json` must carry the **`gis_kind`** *
 
 ### 3.2 Door Families (`OST_Doors`)
 
-Every door family intended for IMDF opening export must expose these **Type** shared parameters (automatically bound to `OST_Doors` by **Prepare Template** / **Set up model**, and also attachable directly inside the `.rfa` from `standards/KanizuGIS.SharedParameters.txt`):
+Every door family intended for IMDF opening export receives these **Type** shared parameters automatically from project `OST_Doors` bindings when loaded into a prepared template or project. You do not need to embed them inside standalone `.rfa` files, though if you do embed them they must use the exact shipped shared GUIDs and Type binding from `standards/KanizuGIS.SharedParameters.txt`:
 
 | Parameter | GUID | Binding | Purpose |
 | --- | --- | --- | --- |
@@ -65,7 +64,7 @@ Use **Validate .rfa folder…** in `#/gis-standard` to inspect an external folde
 | Shared parameters (15 frozen GUIDs) & `gis_standard_version` | Required | Required |
 | 21 standard floor types & `GIS_*` materials | Required | Required |
 | Loaded families (`families.json` `gis_kind` + door `gis_door`/`gis_access_con`) | Required | Required |
-| 4 QA schedules & `Kanizu GIS Export Plan` view template | Required | Required |
+| 3 QA schedules & `Kanizu GIS Export Plan` view template | Required | Required |
 | Japan Plane Rectangular CRS (`EPSG:6669`–`6687`) verified | **N/A** | Required |
 | Host `ModelId` & all loaded Revit links have stable `ModelId` | **N/A** | Required |
 | Project levels have complete, non-duplicate `ordinal` & `short_name` | **N/A** | Required |

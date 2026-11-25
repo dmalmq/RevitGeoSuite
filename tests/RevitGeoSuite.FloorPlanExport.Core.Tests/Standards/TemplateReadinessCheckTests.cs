@@ -35,7 +35,7 @@ public sealed class TemplateReadinessCheckTests
                 new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "public", hasGisDoorParameter: true, hasGisAccessConParameter: true),
             },
             Schedules = TemplateStandardDefinitions.QaSchedules
-                .Select((s, idx) => new QaScheduleInfo(400 + idx, s.Name, s.RequiredFields))
+                .Select((s, idx) => new QaScheduleInfo(400 + idx, s.Name, s.RequiredFields, s.CategoryName))
                 .ToList(),
             ViewTemplateNames = new[] { TemplateStandardDefinitions.ExportPlanViewTemplateName },
             Levels = new[] { new LevelInfo(501, "Level 1", ordinal: null, shortName: "", hasFloors: false) },
@@ -162,8 +162,27 @@ public sealed class TemplateReadinessCheckTests
         ReadinessCheckItem levels = report.Groups.SelectMany(g => g.Items).Single(i => i.Id == "level-metadata");
         Assert.Equal(ReadinessCheckStatus.Fail, levels.Status);
         Assert.Contains("duplicate ordinal", levels.Detail);
-        Assert.Contains("501", string.Join(",", levels.ElementIds));
-        Assert.Contains("502", string.Join(",", levels.ElementIds));
+        Assert.Contains(501L, levels.ElementIds);
+        Assert.Contains(502L, levels.ElementIds);
+    }
+
+    [Fact]
+    public void ProjectModeFailsDuplicateLevelShortNameCaseInsensitively()
+    {
+        ReadinessCheckSnapshot snapshot = CleanProjectSnapshot();
+        snapshot.Levels = new[]
+        {
+            new LevelInfo(501, "1F North", ordinal: 0, shortName: " 1f ", hasFloors: true),
+            new LevelInfo(502, "1F South", ordinal: 1, shortName: "1F", hasFloors: true),
+        };
+
+        ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot, ReadinessMode.Project);
+
+        ReadinessCheckItem levels = report.Groups.SelectMany(g => g.Items).Single(i => i.Id == "level-metadata");
+        Assert.Equal(ReadinessCheckStatus.Fail, levels.Status);
+        Assert.Contains("duplicate short_name", levels.Detail);
+        Assert.Contains(501L, levels.ElementIds);
+        Assert.Contains(502L, levels.ElementIds);
     }
 
     [Fact]
@@ -188,7 +207,7 @@ public sealed class TemplateReadinessCheckTests
         ReadinessCheckSnapshot snapshot = CleanTemplateSnapshot();
         snapshot.Schedules = new[]
         {
-            new QaScheduleInfo(400, TemplateStandardDefinitions.FloorsScheduleName, new[] { GisSharedParameters.GisCategory }),
+            new QaScheduleInfo(400, TemplateStandardDefinitions.FloorsScheduleName, new[] { GisSharedParameters.GisCategory }, "OST_Floors"),
         };
         snapshot.ViewTemplateNames = Array.Empty<string>();
 
@@ -197,17 +216,41 @@ public sealed class TemplateReadinessCheckTests
         Assert.False(report.IsReady);
         Assert.True(report.CanPrepareTemplate);
         Assert.False(report.CanSetupModel);
-        Assert.Equal(4, report.TemplatePlan.Schedules.Count);
+        Assert.Equal(3, report.TemplatePlan.Schedules.Count);
         Assert.True(report.TemplatePlan.CreateExportPlanTemplate);
 
         QaSchedulePlanStep floorStep = Assert.Single(report.TemplatePlan.Schedules, s => s.Definition.Name == TemplateStandardDefinitions.FloorsScheduleName);
         Assert.False(floorStep.CreateSchedule);
+        Assert.False(floorStep.CategoryMismatch);
         Assert.Contains(GisSharedParameters.GisRestriction, floorStep.MissingFields);
         Assert.Contains(GisSharedParameters.Category, floorStep.MissingFields);
 
         IReadOnlyList<string> lines = TemplateStandardPlanner.Describe(report.TemplatePlan);
         Assert.Contains(lines, line => line.Contains(TemplateStandardDefinitions.ExportPlanViewTemplateName));
         Assert.Contains(lines, line => line.Contains(TemplateStandardDefinitions.DoorsScheduleName));
+    }
+
+    [Fact]
+    public void ExistingScheduleWithWrongCategoryFailsReadinessAndIsFlagged()
+    {
+        ReadinessCheckSnapshot snapshot = CleanTemplateSnapshot();
+        snapshot.Schedules = TemplateStandardDefinitions.QaSchedules
+            .Select((s, idx) => new QaScheduleInfo(
+                400 + idx,
+                s.Name,
+                s.RequiredFields,
+                s.Name == TemplateStandardDefinitions.FloorsScheduleName ? string.Empty : s.CategoryName))
+            .ToList();
+
+        ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot, ReadinessMode.Template);
+
+        Assert.False(report.IsReady);
+        Assert.False(report.CanPrepareTemplate);
+        ReadinessCheckItem floorSchedule = report.Groups.SelectMany(g => g.Items).Single(i => i.Id == "qa-schedule-floors");
+        Assert.Equal(ReadinessCheckStatus.Fail, floorSchedule.Status);
+        Assert.Equal(ReadinessActionKind.None, floorSchedule.Action);
+        Assert.Contains("Multi-Category", floorSchedule.Detail);
+        Assert.Contains("OST_Floors", floorSchedule.Detail);
     }
 
     [Fact]
@@ -222,36 +265,114 @@ public sealed class TemplateReadinessCheckTests
     }
 
     [Fact]
-    public void BadRfaGisKindAndMissingDoorParametersFailFamilyValidation()
+    public void BadRfaGisKindWrongGuidAndInstanceBindingFailFamilyValidation()
     {
-        ReadinessCheckSnapshot snapshot = CleanTemplateSnapshot();
-        snapshot.LoadedFamilies = new[]
+        GisToolStandard standard = GisToolStandard.LoadEmbedded();
+        Guid gisKindGuid = standard.Parameter(GisSharedParameters.GisKind)!.Guid;
+        Guid gisDoorGuid = standard.Parameter(GisSharedParameters.GisDoor)!.Guid;
+
+        LoadedFamilyCheckInfo[] families =
         {
-            new LoadedFamilyCheckInfo(310, "CustomLift", "TypeA", "OST_GenericModel", gisKind: "lift", hasGisKindParameter: true, instanceIds: new[] { 901L }, sourcePath: @"C:\Families\CustomLift.rfa"),
-            new LoadedFamilyCheckInfo(311, "j EV", "Mismatch", "OST_MechanicalEquipment", gisKind: "escalator", hasGisKindParameter: true, sourcePath: @"C:\Families\j EV.rfa"),
-            new LoadedFamilyCheckInfo(312, "OldDoor", "D1", "OST_Doors", hasGisDoorParameter: false, hasGisAccessConParameter: false, sourcePath: @"C:\Families\OldDoor.rfa"),
+            new LoadedFamilyCheckInfo(
+                310,
+                "CustomLift",
+                "TypeA",
+                "OST_GenericModel",
+                gisKind: "lift",
+                hasGisKindParameter: true,
+                instanceIds: new[] { 901L },
+                sourcePath: @"C:\Families\CustomLift.rfa",
+                parameterBindings: new Dictionary<string, FamilyParameterBindingInfo>
+                {
+                    [GisSharedParameters.GisKind] = new(GisSharedParameters.GisKind, isShared: true, guid: gisKindGuid, isInstance: false),
+                }),
+            new LoadedFamilyCheckInfo(
+                311,
+                "j EV",
+                "WrongGuid",
+                "OST_MechanicalEquipment",
+                gisKind: "elevator",
+                hasGisKindParameter: true,
+                sourcePath: @"C:\Families\j EV.rfa",
+                parameterBindings: new Dictionary<string, FamilyParameterBindingInfo>
+                {
+                    [GisSharedParameters.GisKind] = new(GisSharedParameters.GisKind, isShared: true, guid: Guid.NewGuid(), isInstance: false),
+                }),
+            new LoadedFamilyCheckInfo(
+                312,
+                "j 自動改札",
+                "InstanceBound",
+                "OST_SpecialityEquipment",
+                gisKind: "ticket_gate",
+                hasGisKindParameter: true,
+                sourcePath: @"C:\Families\j Gate.rfa",
+                parameterBindings: new Dictionary<string, FamilyParameterBindingInfo>
+                {
+                    [GisSharedParameters.GisKind] = new(GisSharedParameters.GisKind, isShared: true, guid: gisKindGuid, isInstance: true),
+                }),
+            new LoadedFamilyCheckInfo(
+                313,
+                "NonSharedDoor",
+                "D1",
+                "OST_Doors",
+                hasGisDoorParameter: true,
+                hasGisAccessConParameter: false,
+                sourcePath: @"C:\Families\NonSharedDoor.rfa",
+                parameterBindings: new Dictionary<string, FamilyParameterBindingInfo>
+                {
+                    [GisSharedParameters.GisDoor] = new(GisSharedParameters.GisDoor, isShared: false, guid: null, isInstance: false),
+                }),
+            new LoadedFamilyCheckInfo(
+                314,
+                "InstanceDoor",
+                "D2",
+                "OST_Doors",
+                hasGisDoorParameter: true,
+                hasGisAccessConParameter: false,
+                sourcePath: @"C:\Families\InstanceDoor.rfa",
+                parameterBindings: new Dictionary<string, FamilyParameterBindingInfo>
+                {
+                    [GisSharedParameters.GisDoor] = new(GisSharedParameters.GisDoor, isShared: true, guid: gisDoorGuid, isInstance: true),
+                }),
         };
 
-        IReadOnlyList<FamilyValidationItem> items = FamilyStandardValidator.ValidateFamilies(snapshot.LoadedFamilies);
-        Assert.Equal(3, items.Count);
+        IReadOnlyList<FamilyValidationItem> items = FamilyStandardValidator.ValidateFamilies(families, standard);
+        Assert.Equal(5, items.Count);
         Assert.All(items, item => Assert.Equal(ReadinessCheckStatus.Fail, item.Status));
-
-        ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot, ReadinessMode.Template);
-        ReadinessCheckGroup familiesGroup = Assert.Single(report.Groups, g => g.Id == "families");
-        Assert.Equal(ReadinessCheckStatus.Fail, familiesGroup.Status);
-        Assert.Equal(2, familiesGroup.FailCount);
+        Assert.Contains("GUID", items[1].Detail);
+        Assert.Contains("instance", items[2].Detail);
+        Assert.Contains("non-shared", items[3].Detail);
+        Assert.Contains("instance", items[4].Detail);
     }
 
     [Fact]
-    public void RtePathSuggestsTemplateModeEvenWhenNonEmpty()
+    public void ExternalDoorRfaWithoutEmbeddedDoorParametersPassesBecauseProjectSuppliesBindings()
     {
-        ReadinessCheckSnapshot snapshot = CleanProjectSnapshot();
-        snapshot.DocumentPath = @"C:\Templates\Master2024.rte";
-        snapshot.IsEmptyModel = false;
+        LoadedFamilyCheckInfo externalDoor = new(
+            0,
+            "PlainStationDoor",
+            "Sliding_1800",
+            "OST_Doors",
+            hasGisDoorParameter: false,
+            hasGisAccessConParameter: false,
+            sourcePath: @"C:\Families\PlainStationDoor.rfa");
 
-        ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(snapshot);
+        FamilyValidationItem result = Assert.Single(FamilyStandardValidator.ValidateFamilies(new[] { externalDoor }));
+        Assert.Equal(ReadinessCheckStatus.Pass, result.Status);
+        Assert.Contains("OST_Doors", result.Detail);
+    }
 
-        Assert.Equal(ReadinessMode.Template, report.SuggestedMode);
-        Assert.Equal(ReadinessMode.Template, report.Mode);
+    [Fact]
+    public void RvtPathSuggestsProjectModeEvenWhenEmptyWhileRteSuggestsTemplateMode()
+    {
+        ReadinessCheckSnapshot rvt = CleanProjectSnapshot();
+        rvt.DocumentPath = @"D:\Projects\LinkedHost.rvt";
+        rvt.IsEmptyModel = true;
+        Assert.Equal(ReadinessMode.Project, ProjectReadinessEvaluator.Evaluate(rvt).SuggestedMode);
+
+        ReadinessCheckSnapshot rte = CleanProjectSnapshot();
+        rte.DocumentPath = @"C:\Templates\Master2024.rte";
+        rte.IsEmptyModel = false;
+        Assert.Equal(ReadinessMode.Template, ProjectReadinessEvaluator.Evaluate(rte).SuggestedMode);
     }
 }

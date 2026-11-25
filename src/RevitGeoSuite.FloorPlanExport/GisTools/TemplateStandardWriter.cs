@@ -9,7 +9,7 @@ namespace RevitGeoSuite.FloorPlanExport.GisTools;
 
 /// <summary>
 /// Idempotently prepares a Revit template (.rte) or project model in one single transaction:
-/// runs Set up model, creates or updates the 4 standard QA schedules, and creates or repairs
+/// runs Set up model, creates or updates the standard QA schedules, and creates or repairs
 /// the <c>Kanizu GIS Export Plan</c> view template.
 /// </summary>
 public static class TemplateStandardWriter
@@ -48,7 +48,7 @@ public static class TemplateStandardWriter
             throw new ArgumentNullException(nameof(templatePlan));
         }
 
-        if (setupPlan.IsEmpty && exportViews.IsEmpty && templatePlan.IsEmpty)
+        if (setupPlan.IsEmpty && exportViews.IsEmpty && !templatePlan.HasActionableSteps)
         {
             return Array.Empty<string>();
         }
@@ -56,7 +56,7 @@ public static class TemplateStandardWriter
         List<long> ownableIds = GisStandardWriter.SetupTargetElementIds(document, setupPlan, exportViews).ToList();
         foreach (QaSchedulePlanStep step in templatePlan.Schedules)
         {
-            if (step.ExistingScheduleId.HasValue)
+            if (step.IsActionable && step.ExistingScheduleId.HasValue)
             {
                 ownableIds.Add(step.ExistingScheduleId.Value);
             }
@@ -81,6 +81,14 @@ public static class TemplateStandardWriter
                 Dictionary<string, ElementId> sharedParamIds = SharedParameterIdsByName(document);
                 foreach (QaSchedulePlanStep step in templatePlan.Schedules)
                 {
+                    if (step.CategoryMismatch)
+                    {
+                        string actual = TemplateStandardDefinitions.CategoryLabel(step.ActualCategoryName);
+                        string expected = TemplateStandardDefinitions.CategoryLabel(step.Definition.CategoryName);
+                        log.Add($"Skipped QA schedule {step.Definition.Name}: existing schedule targets {actual}, expected {expected}.");
+                        continue;
+                    }
+
                     EnsureQaSchedule(document, step, sharedParamIds, log);
                 }
             }
@@ -112,6 +120,12 @@ public static class TemplateStandardWriter
         if (schedule is null)
         {
             ElementId categoryId = ResolveCategoryId(step.Definition.CategoryName);
+            if (categoryId != ElementId.InvalidElementId && !ViewSchedule.IsValidCategoryForSchedule(categoryId))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot create QA schedule '{step.Definition.Name}': category '{step.Definition.CategoryName}' is not schedulable in Revit.");
+            }
+
             schedule = ViewSchedule.CreateSchedule(document, categoryId);
             schedule.Name = step.Definition.Name;
             created = true;
@@ -120,7 +134,7 @@ public static class TemplateStandardWriter
         ScheduleDefinition definition = schedule.Definition;
         IList<SchedulableField> schedulable = definition.GetSchedulableFields();
         HashSet<long> existingParamIds = new();
-        HashSet<string> existingNames = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> existingSharedNames = new(StringComparer.OrdinalIgnoreCase);
 
         int fieldCount = definition.GetFieldCount();
         for (int i = 0; i < fieldCount; i++)
@@ -129,30 +143,48 @@ public static class TemplateStandardWriter
             if (existingField.ParameterId != ElementId.InvalidElementId)
             {
                 existingParamIds.Add(existingField.ParameterId.Value);
-            }
-
-            string existingName = (existingField.GetName() ?? string.Empty).Trim();
-            if (existingName.Length > 0)
-            {
-                existingNames.Add(existingName);
+                if (document.GetElement(existingField.ParameterId) is SharedParameterElement shared)
+                {
+                    string? sharedName = shared.GetDefinition()?.Name ?? shared.Name;
+                    if (!string.IsNullOrWhiteSpace(sharedName))
+                    {
+                        existingSharedNames.Add(sharedName!.Trim());
+                    }
+                }
             }
         }
 
         if (created)
         {
-            AddDefaultIdentifierColumns(definition, schedulable, step.Definition.CategoryName, existingParamIds, existingNames);
+            AddDefaultIdentifierColumns(definition, schedulable, step.Definition.CategoryName, existingParamIds);
         }
 
+        HashSet<string> requiredSet = new(step.Definition.RequiredFields, StringComparer.OrdinalIgnoreCase);
         IEnumerable<string> fieldsToAdd = created
             ? step.Definition.AllSharedParameterFields
             : step.MissingFields;
 
         List<string> added = new();
+        List<string> skippedRequired = new();
+        List<string> skippedExtra = new();
         foreach (string paramName in fieldsToAdd)
         {
-            if (TryAddSharedParameterField(document, definition, schedulable, sharedParamIds, paramName, existingParamIds, existingNames))
+            if (existingSharedNames.Contains(paramName))
+            {
+                continue;
+            }
+
+            if (TryAddSharedParameterField(definition, schedulable, sharedParamIds, paramName, existingParamIds, existingSharedNames))
             {
                 added.Add(paramName);
+            }
+            else if (requiredSet.Contains(paramName))
+            {
+                skippedRequired.Add(paramName);
+            }
+            else
+            {
+                skippedExtra.Add(paramName);
             }
         }
 
@@ -166,37 +198,39 @@ public static class TemplateStandardWriter
         {
             log.Add($"Updated QA schedule {step.Definition.Name}: added {string.Join(", ", added)}");
         }
+
+        if (skippedRequired.Count > 0)
+        {
+            log.Add($"Warning: QA schedule {step.Definition.Name} skipped unavailable required field(s): {string.Join(", ", skippedRequired)}");
+        }
+
+        if (skippedExtra.Count > 0)
+        {
+            log.Add($"Note: QA schedule {step.Definition.Name} skipped unavailable optional field(s): {string.Join(", ", skippedExtra)}");
+        }
     }
 
     private static void AddDefaultIdentifierColumns(
         ScheduleDefinition definition,
         IList<SchedulableField> schedulable,
         string categoryName,
-        HashSet<long> existingParamIds,
-        HashSet<string> existingNames)
+        HashSet<long> existingParamIds)
     {
         if (string.IsNullOrEmpty(categoryName))
         {
-            TryAddBuiltInField(definition, schedulable, BuiltInParameter.ELEM_CATEGORY_PARAM, existingParamIds, existingNames);
-            TryAddBuiltInField(definition, schedulable, BuiltInParameter.ELEM_FAMILY_AND_TYPE_PARAM, existingParamIds, existingNames);
+            TryAddBuiltInField(definition, schedulable, BuiltInParameter.ELEM_CATEGORY_PARAM, existingParamIds);
+            TryAddBuiltInField(definition, schedulable, BuiltInParameter.ELEM_FAMILY_AND_TYPE_PARAM, existingParamIds);
             return;
         }
 
-        if (string.Equals(categoryName, "OST_Levels", StringComparison.Ordinal))
-        {
-            TryAddBuiltInField(definition, schedulable, BuiltInParameter.DATUM_TEXT, existingParamIds, existingNames);
-            return;
-        }
-
-        TryAddBuiltInField(definition, schedulable, BuiltInParameter.ELEM_FAMILY_AND_TYPE_PARAM, existingParamIds, existingNames);
+        TryAddBuiltInField(definition, schedulable, BuiltInParameter.ELEM_FAMILY_AND_TYPE_PARAM, existingParamIds);
     }
 
     private static void TryAddBuiltInField(
         ScheduleDefinition definition,
         IList<SchedulableField> schedulable,
         BuiltInParameter builtInParameter,
-        HashSet<long> existingParamIds,
-        HashSet<string> existingNames)
+        HashSet<long> existingParamIds)
     {
         ElementId targetId = new(builtInParameter);
         if (existingParamIds.Contains(targetId.Value))
@@ -210,60 +244,38 @@ public static class TemplateStandardWriter
             return;
         }
 
-        ScheduleField added = definition.AddField(match);
+        definition.AddField(match);
         existingParamIds.Add(targetId.Value);
-        string name = (added.GetName() ?? string.Empty).Trim();
-        if (name.Length > 0)
-        {
-            existingNames.Add(name);
-        }
     }
 
     private static bool TryAddSharedParameterField(
-        Document document,
         ScheduleDefinition definition,
         IList<SchedulableField> schedulable,
         IReadOnlyDictionary<string, ElementId> sharedParamIds,
         string paramName,
         HashSet<long> existingParamIds,
-        HashSet<string> existingNames)
+        HashSet<string> existingSharedNames)
     {
-        if (existingNames.Contains(paramName))
+        if (!sharedParamIds.TryGetValue(paramName, out ElementId? targetId))
         {
             return false;
         }
 
-        SchedulableField? match = null;
-        if (sharedParamIds.TryGetValue(paramName, out ElementId? targetId))
+        if (existingParamIds.Contains(targetId.Value))
         {
-            if (existingParamIds.Contains(targetId.Value))
-            {
-                return false;
-            }
-
-            match = schedulable.FirstOrDefault(field => field.ParameterId == targetId);
+            existingSharedNames.Add(paramName);
+            return false;
         }
 
-        match ??= schedulable.FirstOrDefault(field =>
-            string.Equals((field.GetName(document) ?? string.Empty).Trim(), paramName, StringComparison.OrdinalIgnoreCase));
-
+        SchedulableField? match = schedulable.FirstOrDefault(field => field.ParameterId == targetId);
         if (match is null)
         {
             return false;
         }
 
-        if (match.ParameterId != ElementId.InvalidElementId && existingParamIds.Contains(match.ParameterId.Value))
-        {
-            return false;
-        }
-
         definition.AddField(match);
-        if (match.ParameterId != ElementId.InvalidElementId)
-        {
-            existingParamIds.Add(match.ParameterId.Value);
-        }
-
-        existingNames.Add(paramName);
+        existingParamIds.Add(targetId.Value);
+        existingSharedNames.Add(paramName);
         return true;
     }
 
@@ -290,18 +302,41 @@ public static class TemplateStandardWriter
 
     private static Dictionary<string, ElementId> SharedParameterIdsByName(Document document)
     {
-        Dictionary<string, ElementId> map = new(StringComparer.OrdinalIgnoreCase);
-        foreach (SharedParameterElement shared in new FilteredElementCollector(document)
+        List<SharedParameterElement> allShared = new FilteredElementCollector(document)
             .OfClass(typeof(SharedParameterElement))
-            .Cast<SharedParameterElement>())
+            .Cast<SharedParameterElement>()
+            .ToList();
+
+        Dictionary<Guid, ElementId> byGuid = new();
+        Dictionary<string, ElementId> byName = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SharedParameterElement shared in allShared)
         {
-            string? name = shared.GetDefinition()?.Name ?? shared.Name;
-            if (!string.IsNullOrWhiteSpace(name) && !map.ContainsKey(name!.Trim()))
+            if (!byGuid.ContainsKey(shared.GuidValue))
             {
-                map[name!.Trim()] = shared.Id;
+                byGuid[shared.GuidValue] = shared.Id;
+            }
+
+            string? name = shared.GetDefinition()?.Name ?? shared.Name;
+            if (!string.IsNullOrWhiteSpace(name) && !byName.ContainsKey(name!.Trim()))
+            {
+                byName[name!.Trim()] = shared.Id;
             }
         }
 
-        return map;
+        Dictionary<string, ElementId> resolved = new(StringComparer.OrdinalIgnoreCase);
+        foreach (GisParameterDefinition def in GisSharedParameters.All)
+        {
+            if (byGuid.TryGetValue(def.Guid, out ElementId? exactId))
+            {
+                resolved[def.Name] = exactId;
+            }
+            else if (GisStandardCheck.LegacyParameterNames.Contains(def.Name)
+                     && byName.TryGetValue(def.Name, out ElementId? legacyId))
+            {
+                resolved[def.Name] = legacyId;
+            }
+        }
+
+        return resolved;
     }
 }

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.Core.Coordinates;
@@ -66,12 +68,6 @@ public static class GisStandardStateReader
             crsName = migrated.NameSnapshot ?? string.Empty;
         }
 
-        bool hasPlacedFloors = snapshot.FloorTypes.Any(type => type.FloorIds.Count > 0);
-        bool hasPlacedRooms = new FilteredElementCollector(document)
-            .OfCategory(BuiltInCategory.OST_Rooms)
-            .WhereElementIsNotElementType()
-            .Any();
-
         List<string> viewTemplateNames = new FilteredElementCollector(document)
             .OfClass(typeof(ViewPlan))
             .Cast<ViewPlan>()
@@ -84,7 +80,7 @@ public static class GisStandardStateReader
         {
             DocumentTitle = document.Title ?? string.Empty,
             DocumentPath = document.PathName ?? string.Empty,
-            IsEmptyModel = !hasPlacedFloors && !hasPlacedRooms,
+            IsEmptyModel = IsGenuinelyEmptyModel(document, snapshot),
             StandardVersionText = snapshot.StandardVersion,
             BoundParameters = snapshot.BoundParameters.Values.ToList(),
             FloorTypes = snapshot.FloorTypes,
@@ -106,6 +102,41 @@ public static class GisStandardStateReader
         };
     }
 
+    private static bool IsGenuinelyEmptyModel(Document document, ModelSnapshot snapshot)
+    {
+        if (snapshot.FloorTypes.Any(type => type.FloorIds.Count > 0))
+        {
+            return false;
+        }
+
+        if (new FilteredElementCollector(document).OfClass(typeof(RevitLinkInstance)).WhereElementIsNotElementType().Any())
+        {
+            return false;
+        }
+
+        if (new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Any())
+        {
+            return false;
+        }
+
+        if (new FilteredElementCollector(document).OfClass(typeof(Wall)).WhereElementIsNotElementType().Any())
+        {
+            return false;
+        }
+
+        if (new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().Any())
+        {
+            return false;
+        }
+
+        if (new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_Stairs).WhereElementIsNotElementType().Any())
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     private static GeoProjectInfo? TryLoadGeoProjectInfo(Document document)
     {
         try
@@ -121,12 +152,20 @@ public static class GisStandardStateReader
     private static List<LinkedModelReadinessInfo> ReadLinkedModels(Document document)
     {
         List<LinkedModelReadinessInfo> links = new();
+        HashSet<string> seenKeys = new(StringComparer.OrdinalIgnoreCase);
+
         foreach (RevitLinkInstance link in new FilteredElementCollector(document)
             .OfClass(typeof(RevitLinkInstance))
             .WhereElementIsNotElementType()
             .Cast<RevitLinkInstance>())
         {
             Document? linkedDoc = link.GetLinkDocument();
+            string dedupeKey = LinkDeduplicationKey(link, linkedDoc);
+            if (!seenKeys.Add(dedupeKey))
+            {
+                continue;
+            }
+
             string name = linkedDoc?.Title ?? link.Name ?? $"Link {link.Id.Value}";
             if (linkedDoc is null)
             {
@@ -139,6 +178,29 @@ public static class GisStandardStateReader
         }
 
         return links;
+    }
+
+    private static string LinkDeduplicationKey(RevitLinkInstance link, Document? linkedDoc)
+    {
+        if (linkedDoc != null && !string.IsNullOrWhiteSpace(linkedDoc.PathName))
+        {
+            try
+            {
+                return "path:" + Path.GetFullPath(linkedDoc.PathName);
+            }
+            catch (Exception)
+            {
+                return "path:" + linkedDoc.PathName.Trim();
+            }
+        }
+
+        ElementId typeId = link.GetTypeId();
+        if (typeId != ElementId.InvalidElementId)
+        {
+            return "type:" + typeId.Value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return "id:" + link.Id.Value.ToString(CultureInfo.InvariantCulture);
     }
 
     private static List<LoadedFamilyCheckInfo> ReadLoadedFamilies(Document document)
@@ -222,26 +284,47 @@ public static class GisStandardStateReader
                 continue;
             }
 
-            List<string> fields = new();
             ScheduleDefinition definition = schedule.Definition;
+            string categoryName = ResolveScheduleCategoryName(definition.CategoryId);
+            List<string> fields = new();
             int count = definition.GetFieldCount();
             for (int index = 0; index < count; index++)
             {
                 ScheduleField field = definition.GetField(index);
-                string resolvedName = ResolveScheduleFieldName(document, field);
+                string resolvedName = ResolveSharedScheduleFieldName(document, field);
                 if (resolvedName.Length > 0)
                 {
                     fields.Add(resolvedName);
                 }
             }
 
-            schedules.Add(new QaScheduleInfo(schedule.Id.Value, schedule.Name ?? string.Empty, fields));
+            schedules.Add(new QaScheduleInfo(schedule.Id.Value, schedule.Name ?? string.Empty, fields, categoryName));
         }
 
         return schedules;
     }
 
-    private static string ResolveScheduleFieldName(Document document, ScheduleField field)
+    private static string ResolveScheduleCategoryName(ElementId categoryId)
+    {
+        if (categoryId == ElementId.InvalidElementId)
+        {
+            return string.Empty;
+        }
+
+        long raw = categoryId.Value;
+        if (raw >= int.MinValue && raw <= int.MaxValue)
+        {
+            BuiltInCategory builtIn = (BuiltInCategory)(int)raw;
+            if (Enum.IsDefined(typeof(BuiltInCategory), builtIn) && builtIn != BuiltInCategory.INVALID)
+            {
+                return builtIn.ToString();
+            }
+        }
+
+        return raw.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string ResolveSharedScheduleFieldName(Document document, ScheduleField field)
     {
         if (field.ParameterId != ElementId.InvalidElementId
             && document.GetElement(field.ParameterId) is SharedParameterElement shared)
@@ -258,7 +341,7 @@ public static class GisStandardStateReader
             }
         }
 
-        return (field.GetName() ?? string.Empty).Trim();
+        return string.Empty;
     }
 
     private static List<GisBoundParameterState> ReadBoundParameters(Document document)

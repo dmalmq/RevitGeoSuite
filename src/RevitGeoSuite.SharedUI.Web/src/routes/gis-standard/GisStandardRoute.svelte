@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { request } from '$lib/bridge/rpc'
+  import { on, request } from '$lib/bridge/rpc'
   import type {
     GisAuditFindingItem,
     GisFloorTypeProposalItem,
@@ -29,7 +29,7 @@
   let tab = $state<Tab>(window.location.hash.endsWith('/gis-standard/drift') ? 'drift' : 'standard')
 
   let model = $state<GisStandardInspectResponse | null>(null)
-  let readinessMode = $state<'template' | 'project' | null>(null)
+  let selectedMode = $state<'template' | 'project' | null>(null)
   let loading = $state(false)
   let applying = $state<'setup' | 'prepareTemplate' | 'fix' | 'reset' | null>(null)
   let validatingRfa = $state(false)
@@ -55,20 +55,26 @@
     info: { tone: 'info', key: 'GisStandard.Severity.Info', fallback: 'Note' }
   }
 
-  onMount(() => void inspect())
+  onMount(() => {
+    void inspect()
+    return on('document.changed', () => {
+      selectedMode = null
+      applied = null
+      rfaResult = null
+      rfaError = null
+      void inspect(null)
+    })
+  })
 
-  async function inspect(modeOverride?: 'template' | 'project') {
-    const targetMode = modeOverride ?? readinessMode
+  async function inspect(modeOverride?: 'template' | 'project' | null) {
+    const explicitMode = modeOverride !== undefined ? modeOverride : selectedMode
     loading = true
     error = null
     try {
       model = await request(
         'gisStandard.inspect',
-        targetMode ? { stationFolder: '', mode: targetMode } : { stationFolder: '' }
+        explicitMode ? { stationFolder: '', mode: explicitMode } : { stationFolder: '' }
       )
-      if (model.readiness?.mode === 'template' || model.readiness?.mode === 'project') {
-        readinessMode = model.readiness.mode
-      }
       ticked = initiallyTicked(model.proposals)
     } catch (err: any) {
       error = err.message || $t('GisStandard.Error.Read', 'Could not read the model.')
@@ -78,7 +84,7 @@
   }
 
   async function changeReadinessMode(next: 'template' | 'project') {
-    readinessMode = next
+    selectedMode = next
     await inspect(next)
   }
 

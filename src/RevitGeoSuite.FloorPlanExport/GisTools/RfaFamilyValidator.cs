@@ -17,7 +17,18 @@ public static class RfaFamilyValidator
 {
     public const int MaxFilesPerScan = 200;
 
-    public static IReadOnlyList<FamilyValidationItem> ValidateFolder(
+    private static readonly string[] TrackedParameterNames =
+    {
+        GisSharedParameters.GisKind,
+        GisSharedParameters.GisCategory,
+        GisSharedParameters.GisRestriction,
+        GisSharedParameters.GisDirection,
+        GisSharedParameters.GisLevelsServed,
+        GisSharedParameters.GisDoor,
+        GisSharedParameters.GisAccessCon,
+    };
+
+    public static RfaFolderValidationResult ValidateFolder(
         Document hostDocument,
         string folderPath,
         GisToolStandard? standard = null)
@@ -33,16 +44,18 @@ public static class RfaFamilyValidator
         }
 
         GisToolStandard effective = standard ?? GisToolStandard.LoadEmbedded();
-        string[] files = Directory
+        string[] allFiles = Directory
             .EnumerateFiles(folderPath, "*.rfa", SearchOption.AllDirectories)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .Take(MaxFilesPerScan)
             .ToArray();
 
-        if (files.Length == 0)
+        if (allFiles.Length == 0)
         {
-            return Array.Empty<FamilyValidationItem>();
+            return new RfaFolderValidationResult(Array.Empty<FamilyValidationItem>(), 0, 0, truncated: false);
         }
+
+        string[] files = allFiles.Take(MaxFilesPerScan).ToArray();
+        bool truncated = allFiles.Length > files.Length;
 
         Dictionary<string, Document> openDocs = new(StringComparer.OrdinalIgnoreCase);
         foreach (Document openDoc in hostDocument.Application.Documents)
@@ -120,7 +133,7 @@ public static class RfaFamilyValidator
         }
 
         results.AddRange(FamilyStandardValidator.ValidateFamilies(inspected, effective));
-        return results;
+        return new RfaFolderValidationResult(results, allFiles.Length, files.Length, truncated);
     }
 
     private static IEnumerable<LoadedFamilyCheckInfo> ReadFamilyDocument(Document familyDoc, string familyName, string filePath)
@@ -138,6 +151,20 @@ public static class RfaFamilyValidator
             if (!string.IsNullOrWhiteSpace(name) && !paramsByName.ContainsKey(name!))
             {
                 paramsByName[name!] = param;
+            }
+        }
+
+        Dictionary<string, FamilyParameterBindingInfo> bindings = new(StringComparer.Ordinal);
+        foreach (string trackedName in TrackedParameterNames)
+        {
+            if (paramsByName.TryGetValue(trackedName, out FamilyParameter? trackedParam))
+            {
+                Guid? guid = trackedParam.IsShared ? trackedParam.GUID : null;
+                bindings[trackedName] = new FamilyParameterBindingInfo(
+                    trackedName,
+                    trackedParam.IsShared,
+                    guid,
+                    trackedParam.IsInstance);
             }
         }
 
@@ -171,7 +198,8 @@ public static class RfaFamilyValidator
                 hasGisKindParameter: hasGisKind,
                 hasGisDoorParameter: hasGisDoor,
                 hasGisAccessConParameter: hasGisAccessCon,
-                sourcePath: filePath);
+                sourcePath: filePath,
+                parameterBindings: bindings);
             yield break;
         }
 
@@ -199,7 +227,8 @@ public static class RfaFamilyValidator
                 hasGisDoorParameter: hasGisDoor,
                 hasGisAccessConParameter: hasGisAccessCon,
                 typeParameters: requiredValues,
-                sourcePath: filePath);
+                sourcePath: filePath,
+                parameterBindings: bindings);
         }
     }
 

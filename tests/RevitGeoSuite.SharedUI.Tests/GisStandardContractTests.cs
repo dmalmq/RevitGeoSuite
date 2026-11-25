@@ -106,6 +106,9 @@ public sealed class GisStandardContractTests
             return Task.FromResult<object?>(new GisRfaValidationResponse
             {
                 FolderPath = ReceivedFolder,
+                TotalFilesFound = 250,
+                InspectedFileCount = 200,
+                Truncated = true,
                 PassCount = 1,
                 WarnCount = 0,
                 FailCount = 0,
@@ -142,6 +145,9 @@ public sealed class GisStandardContractTests
             ["folderPath"] = @"C:\Families",
         });
         Assert.Equal(@"C:\Families", rfaHandler.ReceivedFolder);
+        Assert.Equal(250, (int)rfaResponse["payload"]!["totalFilesFound"]!);
+        Assert.Equal(200, (int)rfaResponse["payload"]!["inspectedFileCount"]!);
+        Assert.True((bool)rfaResponse["payload"]!["truncated"]!);
         Assert.Equal(1, (int)rfaResponse["payload"]!["passCount"]!);
         Assert.Equal("pass", (string)rfaResponse["payload"]!["items"]![0]!["status"]!);
     }

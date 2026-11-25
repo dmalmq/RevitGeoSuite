@@ -32,6 +32,26 @@ public enum ReadinessActionKind
     FixFloorTypes,
 }
 
+/// <summary>Shared-parameter GUID and type/instance binding metadata read from an .rfa family parameter.</summary>
+public sealed class FamilyParameterBindingInfo
+{
+    public FamilyParameterBindingInfo(string name, bool isShared, Guid? guid, bool isInstance)
+    {
+        Name = name ?? string.Empty;
+        IsShared = isShared;
+        Guid = guid;
+        IsInstance = isInstance;
+    }
+
+    public string Name { get; }
+
+    public bool IsShared { get; }
+
+    public Guid? Guid { get; }
+
+    public bool IsInstance { get; }
+}
+
 /// <summary>A loaded family type (in a model/template) or an external .rfa family type inspected against standards/families.json and door rules.</summary>
 public sealed class LoadedFamilyCheckInfo
 {
@@ -49,7 +69,8 @@ public sealed class LoadedFamilyCheckInfo
         bool hasGisAccessConParameter = false,
         IReadOnlyDictionary<string, string>? typeParameters = null,
         IEnumerable<long>? instanceIds = null,
-        string? sourcePath = null)
+        string? sourcePath = null,
+        IReadOnlyDictionary<string, FamilyParameterBindingInfo>? parameterBindings = null)
     {
         ElementId = elementId;
         FamilyName = familyName ?? string.Empty;
@@ -65,6 +86,7 @@ public sealed class LoadedFamilyCheckInfo
         TypeParameters = typeParameters ?? new Dictionary<string, string>(StringComparer.Ordinal);
         InstanceIds = (instanceIds ?? Array.Empty<long>()).ToList();
         SourcePath = sourcePath ?? string.Empty;
+        ParameterBindings = parameterBindings ?? new Dictionary<string, FamilyParameterBindingInfo>(StringComparer.Ordinal);
     }
 
     public long ElementId { get; }
@@ -94,6 +116,8 @@ public sealed class LoadedFamilyCheckInfo
     public IReadOnlyList<long> InstanceIds { get; }
 
     public string SourcePath { get; }
+
+    public IReadOnlyDictionary<string, FamilyParameterBindingInfo> ParameterBindings { get; }
 }
 
 /// <summary>Validation result for a single family or .rfa file.</summary>
@@ -126,6 +150,30 @@ public sealed class FamilyValidationItem
     public string FilePath { get; }
 
     public IReadOnlyList<long> ElementIds { get; }
+}
+
+/// <summary>Result of scanning a folder of external .rfa files, including truncation metadata.</summary>
+public sealed class RfaFolderValidationResult
+{
+    public RfaFolderValidationResult(
+        IReadOnlyList<FamilyValidationItem> items,
+        int totalFilesFound,
+        int inspectedFileCount,
+        bool truncated)
+    {
+        Items = items ?? throw new ArgumentNullException(nameof(items));
+        TotalFilesFound = totalFilesFound;
+        InspectedFileCount = inspectedFileCount;
+        Truncated = truncated;
+    }
+
+    public IReadOnlyList<FamilyValidationItem> Items { get; }
+
+    public int TotalFilesFound { get; }
+
+    public int InspectedFileCount { get; }
+
+    public bool Truncated { get; }
 }
 
 /// <summary>One linked Revit model inspected for stable ModelId readiness.</summary>
@@ -190,9 +238,19 @@ public sealed class ReadinessCheckSnapshot
         {
             string path = (DocumentPath ?? string.Empty).Trim();
             string title = (DocumentTitle ?? string.Empty).Trim();
-            bool isRte = path.EndsWith(".rte", StringComparison.OrdinalIgnoreCase)
-                || title.EndsWith(".rte", StringComparison.OrdinalIgnoreCase);
-            return isRte || IsEmptyModel ? ReadinessMode.Template : ReadinessMode.Project;
+            if (path.EndsWith(".rte", StringComparison.OrdinalIgnoreCase)
+                || title.EndsWith(".rte", StringComparison.OrdinalIgnoreCase))
+            {
+                return ReadinessMode.Template;
+            }
+
+            if (path.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
+                || title.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase))
+            {
+                return ReadinessMode.Project;
+            }
+
+            return IsEmptyModel ? ReadinessMode.Template : ReadinessMode.Project;
         }
     }
 }
@@ -292,7 +350,7 @@ public sealed class ProjectReadinessReport
             ? 100
             : (int)Math.Round((100.0 * PassCount) / ApplicableCount, MidpointRounding.AwayFromZero);
         IsReady = FailCount == 0 && WarnCount == 0;
-        CanPrepareTemplate = canSetupModel || !templatePlan.IsEmpty;
+        CanPrepareTemplate = canSetupModel || templatePlan.HasActionableSteps;
     }
 
     public ReadinessMode Mode { get; }
@@ -339,6 +397,15 @@ public static class FamilyStandardValidator
         "OST_MechanicalEquipment",
     };
 
+    private static readonly string[] ValidatedCirculationParameters =
+    {
+        GisSharedParameters.GisKind,
+        GisSharedParameters.GisCategory,
+        GisSharedParameters.GisRestriction,
+        GisSharedParameters.GisDirection,
+        GisSharedParameters.GisLevelsServed,
+    };
+
     public static IReadOnlyList<FamilyValidationItem> ValidateFamilies(
         IEnumerable<LoadedFamilyCheckInfo> familyTypes,
         GisToolStandard? standard = null)
@@ -354,13 +421,14 @@ public static class FamilyStandardValidator
 
             if (string.Equals(familyType.CategoryName, DoorsCategory, StringComparison.OrdinalIgnoreCase))
             {
-                results.Add(ValidateDoorFamily(familyType));
+                results.Add(ValidateDoorFamily(familyType, effective));
                 continue;
             }
 
             if (CirculationCategories.Contains(familyType.CategoryName, StringComparer.OrdinalIgnoreCase)
                 || effective.Families.KindOf(familyType.FamilyName) != null
-                || !string.IsNullOrWhiteSpace(familyType.GisKind))
+                || !string.IsNullOrWhiteSpace(familyType.GisKind)
+                || familyType.ParameterBindings.ContainsKey(GisSharedParameters.GisKind))
             {
                 results.Add(ValidateCirculationFamily(familyType, effective));
             }
@@ -369,9 +437,40 @@ public static class FamilyStandardValidator
         return results;
     }
 
-    private static FamilyValidationItem ValidateDoorFamily(LoadedFamilyCheckInfo familyType)
+    private static FamilyValidationItem ValidateDoorFamily(LoadedFamilyCheckInfo familyType, GisToolStandard standard)
     {
         string displayName = DisplayName(familyType);
+        List<string> bindingErrors = CollectBindingErrors(
+            familyType,
+            new[] { GisSharedParameters.GisDoor, GisSharedParameters.GisAccessCon },
+            standard);
+        if (bindingErrors.Count > 0)
+        {
+            return new FamilyValidationItem(
+                displayName,
+                DoorsCategory,
+                ReadinessCheckStatus.Fail,
+                string.Join(" ", bindingErrors),
+                familyType.SourcePath,
+                familyType.InstanceIds);
+        }
+
+        bool isExternalRfa = !string.IsNullOrWhiteSpace(familyType.SourcePath);
+        if (isExternalRfa)
+        {
+            bool bothEmbedded = familyType.HasGisDoorParameter && familyType.HasGisAccessConParameter;
+            string detail = bothEmbedded
+                ? "Door .rfa carries standard shared type parameters gis_door and gis_access_con."
+                : "No conflicting embedded door parameters; project OST_Doors bindings supply gis_door and gis_access_con on load.";
+            return new FamilyValidationItem(
+                displayName,
+                DoorsCategory,
+                ReadinessCheckStatus.Pass,
+                detail,
+                familyType.SourcePath,
+                familyType.InstanceIds);
+        }
+
         List<string> missingParams = new();
         if (!familyType.HasGisDoorParameter)
         {
@@ -406,6 +505,18 @@ public static class FamilyStandardValidator
     private static FamilyValidationItem ValidateCirculationFamily(LoadedFamilyCheckInfo familyType, GisToolStandard standard)
     {
         string displayName = DisplayName(familyType);
+        List<string> bindingErrors = CollectBindingErrors(familyType, ValidatedCirculationParameters, standard);
+        if (bindingErrors.Count > 0)
+        {
+            return new FamilyValidationItem(
+                displayName,
+                familyType.CategoryName,
+                ReadinessCheckStatus.Fail,
+                string.Join(" ", bindingErrors),
+                familyType.SourcePath,
+                familyType.InstanceIds);
+        }
+
         string kind = GisToolStandard.Normalize(familyType.GisKind).ToLowerInvariant();
         if (kind.Length > 0 && !GisAudit.GisKinds.Contains(kind))
         {
@@ -500,6 +611,52 @@ public static class FamilyStandardValidator
             familyType.InstanceIds);
     }
 
+    private static List<string> CollectBindingErrors(
+        LoadedFamilyCheckInfo familyType,
+        IEnumerable<string> parameterNames,
+        GisToolStandard standard)
+    {
+        List<string> errors = new();
+        if (familyType.ParameterBindings.Count == 0)
+        {
+            return errors;
+        }
+
+        foreach (string paramName in parameterNames)
+        {
+            if (!familyType.ParameterBindings.TryGetValue(paramName, out FamilyParameterBindingInfo? info))
+            {
+                continue;
+            }
+
+            GisParameterDefinition? expected = standard.Parameter(paramName);
+            if (expected is null)
+            {
+                continue;
+            }
+
+            if (!info.IsShared)
+            {
+                errors.Add($"Parameter {paramName} is a non-shared family parameter; use the shipped shared parameter ({expected.Guid:D}).");
+            }
+            else if (info.Guid != expected.Guid)
+            {
+                string actualGuid = info.Guid.HasValue ? info.Guid.Value.ToString("D") : "(none)";
+                errors.Add($"Parameter {paramName} has shared GUID {actualGuid}, expected {expected.Guid:D}.");
+            }
+
+            bool expectedInstance = expected.Binding == GisParameterBinding.Instance;
+            if (info.IsInstance != expectedInstance)
+            {
+                string actualKind = info.IsInstance ? "instance" : "type";
+                string expectedKind = expectedInstance ? "instance" : "type";
+                errors.Add($"Parameter {paramName} is bound as an {actualKind} parameter; the standard requires a {expectedKind} parameter.");
+            }
+        }
+
+        return errors;
+    }
+
     private static bool SameKind(string a, string b) =>
         VerticalCirculation.TryMapGisKind(a, out string first)
         && VerticalCirculation.TryMapGisKind(b, out string second)
@@ -556,7 +713,7 @@ public static class ProjectReadinessEvaluator
             EvaluateParametersGroup(modelSnapshot, effective),
             EvaluateFloorsAndMaterialsGroup(modelSnapshot, effective, proposals),
             EvaluateFamiliesGroup(snapshot, modelSnapshot, effective),
-            EvaluateTemplateViewsGroup(snapshot, templatePlan),
+            EvaluateTemplateViewsGroup(templatePlan),
             EvaluateProjectOnlyGroup(snapshot, mode),
         };
 
@@ -935,9 +1092,7 @@ public static class ProjectReadinessEvaluator
         return new ReadinessCheckGroup("families", "Families & .rfa standard", items);
     }
 
-    private static ReadinessCheckGroup EvaluateTemplateViewsGroup(
-        ReadinessCheckSnapshot snapshot,
-        TemplatePreparationPlan templatePlan)
+    private static ReadinessCheckGroup EvaluateTemplateViewsGroup(TemplatePreparationPlan templatePlan)
     {
         List<ReadinessCheckItem> items = new();
         Dictionary<string, QaSchedulePlanStep> pendingById = templatePlan.Schedules
@@ -947,15 +1102,29 @@ public static class ProjectReadinessEvaluator
         {
             if (pendingById.TryGetValue(definition.Id, out QaSchedulePlanStep? step))
             {
-                string detail = step.CreateSchedule
-                    ? $"QA schedule '{definition.Name}' is missing. Run Prepare Template to create it with {string.Join(", ", definition.RequiredFields)}."
-                    : $"QA schedule '{definition.Name}' is missing required field(s): {string.Join(", ", step.MissingFields)}. Run Prepare Template to update it.";
-                items.Add(new ReadinessCheckItem(
-                    definition.Id,
-                    definition.Name,
-                    ReadinessCheckStatus.Fail,
-                    detail,
-                    ReadinessActionKind.PrepareTemplate));
+                if (step.CategoryMismatch)
+                {
+                    string actual = TemplateStandardDefinitions.CategoryLabel(step.ActualCategoryName);
+                    string expected = TemplateStandardDefinitions.CategoryLabel(definition.CategoryName);
+                    items.Add(new ReadinessCheckItem(
+                        definition.Id,
+                        definition.Name,
+                        ReadinessCheckStatus.Fail,
+                        $"Existing schedule '{definition.Name}' targets {actual}, expected {expected}. Rename or delete it, then run Prepare Template.",
+                        ReadinessActionKind.None));
+                }
+                else
+                {
+                    string detail = step.CreateSchedule
+                        ? $"QA schedule '{definition.Name}' is missing. Run Prepare Template to create it with {string.Join(", ", definition.RequiredFields)}."
+                        : $"QA schedule '{definition.Name}' is missing required field(s): {string.Join(", ", step.MissingFields)}. Run Prepare Template to update it.";
+                    items.Add(new ReadinessCheckItem(
+                        definition.Id,
+                        definition.Name,
+                        ReadinessCheckStatus.Fail,
+                        detail,
+                        ReadinessActionKind.PrepareTemplate));
+                }
             }
             else
             {
@@ -982,7 +1151,7 @@ public static class ProjectReadinessEvaluator
                 "view-template-export-plan",
                 TemplateStandardDefinitions.ExportPlanViewTemplateName,
                 ReadinessCheckStatus.Warn,
-                $"View template '{TemplateStandardDefinitions.ExportPlanViewTemplateName}' needs category/line-style visibility repair: {string.Join("; ", templatePlan.ExportPlanTemplateIssues)}.",
+                $"View template '{TemplateStandardDefinitions.ExportPlanViewTemplateName}' needs settings repair: {string.Join("; ", templatePlan.ExportPlanTemplateIssues)}.",
                 ReadinessActionKind.PrepareTemplate));
         }
         else
@@ -1120,6 +1289,12 @@ public static class ProjectReadinessEvaluator
             .Where(group => group.Count() > 1)
             .ToList();
 
+        List<IGrouping<string, LevelInfo>> duplicateShortNames = levels
+            .Where(level => !string.IsNullOrWhiteSpace(level.ShortName))
+            .GroupBy(level => level.ShortName.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .ToList();
+
         List<LevelInfo> missingMetadata = checkedLevels
             .Where(level => !level.Ordinal.HasValue || string.IsNullOrWhiteSpace(level.ShortName))
             .ToList();
@@ -1132,7 +1307,7 @@ public static class ProjectReadinessEvaluator
                 ReadinessCheckStatus.Fail,
                 "Model has no levels."));
         }
-        else if (duplicateOrdinals.Count > 0 || missingMetadata.Count > 0)
+        else if (duplicateOrdinals.Count > 0 || duplicateShortNames.Count > 0 || missingMetadata.Count > 0)
         {
             List<string> problems = new();
             List<long> problemIds = new();
@@ -1140,6 +1315,12 @@ public static class ProjectReadinessEvaluator
             {
                 problems.Add($"duplicate ordinal(s): {string.Join(", ", duplicateOrdinals.Select(g => $"{g.Key} ({string.Join("/", g.Select(l => l.Name))})"))}");
                 problemIds.AddRange(duplicateOrdinals.SelectMany(g => g.Select(l => l.ElementId)));
+            }
+
+            if (duplicateShortNames.Count > 0)
+            {
+                problems.Add($"duplicate short_name(s): {string.Join(", ", duplicateShortNames.Select(g => $"{g.Key} ({string.Join("/", g.Select(l => l.Name))})"))}");
+                problemIds.AddRange(duplicateShortNames.SelectMany(g => g.Select(l => l.ElementId)));
             }
 
             if (missingMetadata.Count > 0)
@@ -1162,7 +1343,7 @@ public static class ProjectReadinessEvaluator
                 "level-metadata",
                 "Level ordinal & short_name completeness",
                 ReadinessCheckStatus.Pass,
-                $"All {checkedLevels.Count} level(s) have unique ordinals and non-empty short_name values."));
+                $"All {checkedLevels.Count} level(s) have unique ordinals and short_name values."));
         }
 
         return new ReadinessCheckGroup("project-setup", "Project georeferencing, Model IDs & levels", items);
