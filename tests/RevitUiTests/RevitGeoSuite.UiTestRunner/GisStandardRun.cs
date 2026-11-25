@@ -37,24 +37,11 @@ internal sealed partial class GisStandardRun(RunOptions options, TestHostClient 
 
     private ShellPage Shell => shell ?? throw new InvalidOperationException("The page is not attached (step 1 failed).");
 
+    /// <summary>
+    /// Runs the scenario. An exception it cannot recover from propagates, so Program.cs records the STOP
+    /// step once and every later scenario reports that it did not run.
+    /// </summary>
     public async Task RunAsync(DateTime revitStartedUtc)
-    {
-        try
-        {
-            await RunStepsAsync(revitStartedUtc);
-        }
-        catch (Exception ex)
-        {
-            // A stopped run is a failed run: the report says FAIL and the runner exits non-zero.
-            report.Header.Add($"RUN STOPPED: {ex.Message}");
-            var stopped = new StepResult("STOP", "The run finished every step it was asked to run");
-            stopped.Check(false, $"The run stopped with {ex.GetType().Name}: {ex.Message}");
-            report.Steps.Add(stopped);
-            Console.Error.WriteLine($"Run stopped: {ex.Message}");
-        }
-    }
-
-    private async Task RunStepsAsync(DateTime revitStartedUtc)
     {
         PrepareModel();
         try

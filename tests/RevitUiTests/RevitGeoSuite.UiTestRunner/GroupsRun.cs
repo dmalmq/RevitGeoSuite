@@ -15,7 +15,7 @@ internal sealed partial class GisStandardRun
     private static readonly double[] GroupOffsetsM = { 5, 10, 20, 40, 80 };
     private static readonly string[] AtomMarkers = { "Disallowed Atom Touch", "AtomViolation" };
 
-    private readonly JournalMark groupsStarted = JournalScan.Mark(JournalScan.DefaultFolder(options.RevitYear));
+    private JournalMark? groupsStarted;
     private long[] groupFloors = Array.Empty<long>();
     private string[] groupUniqueIds = Array.Empty<string>();
     private string[] groupIds = Array.Empty<string>();
@@ -23,6 +23,7 @@ internal sealed partial class GisStandardRun
 
     private async Task GroupSteps()
     {
+        groupsStarted = JournalScan.Mark(JournalScan.DefaultFolder(options.RevitYear));
         await Step("B9.0", "The model has had Set up model once, so each level has a GIS_ plan", EnsureSetUp);
         await Step("B9.G", "The copy gets RevitGeoSuite's georeference record from its own coordinates, which the Cesium export needs", EnsureGeoreference);
         await Step("B9.S", "A Cesium export into a station folder gives the copy a model id, which a drift file must name", EnsureStation);
@@ -267,7 +268,7 @@ internal sealed partial class GisStandardRun
         moved.Min![0] + dxFt < other.Max![0] && moved.Max![0] + dxFt > other.Min![0] && moved.Min[1] < other.Max[1] && moved.Max![1] > other.Min![1];
 
     private List<string> AtomLines() =>
-        groupsStarted.LinesAfter().Lines
+        (groupsStarted ?? throw new InvalidOperationException("The B9 journal mark is taken when the group steps start.")).LinesAfter().Lines
             .Where(line => AtomMarkers.Any(marker => line.Contains(marker, StringComparison.Ordinal)))
             .ToList();
 

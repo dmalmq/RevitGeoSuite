@@ -10,7 +10,7 @@
 
   .\Run-UiTests.ps1 -StartRevit --model C:\dev\revit-test\auto\lumine-pristine.rvt --export-view 1F --excel
 
-  Several scenarios share one Revit start: -FloorPlanDataSandbox --scenario b1,b2a,c3a-reshape (or --scenario
+  Several scenarios share one Revit start: -FloorPlanDataSandbox --scenario "b1,b2a,c3a-reshape" (or --scenario
   all) runs them one after another, each on a fresh copy of the model in <out>\<scenario>, and writes
   <out>\summary.md with each scenario's result and minutes. A list needs -FloorPlanDataSandbox: the runner
   resets the export page's settings and profiles between scenarios, and only ever in the run's own copy.
@@ -106,6 +106,9 @@ $scenarioValue = $null
 $given = @($RunnerArgs | Where-Object { $null -ne $_ })
 for ($i = 0; $i -lt $given.Count - 1; $i++) { if ($given[$i] -in '--scenario', '--script') { $scenarioValue = $given[$i + 1] } }
 if ($scenarioValue) {
+    if ($scenarioValue -match '\s') {
+        throw "The scenario list '$scenarioValue' has a space in it. Quote a comma list in PowerShell (--scenario `"b1,b2a`"): unquoted, PowerShell passes b1,b2a as an array, which reaches the runner as 'b1 b2a'."
+    }
     if (($scenarioValue -match ',' -or $scenarioValue -eq 'all') -and -not $FloorPlanDataSandbox) {
         throw "Several scenarios ('$scenarioValue') need -FloorPlanDataSandbox: between scenarios the runner resets the export page's settings and profiles, which may only be the run's own copy."
     }

@@ -31,7 +31,7 @@ internal sealed record RunOptions
     public static readonly IReadOnlyList<string> AllScenarios = new[]
     {
         "gis-standard", "floor-types", "b1", "b2a", "a3-fields", "b9-groups", "c3a-reshape", "c3b-split",
-        "c3c-merge", "c3d-hand-drawn", "c4-waiting", "c8-network", "h4-shared-rules", "g7-reset",
+        "c3c-merge", "c3d-hand-drawn", "c4-waiting", "c8-network", "g7-reset", "h4-shared-rules",
     };
 
     /// <summary>c3a-reshape: a drift file to use instead of the one the scenario makes from its own export.</summary>

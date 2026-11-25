@@ -81,7 +81,15 @@ foreach (string name in options.ScenarioNames)
             }
             finally
             {
-                host.Call("arm", new { on = false });
+                try
+                {
+                    host.Call("arm", new { on = false });
+                }
+                catch (Exception disarm)
+                {
+                    // Best effort: a dead pipe here must not hide the exception that stopped the scenario.
+                    Console.Error.WriteLine($"Disarm failed: {disarm.Message}");
+                }
             }
         }
         catch (Exception ex)
