@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
+using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.GisTools;
 using RevitGeoSuite.RevitInterop;
@@ -40,7 +41,7 @@ public static class GisStandardStateReader
 
         return new GisStandardModelState
         {
-            StandardVersionText = ReadText(document.ProjectInformation, GisSharedParameters.GisStandardVersion),
+            StandardVersionText = ReadParameterText(FindSharedParameter(document.ProjectInformation, GisSharedParameters.GisStandardVersion, allowNameFallback: true)),
             BoundParameters = ReadBoundParameters(document),
             GisViewCount = new FilteredElementCollector(document)
                 .OfClass(typeof(ViewPlan))
@@ -49,6 +50,74 @@ public static class GisStandardStateReader
                                (view.Name ?? string.Empty).StartsWith(GisModelFile.GisViewPrefix, StringComparison.OrdinalIgnoreCase)),
             FloorTypesWithoutCategory = ReadFloorTypesWithoutCategory(document),
         };
+    }
+
+    public static int? ReadStandardVersion(Document? document)
+    {
+        if (document?.ProjectInformation == null)
+        {
+            return null;
+        }
+
+        Parameter? parameter = FindSharedParameter(
+            document.ProjectInformation,
+            GisSharedParameters.GisStandardVersion,
+            allowNameFallback: true);
+        return OpeningFamilyRules.ParseStandardVersion(ReadRawOrDisplayText(parameter));
+    }
+
+    /// <summary>
+    /// A standard parameter on <paramref name="element"/>: by its frozen GUID first; by name only for the legacy
+    /// parameters older models may hold under another GUID, or when <paramref name="allowNameFallback"/> is set.
+    /// Names outside the standard are looked up by name.
+    /// </summary>
+    internal static Parameter? FindSharedParameter(
+        Element? element,
+        string parameterName,
+        bool allowNameFallback = false)
+    {
+        if (element == null || string.IsNullOrWhiteSpace(parameterName))
+        {
+            return null;
+        }
+
+        if (GisSharedParameters.TryGet(parameterName, out GisParameterDefinition definition))
+        {
+            Parameter? byGuid = element.get_Parameter(definition.Guid);
+            if (byGuid != null)
+            {
+                return byGuid;
+            }
+
+            if (!allowNameFallback &&
+                !GisStandardCheck.LegacyParameterNames.Contains(parameterName, StringComparer.Ordinal))
+            {
+                return null;
+            }
+        }
+
+        return element.LookupParameter(parameterName);
+    }
+
+    /// <summary>The raw text of a standard type parameter (type first, then instance), read by GUID per <see cref="FindSharedParameter"/>.</summary>
+    internal static string? ReadSharedTypeParameterRaw(FamilyInstance? instance, string parameterName)
+    {
+        if (instance == null || string.IsNullOrWhiteSpace(parameterName))
+        {
+            return null;
+        }
+
+        Element? typeElement = (Element?)instance.Symbol ?? instance.Document?.GetElement(instance.GetTypeId());
+        Parameter? parameter = FindSharedParameter(typeElement, parameterName) ??
+            FindSharedParameter(instance, parameterName);
+        if (parameter == null || !parameter.HasValue)
+        {
+            return null;
+        }
+
+        return parameter.StorageType == StorageType.String
+            ? parameter.AsString()
+            : ReadParameterText(parameter);
     }
 
     public static bool IsTemplateDocument(Document document) =>
@@ -436,14 +505,6 @@ public static class GisStandardStateReader
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        GisSharedParameters.TryGet(GisSharedParameters.GisDoor, out GisParameterDefinition gisDoorDefinition);
-        Guid gisDoorGuid = gisDoorDefinition.Guid;
-        GisSharedParameters.TryGet(GisSharedParameters.GisAccessCon, out GisParameterDefinition gisAccessConDefinition);
-        Guid gisAccessConGuid = gisAccessConDefinition.Guid;
-        GisSharedParameters.TryGet(GisSharedParameters.GisOpeningCategory, out GisParameterDefinition gisOpeningCategoryDefinition);
-        Guid gisOpeningCategoryGuid = gisOpeningCategoryDefinition.Guid;
-        GisSharedParameters.TryGet(GisSharedParameters.GisFixtureType, out GisParameterDefinition gisFixtureTypeDefinition);
-        Guid gisFixtureTypeGuid = gisFixtureTypeDefinition.Guid;
         List<LoadedFamilyCheckInfo> loaded = new();
         foreach (BuiltInCategory category in ReadinessFamilyCategories)
         {
@@ -454,10 +515,11 @@ public static class GisStandardStateReader
                 .Cast<FamilySymbol>())
             {
                 Parameter? gisKindParam = symbol.LookupParameter(GisSharedParameters.GisKind);
-                Parameter? gisDoorParam = symbol.get_Parameter(gisDoorGuid);
-                Parameter? gisAccessConParam = symbol.get_Parameter(gisAccessConGuid) ?? symbol.LookupParameter(GisSharedParameters.GisAccessCon);
-                Parameter? gisOpeningCategoryParam = symbol.get_Parameter(gisOpeningCategoryGuid) ?? symbol.LookupParameter(GisSharedParameters.GisOpeningCategory);
-                Parameter? gisFixtureTypeParam = symbol.get_Parameter(gisFixtureTypeGuid) ?? symbol.LookupParameter(GisSharedParameters.GisFixtureType);
+                // The standard-only gis_ parameters are read the same way: by their frozen GUID, never by name.
+                Parameter? gisDoorParam = FindSharedParameter(symbol, GisSharedParameters.GisDoor);
+                Parameter? gisAccessConParam = FindSharedParameter(symbol, GisSharedParameters.GisAccessCon);
+                Parameter? gisOpeningCategoryParam = FindSharedParameter(symbol, GisSharedParameters.GisOpeningCategory);
+                Parameter? gisFixtureTypeParam = FindSharedParameter(symbol, GisSharedParameters.GisFixtureType);
 
                 Dictionary<string, string> requiredValues = new(StringComparer.Ordinal);
                 foreach (string paramName in requiredParamNames)

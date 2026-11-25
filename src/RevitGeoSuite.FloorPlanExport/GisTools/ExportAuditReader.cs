@@ -72,9 +72,10 @@ public static class ExportAuditReader
     private static IEnumerable<LayoutOpening> ReadWaysIn(Document document, IReadOnlyList<AuditStair> stairs, IReadOnlyList<AuditFamily> families)
     {
         IReadOnlyList<string> accepted = GisRulesSourceFactory.For(document).Load().Value.AcceptedOpeningFamilies;
+        int? standardVersion = GisStandardStateReader.ReadStandardVersion(document);
         foreach (FamilyInstance instance in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>())
         {
-            if (instance.LevelId != ElementId.InvalidElementId && OpeningFamilyClassifier.IsAcceptedOpening(instance, accepted) && Corners(instance) is List<Point2D> corners)
+            if (instance.LevelId != ElementId.InvalidElementId && OpeningFamilyClassifier.IsAcceptedOpening(instance, accepted, standardVersion) && Corners(instance) is List<Point2D> corners)
             {
                 yield return new LayoutOpening(instance.Id.Value, instance.LevelId.Value, corners);
             }
