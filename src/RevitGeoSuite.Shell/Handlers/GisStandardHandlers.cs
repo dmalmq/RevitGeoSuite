@@ -221,9 +221,9 @@ internal static class GisStandardWork
             ProjectReadinessReport readinessReport = ProjectReadinessEvaluator.Evaluate(readinessSnapshot, ParseMode(modeText), standard);
             readiness = MapReadiness(readinessReport);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Keep existing Standard tab audit/setup working even if readiness inspection fails.
+            System.Diagnostics.Trace.WriteLine($"Reading GIS readiness failed: {ex}");
         }
         return new GisStandardInspectResponse
         {

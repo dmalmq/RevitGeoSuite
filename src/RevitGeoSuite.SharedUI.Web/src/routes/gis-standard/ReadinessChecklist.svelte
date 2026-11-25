@@ -295,7 +295,18 @@
         {/if}
         {#if rfaResult.items.length === 0}
           <p class="text-muted-foreground">
-            {format($t('GisStandard.Readiness.ValidateRfa.Empty', 'No .rfa family files were found in {0}.'), rfaResult.folderPath)}
+            {#if rfaResult.totalFilesFound === 0}
+              {format($t('GisStandard.Readiness.ValidateRfa.Empty', 'No .rfa family files were found in {0}.'), rfaResult.folderPath)}
+            {:else}
+              {format(
+                $t(
+                  'GisStandard.Readiness.ValidateRfa.NoApplicable',
+                  'Inspected {0} .rfa file(s) in {1}; none were in GIS-validated categories (circulation or doors).'
+                ),
+                rfaResult.inspectedFileCount,
+                rfaResult.folderPath
+              )}
+            {/if}
           </p>
         {:else}
           <p class="font-medium text-foreground">

@@ -355,6 +355,54 @@ describe('GisStandardRoute readiness checklist & Prepare Template', () => {
     expect(results!.textContent).toContain('BadLift : A')
   })
 
+  it('distinguishes empty .rfa folders from folders with only non-GIS families', async () => {
+    const { target, flush } = await mountRoute('template', true)
+
+    const rfaButton = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-slot="button"]')).find((btn) =>
+      /Validate \.rfa folder/.test(btn.textContent ?? '')
+    )!
+
+    rfaButton.click()
+    await flush()
+    reply(sent('dialog.openFolder')[0], { path: 'C:\\Empty' })
+    await flush()
+    reply(sent('gisStandard.validateRfaFolder')[0], {
+      folderPath: 'C:\\Empty',
+      totalFilesFound: 0,
+      inspectedFileCount: 0,
+      truncated: false,
+      passCount: 0,
+      warnCount: 0,
+      failCount: 0,
+      items: []
+    })
+    await flush()
+
+    expect(target.querySelector('[data-testid="rfa-validation-results"]')!.textContent).toContain(
+      'No .rfa family files were found in C:\\Empty.'
+    )
+
+    rfaButton.click()
+    await flush()
+    reply(sent('dialog.openFolder')[1], { path: 'C:\\FurnitureOnly' })
+    await flush()
+    reply(sent('gisStandard.validateRfaFolder')[1], {
+      folderPath: 'C:\\FurnitureOnly',
+      totalFilesFound: 3,
+      inspectedFileCount: 3,
+      truncated: false,
+      passCount: 0,
+      warnCount: 0,
+      failCount: 0,
+      items: []
+    })
+    await flush()
+
+    const resultsText = target.querySelector('[data-testid="rfa-validation-results"]')!.textContent ?? ''
+    expect(resultsText).toContain('Inspected 3 .rfa file(s) in C:\\FurnitureOnly; none were in GIS-validated categories (circulation or doors).')
+    expect(resultsText).not.toContain('No .rfa family files were found')
+  })
+
   it('keeps auto-detection on Check again and resets explicit mode override on document.changed', async () => {
     const { target, flush } = await mountRoute('template', true)
 
