@@ -1043,6 +1043,7 @@ public sealed class FloorGeoPackageExporter
     {
         Dictionary<long, (string? Category, int Ordinal, string LevelId)> pending = new();
         Dictionary<long, string> gisKeys = new();
+        bool collectOpeningKeys = OpeningFamilyRules.IsStandardV3OrNewer(GisStandardStateReader.ReadStandardVersion(manager.Document));
         foreach (PreparedViewExportData view in prepared.Views)
         {
             // Families that resolve to fixtures leave the unit layer; they still get their gis_key.
@@ -1052,6 +1053,19 @@ public sealed class FloorGeoPackageExporter
                     TryGetLongAttribute(fixture.Attributes, "source_element_id", out long fixtureElementId))
                 {
                     CollectGisKey(gisKeys, fixtureElementId, fixture.Attributes);
+                }
+            }
+
+            // Doors and windows carry gis_key only in standard v3+ models; v1/v2 write-back stays unchanged.
+            IEnumerable<IExportFeature> openings = collectOpeningKeys
+                ? view.OpeningLayer?.Features ?? Enumerable.Empty<IExportFeature>()
+                : Enumerable.Empty<IExportFeature>();
+            foreach (IExportFeature opening in openings)
+            {
+                if (!(TryGetBoolAttribute(opening.Attributes, "is_linked_source", out bool isLinkedOpening) && isLinkedOpening) &&
+                    TryGetLongAttribute(opening.Attributes, "element_id", out long openingElementId))
+                {
+                    CollectGisKey(gisKeys, openingElementId, opening.Attributes);
                 }
             }
 
@@ -1139,7 +1153,7 @@ public sealed class FloorGeoPackageExporter
         AddWarnings(warnings, failures);
     }
 
-    /// <summary>gis_key holds the element's first revit_key (part 0), for every unit or fixture the model makes.</summary>
+    /// <summary>gis_key holds the element's first revit_key (part 0), for every unit, fixture, or opening the model makes.</summary>
     private static void CollectGisKey(Dictionary<long, string> gisKeys, long sourceElementId, IReadOnlyDictionary<string, object?> attributes)
     {
         if (attributes.TryGetValue(RevitKey.AttributeName, out object? keyValue) &&

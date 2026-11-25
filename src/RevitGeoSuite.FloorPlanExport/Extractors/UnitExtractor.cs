@@ -887,14 +887,14 @@ public sealed class UnitExtractor
 
     private static string? ReadInstanceStringParameter(FamilyInstance familyInstance, string parameterName)
     {
-        Parameter? parameter = familyInstance?.LookupParameter(parameterName);
+        Parameter? parameter = GisStandardStateReader.FindSharedParameter(familyInstance, parameterName, allowNameFallback: true);
         string? value = parameter != null && parameter.StorageType == StorageType.String ? parameter.AsString() : null;
         return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
     }
 
     private static string? ReadTypeStringParameter(FamilyInstance familyInstance, string parameterName)
     {
-        Parameter? parameter = familyInstance?.Symbol?.LookupParameter(parameterName);
+        Parameter? parameter = GisStandardStateReader.FindSharedParameter(familyInstance?.Symbol, parameterName, allowNameFallback: true);
         string? value = parameter != null && parameter.StorageType == StorageType.String ? parameter.AsString() : null;
         return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
     }
@@ -3300,10 +3300,12 @@ public sealed class UnitExtractor
 
     private static string? ReadStringParameter(FamilyInstance familyInstance, string parameterName)
     {
-        string? value = familyInstance?.LookupParameter(parameterName)?.AsString();
+        Parameter? instanceParam = GisStandardStateReader.FindSharedParameter(familyInstance, parameterName, allowNameFallback: true);
+        string? value = instanceParam != null && instanceParam.StorageType == StorageType.String ? instanceParam.AsString() : null;
         if (string.IsNullOrWhiteSpace(value))
         {
-            value = familyInstance?.Symbol?.LookupParameter(parameterName)?.AsString();
+            Parameter? typeParam = GisStandardStateReader.FindSharedParameter(familyInstance?.Symbol, parameterName, allowNameFallback: true);
+            value = typeParam != null && typeParam.StorageType == StorageType.String ? typeParam.AsString() : null;
         }
 
         return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();

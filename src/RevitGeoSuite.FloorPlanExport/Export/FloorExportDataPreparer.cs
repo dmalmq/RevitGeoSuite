@@ -127,6 +127,7 @@ public sealed class FloorExportDataPreparer
         string hostSourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
         string hostSourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
 
+        int? hostStandardVersion = GisStandardStateReader.ReadStandardVersion(_document);
         string sourceModelName = GetSourceModelName(_document);
         ExportSourceDescriptor hostSourceDescriptor = ExportSourceDescriptor.CreateHost(_document);
         UnitExtractor unitExtractor = new(
@@ -145,7 +146,14 @@ public sealed class FloorExportDataPreparer
         unitExtractor.StairDrawingSettings = _stairDrawingSettings;
         unitExtractor.ExportedLevelIds = new HashSet<long>(contexts.Select(x => x.Level.Id.Value));
         detailExtractor.StairDrawingSettings = _stairDrawingSettings;
-        OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog, geometryRepairOptions, hostSourceDescriptor, activeSchemaProfile);
+        OpeningExtractor openingExtractor = new(
+            _document,
+            metadataProvider,
+            _zoneCatalog,
+            geometryRepairOptions,
+            hostSourceDescriptor,
+            activeSchemaProfile,
+            hostStandardVersion);
         LevelBoundaryBuilder levelBoundaryBuilder = new();
 
         List<PreparedViewExportData> preparedViews = new(contexts.Count);
@@ -252,6 +260,7 @@ public sealed class FloorExportDataPreparer
                         supplementalUnitLayer,
                         fixtureLayer,
                         activeSchemaProfile,
+                        hostStandardVersion,
                         viewWarnings,
                         precomputedHostVerticalIds);
                     AddColumns(levelId, context.View, context.Columns, unitExtractor, supplementalUnitLayer, viewWarnings);
@@ -489,6 +498,7 @@ public sealed class FloorExportDataPreparer
         ExportLayer unitLayer,
         ExportLayer? fixtureLayer,
         SchemaProfile schemaProfile,
+        int? standardVersion,
         ICollection<string> warnings,
         ICollection<long>? skippedSourceElementIds = null)
     {
@@ -507,7 +517,7 @@ public sealed class FloorExportDataPreparer
                 {
                     if (fixtureLayer != null)
                     {
-                        fixtureLayer.AddFeature(RemapToFixtureAttributes(feature, familyUnit, view.Name, schemaProfile, warnings));
+                        fixtureLayer.AddFeature(RemapToFixtureAttributes(feature, familyUnit, view.Name, schemaProfile, standardVersion, warnings));
                     }
                 }
                 else
@@ -1132,9 +1142,16 @@ public sealed class FloorExportDataPreparer
         FamilyInstance sourceElement,
         string? viewName,
         SchemaProfile schemaProfile,
+        int? standardVersion,
         ICollection<string> warnings)
     {
-        Dictionary<string, object?> attributes = FixtureFeatureAttributes.FromUnit(unitFeature.Attributes);
+        string? gisFixtureType = OpeningFamilyRules.IsStandardV3OrNewer(standardVersion)
+            ? GisStandardStateReader.ReadSharedTypeParameterRaw(sourceElement, GisSharedParameters.GisFixtureType)
+            : null;
+        Dictionary<string, object?> attributes = FixtureFeatureAttributes.FromUnit(
+            unitFeature.Attributes,
+            gisFixtureType,
+            standardVersion);
         // Mappings read the full unit values, so a fixture field can use any derived value.
         SchemaAttributeMapper.ApplyMappings(
             schemaProfile,
@@ -1388,6 +1405,7 @@ public sealed class FloorExportDataPreparer
                 linkedStairVisibilityFeatures.Values.Concat(linkedEscalatorVisibilityFeatures.Values),
                 supplementalUnitLayer);
             HashSet<long> precomputedLinkedEscalatorIds = new(linkedEscalatorVisibilityFeatures.Keys);
+            int? linkedStandardVersion = GisStandardStateReader.ReadStandardVersion(linkedSource.LinkedDocument);
             AddFamilyUnits(
                 levelId,
                 context.View,
@@ -1396,6 +1414,7 @@ public sealed class FloorExportDataPreparer
                 supplementalUnitLayer,
                 fixtureLayer,
                 activeSchemaProfile,
+                linkedStandardVersion,
                 warnings,
                 precomputedLinkedEscalatorIds);
             AddColumns(levelId, context.View, linkedSource.Columns, linkedUnitExtractor, supplementalUnitLayer, warnings);
@@ -1463,13 +1482,15 @@ public sealed class FloorExportDataPreparer
 
         foreach (LinkedViewSourceContext linkedSource in context.LinkedSources)
         {
+            int? linkedStandardVersion = GisStandardStateReader.ReadStandardVersion(linkedSource.LinkedDocument);
             OpeningExtractor linkedOpeningExtractor = new(
                 linkedSource.LinkedDocument,
                 metadataProvider,
                 _zoneCatalog,
                 geometryRepairOptions,
                 ExportSourceDescriptor.CreateLinked(_document, linkedSource),
-                activeSchemaProfile);
+                activeSchemaProfile,
+                linkedStandardVersion);
             foreach (ExportLineString openingFeature in linkedOpeningExtractor.ExtractForLevel(
                          context.Level,
                          levelId,

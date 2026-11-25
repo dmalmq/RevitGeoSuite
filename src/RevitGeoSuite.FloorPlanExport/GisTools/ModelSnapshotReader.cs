@@ -12,13 +12,12 @@ namespace RevitGeoSuite.FloorPlanExport.GisTools;
 /// <summary>Reads the <see cref="ModelSnapshot"/> the GIS standard tools plan from. Reads only.</summary>
 public static class ModelSnapshotReader
 {
-    /// <summary>The categories whose family instances are units: escalators, ticket gates and fixtures.</summary>
+    /// <summary>The categories whose family instances are units: escalators, elevators, ticket gates and fixtures.</summary>
     public static IReadOnlyList<BuiltInCategory> FamilyCategories { get; } =
-        new[] { BuiltInCategory.OST_GenericModel, BuiltInCategory.OST_SpecialityEquipment };
+        new[] { BuiltInCategory.OST_GenericModel, BuiltInCategory.OST_SpecialityEquipment, BuiltInCategory.OST_MechanicalEquipment };
 
-    /// <summary>The categories the audit checks families in: the unit ones, and mechanical equipment for elevators.</summary>
-    private static readonly BuiltInCategory[] AuditedFamilyCategories =
-        FamilyCategories.Concat(new[] { BuiltInCategory.OST_MechanicalEquipment }).ToArray();
+    /// <summary>The categories the audit checks families in: the same as the unit ones.</summary>
+    private static readonly BuiltInCategory[] AuditedFamilyCategories = FamilyCategories.ToArray();
 
     public static ModelSnapshot Read(Document document)
     {
@@ -115,10 +114,17 @@ public static class ModelSnapshotReader
             }
         }
 
+        RevitGeoSuite.FloorPlanExport.Core.Models.ZoneCatalog unitFamilyCatalog = RevitGeoSuite.FloorPlanExport.Core.Models.ZoneCatalog.CreateDefault();
         foreach (BuiltInCategory category in FamilyCategories)
         {
             foreach (Element instance in new FilteredElementCollector(document).OfCategory(category).OfClass(typeof(FamilyInstance)))
             {
+                // Mechanical equipment holds elevators and escalators next to plant; only unit families get a row.
+                if (category == BuiltInCategory.OST_MechanicalEquipment && !IsUnitFamily(instance as FamilyInstance, unitFamilyCatalog))
+                {
+                    continue;
+                }
+
                 rows.Add(ParameterRow(document, instance, "family"));
             }
         }
@@ -129,6 +135,19 @@ public static class ModelSnapshotReader
         }
 
         return rows;
+    }
+
+    /// <summary>Whether the export collects <paramref name="instance"/> as a family unit (elevator, escalator, fixture...).</summary>
+    private static bool IsUnitFamily(FamilyInstance? instance, RevitGeoSuite.FloorPlanExport.Core.Models.ZoneCatalog catalog)
+    {
+        if (instance == null)
+        {
+            return false;
+        }
+
+        return RevitGeoSuite.FloorPlanExport.Extractors.UnitExtractor.HasMappedGisKind(instance) ||
+               RevitGeoSuite.FloorPlanExport.Extractors.UnitExtractor.HasStandardCategory(instance) ||
+               catalog.TryGetFamilyInfo(RevitGeoSuite.FloorPlanExport.Extractors.UnitExtractor.GetFamilyName(instance), out _);
     }
 
     /// <summary>A text parameter's value, trimmed; empty when the parameter is missing or not text.</summary>

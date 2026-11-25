@@ -48,6 +48,7 @@ public sealed class ViewExportContextProvider
             ? new HashSet<long>(linkExportOptions!.SelectedLinkInstanceIds ?? new List<long>())
             : new HashSet<long>();
 
+        int? hostStandardVersion = GisStandardStateReader.ReadStandardVersion(_document);
         List<ViewExportContext> contexts = new(selectedViews.Count);
         foreach (ViewPlan? candidate in selectedViews)
         {
@@ -79,8 +80,8 @@ public sealed class ViewExportContextProvider
                     CollectRoomsInView(view.Id, clipRegion),
                     CollectStairsInView(view.Id, clipRegion),
                     CollectFamilyUnitsInView(view.Id, zoneCatalog, familyCategoryOverrides, clipRegion),
-                    CollectOpeningInstancesInView(view.Id, acceptedOpeningFamilies, clipRegion),
-                    CollectUnsupportedOpeningInstancesInView(view.Id, acceptedOpeningFamilies, clipRegion),
+                    CollectOpeningInstancesInView(view.Id, acceptedOpeningFamilies, clipRegion, hostStandardVersion),
+                    CollectUnsupportedOpeningInstancesInView(view.Id, acceptedOpeningFamilies, clipRegion, hostStandardVersion),
                     CollectDetailCurvesInView(view.Id, clipRegion),
                     CollectLinkedSourcesInView(
                         view.Id,
@@ -243,13 +244,14 @@ public sealed class ViewExportContextProvider
     private List<FamilyInstance> CollectOpeningInstancesInView(
         ElementId viewId,
         IReadOnlyList<string>? acceptedOpeningFamilies,
-        ClipRegion2D? clipRegion)
+        ClipRegion2D? clipRegion,
+        int? standardVersion)
     {
         return new FilteredElementCollector(_document, viewId)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
-            .Where(instance => OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies))
+            .Where(instance => OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies, standardVersion))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
     }
@@ -257,13 +259,14 @@ public sealed class ViewExportContextProvider
     private List<FamilyInstance> CollectUnsupportedOpeningInstancesInView(
         ElementId viewId,
         IReadOnlyList<string>? acceptedOpeningFamilies,
-        ClipRegion2D? clipRegion)
+        ClipRegion2D? clipRegion,
+        int? standardVersion)
     {
         return new FilteredElementCollector(_document, viewId)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
-            .Where(instance => IsUnsupportedOpening(instance, acceptedOpeningFamilies))
+            .Where(instance => IsUnsupportedOpening(instance, acceptedOpeningFamilies, standardVersion))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
     }
@@ -316,6 +319,7 @@ public sealed class ViewExportContextProvider
             try
             {
                 Transform linkTransform = linkInstance.GetTotalTransform();
+                int? linkedStandardVersion = GisStandardStateReader.ReadStandardVersion(linkedDocument);
 
                 linkedSources.Add(
                     new LinkedViewSourceContext(
@@ -328,8 +332,8 @@ public sealed class ViewExportContextProvider
                         CollectRoomsInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
                         CollectStairsInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
                         CollectFamilyUnitsInLinkView(viewId, linkInstance.Id, zoneCatalog, familyCategoryOverrides, linkTransform, clipRegion),
-                        CollectOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion),
-                        CollectUnsupportedOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion),
+                        CollectOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion, linkedStandardVersion),
+                        CollectUnsupportedOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies, linkTransform, clipRegion, linkedStandardVersion),
                         CollectDetailCurvesInLinkView(viewId, linkInstance.Id, linkTransform, clipRegion),
                         CollectColumnsInLinkView(viewId, linkInstance.Id, zoneCatalog, familyCategoryOverrides, linkTransform, clipRegion)));
             }
@@ -440,13 +444,14 @@ public sealed class ViewExportContextProvider
         ElementId linkInstanceId,
         IReadOnlyList<string>? acceptedOpeningFamilies,
         Transform linkTransform,
-        ClipRegion2D? clipRegion)
+        ClipRegion2D? clipRegion,
+        int? standardVersion)
     {
         return new FilteredElementCollector(_document, viewId, linkInstanceId)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
-            .Where(instance => OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies))
+            .Where(instance => OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies, standardVersion))
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();
     }
@@ -456,13 +461,14 @@ public sealed class ViewExportContextProvider
         ElementId linkInstanceId,
         IReadOnlyList<string>? acceptedOpeningFamilies,
         Transform linkTransform,
-        ClipRegion2D? clipRegion)
+        ClipRegion2D? clipRegion,
+        int? standardVersion)
     {
         return new FilteredElementCollector(_document, viewId, linkInstanceId)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
-            .Where(instance => IsUnsupportedOpening(instance, acceptedOpeningFamilies))
+            .Where(instance => IsUnsupportedOpening(instance, acceptedOpeningFamilies, standardVersion))
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();
     }
@@ -497,7 +503,10 @@ public sealed class ViewExportContextProvider
             : DocumentProjectKeyBuilder.CreateDisplayName(linkedDocument);
     }
 
-    private static bool IsUnsupportedOpening(FamilyInstance instance, IReadOnlyList<string>? acceptedOpeningFamilies)
+    private static bool IsUnsupportedOpening(
+        FamilyInstance instance,
+        IReadOnlyList<string>? acceptedOpeningFamilies,
+        int? standardVersion)
     {
         if (instance == null)
         {
@@ -512,7 +521,7 @@ public sealed class ViewExportContextProvider
 
         BuiltInCategory categoryId = (BuiltInCategory)(int)category.Id.Value;
         bool isDoorOrWindow = categoryId == BuiltInCategory.OST_Doors || categoryId == BuiltInCategory.OST_Windows;
-        return isDoorOrWindow && !OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies);
+        return isDoorOrWindow && !OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies, standardVersion);
     }
 
     private static ClipRegion2D? TryGetSectionBoxClipRegion(View3D view3D)

@@ -6,6 +6,7 @@ using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Geometry;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Schema;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 
 namespace RevitGeoSuite.FloorPlanExport.Extractors;
@@ -23,6 +24,7 @@ public sealed class OpeningExtractor
     private readonly ExportSourceDescriptor _sourceDescriptor;
     private readonly SchemaProfile _schemaProfile;
     private readonly string _modelKey;
+    private readonly int? _standardVersion;
 
     public OpeningExtractor(
         Document document,
@@ -31,6 +33,25 @@ public sealed class OpeningExtractor
         GeometryRepairOptions? geometryRepairOptions = null,
         ExportSourceDescriptor? sourceDescriptor = null,
         SchemaProfile? schemaProfile = null)
+        : this(
+            document,
+            metadataProvider,
+            zoneCatalog,
+            geometryRepairOptions,
+            sourceDescriptor,
+            schemaProfile,
+            GisStandardStateReader.ReadStandardVersion(document))
+    {
+    }
+
+    public OpeningExtractor(
+        Document document,
+        IExportMetadataProvider metadataProvider,
+        ZoneCatalog zoneCatalog,
+        GeometryRepairOptions? geometryRepairOptions,
+        ExportSourceDescriptor? sourceDescriptor,
+        SchemaProfile? schemaProfile,
+        int? standardVersion)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -40,6 +61,7 @@ public sealed class OpeningExtractor
         _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        _standardVersion = standardVersion;
     }
 
     public IReadOnlyList<ExportLineString> ExtractForLevel(
@@ -99,10 +121,10 @@ public sealed class OpeningExtractor
                 continue;
             }
 
-            double maxSnapDistance = GetSnapDistance(opening, lineString, snapSegments);
+            bool isElevatorDoor = OpeningFamilyClassifier.IsAcceptedElevatorDoorFamily(opening, _standardVersion);
+            double maxSnapDistance = GetSnapDistance(lineString, snapSegments, isElevatorDoor);
             SnapResult snapResult = SnapToClosestOutline(lineString, snapSegments, maxSnapDistance);
             lineString = snapResult.Line;
-            bool isElevatorDoor = OpeningFamilyClassifier.IsAcceptedElevatorDoorFamily(opening);
             if (GetLineLength(lineString) < _geometryRepairOptions.MinimumOpeningLengthMeters)
             {
                 geometryRepair.DroppedOpenings++;
@@ -178,9 +200,9 @@ public sealed class OpeningExtractor
     }
 
     private double GetSnapDistance(
-        FamilyInstance opening,
         LineString2D line,
-        IReadOnlyList<BoundarySegment> segments)
+        IReadOnlyList<BoundarySegment> segments,
+        bool isElevatorDoor)
     {
         bool isNearElevatorBoundary = HasNearbyCategory(
             line,
@@ -188,7 +210,7 @@ public sealed class OpeningExtractor
             "elevator",
             _geometryRepairOptions.ElevatorOpeningSnapDistanceMeters);
         return OpeningSnapPolicy.ResolveMaxSnapDistance(
-            OpeningFamilyClassifier.IsAcceptedElevatorDoorFamily(opening),
+            isElevatorDoor,
             isNearElevatorBoundary,
             _geometryRepairOptions.OpeningSnapDistanceMeters,
             _geometryRepairOptions.ElevatorOpeningSnapDistanceMeters);
@@ -602,12 +624,25 @@ public sealed class OpeningExtractor
         return XYZ.BasisX;
     }
 
-    private static string GetOpeningCategory(FamilyInstance opening)
+    private string GetOpeningCategory(FamilyInstance opening)
     {
         string familyName = OpeningFamilyClassifier.GetFamilyName(opening);
-        return familyName.IndexOf("emergency", StringComparison.OrdinalIgnoreCase) >= 0
-            ? "emergencyexit"
-            : "pedestrian";
+        if (!OpeningFamilyRules.IsStandardV3OrNewer(_standardVersion))
+        {
+            return OpeningFamilyRules.ResolveOpeningCategory(familyName, null, null, _standardVersion);
+        }
+
+        string? gisOpeningCategory = GisStandardStateReader.ReadSharedTypeParameterRaw(
+            opening,
+            GisSharedParameters.GisOpeningCategory);
+        string? gisAccessCon = GisStandardStateReader.ReadSharedTypeParameterRaw(
+            opening,
+            GisSharedParameters.GisAccessCon);
+        return OpeningFamilyRules.ResolveOpeningCategory(
+            familyName,
+            gisOpeningCategory,
+            gisAccessCon,
+            _standardVersion);
     }
 
     private static bool IsOnLevel(FamilyInstance opening, Level level)

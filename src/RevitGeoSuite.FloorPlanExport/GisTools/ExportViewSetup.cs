@@ -440,6 +440,7 @@ public static class ExportViewSetup
         ProjectMappingRules rules = GisRulesSourceFactory.For(document).Load().Value;
         IReadOnlyDictionary<string, string> overrides = rules.FamilyCategoryOverrides;
         IReadOnlyList<string> acceptedOpenings = rules.AcceptedOpeningFamilies;
+        int? standardVersion = GisStandardStateReader.ReadStandardVersion(document);
         ZoneCatalog catalog = ZoneCatalog.CreateDefault();
         foreach (FamilyInstance instance in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).WhereElementIsNotElementType().Cast<FamilyInstance>())
         {
@@ -453,7 +454,7 @@ public static class ExportViewSetup
                 UnitExtractor.HasStandardCategory(instance) ||
                 catalog.TryGetFamilyInfo(familyName, out _) ||
                 overrides.ContainsKey(familyName) ||
-                OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpenings))
+                OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpenings, standardVersion))
             {
                 categories.Add(instance.Category.Id.Value);
             }
