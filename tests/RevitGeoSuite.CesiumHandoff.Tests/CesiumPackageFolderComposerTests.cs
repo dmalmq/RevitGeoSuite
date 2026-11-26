@@ -306,6 +306,99 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
         Assert.Equal("8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a", manifest.Source!.ModelId);
     }
 
+    [Fact]
+    public void ComposeFromFolder_WritesAndPreservesSourceModelRoleForSameModel()
+    {
+        File.WriteAllText(Path.Combine(_root, "tower.gpkg"), "gpkg");
+        CesiumPackageBuildInputs firstInputs = Inputs();
+        firstInputs.DocumentKey = "doc-key";
+        firstInputs.ModelRole = "SHOWCASE";
+
+        CesiumPackageManifest first = CesiumPackageFolderComposer.ComposeFromFolder(_root, firstInputs);
+        Assert.Equal(CesiumModelRoles.Showcase, first.Source!.ModelRole);
+
+        CesiumPackageBuildInputs secondInputs = Inputs();
+        secondInputs.DocumentKey = "DOC-KEY";
+        secondInputs.ModelRole = null;
+        CesiumPackageManifest preserved = CesiumPackageFolderComposer.ComposeFromFolder(_root, secondInputs);
+        Assert.Equal(CesiumModelRoles.Showcase, preserved.Source!.ModelRole);
+
+        CesiumPackageBuildInputs otherModelInputs = Inputs();
+        otherModelInputs.DocumentKey = "other-doc";
+        otherModelInputs.ModelRole = null;
+        CesiumPackageManifest otherModel = CesiumPackageFolderComposer.ComposeFromFolder(_root, otherModelInputs);
+        Assert.Null(otherModel.Source!.ModelRole);
+    }
+
+    [Fact]
+    public void ComposeFromFolder_PrefersFreshInputModelRoleOverStalePreviousManifest()
+    {
+        File.WriteAllText(Path.Combine(_root, "tower.gpkg"), "gpkg");
+
+        CesiumPackageBuildInputs authoringInputs = Inputs();
+        authoringInputs.DocumentKey = "doc-key";
+        authoringInputs.ModelRole = CesiumModelRoles.Authoring;
+        CesiumPackageManifest initial = CesiumPackageFolderComposer.ComposeFromFolder(_root, authoringInputs);
+        Assert.Equal(CesiumModelRoles.Authoring, initial.Source!.ModelRole);
+
+        // Fresh "showcase" input must override stale "authoring" in the existing manifest.
+        CesiumPackageBuildInputs showcaseInputs = Inputs();
+        showcaseInputs.DocumentKey = "DOC-KEY";
+        showcaseInputs.ModelRole = "SHOWCASE";
+        CesiumPackageManifest replacedWithShowcase = CesiumPackageFolderComposer.ComposeFromFolder(_root, showcaseInputs);
+        Assert.Equal(CesiumModelRoles.Showcase, replacedWithShowcase.Source!.ModelRole);
+
+        // Fresh "authoring" input must also override stale "showcase" when re-exported from authoring.
+        CesiumPackageBuildInputs restoredAuthoringInputs = Inputs();
+        restoredAuthoringInputs.DocumentKey = "doc-key";
+        restoredAuthoringInputs.ModelRole = "Authoring";
+        CesiumPackageManifest restored = CesiumPackageFolderComposer.ComposeFromFolder(_root, restoredAuthoringInputs);
+        Assert.Equal(CesiumModelRoles.Authoring, restored.Source!.ModelRole);
+    }
+
+    [Fact]
+    public void ComposeFromFolder_IgnoresInvalidPreviousModelRoleAndFallsBackToNormalizedInput()
+    {
+        File.WriteAllText(Path.Combine(_root, "tower.gpkg"), "gpkg");
+        string manifestPath = Path.Combine(_root, "cesium-package.json");
+        File.WriteAllText(
+            manifestPath,
+            """
+            {
+              "packageId": "legacy-pkg",
+              "source": {
+                "documentKey": "doc-key",
+                "modelRole": "unrecognized-role"
+              }
+            }
+            """);
+
+        CesiumPackageBuildInputs validFreshInputs = Inputs();
+        validFreshInputs.DocumentKey = "doc-key";
+        validFreshInputs.ModelRole = "showcase";
+        CesiumPackageManifest withValidFresh = CesiumPackageFolderComposer.ComposeFromFolder(_root, validFreshInputs);
+        Assert.Equal(CesiumModelRoles.Showcase, withValidFresh.Source!.ModelRole);
+
+        // Reset invalid previous role and verify invalid/null fresh input yields null instead of leaking raw text.
+        File.WriteAllText(
+            manifestPath,
+            """
+            {
+              "packageId": "legacy-pkg",
+              "source": {
+                "documentKey": "doc-key",
+                "modelRole": "unrecognized-role"
+              }
+            }
+            """);
+
+        CesiumPackageBuildInputs missingFreshInputs = Inputs();
+        missingFreshInputs.DocumentKey = "doc-key";
+        missingFreshInputs.ModelRole = "   ";
+        CesiumPackageManifest withBlankFresh = CesiumPackageFolderComposer.ComposeFromFolder(_root, missingFreshInputs);
+        Assert.Null(withBlankFresh.Source!.ModelRole);
+    }
+
     /// <summary>A package as the combined export leaves it in an ordinary folder: tiles/, gis/ and a full manifest.</summary>
     private void WriteExportedPackage(string documentKey)
     {

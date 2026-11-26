@@ -106,7 +106,8 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(RevitLinkInstance))
             .WhereElementIsNotElementType()
             .Cast<RevitLinkInstance>()
-            .Where(instance => instance.GetLinkDocument() != null)
+            .Where(instance => instance.GetLinkDocument() is Document linkedDoc &&
+                               !RevitShowcaseElementFilter.IsShowcaseDocument(linkedDoc))
             .OrderBy(instance => GetLinkDisplayName(instance), StringComparer.OrdinalIgnoreCase)
             .ThenBy(instance => instance.Id.Value)
             .ToList();
@@ -115,6 +116,7 @@ public sealed class ViewExportContextProvider
     /// <summary>
     /// The selected links an export cannot fully and stably cover: those not loaded, and those
     /// whose model has no model id. A selected link that no longer exists is not a problem here.
+    /// Linked Forma Companion showcase documents are intentionally excluded from authoring export.
     /// </summary>
     public IReadOnlyList<LinkCoverageProblem> FindLinkCoverageProblems(LinkExportOptions? linkExportOptions)
     {
@@ -136,6 +138,10 @@ public sealed class ViewExportContextProvider
             {
                 problems.Add(new LinkCoverageProblem(GetLinkDisplayName(linkInstance), LinkCoverageProblemKind.NotLoaded));
             }
+            else if (RevitShowcaseElementFilter.IsShowcaseDocument(linkedDocument))
+            {
+                continue;
+            }
             else if (RevitKey.IsDocumentModelKey(RevitModelKeyResolver.Resolve(linkedDocument)))
             {
                 problems.Add(new LinkCoverageProblem(GetLinkDisplayName(linkInstance), LinkCoverageProblemKind.NoModelId));
@@ -151,6 +157,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(Floor))
             .WhereElementIsNotElementType()
             .Cast<Floor>()
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
     }
@@ -162,6 +169,7 @@ public sealed class ViewExportContextProvider
             .WhereElementIsNotElementType()
             .Cast<Opening>()
             .Where(opening => opening.Host is Floor || opening.Host == null)
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
     }
@@ -173,6 +181,7 @@ public sealed class ViewExportContextProvider
             .WhereElementIsNotElementType()
             .Cast<Room>()
             .Where(room => room.Area > 0d)
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
     }
@@ -183,6 +192,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(Stairs))
             .WhereElementIsNotElementType()
             .Cast<Stairs>()
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
     }
@@ -199,6 +209,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
+            .Where(instance => !RevitShowcaseElementFilter.IsShowcaseElement(instance))
             .Where(instance =>
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
@@ -224,6 +235,7 @@ public sealed class ViewExportContextProvider
             .WherePasses(ColumnCategoryFilter)
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
+            .Where(instance => !RevitShowcaseElementFilter.IsShowcaseElement(instance))
             .Where(instance =>
             {
                 // A column family already mapped as a family unit is collected by
@@ -251,6 +263,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
+            .Where(instance => !RevitShowcaseElementFilter.IsShowcaseElement(instance))
             .Where(instance => OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies, standardVersion))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
@@ -266,6 +279,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
+            .Where(instance => !RevitShowcaseElementFilter.IsShowcaseElement(instance))
             .Where(instance => IsUnsupportedOpening(instance, acceptedOpeningFamilies, standardVersion))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
@@ -277,6 +291,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(CurveElement))
             .WhereElementIsNotElementType()
             .Cast<CurveElement>()
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsElementInClipRegion(element, clipRegion))
             .ToList();
     }
@@ -312,6 +327,11 @@ public sealed class ViewExportContextProvider
 
             Document? linkedDocument = linkInstance.GetLinkDocument();
             if (linkedDocument == null)
+            {
+                continue;
+            }
+
+            if (RevitShowcaseElementFilter.IsShowcaseDocument(linkedDocument))
             {
                 continue;
             }
@@ -359,6 +379,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(Floor))
             .WhereElementIsNotElementType()
             .Cast<Floor>()
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();
     }
@@ -371,6 +392,7 @@ public sealed class ViewExportContextProvider
             .WhereElementIsNotElementType()
             .Cast<Room>()
             .Where(room => room.Area > 0d)
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();
     }
@@ -382,6 +404,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(Stairs))
             .WhereElementIsNotElementType()
             .Cast<Stairs>()
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();
     }
@@ -400,6 +423,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
+            .Where(instance => !RevitShowcaseElementFilter.IsShowcaseElement(instance))
             .Where(instance =>
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
@@ -427,6 +451,7 @@ public sealed class ViewExportContextProvider
             .WherePasses(ColumnCategoryFilter)
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
+            .Where(instance => !RevitShowcaseElementFilter.IsShowcaseElement(instance))
             .Where(instance =>
             {
                 string familyName = UnitExtractor.GetFamilyName(instance);
@@ -451,6 +476,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
+            .Where(instance => !RevitShowcaseElementFilter.IsShowcaseElement(instance))
             .Where(instance => OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies, standardVersion))
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();
@@ -468,6 +494,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
+            .Where(instance => !RevitShowcaseElementFilter.IsShowcaseElement(instance))
             .Where(instance => IsUnsupportedOpening(instance, acceptedOpeningFamilies, standardVersion))
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();
@@ -480,6 +507,7 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(CurveElement))
             .WhereElementIsNotElementType()
             .Cast<CurveElement>()
+            .Where(element => !RevitShowcaseElementFilter.IsShowcaseElement(element))
             .Where(element => IsLinkedElementInClipRegion(element, linkTransform, clipRegion))
             .ToList();
     }

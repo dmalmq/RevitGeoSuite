@@ -108,7 +108,7 @@ public sealed class DetailExtractor
         List<ExportLineString> features = new();
         foreach (CurveElement curveElement in detailCurves)
         {
-            if (curveElement is not ModelCurve)
+            if (curveElement is not ModelCurve || RevitShowcaseElementFilter.IsShowcaseElement(curveElement))
             {
                 continue;
             }
@@ -152,16 +152,19 @@ public sealed class DetailExtractor
         IReadOnlyDictionary<long, VerticalCirculationVisibilityResult>? stairVisibilityResults)
     {
         HashSet<ElementId> invisibleStairCurveIds = new();
-        if (stairVisibilityResults == null || stairs.Count == 0)
+        if (stairs.Count == 0)
         {
             return invisibleStairCurveIds;
         }
 
         foreach (Stairs stair in stairs)
         {
-            bool isInvisible = !stairVisibilityResults.TryGetValue(stair.Id.Value, out VerticalCirculationVisibilityResult? result) ||
-                               result == null ||
-                               result.VisiblePolygons.Count == 0;
+            bool isShowcase = RevitShowcaseElementFilter.IsShowcaseElement(stair);
+            bool isInvisible = isShowcase ||
+                               (stairVisibilityResults != null &&
+                                (!stairVisibilityResults.TryGetValue(stair.Id.Value, out VerticalCirculationVisibilityResult? result) ||
+                                 result == null ||
+                                 result.VisiblePolygons.Count == 0));
             if (!isInvisible)
             {
                 continue;
@@ -272,6 +275,11 @@ public sealed class DetailExtractor
         List<ExportLineString> features = new();
         foreach (Stairs stair in stairs)
         {
+            if (RevitShowcaseElementFilter.IsShowcaseElement(stair))
+            {
+                continue;
+            }
+
             VerticalCirculationVisibilityResult? stairVisibility = null;
             Geometry? visibleFootprintMask = null;
             if (stairVisibilityResults != null)

@@ -21,7 +21,9 @@ public sealed class RuleCatalogEntry
         RuleSeverity severity,
         string title,
         string description,
-        IReadOnlyList<string>? legacyItemIds = null)
+        IReadOnlyList<string>? legacyItemIds = null,
+        string? titleJa = null,
+        string? descriptionJa = null)
     {
         RuleId = ruleId ?? throw new ArgumentNullException(nameof(ruleId));
         Group = group ?? throw new ArgumentNullException(nameof(group));
@@ -29,6 +31,8 @@ public sealed class RuleCatalogEntry
         Title = title ?? string.Empty;
         Description = description ?? string.Empty;
         LegacyItemIds = Array.AsReadOnly((legacyItemIds ?? Array.Empty<string>()).ToArray());
+        TitleJa = titleJa ?? string.Empty;
+        DescriptionJa = descriptionJa ?? string.Empty;
     }
 
     /// <summary>Canonical stable id, e.g. <c>KZ-TPL-002</c>.</summary>
@@ -42,6 +46,12 @@ public sealed class RuleCatalogEntry
     public string Title { get; }
 
     public string Description { get; }
+
+    /// <summary>Japanese title for bilingual readiness/receipt surfaces.</summary>
+    public string TitleJa { get; }
+
+    /// <summary>Japanese description for bilingual readiness/receipt surfaces.</summary>
+    public string DescriptionJa { get; }
 
     /// <summary>Legacy Phase 4B ItemIds that resolve to this canonical rule (UI and test back-compat).</summary>
     public IReadOnlyList<string> LegacyItemIds { get; }
@@ -179,6 +189,15 @@ public static class RuleCatalog
             RuleSeverity.Warning,
             "Element gis_key stamped",
             "Exported elements should carry a stable gis_key written by the last export."),
+        new RuleCatalogEntry(
+            "KZ-ELEM-005",
+            "element",
+            RuleSeverity.Error,
+            "No showcase elements in authoring model",
+            "Authoring models and templates must not contain Forma Companion showcase elements (ApplicationId 'Kanizu.Showcase', KNZ_FRM_* families/types, or KS_*/ks_* companion parameters).",
+            new[] { "showcase-elements" },
+            titleJa: "オーサリングモデル内にショーケース要素がないこと",
+            descriptionJa: "オーサリングモデルおよびテンプレートに Forma Companion ショーケース要素（ApplicationId 'Kanizu.Showcase'、KNZ_FRM_* ファミリ／タイプ、または KS_*/ks_* パラメータ）を含めることはできません。"),
 
         // KZ-VIEW-*: export view template & hide filters
         new RuleCatalogEntry(
@@ -242,6 +261,15 @@ public static class RuleCatalog
             RuleSeverity.Warning,
             "Unloaded link review",
             "Unloaded links cannot be verified for ModelId; reload before export."),
+        new RuleCatalogEntry(
+            "KZ-FED-009",
+            "federation",
+            RuleSeverity.Error,
+            "No showcase companion model role conflict",
+            "An authoring model must not carry gis_model_role = 'showcase' and must not link a Forma Companion showcase model (gis_model_role = 'showcase') into authoring federation.",
+            new[] { "showcase-model-role" },
+            titleJa: "ショーケースモデルの役割競合がないこと",
+            descriptionJa: "オーサリングモデル自身を gis_model_role = 'showcase' に設定してはならず、Forma Companion ショーケースモデル（gis_model_role = 'showcase'）をオーサリング用フェデレーションにリンクしないでください。"),
     };
 
     private static readonly Dictionary<string, RuleCatalogEntry> ByRuleId = BuildById();

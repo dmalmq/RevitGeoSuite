@@ -40,6 +40,8 @@ public sealed class Tiles3DGeometryExtractor
             throw new ArgumentNullException(nameof(scope));
         }
 
+        Tiles3DShowcaseGuard.ThrowIfAuthoringExportBlocked(document);
+
         View3D? selectedView = ResolveSelectedView(document, scope);
         GeometryExtractionFrame frame = GeometryExtractionFrame.Create(document.ActiveProjectLocation, referenceContext);
         Options hostOptions = new Options
@@ -85,8 +87,13 @@ public sealed class Tiles3DGeometryExtractor
 
     internal static bool IsExcludedSubcategoryName(string? subcategoryName)
     {
-        return !string.IsNullOrWhiteSpace(subcategoryName)
-            && string.Equals(subcategoryName!.Trim(), FootprintSubcategoryName, StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(subcategoryName))
+        {
+            return false;
+        }
+
+        return string.Equals(subcategoryName!.Trim(), FootprintSubcategoryName, StringComparison.OrdinalIgnoreCase)
+            || Tiles3DShowcaseGuard.IsShowcaseFamilyOrTypeName(subcategoryName);
     }
 
     /// <summary>
@@ -164,6 +171,8 @@ public sealed class Tiles3DGeometryExtractor
             throw new ArgumentNullException(nameof(scope));
         }
 
+        Tiles3DShowcaseGuard.ThrowIfAuthoringExportBlocked(document);
+
         GeometryExtractionFrame frame = GeometryExtractionFrame.Create(document.ActiveProjectLocation, referenceContext);
         var rooms = new List<Tiles3DRoomFootprint>();
         AppendRooms(document, Transform.Identity, frame, referenceContext, document.Title, string.Empty, string.Empty, rooms, warnings);
@@ -175,6 +184,11 @@ public sealed class Tiles3DGeometryExtractor
                 || linkInstance.GetLinkDocument() is not Document linkDocument)
             {
                 // The mesh pass already warned about a link it could not open.
+                continue;
+            }
+
+            if (Tiles3DShowcaseGuard.IsShowcaseDocument(linkDocument))
+            {
                 continue;
             }
 
@@ -216,7 +230,7 @@ public sealed class Tiles3DGeometryExtractor
             .OfCategory(BuiltInCategory.OST_Rooms)
             .WhereElementIsNotElementType()
             .OfType<Room>()
-            .Where(room => room.Location is not null && room.Area > 0d);
+            .Where(room => room.Location is not null && room.Area > 0d && !Tiles3DShowcaseGuard.IsShowcaseElement(room));
         foreach (Room room in placed)
         {
             try
@@ -369,6 +383,11 @@ public sealed class Tiles3DGeometryExtractor
                 return;
             }
 
+            if (Tiles3DShowcaseGuard.IsShowcaseDocument(linkDocument))
+            {
+                return;
+            }
+
             Transform linkTransform = linkInstance.GetTotalTransform();
             if (scopeMode == Tiles3DExportScopeMode.Selected3DView && selectedView is not null)
             {
@@ -482,6 +501,11 @@ public sealed class Tiles3DGeometryExtractor
     private static bool IsExportable(Element element)
     {
         if (element is RevitLinkInstance || element.ViewSpecific || element.Category is null)
+        {
+            return false;
+        }
+
+        if (Tiles3DShowcaseGuard.IsShowcaseElement(element))
         {
             return false;
         }

@@ -41,6 +41,7 @@ Two files have more than one writer: `gis-rules.json` (written from any PC as pe
 | Field | Meaning |
 |---|---|
 | `source.modelId` | The model's stable id (`GeoProjectInfo.ModelId`), a GUID kept in the model. Same for every user, survives Save As and moves. Absent when the model was read-only on its first export. Compared without case. |
+| `source.modelRole` | Optional additive model role from the `gis_model_role` shared parameter (`authoring` or `showcase`). Omitted when unset on v1/v2 authoring models; a reader treats an absent value as `authoring` and rejects `showcase` packages from authoring ingestion (Layer 4 export-loop guard). |
 | `source.documentKey` | Hashes the file path, so it differs per PC and on Save As. A reader uses it as the model's key only when `modelId` is absent. |
 | `source.model` | The file name, for display. |
 | `building.id`, `building.name` | The building's id (hashes the path) and name, for display. |
@@ -275,6 +276,15 @@ A station's state is its models' worst: Blocked if any model is; else Both chang
 | Blocked | 停止中 |
 
 Kanizu's own new-export notice judges a pending export against the GDB, so it can say Revit ahead where the folder still says Both changed (the export already agrees with the GDB's edits); the folder state above is the one both apps show.
+
+## Forma Companion Showcase Isolation (4-Layer Export-Loop Guards)
+
+Forma Companion `.rvt` models visualize read-only GDB snapshots inside Autodesk Forma Data Management and must never re-enter Kanizu's authoring 2D GeoPackage or 3D Tiles pipelines. RevitGeoSuite enforces four defense-in-depth layers:
+
+1. **Layer 1 — Pure-C# `ShowcaseExportGuard`** (`RevitGeoSuite.FloorPlanExport.Core.Standards.ShowcaseExportGuard`): classifies `gis_model_role = "showcase"` (case-insensitive; absent/blank defaults to `"authoring"` for v1/v2 backward compatibility), DirectShape `ApplicationId == "Kanizu.Showcase"`, `KNZ_FRM_*` family/type/category/subcategory names, `KS_*`/`ks_*` companion showcase parameters, and elements originating from a linked showcase document.
+2. **Layer 2 — 2D & 3D Exporter Enforcement**: both `RevitGeoSuite.FloorPlanExport` (`FloorGeoPackageExporter`, `FloorExportDataPreparer`, `ViewExportContextProvider`, extractors) and `RevitGeoSuite.Tiles3DExport` (`Tiles3DExportCoordinator`, `Tiles3DGeometryExtractor`, `Tiles3DExportDocumentCatalog`, `Tiles3DExportSupport`) block authoring exports when the active document carries `gis_model_role = "showcase"` (read strictly by frozen GUID `90086db8-5f21-46cd-b4d5-5be2728a0e18`), skip linked showcase documents, and exclude any showcase-marked individual elements so authoring exports remain byte-identical.
+3. **Layer 3 — Readiness & Federation Rules**: `RuleCatalog` registers `KZ-FED-009` (active document role / linked showcase companion model conflict) and `KZ-ELEM-005` (showcase elements leaked into an authoring model or template), evaluated in `ProjectReadinessEvaluator` and `ShowcaseReadinessEvaluator` with bilingual EN/JA diagnostics.
+4. **Layer 4 — `source.modelRole` Manifest Guard**: `cesium-package.json` carries optional additive `source.modelRole` (`"authoring"` or `"showcase"`, omitted when unset on v1/v2 models, schema version stays `1`). Consumers (`RoundTrip` and Kanizu ingestion) treat an absent `modelRole` as `"authoring"` and reject `"showcase"` packages from authoring ingestion.
 
 ## Versions
 

@@ -30,7 +30,7 @@ internal static class OpeningFamilyClassifier
         IReadOnlyList<string>? additionalAcceptedFamilies,
         int? standardVersion)
     {
-        if (instance == null)
+        if (instance == null || RevitShowcaseElementFilter.IsShowcaseElement(instance))
         {
             return false;
         }

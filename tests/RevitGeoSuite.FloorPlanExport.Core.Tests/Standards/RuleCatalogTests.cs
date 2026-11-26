@@ -36,6 +36,7 @@ public sealed class RuleCatalogTests
     [InlineData("KZ-ELEM-002")]
     [InlineData("KZ-ELEM-003")]
     [InlineData("KZ-ELEM-004")]
+    [InlineData("KZ-ELEM-005")]
     [InlineData("KZ-VIEW-001")]
     [InlineData("KZ-VIEW-002")]
     [InlineData("KZ-VIEW-003")]
@@ -45,6 +46,7 @@ public sealed class RuleCatalogTests
     [InlineData("KZ-FED-002")]
     [InlineData("KZ-FED-003")]
     [InlineData("KZ-FED-004")]
+    [InlineData("KZ-FED-009")]
     public void EveryExpectedCanonicalIdIsRegistered(string ruleId)
     {
         Assert.True(RuleCatalog.TryLookup(ruleId, out RuleCatalogEntry entry));
@@ -68,11 +70,26 @@ public sealed class RuleCatalogTests
     [InlineData("qa-schedule-floors", "KZ-TPL-003")]
     [InlineData("qa-schedule-circulation", "KZ-TPL-003")]
     [InlineData("qa-schedule-doors", "KZ-TPL-003")]
+    [InlineData("showcase-elements", "KZ-ELEM-005")]
+    [InlineData("showcase-model-role", "KZ-FED-009")]
     public void LegacyItemIdsResolveToCanonicalRule(string legacyId, string expectedRuleId)
     {
         Assert.Equal(expectedRuleId, RuleCatalog.CanonicalRuleId(legacyId));
         Assert.True(RuleCatalog.TryLookupByLegacyItemId(legacyId, out RuleCatalogEntry entry));
         Assert.Equal(expectedRuleId, entry.RuleId);
+    }
+
+    [Theory]
+    [InlineData("KZ-ELEM-005")]
+    [InlineData("KZ-FED-009")]
+    public void ShowcaseIsolationRulesHaveErrorSeverityAndBilingualMessages(string ruleId)
+    {
+        RuleCatalogEntry entry = RuleCatalog.Lookup(ruleId);
+        Assert.Equal(RuleSeverity.Error, entry.Severity);
+        Assert.False(string.IsNullOrWhiteSpace(entry.Title));
+        Assert.False(string.IsNullOrWhiteSpace(entry.Description));
+        Assert.False(string.IsNullOrWhiteSpace(entry.TitleJa));
+        Assert.False(string.IsNullOrWhiteSpace(entry.DescriptionJa));
     }
 
     [Fact]

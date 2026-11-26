@@ -334,6 +334,12 @@ public static class RoundTrip
             return null;
         }
 
+        // Layer 4 consumer guard: reject Forma Companion showcase packages from authoring round-trip tracking.
+        if (CesiumModelRoles.IsShowcase(manifest.Source?.ModelRole))
+        {
+            return null;
+        }
+
         string? modelId = manifest.Source?.ModelId;
         if (string.IsNullOrWhiteSpace(modelId))
         {

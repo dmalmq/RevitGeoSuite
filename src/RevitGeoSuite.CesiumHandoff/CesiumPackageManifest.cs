@@ -69,6 +69,48 @@ public sealed class CesiumPackageSource
     /// Absent when the model could not be written to (read-only) on its first export.
     /// </summary>
     public string? ModelId { get; set; }
+
+    /// <summary>
+    /// Role of the exported Revit model (<c>"authoring"</c> or <c>"showcase"</c>), sourced from
+    /// <c>gis_model_role</c>. Omitted when unset on legacy v1/v2 authoring models; downstream Kanizu
+    /// consumers treat an absent role as <c>"authoring"</c> and reject <c>"showcase"</c> packages
+    /// from authoring ingestion.
+    /// </summary>
+    public string? ModelRole { get; set; }
+}
+
+/// <summary>The model role names written to <see cref="CesiumPackageSource.ModelRole"/>.</summary>
+public static class CesiumModelRoles
+{
+    public const string Authoring = "authoring";
+
+    public const string Showcase = "showcase";
+
+    /// <summary>Normalizes a model role to <c>"authoring"</c> or <c>"showcase"</c>, or null when blank or unknown.</summary>
+    public static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string trimmed = value!.Trim();
+        if (string.Equals(trimmed, Authoring, StringComparison.OrdinalIgnoreCase))
+        {
+            return Authoring;
+        }
+
+        if (string.Equals(trimmed, Showcase, StringComparison.OrdinalIgnoreCase))
+        {
+            return Showcase;
+        }
+
+        return null;
+    }
+
+    /// <summary>True when <paramref name="value"/> identifies a Forma Companion showcase package.</summary>
+    public static bool IsShowcase(string? value) =>
+        string.Equals(Normalize(value), Showcase, StringComparison.Ordinal);
 }
 
 public sealed class CesiumPackageBuilding

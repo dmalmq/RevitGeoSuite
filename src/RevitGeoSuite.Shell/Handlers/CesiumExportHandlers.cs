@@ -11,6 +11,7 @@ using RevitGeoSuite.CesiumHandoff;
 using RevitGeoSuite.FloorPlanExport.Commands;
 using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.FloorPlanExport.UI;
 using RevitGeoSuite.RevitInterop;
@@ -266,6 +267,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 AnchorEasting = tiles.AnchorEasting,
                 AnchorNorthing = tiles.AnchorNorthing,
                 ModelId = tiles.ModelId,
+                ModelRole = tiles.ModelRole,
                 LevelMap = gis.LevelMap,
                 GisLayers = new List<string> { "unit", "detail", "opening", "fixture", "level" },
                 GisRules = gis.Rules,
@@ -356,6 +358,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         public double AnchorEasting;
         public double AnchorNorthing;
         public string? ModelId;
+        public string? ModelRole;
         public Tiles3DExportState State = new();
         public CesiumPackageExport? Export;
     }
@@ -409,6 +412,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             AnchorEasting = context.AnchorProjectedCoordinate.Easting,
             AnchorNorthing = context.AnchorProjectedCoordinate.Northing,
             ModelId = modelId,
+            ModelRole = prep.Package.ModelRole ?? GisStandardStateReader.ReadModelRole(document),
             State = exportResult.UpdatedState,
             Export = Tiles3DExportSupport.DescribeExport(scopeSelection, lod, prep.Package.UsedExactPlacement),
         };
@@ -476,6 +480,9 @@ public sealed class CesiumPushHandler : IRpcHandler
             CesiumPackageBuildInputs inputs = await RevitContext.Instance
                 .InvokeWithDocumentAsync(document =>
                 {
+                    string rawModelRole = GisStandardStateReader.ReadModelRoleText(document);
+                    ShowcaseExportGuard.ThrowIfAuthoringExportBlocked(rawModelRole, "Cesium push");
+
                     string projectKey = DocumentProjectKeyBuilder.Create(document);
                     string buildingName = DocumentProjectKeyBuilder.CreateDisplayName(document);
                     string modelKey = RevitModelKeyResolver.Resolve(document);
@@ -486,13 +493,18 @@ public sealed class CesiumPushHandler : IRpcHandler
                         SourceModel = Path.GetFileName(document.PathName ?? string.Empty),
                         DocumentKey = projectKey,
                         ModelId = RevitKey.IsDocumentModelKey(modelKey) ? null : modelKey,
+                        ModelRole = ShowcaseExportGuard.NormalizeModelRole(rawModelRole),
                         GeneratorVersion = typeof(CesiumPushHandler).Assembly.GetName().Version?.ToString() ?? string.Empty,
                         LevelMap = CesiumExportSupport.BuildLevelMap(document),
                     };
                 })
                 .ConfigureAwait(false);
 
-            CesiumPackageFolderComposer.ComposeFromFolder(request.Folder, inputs);
+            CesiumPackageManifest manifest = CesiumPackageFolderComposer.ComposeFromFolder(request.Folder, inputs);
+            if (CesiumModelRoles.IsShowcase(manifest.Source?.ModelRole))
+            {
+                ShowcaseExportGuard.ThrowIfAuthoringExportBlocked(manifest.Source!.ModelRole, "Cesium push");
+            }
 
             progress.Report(new JobProgress { Phase = "push", Percent = 40, Message = "Pushing to Cesium viewer…" });
             CesiumViewerSettings viewerSettings = new CesiumViewerSettingsStore().Load();

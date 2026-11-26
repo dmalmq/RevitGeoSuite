@@ -57,6 +57,8 @@ public sealed class Tiles3DExportCoordinator
             throw new InvalidOperationException("3D Tiles export is not supported in family documents.");
         }
 
+        Tiles3DShowcaseGuard.ThrowIfAuthoringExportBlocked(revitDocument);
+
         if (scope.ScopeMode == Tiles3DExportScopeMode.Selected3DView && !scope.HasSelectedView)
         {
             throw new InvalidOperationException("Select a non-template 3D view before preparing 3D Tiles export from a selected view.");
@@ -84,6 +86,7 @@ public sealed class Tiles3DExportCoordinator
         IReadOnlyList<Tiles3DLevelGroup> levelGroups = levelGrouper.Group(meshList);
         Tiles3DExportPackage package = BuildPackage(referenceContext, meshList, levelOfDetail, resolvedGeoidHeightOffsetMeters, materialPalette);
         package.GeoidModel = resolvedGeoidModel;
+        package.ModelRole = Tiles3DShowcaseGuard.ReadModelRole(revitDocument);
         // Rooms are in plane-grid coordinates from the start, so rebasing and exact placement
         // leave them alone.
         package.Rooms = geometryExtractor.ExtractRooms(revitDocument, referenceContext, scope, extractionWarnings).ToList();
@@ -124,6 +127,7 @@ public sealed class Tiles3DExportCoordinator
     {
         RevitDocumentHandle handle = document as RevitDocumentHandle
             ?? throw new InvalidOperationException("Send to Kanizu requires a RevitDocumentHandle.");
+        Tiles3DShowcaseGuard.ThrowIfAuthoringExportBlocked(handle.Document);
         if (referenceContext is null)
         {
             throw new ArgumentNullException(nameof(referenceContext));
@@ -228,6 +232,14 @@ public sealed class Tiles3DExportCoordinator
         {
             throw new InvalidOperationException("3D Tiles export is not supported in family documents.");
         }
+
+        if (package is null)
+        {
+            throw new ArgumentNullException(nameof(package));
+        }
+
+        Tiles3DShowcaseGuard.ThrowIfAuthoringExportBlocked(revitDocument);
+        Tiles3DShowcaseGuard.ThrowIfModelRoleBlocked(package.ModelRole);
 
         if (scope.ScopeMode == Tiles3DExportScopeMode.Selected3DView && !scope.HasSelectedView)
         {

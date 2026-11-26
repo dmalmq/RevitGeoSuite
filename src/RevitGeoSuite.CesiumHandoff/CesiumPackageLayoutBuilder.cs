@@ -68,6 +68,9 @@ public sealed class CesiumPackageBuildInputs
 
     public string? ModelId { get; set; }
 
+    /// <summary>Optional additive <c>source.modelRole</c> (<c>"authoring"</c> or <c>"showcase"</c>); omitted when null/unset.</summary>
+    public string? ModelRole { get; set; }
+
     public List<CesiumPackageLevelMapEntry>? LevelMap { get; set; }
 
     public List<string>? GisLayers { get; set; }
@@ -263,6 +266,7 @@ public sealed class CesiumPackageLayoutBuilder
                 Model = inputs.SourceModel,
                 DocumentKey = inputs.DocumentKey,
                 ModelId = string.IsNullOrWhiteSpace(inputs.ModelId) ? null : inputs.ModelId,
+                ModelRole = CesiumModelRoles.Normalize(inputs.ModelRole),
             },
             Building = new CesiumPackageBuilding
             {

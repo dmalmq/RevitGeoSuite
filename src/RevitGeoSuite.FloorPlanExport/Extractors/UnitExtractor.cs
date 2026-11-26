@@ -134,7 +134,7 @@ public sealed class UnitExtractor
         out IReadOnlyList<ExportPolygon> features)
     {
         features = Array.Empty<ExportPolygon>();
-        if (floor is null)
+        if (floor is null || RevitShowcaseElementFilter.IsShowcaseElement(floor))
         {
             return false;
         }
@@ -343,7 +343,7 @@ public sealed class UnitExtractor
         out ExportPolygon? feature)
     {
         feature = null;
-        if (room is null)
+        if (room is null || RevitShowcaseElementFilter.IsShowcaseElement(room))
         {
             return false;
         }
@@ -617,7 +617,7 @@ public sealed class UnitExtractor
         out ExportPolygon? feature)
     {
         feature = null;
-        if (stairs is null)
+        if (stairs is null || RevitShowcaseElementFilter.IsShowcaseElement(stairs))
         {
             return false;
         }
@@ -640,7 +640,7 @@ public sealed class UnitExtractor
         out ExportPolygon? feature)
     {
         feature = null;
-        if (stairs is null)
+        if (stairs is null || RevitShowcaseElementFilter.IsShowcaseElement(stairs))
         {
             return false;
         }
@@ -708,7 +708,7 @@ public sealed class UnitExtractor
     {
         feature = null;
         resolvedCategory = null;
-        if (familyInstance is null)
+        if (familyInstance is null || RevitShowcaseElementFilter.IsShowcaseElement(familyInstance))
         {
             return false;
         }
@@ -779,7 +779,7 @@ public sealed class UnitExtractor
         out ExportPolygon? feature)
     {
         feature = null;
-        if (column is null)
+        if (column is null || RevitShowcaseElementFilter.IsShowcaseElement(column))
         {
             return false;
         }

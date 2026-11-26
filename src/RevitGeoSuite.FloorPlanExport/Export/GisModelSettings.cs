@@ -124,7 +124,7 @@ public sealed class GisModelSettings
                 file.Links = (linkOptions.SelectedLinkInstanceIds ?? new List<long>())
                     .Distinct()
                     .Select(id => document.GetElement(new ElementId(id)) as RevitLinkInstance)
-                    .Where(instance => instance != null)
+                    .Where(instance => instance != null && !RevitShowcaseElementFilter.IsShowcaseDocument(instance.GetLinkDocument()))
                     .Select(instance => new GisModelLink { UniqueId = instance!.UniqueId, Name = instance.Name ?? string.Empty })
                     .ToList();
             }

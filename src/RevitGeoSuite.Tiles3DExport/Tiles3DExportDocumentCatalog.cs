@@ -46,7 +46,7 @@ public static class Tiles3DExportDocumentCatalog
         return new FilteredElementCollector(document)
             .OfClass(typeof(RevitLinkInstance))
             .Cast<RevitLinkInstance>()
-            .Where(instance => instance.GetLinkDocument() is not null)
+            .Where(instance => instance.GetLinkDocument() is Document linkDoc && !Tiles3DShowcaseGuard.IsShowcaseDocument(linkDoc))
             .OrderBy(instance => instance.Name, StringComparer.OrdinalIgnoreCase)
             .Select(instance =>
             {
