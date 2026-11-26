@@ -815,20 +815,25 @@ public static class ShowcaseGeometryPlanner
         return cleaned;
     }
 
-    /// <summary>Computes the 2D signed area of an open vertex loop (<c>&gt; 0</c> = CCW, <c>&lt; 0</c> = CW).</summary>
+    /// <summary>
+    /// Computes the 2D signed area of an open vertex loop (<c>&gt; 0</c> = CCW, <c>&lt; 0</c> = CW),
+    /// shifted relative to <c>openRing[0]</c> to avoid floating-point cancellation on large coordinates.
+    /// </summary>
     public static double ComputeSignedAreaOpen(IReadOnlyList<Point2D> openRing)
     {
-        if (openRing.Count < 3)
+        if (openRing is null || openRing.Count < 3)
         {
             return 0d;
         }
 
+        double x0 = openRing[0].X;
+        double y0 = openRing[0].Y;
         double twiceArea = 0d;
         for (int i = 0; i < openRing.Count; i++)
         {
             Point2D a = openRing[i];
             Point2D b = openRing[(i + 1) % openRing.Count];
-            twiceArea += (a.X * b.Y) - (b.X * a.Y);
+            twiceArea += ((a.X - x0) * (b.Y - y0)) - ((b.X - x0) * (a.Y - y0));
         }
 
         return twiceArea * 0.5d;

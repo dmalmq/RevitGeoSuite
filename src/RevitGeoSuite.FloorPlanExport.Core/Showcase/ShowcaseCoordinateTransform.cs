@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 
@@ -50,9 +51,31 @@ public sealed class ShowcaseCoordinateTransform
     /// <summary>Shared datum elevation (metres, e.g. Tokyo Peil) at Revit internal <c>Z = 0</c>.</summary>
     public double OriginElevationMeters { get; }
 
+    /// <summary>Shared CRS easting (metres) corresponding to Revit internal <c>(0, 0, 0)</c>.</summary>
+    public double OriginEastingMeters => ForwardInternalFeetToCrsMeters.Origin.X;
+
+    /// <summary>Shared CRS northing (metres) corresponding to Revit internal <c>(0, 0, 0)</c>.</summary>
+    public double OriginNorthingMeters => ForwardInternalFeetToCrsMeters.Origin.Y;
+
+    /// <summary>Rotation angle (radians) of the forward X basis relative to CRS East.</summary>
+    public double RotationRadians => Math.Atan2(ForwardInternalFeetToCrsMeters.XBasis.Y, ForwardInternalFeetToCrsMeters.XBasis.X);
+
     /// <summary>Identity transform at shared origin <c>(0, 0, 0)</c> with zero rotation (metres &lt;-&gt; feet).</summary>
     public static ShowcaseCoordinateTransform Identity { get; } =
         FromSharedOrigin(0d, 0d, 0d, 0d);
+
+    /// <summary>
+    /// True when this transform represents an unconfigured Revit default project location at
+    /// <c>(EastWest = 0, NorthSouth = 0, Elevation = 0, Angle = 0)</c>.
+    /// </summary>
+    public bool IsDefaultZeroOrigin(double toleranceMeters = 1e-6d) =>
+        Math.Abs(OriginEastingMeters) <= toleranceMeters &&
+        Math.Abs(OriginNorthingMeters) <= toleranceMeters &&
+        Math.Abs(OriginElevationMeters) <= toleranceMeters &&
+        Math.Abs(ForwardInternalFeetToCrsMeters.XBasis.X - FeetToMetersFactor) <= 1e-9d &&
+        Math.Abs(ForwardInternalFeetToCrsMeters.XBasis.Y) <= 1e-9d &&
+        Math.Abs(ForwardInternalFeetToCrsMeters.YBasis.X) <= 1e-9d &&
+        Math.Abs(ForwardInternalFeetToCrsMeters.YBasis.Y - FeetToMetersFactor) <= 1e-9d;
 
     /// <summary>
     /// Creates an inverse transform directly from a measured Revit forward affine transform
@@ -100,6 +123,87 @@ public sealed class ShowcaseCoordinateTransform
             new Point2D(-FeetToMetersFactor * sin, FeetToMetersFactor * cos));
 
         return FromForwardAffine(forward, originElevationMeters);
+    }
+
+    /// <summary>
+    /// Computes a localized shared-coordinate transform centered on the planar bounding box of
+    /// <paramref name="snapshot"/> (and its lowest surveyed/model elevation) so newly created companion
+    /// geometry sits near Revit's internal origin (well within Revit's 10-mile radius) while preserving
+    /// exact projected CRS shared coordinates.
+    /// </summary>
+    public static ShowcaseCoordinateTransform CreateLocalizedForSnapshot(ShowcaseSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        double minX = double.PositiveInfinity;
+        double maxX = double.NegativeInfinity;
+        double minY = double.PositiveInfinity;
+        double maxY = double.NegativeInfinity;
+        double minZ = double.PositiveInfinity;
+        bool hasPlanarCoords = false;
+
+        foreach (ShowcaseLevel level in snapshot.Levels)
+        {
+            if (level.TpM.HasValue && IsFinite(level.TpM.Value) && level.TpM.Value < minZ)
+            {
+                minZ = level.TpM.Value;
+            }
+        }
+
+        foreach (ShowcaseLayer layer in snapshot.Layers)
+        {
+            foreach (ShowcaseFeature feature in layer.Features)
+            {
+                AccumulateGeometryBounds(feature.Geometry, ref minX, ref maxX, ref minY, ref maxY, ref minZ, ref hasPlanarCoords);
+            }
+        }
+
+        double originEasting = hasPlanarCoords ? RoundMillimeter((minX + maxX) * 0.5d) : 0d;
+        double originNorthing = hasPlanarCoords ? RoundMillimeter((minY + maxY) * 0.5d) : 0d;
+        double originElevation = !double.IsPositiveInfinity(minZ) ? RoundMillimeter(minZ) : 0d;
+
+        return FromSharedOrigin(originEasting, originNorthing, originElevation, rotationDegrees: 0d);
+    }
+
+    /// <summary>
+    /// Resolves the effective transform for a companion build and reports whether the target document's
+    /// <c>ActiveProjectLocation</c> should be configured to match it.
+    /// When building a fresh blank companion (<paramref name="isFreshNewDocument"/> = <c>true</c>) whose
+    /// project location is still at <c>(0, 0, 0, 0)</c>, automatically localizes the internal origin to the
+    /// snapshot's bounding-box center so projected EPSG coordinates never sit tens/thousands of kilometres away.
+    /// </summary>
+    public static ShowcaseCoordinateTransform ResolveTransformForCompanion(
+        ShowcaseSnapshot snapshot,
+        ShowcaseCoordinateTransform? explicitOverride,
+        ShowcaseCoordinateTransform? documentLocationTransform,
+        bool isFreshNewDocument,
+        out bool shouldConfigureDocumentProjectPosition)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        bool docIsUnconfiguredZero = documentLocationTransform == null || documentLocationTransform.IsDefaultZeroOrigin();
+
+        if (explicitOverride != null)
+        {
+            shouldConfigureDocumentProjectPosition = isFreshNewDocument && docIsUnconfiguredZero && !explicitOverride.IsDefaultZeroOrigin();
+            return explicitOverride;
+        }
+
+        if (isFreshNewDocument && docIsUnconfiguredZero)
+        {
+            ShowcaseCoordinateTransform localized = CreateLocalizedForSnapshot(snapshot);
+            shouldConfigureDocumentProjectPosition = !localized.IsDefaultZeroOrigin();
+            return localized;
+        }
+
+        shouldConfigureDocumentProjectPosition = false;
+        return documentLocationTransform ?? Identity;
     }
 
     /// <summary>Maps projected CRS planar coordinates (metres) into Revit internal XY coordinates (feet).</summary>
@@ -155,9 +259,120 @@ public sealed class ShowcaseCoordinateTransform
         return feet * FeetToMetersFactor;
     }
 
+    private static void AccumulateGeometryBounds(
+        ShowcaseGeometry geometry,
+        ref double minX,
+        ref double maxX,
+        ref double minY,
+        ref double maxY,
+        ref double minZ,
+        ref bool hasPlanarCoords)
+    {
+        switch (geometry)
+        {
+            case ShowcasePointGeometry pt:
+                IncludePoint(pt.Xy, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                if (pt.Z.HasValue && IsFinite(pt.Z.Value) && pt.Z.Value < minZ)
+                {
+                    minZ = pt.Z.Value;
+                }
+
+                break;
+
+            case ShowcaseLineStringGeometry line:
+                IncludePoints(line.Coords, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                break;
+
+            case ShowcaseMultiLineStringGeometry multiLine:
+                foreach (IReadOnlyList<Point2D> l in multiLine.Lines)
+                {
+                    IncludePoints(l, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                }
+
+                break;
+
+            case ShowcasePolygonGeometry poly:
+                foreach (IReadOnlyList<Point2D> ring in poly.Rings)
+                {
+                    IncludePoints(ring, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                }
+
+                break;
+
+            case ShowcaseMultiPolygonGeometry multiPoly:
+                foreach (ShowcasePolygonGeometry poly in multiPoly.Polygons)
+                {
+                    foreach (IReadOnlyList<Point2D> ring in poly.Rings)
+                    {
+                        IncludePoints(ring, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                    }
+                }
+
+                break;
+
+            case ShowcaseConnector3DGeometry conn:
+                IncludePoint(conn.From.Xy, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                IncludePoint(conn.To.Xy, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                IncludePoints(conn.Path, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                if (conn.From.TpM.HasValue && IsFinite(conn.From.TpM.Value) && conn.From.TpM.Value < minZ)
+                {
+                    minZ = conn.From.TpM.Value;
+                }
+
+                if (conn.To.TpM.HasValue && IsFinite(conn.To.TpM.Value) && conn.To.TpM.Value < minZ)
+                {
+                    minZ = conn.To.TpM.Value;
+                }
+
+                break;
+        }
+    }
+
+    private static void IncludePoints(
+        IReadOnlyList<Point2D> points,
+        ref double minX,
+        ref double maxX,
+        ref double minY,
+        ref double maxY,
+        ref bool hasPlanarCoords)
+    {
+        for (int i = 0; i < points.Count; i++)
+        {
+            IncludePoint(points[i], ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+        }
+    }
+
+    private static void IncludePoint(
+        Point2D pt,
+        ref double minX,
+        ref double maxX,
+        ref double minY,
+        ref double maxY,
+        ref bool hasPlanarCoords)
+    {
+        if (!IsFinite(pt.X) || !IsFinite(pt.Y))
+        {
+            return;
+        }
+
+        if (pt.X < minX) minX = pt.X;
+        if (pt.X > maxX) maxX = pt.X;
+        if (pt.Y < minY) minY = pt.Y;
+        if (pt.Y > maxY) maxY = pt.Y;
+        hasPlanarCoords = true;
+    }
+
+    private static double RoundMillimeter(double meters)
+    {
+        double rounded = Math.Round(meters * 1000d, MidpointRounding.AwayFromZero) / 1000d;
+        return rounded == 0d ? 0d : rounded;
+    }
+
+    private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
     private static void RequireFinite(double value, string paramName)
     {
-        if (double.IsNaN(value) || double.IsInfinity(value))
+        if (!IsFinite(value))
         {
             throw new ArgumentOutOfRangeException(paramName, $"Coordinate value '{value}' must be finite.");
         }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -38,7 +39,9 @@ public sealed class ShowcaseCompanionBuilder
 
     /// <summary>
     /// Creates a brand-new companion <c>.rvt</c> document from <paramref name="snapshot"/> without ever touching
-    /// an active authoring document.
+    /// an active authoring document. When no <c>CoordinateTransformOverride</c> is provided and the new document's
+    /// active project location is at <c>(0, 0, 0, 0)</c>, localizes the internal origin to the snapshot's
+    /// bounding-box center and configures shared coordinates via <c>ActiveProjectLocation.SetProjectPosition</c>.
     /// </summary>
     public ShowcaseCompanionBuildResult BuildNewCompanion(
         Application application,
@@ -105,7 +108,10 @@ public sealed class ShowcaseCompanionBuilder
                 buildResult.BoundParameterCount,
                 buildResult.OverflowFeatureCount,
                 buildResult.CreatedApplicationDataIds,
-                buildResult.Warnings);
+                buildResult.Warnings,
+                buildResult.UpdatedElementCount,
+                buildResult.ReplacedElementCount,
+                buildResult.DeletedElementCount);
         }
         finally
         {
@@ -124,9 +130,11 @@ public sealed class ShowcaseCompanionBuilder
     }
 
     /// <summary>
-    /// Populates an existing Revit companion document ONLY if it is explicitly stamped with
-    /// <c>gis_model_role = "showcase"</c>. Refuses to run on any authoring document (including legacy
-    /// models with an unset <c>gis_model_role</c>).
+    /// Populates or refreshes an existing Revit companion document ONLY if it is explicitly stamped with
+    /// <c>gis_model_role = "showcase"</c>. Reconciles existing <c>Kanizu.Showcase</c> DirectShapes by
+    /// <c>ApplicationDataId</c> (updating in-place when category matches to preserve Revit <c>UniqueId</c>s,
+    /// replacing when category changed, clearing nulled parameters, and deleting stale features).
+    /// Refuses to run on any authoring document (including legacy models with an unset <c>gis_model_role</c>).
     /// </summary>
     public ShowcaseCompanionBuildResult PopulateExistingCompanion(
         Document companionDocument,
@@ -200,8 +208,13 @@ public sealed class ShowcaseCompanionBuilder
         string existingModelRole = GisStandardStateReader.ReadModelRoleText(document);
         ShowcaseCompanionDocumentGuard.ValidateTargetRole(existingModelRole, isFreshNewDocument, document.Title);
 
-        ShowcaseCoordinateTransform transform = options.CoordinateTransformOverride
-            ?? CreateTransformFromProjectLocation(document.ActiveProjectLocation);
+        ShowcaseCoordinateTransform documentLocationTransform = CreateTransformFromProjectLocation(document.ActiveProjectLocation);
+        ShowcaseCoordinateTransform transform = ShowcaseCoordinateTransform.ResolveTransformForCompanion(
+            snapshot,
+            options.CoordinateTransformOverride,
+            documentLocationTransform,
+            isFreshNewDocument,
+            out bool shouldConfigureDocumentProjectPosition);
 
         ShowcaseParameterRegistry registry = ShowcaseParameterRegistry.Build(snapshot);
         ShowcaseGeometryPlanOptions geometryOptions = CloneGeometryOptionsWithDocumentTolerance(
@@ -211,14 +224,22 @@ public sealed class ShowcaseCompanionBuilder
         ShowcaseGeometryPlanResult plan = ShowcaseGeometryPlanner.Plan(snapshot, transform, registry, geometryOptions);
 
         List<string> warnings = new(plan.Warnings);
-        List<string> createdAppDataIds = new();
+        List<string> activeAppDataIds = new();
         int createdCount = 0;
+        int updatedCount = 0;
+        int replacedCount = 0;
+        int deletedCount = 0;
         int skippedCount = 0;
         int boundParamCount = 0;
         int overflowFeatureCount = 0;
 
         ExecuteInTransaction(document, () =>
         {
+            if (shouldConfigureDocumentProjectPosition && document.ActiveProjectLocation != null)
+            {
+                ConfigureLocalizedProjectPosition(document, transform);
+            }
+
             boundParamCount = BindCompanionSharedParameters(document, registry, warnings);
             document.Regenerate();
 
@@ -227,19 +248,116 @@ public sealed class ShowcaseCompanionBuilder
             double minSegmentFeet = Math.Max(document.Application.ShortCurveTolerance, geometryOptions.MinSegmentLengthFeet);
             SolidOptions solidOptions = new(ElementId.InvalidElementId, ElementId.InvalidElementId);
 
-            foreach (ShowcaseElementPlan elementPlan in plan.Elements)
+            // Reconcile existing Kanizu.Showcase DirectShapes by ApplicationDataId so refreshes update in-place,
+            // replace when category changed, clear nulled parameters, and delete stale features.
+            IReadOnlyList<ShowcaseExistingElementInfo> existingShowcase = CollectExistingShowcaseDirectShapes(document);
+            Dictionary<string, ElementId> resolvedCategoryIdsByPref = new(StringComparer.Ordinal);
+            string ResolveCategoryKey(ShowcaseElementPlan p)
             {
-                if (!TryBuildDirectShape(document, elementPlan, registry, minSegmentFeet, solidOptions, warnings))
+                if (!resolvedCategoryIdsByPref.TryGetValue(p.PreferredCategoryName, out ElementId? resolvedId))
                 {
-                    skippedCount++;
-                    continue;
+                    resolvedId = ResolveDirectShapeCategoryId(document, p.PreferredCategoryName, warnings);
+                    resolvedCategoryIdsByPref[p.PreferredCategoryName] = resolvedId;
                 }
 
-                createdCount++;
-                createdAppDataIds.Add(elementPlan.ApplicationDataId);
-                if (!string.IsNullOrEmpty(elementPlan.OverflowAttributesJson))
+                return FormatCategoryKey(resolvedId);
+            }
+
+            ShowcaseReconciliationPlan reconciliation = ShowcaseElementReconciler.BuildPlan(
+                plan.Elements,
+                existingShowcase,
+                ResolveCategoryKey);
+
+            List<ElementId> staleIdsToDelete = new();
+
+            foreach (ShowcaseReconciliationStep step in reconciliation.Steps)
+            {
+                switch (step.Action)
                 {
-                    overflowFeatureCount++;
+                    case ShowcaseReconciliationActionKind.Create:
+                    {
+                        ShowcaseElementPlan elementPlan = step.TargetPlan!;
+                        ElementId categoryId = resolvedCategoryIdsByPref[elementPlan.PreferredCategoryName];
+                        if (!TryCreateDirectShape(document, elementPlan, categoryId, registry, minSegmentFeet, solidOptions, warnings))
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+
+                        createdCount++;
+                        activeAppDataIds.Add(elementPlan.ApplicationDataId);
+                        if (!string.IsNullOrEmpty(elementPlan.OverflowAttributesJson))
+                        {
+                            overflowFeatureCount++;
+                        }
+
+                        break;
+                    }
+
+                    case ShowcaseReconciliationActionKind.UpdateInPlace:
+                    {
+                        ShowcaseElementPlan elementPlan = step.TargetPlan!;
+                        ElementId existingId = new(step.ExistingElementId!.Value);
+                        if (!TryUpdateDirectShapeInPlace(document, existingId, elementPlan, registry, minSegmentFeet, solidOptions, warnings))
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+
+                        updatedCount++;
+                        activeAppDataIds.Add(elementPlan.ApplicationDataId);
+                        if (!string.IsNullOrEmpty(elementPlan.OverflowAttributesJson))
+                        {
+                            overflowFeatureCount++;
+                        }
+
+                        break;
+                    }
+
+                    case ShowcaseReconciliationActionKind.ReplaceCategoryChanged:
+                    {
+                        ShowcaseElementPlan elementPlan = step.TargetPlan!;
+                        ElementId existingId = new(step.ExistingElementId!.Value);
+                        ElementId categoryId = resolvedCategoryIdsByPref[elementPlan.PreferredCategoryName];
+                        if (!TryReplaceDirectShape(document, existingId, elementPlan, categoryId, registry, minSegmentFeet, solidOptions, warnings))
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+
+                        replacedCount++;
+                        activeAppDataIds.Add(elementPlan.ApplicationDataId);
+                        if (!string.IsNullOrEmpty(elementPlan.OverflowAttributesJson))
+                        {
+                            overflowFeatureCount++;
+                        }
+
+                        break;
+                    }
+
+                    case ShowcaseReconciliationActionKind.DeleteStale:
+                    {
+                        if (step.ExistingElementId.HasValue)
+                        {
+                            staleIdsToDelete.Add(new ElementId(step.ExistingElementId.Value));
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            if (staleIdsToDelete.Count > 0)
+            {
+                try
+                {
+                    ICollection<ElementId> deleted = document.Delete(staleIdsToDelete);
+                    deletedCount += staleIdsToDelete.Count;
+                    _ = deleted;
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add($"Failed to delete {staleIdsToDelete.Count} stale showcase DirectShape(s): {ex.Message}");
                 }
             }
         });
@@ -253,9 +371,42 @@ public sealed class ShowcaseCompanionBuilder
             skippedCount,
             boundParamCount,
             overflowFeatureCount,
-            createdAppDataIds,
-            warnings);
+            activeAppDataIds,
+            warnings,
+            updatedCount,
+            replacedCount,
+            deletedCount);
     }
+
+    private static void ConfigureLocalizedProjectPosition(Document document, ShowcaseCoordinateTransform transform)
+    {
+        ProjectPosition projectPosition = new(
+            transform.OriginEastingMeters * ShowcaseCoordinateTransform.MetersToFeetFactor,
+            transform.OriginNorthingMeters * ShowcaseCoordinateTransform.MetersToFeetFactor,
+            transform.OriginElevationMeters * ShowcaseCoordinateTransform.MetersToFeetFactor,
+            transform.RotationRadians);
+        document.ActiveProjectLocation.SetProjectPosition(XYZ.Zero, projectPosition);
+    }
+
+    private static IReadOnlyList<ShowcaseExistingElementInfo> CollectExistingShowcaseDirectShapes(Document document)
+    {
+        List<ShowcaseExistingElementInfo> existing = new();
+        foreach (DirectShape ds in new FilteredElementCollector(document).OfClass(typeof(DirectShape)).Cast<DirectShape>())
+        {
+            if (!ShowcaseExportGuard.IsShowcaseApplicationId(ds.ApplicationId))
+            {
+                continue;
+            }
+
+            string categoryKey = ds.Category != null ? FormatCategoryKey(ds.Category.Id) : string.Empty;
+            existing.Add(new ShowcaseExistingElementInfo(ds.Id.Value, ds.ApplicationDataId ?? string.Empty, categoryKey));
+        }
+
+        return existing;
+    }
+
+    private static string FormatCategoryKey(ElementId categoryId) =>
+        categoryId.Value.ToString(CultureInfo.InvariantCulture);
 
     private static ShowcaseGeometryPlanOptions CloneGeometryOptionsWithDocumentTolerance(
         ShowcaseGeometryPlanOptions? source,
@@ -282,8 +433,9 @@ public sealed class ShowcaseCompanionBuilder
 
     /// <summary>
     /// Binds <c>gis_model_role</c> (frozen GUID) onto Project Information and all deterministic UUIDv5 <c>ks_*</c>
-    /// parameters onto companion DirectShape categories, unconditionally restoring
-    /// <see cref="Application.SharedParametersFilename"/> in a <c>finally</c> block.
+    /// parameters onto companion DirectShape categories, writing the temporary shared-parameter file as UTF-16 LE
+    /// with BOM (Revit's native encoding so Japanese <c>aliasJa</c> descriptions never mojibake) and unconditionally
+    /// restoring <see cref="Application.SharedParametersFilename"/> in a <c>finally</c> block.
     /// </summary>
     private static int BindCompanionSharedParameters(
         Document document,
@@ -296,7 +448,8 @@ public sealed class ShowcaseCompanionBuilder
             Path.GetTempPath(),
             $"KanizuShowcase.SharedParameters.{Guid.NewGuid():N}.txt");
 
-        File.WriteAllText(tempFilePath, sharedParamText, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        // Write UTF-16 LE with BOM (Encoding.Unicode) — Revit's native shared-parameter file encoding on Windows.
+        File.WriteAllText(tempFilePath, sharedParamText, Encoding.Unicode);
 
         string originalSharedParametersFilename = application.SharedParametersFilename ?? string.Empty;
         int boundCount = 0;
@@ -324,8 +477,14 @@ public sealed class ShowcaseCompanionBuilder
             if (projectInfoCategory != null && projectInfoCategory.AllowsBoundParameters)
             {
                 projectInfoCategories.Insert(projectInfoCategory);
-                BindInstanceDefinition(document, application, roleDefinition, projectInfoCategories, GroupTypeId.General);
-                boundCount++;
+                if (BindInstanceDefinition(document, application, roleDefinition, projectInfoCategories, GroupTypeId.General))
+                {
+                    boundCount++;
+                }
+                else
+                {
+                    warnings.Add($"Revit could not bind '{GisSharedParameters.GisModelRole}' onto Project Information.");
+                }
             }
 
             // 2. Bind all deterministic UUIDv5 ks_* parameters (+ ks_attributes_json) onto DirectShape target categories.
@@ -352,8 +511,14 @@ public sealed class ShowcaseCompanionBuilder
                     continue;
                 }
 
-                BindInstanceDefinition(document, application, externalDefinition, directShapeCategories, GroupTypeId.Data);
-                boundCount++;
+                if (BindInstanceDefinition(document, application, externalDefinition, directShapeCategories, GroupTypeId.Data))
+                {
+                    boundCount++;
+                }
+                else
+                {
+                    warnings.Add($"Revit refused to bind showcase shared parameter '{paramDef.Name}' ({paramDef.Guid:D}).");
+                }
             }
         }
         finally
@@ -380,7 +545,7 @@ public sealed class ShowcaseCompanionBuilder
         return categories;
     }
 
-    private static void BindInstanceDefinition(
+    private static bool BindInstanceDefinition(
         Document document,
         Application application,
         ExternalDefinition definition,
@@ -389,10 +554,8 @@ public sealed class ShowcaseCompanionBuilder
     {
         InstanceBinding binding = application.Create.NewInstanceBinding(categories);
         BindingMap map = document.ParameterBindings;
-        if (!map.Insert(definition, binding, groupTypeId))
-        {
-            map.ReInsert(definition, binding, groupTypeId);
-        }
+        return map.Insert(definition, binding, groupTypeId) ||
+               map.ReInsert(definition, binding, groupTypeId);
     }
 
     private static void StampShowcaseModelRole(Document document)
@@ -417,15 +580,14 @@ public sealed class ShowcaseCompanionBuilder
         }
     }
 
-    private static bool TryBuildDirectShape(
-        Document document,
+    private static bool TryBuildGeometryObjects(
         ShowcaseElementPlan plan,
-        ShowcaseParameterRegistry registry,
         double minSegmentLengthFeet,
         SolidOptions solidOptions,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        out List<GeometryObject> geometries)
     {
-        List<GeometryObject> geometries = new(plan.Solids.Count);
+        geometries = new List<GeometryObject>(plan.Solids.Count);
         foreach (ShowcaseExtrusionSolid solidPlan in plan.Solids)
         {
             try
@@ -448,21 +610,133 @@ public sealed class ShowcaseCompanionBuilder
             return false;
         }
 
+        return true;
+    }
+
+    private static bool TryCreateDirectShape(
+        Document document,
+        ShowcaseElementPlan plan,
+        ElementId categoryId,
+        ShowcaseParameterRegistry registry,
+        double minSegmentLengthFeet,
+        SolidOptions solidOptions,
+        ICollection<string> warnings)
+    {
+        if (!TryBuildGeometryObjects(plan, minSegmentLengthFeet, solidOptions, warnings, out List<GeometryObject> geometries))
+        {
+            return false;
+        }
+
+        using SubTransaction subTransaction = new(document);
+        subTransaction.Start();
         try
         {
-            ElementId categoryId = ResolveDirectShapeCategoryId(document, plan.PreferredCategoryName, warnings);
             DirectShape directShape = DirectShape.CreateElement(document, categoryId);
             directShape.ApplicationId = plan.ApplicationId;
             directShape.ApplicationDataId = plan.ApplicationDataId;
             directShape.Name = plan.ElementName;
             directShape.SetShape(geometries);
 
-            PopulateElementParameters(directShape, plan, registry, warnings);
+            PopulateElementParameters(directShape, plan, registry, clearOmittedOrNullParameters: false, warnings);
+            subTransaction.Commit();
             return true;
         }
         catch (Exception ex)
         {
+            if (subTransaction.GetStatus() == TransactionStatus.Started)
+            {
+                subTransaction.RollBack();
+            }
+
             warnings.Add($"Failed to create DirectShape '{plan.ApplicationDataId}': {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TryUpdateDirectShapeInPlace(
+        Document document,
+        ElementId existingElementId,
+        ShowcaseElementPlan plan,
+        ShowcaseParameterRegistry registry,
+        double minSegmentLengthFeet,
+        SolidOptions solidOptions,
+        ICollection<string> warnings)
+    {
+        if (!TryBuildGeometryObjects(plan, minSegmentLengthFeet, solidOptions, warnings, out List<GeometryObject> geometries))
+        {
+            return false;
+        }
+
+        using SubTransaction subTransaction = new(document);
+        subTransaction.Start();
+        try
+        {
+            if (document.GetElement(existingElementId) is not DirectShape directShape)
+            {
+                subTransaction.RollBack();
+                warnings.Add($"Existing showcase DirectShape '{plan.ApplicationDataId}' (#{existingElementId.Value}) was not found for in-place update.");
+                return false;
+            }
+
+            directShape.ApplicationId = plan.ApplicationId;
+            directShape.ApplicationDataId = plan.ApplicationDataId;
+            directShape.Name = plan.ElementName;
+            directShape.SetShape(geometries);
+
+            PopulateElementParameters(directShape, plan, registry, clearOmittedOrNullParameters: true, warnings);
+            subTransaction.Commit();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (subTransaction.GetStatus() == TransactionStatus.Started)
+            {
+                subTransaction.RollBack();
+            }
+
+            warnings.Add($"Failed to update DirectShape '{plan.ApplicationDataId}' in-place: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TryReplaceDirectShape(
+        Document document,
+        ElementId existingElementId,
+        ShowcaseElementPlan plan,
+        ElementId newCategoryId,
+        ShowcaseParameterRegistry registry,
+        double minSegmentLengthFeet,
+        SolidOptions solidOptions,
+        ICollection<string> warnings)
+    {
+        if (!TryBuildGeometryObjects(plan, minSegmentLengthFeet, solidOptions, warnings, out List<GeometryObject> geometries))
+        {
+            return false;
+        }
+
+        using SubTransaction subTransaction = new(document);
+        subTransaction.Start();
+        try
+        {
+            DirectShape directShape = DirectShape.CreateElement(document, newCategoryId);
+            directShape.ApplicationId = plan.ApplicationId;
+            directShape.ApplicationDataId = plan.ApplicationDataId;
+            directShape.Name = plan.ElementName;
+            directShape.SetShape(geometries);
+
+            PopulateElementParameters(directShape, plan, registry, clearOmittedOrNullParameters: false, warnings);
+            document.Delete(existingElementId);
+            subTransaction.Commit();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (subTransaction.GetStatus() == TransactionStatus.Started)
+            {
+                subTransaction.RollBack();
+            }
+
+            warnings.Add($"Failed to replace DirectShape '{plan.ApplicationDataId}' across category change: {ex.Message}");
             return false;
         }
     }
@@ -566,11 +840,12 @@ public sealed class ShowcaseCompanionBuilder
         DirectShape directShape,
         ShowcaseElementPlan plan,
         ShowcaseParameterRegistry registry,
+        bool clearOmittedOrNullParameters,
         ICollection<string> warnings)
     {
         foreach (ShowcaseParameterAssignment assignment in plan.ParameterAssignments)
         {
-            // Leave explicit SQL/JSON NULL values unset rather than overwriting with empty string or zero.
+            // Leave explicit SQL/JSON NULL values unset on fresh shapes (in-place updates clear stale values below).
             if (assignment.IsNull)
             {
                 continue;
@@ -587,13 +862,41 @@ public sealed class ShowcaseCompanionBuilder
                 switch (param.StorageType)
                 {
                     case StorageType.String:
-                        param.Set(assignment.TextValue ?? string.Empty);
+                        if (!param.Set(assignment.TextValue ?? string.Empty))
+                        {
+                            warnings.Add($"Revit refused to set text parameter '{assignment.Parameter.Name}' on '{plan.ApplicationDataId}'.");
+                        }
+
                         break;
+
                     case StorageType.Integer:
-                        param.Set(assignment.Int32Value);
+                        if (assignment.IsTextFallback)
+                        {
+                            warnings.Add(
+                                $"Skipped incompatible text value '{assignment.TextValue}' for integer parameter '{assignment.Parameter.Name}' on '{plan.ApplicationDataId}'.");
+                            break;
+                        }
+
+                        if (!param.Set(assignment.Int32Value))
+                        {
+                            warnings.Add($"Revit refused to set integer parameter '{assignment.Parameter.Name}' on '{plan.ApplicationDataId}'.");
+                        }
+
                         break;
+
                     case StorageType.Double:
-                        param.Set(assignment.DoubleValue);
+                        if (assignment.IsTextFallback)
+                        {
+                            warnings.Add(
+                                $"Skipped incompatible text value '{assignment.TextValue}' for numeric parameter '{assignment.Parameter.Name}' on '{plan.ApplicationDataId}'.");
+                            break;
+                        }
+
+                        if (!param.Set(assignment.DoubleValue))
+                        {
+                            warnings.Add($"Revit refused to set numeric parameter '{assignment.Parameter.Name}' on '{plan.ApplicationDataId}'.");
+                        }
+
                         break;
                 }
             }
@@ -603,13 +906,87 @@ public sealed class ShowcaseCompanionBuilder
             }
         }
 
+        if (clearOmittedOrNullParameters)
+        {
+            IReadOnlyList<ShowcaseParameterDefinition> toClear =
+                ShowcaseElementReconciler.GetParametersToClearOnUpdate(registry, plan);
+            foreach (ShowcaseParameterDefinition def in toClear)
+            {
+                ClearParameterIfPopulated(directShape, def, plan.ApplicationDataId, warnings);
+            }
+        }
+
         if (!string.IsNullOrEmpty(plan.OverflowAttributesJson))
         {
             Parameter? overflowParam = directShape.get_Parameter(registry.OverflowParameter.Guid);
-            if (overflowParam != null && !overflowParam.IsReadOnly && overflowParam.StorageType == StorageType.String)
+            if (overflowParam is null || overflowParam.IsReadOnly || overflowParam.StorageType != StorageType.String)
             {
-                overflowParam.Set(plan.OverflowAttributesJson);
+                warnings.Add(
+                    $"Overflow parameter '{registry.OverflowParameter.Name}' is missing, read-only, or non-string on '{plan.ApplicationDataId}'.");
             }
+            else
+            {
+                try
+                {
+                    if (!overflowParam.Set(plan.OverflowAttributesJson))
+                    {
+                        warnings.Add(
+                            $"Revit refused to write overflow parameter '{registry.OverflowParameter.Name}' on '{plan.ApplicationDataId}'.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add(
+                        $"Could not set overflow parameter '{registry.OverflowParameter.Name}' on '{plan.ApplicationDataId}': {ex.Message}");
+                }
+            }
+        }
+    }
+
+    private static void ClearParameterIfPopulated(
+        DirectShape directShape,
+        ShowcaseParameterDefinition def,
+        string applicationDataId,
+        ICollection<string> warnings)
+    {
+        Parameter? param = directShape.get_Parameter(def.Guid);
+        if (param is null || param.IsReadOnly || !param.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            switch (param.StorageType)
+            {
+                case StorageType.String:
+                    if (!string.IsNullOrEmpty(param.AsString()))
+                    {
+                        param.Set(string.Empty);
+                    }
+
+                    break;
+
+                case StorageType.Integer:
+                    if (param.AsInteger() != 0)
+                    {
+                        param.Set(0);
+                    }
+
+                    break;
+
+                case StorageType.Double:
+                    if (param.AsDouble() != 0d)
+                    {
+                        param.Set(0d);
+                    }
+
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"Could not clear stale parameter '{def.Name}' on '{applicationDataId}': {ex.Message}");
         }
     }
 

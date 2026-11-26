@@ -17,13 +17,19 @@ public sealed class ShowcaseCompanionBuildResult
         int boundParameterCount,
         int overflowFeatureCount,
         IReadOnlyList<string> createdApplicationDataIds,
-        IReadOnlyList<string> warnings)
+        IReadOnlyList<string> warnings,
+        int updatedElementCount = 0,
+        int replacedElementCount = 0,
+        int deletedElementCount = 0)
     {
         Document = document;
         SavedFilePath = savedFilePath;
         SnapshotScope = snapshotScope ?? throw new ArgumentNullException(nameof(snapshotScope));
         SnapshotContentHash = snapshotContentHash ?? throw new ArgumentNullException(nameof(snapshotContentHash));
         CreatedElementCount = createdElementCount;
+        UpdatedElementCount = updatedElementCount;
+        ReplacedElementCount = replacedElementCount;
+        DeletedElementCount = deletedElementCount;
         SkippedElementCount = skippedElementCount;
         BoundParameterCount = boundParameterCount;
         OverflowFeatureCount = overflowFeatureCount;
@@ -41,6 +47,12 @@ public sealed class ShowcaseCompanionBuildResult
     public string SnapshotContentHash { get; }
 
     public int CreatedElementCount { get; }
+
+    public int UpdatedElementCount { get; }
+
+    public int ReplacedElementCount { get; }
+
+    public int DeletedElementCount { get; }
 
     public int SkippedElementCount { get; }
 

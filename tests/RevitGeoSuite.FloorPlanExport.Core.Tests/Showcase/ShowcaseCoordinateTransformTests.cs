@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Showcase;
@@ -103,5 +104,88 @@ public sealed class ShowcaseCoordinateTransformTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ShowcaseCoordinateTransform.FromSharedOrigin(double.NaN, 0, 0, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShowcaseCoordinateTransform.Identity.ToRevitInternal(double.PositiveInfinity, 0, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShowcaseCoordinateTransform.Identity.ToRevitInternalZFeet(double.NegativeInfinity));
+    }
+
+    [Fact]
+    public void FreshBlankCompanionLocalizesProjectedCoordinatesNearInternalOriginWithExactSharedRoundTrip()
+    {
+        // Realistic Tokyo EPSG:6677 station footprint ~37 km from CRS origin (exceeds Revit's 10-mile radius if unlocalized)
+        const double baseE = -12_345.678d;
+        const double baseN = -34_567.890d;
+        const double baseTp = 3.300d;
+
+        ShowcaseLayer unitLayer = new(
+            "1F_unit",
+            ShowcaseLayerKind.Unit,
+            new[] { new ShowcaseField("id", ShowcaseFieldType.Text) },
+            new[]
+            {
+                new ShowcaseFeature(
+                    "tokyo-u1",
+                    "level:0",
+                    "0",
+                    new ShowcasePolygonGeometry(new IReadOnlyList<Point2D>[]
+                    {
+                        new[]
+                        {
+                            new Point2D(baseE, baseN),
+                            new Point2D(baseE + 100.0d, baseN),
+                            new Point2D(baseE + 100.0d, baseN + 60.0d),
+                            new Point2D(baseE, baseN + 60.0d),
+                            new Point2D(baseE, baseN),
+                        },
+                    }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["id"] = ShowcaseAttributeValue.FromText("tokyo-u1"),
+                    }),
+            });
+
+        ShowcaseSnapshot snapshot = ShowcaseSnapshotReader.Parse(
+            ShowcaseSnapshotReaderTests.SerializeSnapshotWithValidHash(
+                scope: "tokyo_station",
+                basedOn: null,
+                writtenUtc: "2026-11-27T00:00:00Z",
+                kanizu: "0.9.0",
+                epsg: 6677,
+                levels: new[] { new ShowcaseLevel("level:0", "0", 0, "1F", baseTp, ShowcaseElevationSource.Surveyed) },
+                layers: new[] { unitLayer },
+                quarantined: Array.Empty<QuarantinedShowcaseFeature>()));
+
+        // Fresh blank companion (ActiveProjectLocation at zero origin) -> auto-localized & configures ProjectPosition
+        ShowcaseCoordinateTransform resolved = ShowcaseCoordinateTransform.ResolveTransformForCompanion(
+            snapshot,
+            explicitOverride: null,
+            documentLocationTransform: ShowcaseCoordinateTransform.Identity,
+            isFreshNewDocument: true,
+            out bool shouldConfigure);
+
+        Assert.True(shouldConfigure);
+        Assert.InRange(Math.Abs(resolved.OriginEastingMeters - (baseE + 50.0d)), 0d, 0.001d);
+        Assert.InRange(Math.Abs(resolved.OriginNorthingMeters - (baseN + 30.0d)), 0d, 0.001d);
+        Assert.InRange(Math.Abs(resolved.OriginElevationMeters - baseTp), 0d, 0.001d);
+
+        // Every corner sits well within 100 m (~328 ft) of Revit's internal origin (far inside 10-mile radius!)
+        ShowcasePoint3D cornerInternal = resolved.ToRevitInternal(baseE, baseN, baseTp);
+        Assert.True(Math.Abs(cornerInternal.XFeet) < 200.0d);
+        Assert.True(Math.Abs(cornerInternal.YFeet) < 200.0d);
+        Assert.InRange(Math.Abs(cornerInternal.ZFeet), 0d, 1e-6d);
+
+        // Shared coordinates round-trip back to exact Tokyo CRS metres (< 0.1 mm)
+        (double rtE, double rtN, double rtZ) = resolved.ToCrsMeters(cornerInternal);
+        Assert.True(Math.Abs(rtE - baseE) < SubTenthMillimeterToleranceMeters);
+        Assert.True(Math.Abs(rtN - baseN) < SubTenthMillimeterToleranceMeters);
+        Assert.True(Math.Abs(rtZ - baseTp) < SubTenthMillimeterToleranceMeters);
+
+        // Existing configured companion document preserves its ProjectLocation without overwriting
+        ShowcaseCoordinateTransform existingTransform = ShowcaseCoordinateTransform.FromSharedOrigin(-12_300d, -34_500d, 2.0d, 12.0d);
+        ShowcaseCoordinateTransform kept = ShowcaseCoordinateTransform.ResolveTransformForCompanion(
+            snapshot,
+            explicitOverride: null,
+            documentLocationTransform: existingTransform,
+            isFreshNewDocument: false,
+            out bool shouldConfigureExisting);
+        Assert.False(shouldConfigureExisting);
+        Assert.Same(existingTransform, kept);
     }
 }

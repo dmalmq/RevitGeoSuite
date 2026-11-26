@@ -226,6 +226,150 @@ public sealed class ShowcaseSnapshotReaderTests : IDisposable
             ShowcaseSnapshotReader.Parse(dupDoc.ToString(), new ShowcaseSnapshotReadOptions { VerifyContentHash = false }));
     }
 
+    [Fact]
+    public void VerifiesCrossImplementationKanizuRustRyuGoldenContentHash()
+    {
+        // Canonical SHA-256 computed independently over Rust serde_json / ryu output:
+        // tiny_fixed = 0.00001 (fixed-point), tiny_sci = 1e-6 (lowercase e, unpadded),
+        // Shape_Area = 123.45678901234567 (full 17-digit IEEE-754 double).
+        const string expectedRustSha256 = "e94491e7b7e3ef2bdcce2cf847ccf4db323e8fa582e2270c155f03efa16bcd2a";
+
+        Assert.Equal("0.00001", ShowcaseSnapshotReader.FormatRyuDouble(0.00001d));
+        Assert.Equal("0.00005", ShowcaseSnapshotReader.FormatRyuDouble(0.00005d));
+        Assert.Equal("1e-6", ShowcaseSnapshotReader.FormatRyuDouble(1e-6d));
+        Assert.Equal("1.25e-6", ShowcaseSnapshotReader.FormatRyuDouble(1.25e-6d));
+        Assert.Equal("123.45678901234567", ShowcaseSnapshotReader.FormatRyuDouble(123.45678901234567d));
+        Assert.Equal("0.0", ShowcaseSnapshotReader.FormatRyuDouble(-0.0d));
+        Assert.Equal("10.0", ShowcaseSnapshotReader.FormatRyuDouble(10.0d));
+
+        string prettyRustSnapshot = $$"""
+        {
+          "schema": "kanizu.gis-showcase",
+          "version": 1,
+          "scope": "ryu_golden",
+          "writtenUtc": "2026-11-27T00:00:00Z",
+          "kanizu": "0.9.0",
+          "epsg": 6677,
+          "contentHash": "{{expectedRustSha256}}",
+          "levels": [
+            {
+              "levelId": "level:0",
+              "floorKey": "0",
+              "ordinal": 0,
+              "shortName": "1F",
+              "tpM": 3.3,
+              "elevationSource": "surveyed"
+            }
+          ],
+          "layers": [
+            {
+              "name": "1F_unit",
+              "kind": "unit",
+              "fields": [
+                { "name": "Shape_Area", "fieldType": "real", "preserveAsText": false },
+                { "name": "tiny_fixed", "fieldType": "real", "preserveAsText": false },
+                { "name": "tiny_sci", "fieldType": "real", "preserveAsText": false }
+              ],
+              "features": [
+                {
+                  "key": "u1",
+                  "levelId": "level:0",
+                  "floorKey": "0",
+                  "geometry": {
+                    "type": "polygon",
+                    "rings": [
+                      [
+                        [0.0, 0.0],
+                        [10.0, 0.0],
+                        [10.0, 5.0],
+                        [0.0, 5.0],
+                        [0.0, 0.0]
+                      ]
+                    ]
+                  },
+                  "attributes": {
+                    "tiny_sci": 1e-6,
+                    "Shape_Area": 123.45678901234567,
+                    "tiny_fixed": 0.00001
+                  }
+                }
+              ]
+            }
+          ],
+          "quarantined": [],
+          "summary": {
+            "countsByKind": { "unit": 1 },
+            "totalLayers": 1,
+            "totalFeatures": 1,
+            "totalQuarantined": 0
+          }
+        }
+        """;
+
+        ShowcaseSnapshot parsed = ShowcaseSnapshotReader.Parse(prettyRustSnapshot);
+        Assert.Equal(expectedRustSha256, parsed.ContentHash);
+        Assert.Equal(expectedRustSha256, ShowcaseSnapshotReader.ComputeContentHash(parsed));
+    }
+
+    [Fact]
+    public void ShiftedShoelaceAreaAcceptsSmallPolygonAtLargeEpsg3857Coordinates()
+    {
+        const double x0 = 15_550_000.0d;
+        const double y0 = 4_250_000.0d;
+        const double size = 0.05d; // 5 cm x 5 cm -> 0.0025 m^2
+
+        Point2D[] closedRing =
+        {
+            new(x0, y0),
+            new(x0 + size, y0),
+            new(x0 + size, y0 + size),
+            new(x0, y0 + size),
+            new(x0, y0),
+        };
+        Point2D[] openRing =
+        {
+            new(x0, y0),
+            new(x0 + size, y0),
+            new(x0 + size, y0 + size),
+            new(x0, y0 + size),
+        };
+
+        double areaReader = ShowcaseSnapshotReader.ComputeSignedArea(closedRing);
+        double areaPlanner = ShowcaseGeometryPlanner.ComputeSignedAreaOpen(openRing);
+        Assert.InRange(Math.Abs(areaReader - 0.0025d), 0d, 1e-10d);
+        Assert.InRange(Math.Abs(areaPlanner - 0.0025d), 0d, 1e-10d);
+
+        ShowcaseLayer layer = new(
+            "1F_unit",
+            ShowcaseLayerKind.Unit,
+            new[] { new ShowcaseField("id", ShowcaseFieldType.Text) },
+            new[]
+            {
+                new ShowcaseFeature(
+                    "tiny-epsg3857",
+                    "level:0",
+                    "0",
+                    new ShowcasePolygonGeometry(new IReadOnlyList<Point2D>[] { closedRing }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["id"] = ShowcaseAttributeValue.FromText("tiny-epsg3857"),
+                    }),
+            });
+
+        string json = SerializeSnapshotWithValidHash(
+            scope: "epsg3857_tiny",
+            basedOn: null,
+            writtenUtc: "2026-11-27T00:00:00Z",
+            kanizu: "0.9.0",
+            epsg: 3857,
+            levels: new[] { new ShowcaseLevel("level:0", "0", 0, "1F", 0.0d, ShowcaseElevationSource.Surveyed) },
+            layers: new[] { layer },
+            quarantined: Array.Empty<QuarantinedShowcaseFeature>());
+
+        ShowcaseSnapshot parsed = ShowcaseSnapshotReader.Parse(json);
+        Assert.Single(parsed.Layers[0].Features);
+    }
+
     internal static string BuildValidFullSnapshotJson(string writtenUtc = "2026-05-01T00:00:00Z")
     {
         ShowcaseLevel[] levels =

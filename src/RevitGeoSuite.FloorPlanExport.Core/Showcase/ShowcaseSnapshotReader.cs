@@ -8,7 +8,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Showcase;
@@ -51,6 +50,21 @@ public static class ShowcaseSnapshotReader
         ShowcaseLayerKind.NetworkLink,
         ShowcaseLayerKind.NetworkConnector,
         ShowcaseLayerKind.NetworkNode,
+    };
+
+    private static readonly string[] CanonicalLayerKindTokenOrder =
+    {
+        "unit",
+        "opening",
+        "fixture",
+        "level",
+        "detail",
+        "pointFacility",
+        "pointFacilityNetwork",
+        "station",
+        "networkLink",
+        "networkConnector",
+        "networkNode",
     };
 
     /// <summary>Reads and strictly validates a <c>kanizu.gis-showcase</c> v1 JSON snapshot from disk.</summary>
@@ -132,7 +146,9 @@ public static class ShowcaseSnapshotReader
 
         if (effectiveOptions.VerifyContentHash)
         {
-            string expectedHash = ComputeContentHash(snapshot);
+            // Verify against the canonical projection preserving exact validated JSON numeric lexemes
+            // from the source document so Rust serde_json/ryu hashes match byte-for-byte on both net48 and net10.0.
+            string expectedHash = ComputeContentHashFromValidatedJson(json);
             if (string.IsNullOrWhiteSpace(contentHash) ||
                 !string.Equals(contentHash, expectedHash, StringComparison.Ordinal))
             {
@@ -222,7 +238,180 @@ public static class ShowcaseSnapshotReader
         }
 
         string canonicalJson = SerializeCanonicalContent(snapshot);
-        byte[] utf8Bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(canonicalJson);
+        return Sha256HexUtf8(canonicalJson);
+    }
+
+    /// <summary>
+    /// Computes the canonical lowercase-hex SHA-256 <c>contentHash</c> directly from raw snapshot JSON text,
+    /// preserving original validated JSON numeric lexemes so Kanizu Rust (<c>ryu</c>) hashes match identically
+    /// across <c>net48</c> and <c>net10.0</c>.
+    /// </summary>
+    internal static string ComputeContentHashFromValidatedJson(string json)
+    {
+        RawJsonValue root = RawJsonParser.Parse(json);
+        if (root.Kind != RawJsonKind.Object)
+        {
+            throw new ShowcaseSnapshotException("Showcase snapshot root must be a JSON object.");
+        }
+
+        string canonicalJson = RawJsonCanonicalWriter.SerializeCanonicalShowcase(root);
+        return Sha256HexUtf8(canonicalJson);
+    }
+
+    /// <summary>
+    /// Formats a finite <see cref="double"/> using Rust <c>ryu::pretty::format64</c> rules (fixed-point down to
+    /// <c>1e-5</c>, lowercase <c>e</c> with unpadded exponent outside <c>[1e-5, 1e16)</c>, <c>.0</c> on integers,
+    /// and exact shortest round-trip digits on both <c>net48</c> and <c>net10.0</c>).
+    /// </summary>
+    public static string FormatRyuDouble(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            throw new ShowcaseSnapshotException($"Cannot canonically format non-finite double '{value}'.");
+        }
+
+        if (value == 0d)
+        {
+            return "0.0";
+        }
+
+        bool negative = value < 0d;
+        double abs = negative ? -value : value;
+
+        string shortest = FormatShortestPositiveDouble(abs);
+        ParseDecimalParts(shortest, out string digits, out int k);
+
+        int length = digits.Length;
+        int kk = length + k; // 10^(kk - 1) <= abs < 10^kk
+
+        StringBuilder sb = new(24);
+        if (negative)
+        {
+            sb.Append('-');
+        }
+
+        if (0 <= k && kk <= 16)
+        {
+            // e.g. 1234e7 -> 12340000000.0
+            sb.Append(digits);
+            sb.Append('0', kk - length);
+            sb.Append(".0");
+        }
+        else if (0 < kk && kk <= 16)
+        {
+            // e.g. 1234e-2 -> 12.34
+            sb.Append(digits, 0, kk);
+            sb.Append('.');
+            sb.Append(digits, kk, length - kk);
+        }
+        else if (-5 < kk && kk <= 0)
+        {
+            // e.g. 1e-5 (kk = -4) -> 0.00001; 1234e-6 (kk = -2) -> 0.001234
+            sb.Append("0.");
+            if (kk < 0)
+            {
+                sb.Append('0', -kk);
+            }
+
+            sb.Append(digits);
+        }
+        else if (length == 1)
+        {
+            // e.g. 1e-6, 1e30
+            sb.Append(digits[0]);
+            sb.Append('e');
+            sb.Append((kk - 1).ToString(CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            // e.g. 1.234e-6, 1.234e33
+            sb.Append(digits[0]);
+            sb.Append('.');
+            sb.Append(digits, 1, length - 1);
+            sb.Append('e');
+            sb.Append((kk - 1).ToString(CultureInfo.InvariantCulture));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatShortestPositiveDouble(double positiveValue)
+    {
+#if NETFRAMEWORK
+        // On .NET Framework 4.8, "G" truncates to 15 digits while "R" can emit unnecessary 17th digits.
+        // Probing G15 -> G16 -> G17 yields the exact shortest IEEE-754 round-trip decimal.
+        string g15 = positiveValue.ToString("G15", CultureInfo.InvariantCulture);
+        if (double.TryParse(g15, NumberStyles.Float, CultureInfo.InvariantCulture, out double p15) && p15 == positiveValue)
+        {
+            return g15;
+        }
+
+        string g16 = positiveValue.ToString("G16", CultureInfo.InvariantCulture);
+        if (double.TryParse(g16, NumberStyles.Float, CultureInfo.InvariantCulture, out double p16) && p16 == positiveValue)
+        {
+            return g16;
+        }
+
+        return positiveValue.ToString("G17", CultureInfo.InvariantCulture);
+#else
+        // .NET Core / .NET 10 uses Dragonbox shortest round-trip for "G".
+        return positiveValue.ToString("G", CultureInfo.InvariantCulture);
+#endif
+    }
+
+    private static void ParseDecimalParts(string decimalText, out string digits, out int k)
+    {
+        int expIndex = decimalText.IndexOf('E');
+        if (expIndex < 0)
+        {
+            expIndex = decimalText.IndexOf('e');
+        }
+
+        int exp = 0;
+        string mantissaPart;
+        if (expIndex >= 0)
+        {
+            mantissaPart = decimalText.Substring(0, expIndex);
+            exp = int.Parse(decimalText.Substring(expIndex + 1), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            mantissaPart = decimalText;
+        }
+
+        int dotIndex = mantissaPart.IndexOf('.');
+        string rawDigits;
+        int fracDigits = 0;
+        if (dotIndex >= 0)
+        {
+            rawDigits = mantissaPart.Substring(0, dotIndex) + mantissaPart.Substring(dotIndex + 1);
+            fracDigits = mantissaPart.Length - dotIndex - 1;
+        }
+        else
+        {
+            rawDigits = mantissaPart;
+        }
+
+        int start = 0;
+        while (start < rawDigits.Length && rawDigits[start] == '0')
+        {
+            start++;
+        }
+
+        int end = rawDigits.Length - 1;
+        while (end >= start && rawDigits[end] == '0')
+        {
+            end--;
+        }
+
+        int trailingZerosTrimmed = (rawDigits.Length - 1) - end;
+        digits = rawDigits.Substring(start, end - start + 1);
+        k = exp - fracDigits + trailingZerosTrimmed;
+    }
+
+    private static string Sha256HexUtf8(string text)
+    {
+        byte[] utf8Bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(text);
         using SHA256 sha256 = SHA256.Create();
         byte[] digest = sha256.ComputeHash(utf8Bytes);
         StringBuilder hex = new(digest.Length * 2);
@@ -605,19 +794,25 @@ public static class ShowcaseSnapshotReader
         }
     }
 
-    internal static double ComputeSignedArea(IReadOnlyList<Point2D> ring)
+    /// <summary>
+    /// Computes the 2D signed area of a ring shifted relative to <c>ring[0]</c> so large projected CRS
+    /// coordinates (e.g. EPSG:3857 at 15,550,000 m) never suffer catastrophic floating-point cancellation.
+    /// </summary>
+    public static double ComputeSignedArea(IReadOnlyList<Point2D> ring)
     {
-        if (ring.Count < 3)
+        if (ring is null || ring.Count < 3)
         {
             return 0d;
         }
 
+        double x0 = ring[0].X;
+        double y0 = ring[0].Y;
         double twiceArea = 0d;
         for (int i = 0; i < ring.Count; i++)
         {
             Point2D a = ring[i];
             Point2D b = ring[(i + 1) % ring.Count];
-            twiceArea += (a.X * b.Y) - (b.X * a.Y);
+            twiceArea += ((a.X - x0) * (b.Y - y0)) - ((b.X - x0) * (a.Y - y0));
         }
 
         return twiceArea * 0.5d;
@@ -1317,13 +1512,621 @@ public static class ShowcaseSnapshotReader
 
     private static void WriteCanonicalDouble(JsonTextWriter writer, double value)
     {
-        double normalized = value == 0d ? 0d : value;
-        string text = normalized.ToString("G", CultureInfo.InvariantCulture);
-        if (text.IndexOf('.') < 0 && text.IndexOf('E') < 0 && text.IndexOf('e') < 0)
+        writer.WriteRawValue(FormatRyuDouble(value));
+    }
+
+    // -----------------------------------------------------------------------
+    // Raw-token JSON parser & canonical projector for byte-exact contentHash
+    // verification against Kanizu Rust (serde_json / ryu) on net48 + net10.0.
+    // -----------------------------------------------------------------------
+
+    private enum RawJsonKind
+    {
+        Null,
+        Bool,
+        Number,
+        String,
+        Array,
+        Object,
+    }
+
+    private sealed class RawJsonValue
+    {
+        public RawJsonValue(
+            RawJsonKind kind,
+            string? text = null,
+            List<RawJsonValue>? arrayItems = null,
+            Dictionary<string, RawJsonValue>? objectMembers = null)
         {
-            text += ".0";
+            Kind = kind;
+            Text = text;
+            ArrayItems = arrayItems;
+            ObjectMembers = objectMembers;
         }
 
-        writer.WriteRawValue(text);
+        public RawJsonKind Kind { get; }
+
+        public string? Text { get; }
+
+        public List<RawJsonValue>? ArrayItems { get; }
+
+        public Dictionary<string, RawJsonValue>? ObjectMembers { get; }
+
+        public bool TryGetProperty(string name, out RawJsonValue value)
+        {
+            if (ObjectMembers != null && ObjectMembers.TryGetValue(name, out RawJsonValue? found) && found != null)
+            {
+                value = found;
+                return true;
+            }
+
+            value = null!;
+            return false;
+        }
+    }
+
+    private struct RawJsonParser
+    {
+        private readonly string _src;
+        private int _pos;
+
+        private RawJsonParser(string src)
+        {
+            _src = src;
+            _pos = 0;
+        }
+
+        public static RawJsonValue Parse(string json)
+        {
+            RawJsonParser parser = new(json);
+            parser.SkipWhitespace();
+            RawJsonValue value = parser.ParseValue();
+            parser.SkipWhitespace();
+            return value;
+        }
+
+        private RawJsonValue ParseValue()
+        {
+            SkipWhitespace();
+            if (_pos >= _src.Length)
+            {
+                throw new ShowcaseSnapshotException("Unexpected end of JSON while verifying contentHash.");
+            }
+
+            char c = _src[_pos];
+            switch (c)
+            {
+                case '{': return ParseObject();
+                case '[': return ParseArray();
+                case '"': return new RawJsonValue(RawJsonKind.String, text: ParseString());
+                case 't':
+                    ExpectLiteral("true");
+                    return new RawJsonValue(RawJsonKind.Bool, text: "true");
+                case 'f':
+                    ExpectLiteral("false");
+                    return new RawJsonValue(RawJsonKind.Bool, text: "false");
+                case 'n':
+                    ExpectLiteral("null");
+                    return new RawJsonValue(RawJsonKind.Null, text: "null");
+                default:
+                    if (c == '-' || (c >= '0' && c <= '9'))
+                    {
+                        return new RawJsonValue(RawJsonKind.Number, text: ParseNumberLexeme());
+                    }
+
+                    throw new ShowcaseSnapshotException($"Unexpected JSON token '{c}' at offset {_pos}.");
+            }
+        }
+
+        private RawJsonValue ParseObject()
+        {
+            _pos++; // '{'
+            Dictionary<string, RawJsonValue> members = new(StringComparer.Ordinal);
+            SkipWhitespace();
+            if (_pos < _src.Length && _src[_pos] == '}')
+            {
+                _pos++;
+                return new RawJsonValue(RawJsonKind.Object, objectMembers: members);
+            }
+
+            while (true)
+            {
+                SkipWhitespace();
+                string key = ParseString();
+                SkipWhitespace();
+                if (_pos >= _src.Length || _src[_pos] != ':')
+                {
+                    throw new ShowcaseSnapshotException($"Expected ':' after object key '{key}'.");
+                }
+
+                _pos++;
+                RawJsonValue val = ParseValue();
+                members[key] = val;
+                SkipWhitespace();
+                if (_pos < _src.Length && _src[_pos] == ',')
+                {
+                    _pos++;
+                    continue;
+                }
+
+                if (_pos < _src.Length && _src[_pos] == '}')
+                {
+                    _pos++;
+                    return new RawJsonValue(RawJsonKind.Object, objectMembers: members);
+                }
+
+                throw new ShowcaseSnapshotException($"Expected ',' or '}}' in JSON object at offset {_pos}.");
+            }
+        }
+
+        private RawJsonValue ParseArray()
+        {
+            _pos++; // '['
+            List<RawJsonValue> items = new();
+            SkipWhitespace();
+            if (_pos < _src.Length && _src[_pos] == ']')
+            {
+                _pos++;
+                return new RawJsonValue(RawJsonKind.Array, arrayItems: items);
+            }
+
+            while (true)
+            {
+                items.Add(ParseValue());
+                SkipWhitespace();
+                if (_pos < _src.Length && _src[_pos] == ',')
+                {
+                    _pos++;
+                    continue;
+                }
+
+                if (_pos < _src.Length && _src[_pos] == ']')
+                {
+                    _pos++;
+                    return new RawJsonValue(RawJsonKind.Array, arrayItems: items);
+                }
+
+                throw new ShowcaseSnapshotException($"Expected ',' or ']' in JSON array at offset {_pos}.");
+            }
+        }
+
+        private string ParseString()
+        {
+            if (_pos >= _src.Length || _src[_pos] != '"')
+            {
+                throw new ShowcaseSnapshotException($"Expected JSON string at offset {_pos}.");
+            }
+
+            _pos++; // opening '"'
+            StringBuilder sb = new();
+            while (_pos < _src.Length)
+            {
+                char c = _src[_pos++];
+                if (c == '"')
+                {
+                    return sb.ToString();
+                }
+
+                if (c == '\\')
+                {
+                    if (_pos >= _src.Length)
+                    {
+                        throw new ShowcaseSnapshotException("Unterminated JSON string escape.");
+                    }
+
+                    char esc = _src[_pos++];
+                    switch (esc)
+                    {
+                        case '"': sb.Append('"'); break;
+                        case '\\': sb.Append('\\'); break;
+                        case '/': sb.Append('/'); break;
+                        case 'b': sb.Append('\b'); break;
+                        case 'f': sb.Append('\f'); break;
+                        case 'n': sb.Append('\n'); break;
+                        case 'r': sb.Append('\r'); break;
+                        case 't': sb.Append('\t'); break;
+                        case 'u':
+                            if (_pos + 4 > _src.Length)
+                            {
+                                throw new ShowcaseSnapshotException("Truncated \\uXXXX escape in JSON string.");
+                            }
+
+                            string hex = _src.Substring(_pos, 4);
+                            sb.Append((char)Convert.ToUInt16(hex, 16));
+                            _pos += 4;
+                            break;
+                        default:
+                            throw new ShowcaseSnapshotException($"Invalid escape '\\{esc}' in JSON string.");
+                    }
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+
+            throw new ShowcaseSnapshotException("Unterminated JSON string.");
+        }
+
+        private string ParseNumberLexeme()
+        {
+            int start = _pos;
+            if (_src[_pos] == '-')
+            {
+                _pos++;
+            }
+
+            while (_pos < _src.Length && _src[_pos] >= '0' && _src[_pos] <= '9')
+            {
+                _pos++;
+            }
+
+            if (_pos < _src.Length && _src[_pos] == '.')
+            {
+                _pos++;
+                while (_pos < _src.Length && _src[_pos] >= '0' && _src[_pos] <= '9')
+                {
+                    _pos++;
+                }
+            }
+
+            if (_pos < _src.Length && (_src[_pos] == 'e' || _src[_pos] == 'E'))
+            {
+                _pos++;
+                if (_pos < _src.Length && (_src[_pos] == '+' || _src[_pos] == '-'))
+                {
+                    _pos++;
+                }
+
+                while (_pos < _src.Length && _src[_pos] >= '0' && _src[_pos] <= '9')
+                {
+                    _pos++;
+                }
+            }
+
+            return _src.Substring(start, _pos - start);
+        }
+
+        private void ExpectLiteral(string literal)
+        {
+            if (_pos + literal.Length > _src.Length ||
+                string.CompareOrdinal(_src, _pos, literal, 0, literal.Length) != 0)
+            {
+                throw new ShowcaseSnapshotException($"Expected JSON literal '{literal}' at offset {_pos}.");
+            }
+
+            _pos += literal.Length;
+        }
+
+        private void SkipWhitespace()
+        {
+            while (_pos < _src.Length)
+            {
+                char c = _src[_pos];
+                if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+                {
+                    _pos++;
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private static class RawJsonCanonicalWriter
+    {
+        public static string SerializeCanonicalShowcase(RawJsonValue root)
+        {
+            StringBuilder sb = new();
+            using (StringWriter sw = new(sb, CultureInfo.InvariantCulture))
+            using (JsonTextWriter writer = new(sw))
+            {
+                writer.Formatting = Formatting.None;
+                writer.WriteStartObject();
+
+                WriteRequiredProp(writer, root, "schema", forceFloat: false);
+                WriteRequiredProp(writer, root, "version", forceFloat: false);
+                WriteRequiredProp(writer, root, "scope", forceFloat: false);
+                WriteOptionalNonNullProp(writer, root, "basedOn", forceFloat: false);
+                WriteRequiredProp(writer, root, "kanizu", forceFloat: false);
+                WriteRequiredProp(writer, root, "epsg", forceFloat: false);
+
+                writer.WritePropertyName("levels");
+                writer.WriteStartArray();
+                if (root.TryGetProperty("levels", out RawJsonValue levelsVal) && levelsVal.ArrayItems != null)
+                {
+                    foreach (RawJsonValue level in levelsVal.ArrayItems)
+                    {
+                        writer.WriteStartObject();
+                        WriteRequiredProp(writer, level, "levelId", forceFloat: false);
+                        WriteRequiredProp(writer, level, "floorKey", forceFloat: false);
+                        WriteRequiredProp(writer, level, "ordinal", forceFloat: false);
+                        WriteRequiredProp(writer, level, "shortName", forceFloat: false);
+                        WriteOptionalNonNullProp(writer, level, "tpM", forceFloat: true);
+                        WriteRequiredProp(writer, level, "elevationSource", forceFloat: false);
+                        writer.WriteEndObject();
+                    }
+                }
+
+                writer.WriteEndArray();
+
+                writer.WritePropertyName("layers");
+                writer.WriteStartArray();
+                if (root.TryGetProperty("layers", out RawJsonValue layersVal) && layersVal.ArrayItems != null)
+                {
+                    foreach (RawJsonValue layer in layersVal.ArrayItems)
+                    {
+                        writer.WriteStartObject();
+                        WriteRequiredProp(writer, layer, "name", forceFloat: false);
+                        WriteRequiredProp(writer, layer, "kind", forceFloat: false);
+
+                        writer.WritePropertyName("fields");
+                        writer.WriteStartArray();
+                        if (layer.TryGetProperty("fields", out RawJsonValue fieldsVal) && fieldsVal.ArrayItems != null)
+                        {
+                            foreach (RawJsonValue field in fieldsVal.ArrayItems)
+                            {
+                                writer.WriteStartObject();
+                                WriteRequiredProp(writer, field, "name", forceFloat: false);
+                                WriteRequiredProp(writer, field, "fieldType", forceFloat: false);
+                                WriteOptionalNonNullProp(writer, field, "aliasJa", forceFloat: false);
+                                WriteOptionalNonNullProp(writer, field, "domain", forceFloat: false);
+                                writer.WritePropertyName("preserveAsText");
+                                if (field.TryGetProperty("preserveAsText", out RawJsonValue preserveVal) && preserveVal.Kind == RawJsonKind.Bool)
+                                {
+                                    writer.WriteRawValue(preserveVal.Text!);
+                                }
+                                else
+                                {
+                                    writer.WriteValue(false);
+                                }
+
+                                writer.WriteEndObject();
+                            }
+                        }
+
+                        writer.WriteEndArray();
+
+                        writer.WritePropertyName("features");
+                        writer.WriteStartArray();
+                        if (layer.TryGetProperty("features", out RawJsonValue featsVal) && featsVal.ArrayItems != null)
+                        {
+                            foreach (RawJsonValue feat in featsVal.ArrayItems)
+                            {
+                                writer.WriteStartObject();
+                                WriteRequiredProp(writer, feat, "key", forceFloat: false);
+                                WriteOptionalNonNullProp(writer, feat, "levelId", forceFloat: false);
+                                WriteOptionalNonNullProp(writer, feat, "floorKey", forceFloat: false);
+
+                                writer.WritePropertyName("geometry");
+                                if (feat.TryGetProperty("geometry", out RawJsonValue geomVal))
+                                {
+                                    WriteCanonicalRawGeometry(writer, geomVal);
+                                }
+
+                                writer.WritePropertyName("attributes");
+                                writer.WriteStartObject();
+                                if (feat.TryGetProperty("attributes", out RawJsonValue attrsVal) && attrsVal.ObjectMembers != null)
+                                {
+                                    foreach (KeyValuePair<string, RawJsonValue> kvp in attrsVal.ObjectMembers.OrderBy(p => p.Key, StringComparer.Ordinal))
+                                    {
+                                        writer.WritePropertyName(kvp.Key);
+                                        WriteRawValue(writer, kvp.Value, forceFloat: false);
+                                    }
+                                }
+
+                                writer.WriteEndObject();
+                                writer.WriteEndObject();
+                            }
+                        }
+
+                        writer.WriteEndArray();
+                        writer.WriteEndObject();
+                    }
+                }
+
+                writer.WriteEndArray();
+
+                writer.WritePropertyName("quarantined");
+                writer.WriteStartArray();
+                if (root.TryGetProperty("quarantined", out RawJsonValue quarantinedVal) && quarantinedVal.ArrayItems != null)
+                {
+                    foreach (RawJsonValue q in quarantinedVal.ArrayItems)
+                    {
+                        writer.WriteStartObject();
+                        WriteRequiredProp(writer, q, "layer", forceFloat: false);
+                        WriteRequiredProp(writer, q, "sourceKey", forceFloat: false);
+                        WriteRequiredProp(writer, q, "reason", forceFloat: false);
+                        writer.WriteEndObject();
+                    }
+                }
+
+                writer.WriteEndArray();
+
+                writer.WritePropertyName("summary");
+                if (root.TryGetProperty("summary", out RawJsonValue summaryVal))
+                {
+                    writer.WriteStartObject();
+                    writer.WritePropertyName("countsByKind");
+                    writer.WriteStartObject();
+                    if (summaryVal.TryGetProperty("countsByKind", out RawJsonValue countsVal) && countsVal.ObjectMembers != null)
+                    {
+                        foreach (string kindToken in CanonicalLayerKindTokenOrder)
+                        {
+                            if (countsVal.ObjectMembers.TryGetValue(kindToken, out RawJsonValue? countVal) && countVal != null)
+                            {
+                                writer.WritePropertyName(kindToken);
+                                WriteRawValue(writer, countVal, forceFloat: false);
+                            }
+                        }
+                    }
+
+                    writer.WriteEndObject();
+                    WriteRequiredProp(writer, summaryVal, "totalLayers", forceFloat: false);
+                    WriteRequiredProp(writer, summaryVal, "totalFeatures", forceFloat: false);
+                    WriteRequiredProp(writer, summaryVal, "totalQuarantined", forceFloat: false);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndObject();
+            }
+
+            return sb.ToString();
+        }
+
+        private static void WriteCanonicalRawGeometry(JsonTextWriter writer, RawJsonValue geom)
+        {
+            writer.WriteStartObject();
+            geom.TryGetProperty("type", out RawJsonValue typeVal);
+            string type = typeVal?.Text ?? string.Empty;
+            writer.WritePropertyName("type");
+            writer.WriteValue(type);
+
+            switch (type)
+            {
+                case "point":
+                    writer.WritePropertyName("xy");
+                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["xy"]);
+                    WriteOptionalNonNullProp(writer, geom, "z", forceFloat: true);
+                    break;
+
+                case "lineString":
+                    writer.WritePropertyName("coords");
+                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["coords"]);
+                    break;
+
+                case "multiLineString":
+                    writer.WritePropertyName("lines");
+                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["lines"]);
+                    break;
+
+                case "polygon":
+                    writer.WritePropertyName("rings");
+                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["rings"]);
+                    break;
+
+                case "multiPolygon":
+                    writer.WritePropertyName("polygons");
+                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["polygons"]);
+                    break;
+
+                case "connector3D":
+                    writer.WritePropertyName("from");
+                    WriteCanonicalRawEndpoint(writer, geom.ObjectMembers!["from"]);
+                    writer.WritePropertyName("to");
+                    WriteCanonicalRawEndpoint(writer, geom.ObjectMembers!["to"]);
+                    writer.WritePropertyName("path");
+                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["path"]);
+                    WriteRequiredProp(writer, geom, "geometryOrigin", forceFloat: false);
+                    break;
+            }
+
+            writer.WriteEndObject();
+        }
+
+        private static void WriteCanonicalRawEndpoint(JsonTextWriter writer, RawJsonValue ep)
+        {
+            writer.WriteStartObject();
+            WriteOptionalNonNullProp(writer, ep, "levelId", forceFloat: false);
+            WriteOptionalNonNullProp(writer, ep, "floorKey", forceFloat: false);
+            writer.WritePropertyName("xy");
+            WriteFloatArrayRecursive(writer, ep.ObjectMembers!["xy"]);
+            WriteOptionalNonNullProp(writer, ep, "tpM", forceFloat: true);
+            writer.WriteEndObject();
+        }
+
+        private static void WriteFloatArrayRecursive(JsonTextWriter writer, RawJsonValue value)
+        {
+            if (value.Kind == RawJsonKind.Array && value.ArrayItems != null)
+            {
+                writer.WriteStartArray();
+                foreach (RawJsonValue item in value.ArrayItems)
+                {
+                    WriteFloatArrayRecursive(writer, item);
+                }
+
+                writer.WriteEndArray();
+                return;
+            }
+
+            WriteRawValue(writer, value, forceFloat: true);
+        }
+
+        private static void WriteRequiredProp(JsonTextWriter writer, RawJsonValue obj, string name, bool forceFloat)
+        {
+            writer.WritePropertyName(name);
+            WriteRawValue(writer, obj.ObjectMembers![name], forceFloat);
+        }
+
+        private static void WriteOptionalNonNullProp(JsonTextWriter writer, RawJsonValue obj, string name, bool forceFloat)
+        {
+            if (obj.TryGetProperty(name, out RawJsonValue val) && val.Kind != RawJsonKind.Null)
+            {
+                writer.WritePropertyName(name);
+                WriteRawValue(writer, val, forceFloat);
+            }
+        }
+
+        private static void WriteRawValue(JsonTextWriter writer, RawJsonValue val, bool forceFloat)
+        {
+            switch (val.Kind)
+            {
+                case RawJsonKind.Null:
+                    writer.WriteNull();
+                    break;
+                case RawJsonKind.Bool:
+                    writer.WriteRawValue(val.Text!);
+                    break;
+                case RawJsonKind.String:
+                    writer.WriteValue(val.Text ?? string.Empty);
+                    break;
+                case RawJsonKind.Number:
+                    writer.WriteRawValue(NormalizeRawNumberToken(val.Text!, forceFloat));
+                    break;
+                case RawJsonKind.Array:
+                    writer.WriteStartArray();
+                    foreach (RawJsonValue item in val.ArrayItems!)
+                    {
+                        WriteRawValue(writer, item, forceFloat: false);
+                    }
+
+                    writer.WriteEndArray();
+                    break;
+                case RawJsonKind.Object:
+                    writer.WriteStartObject();
+                    foreach (KeyValuePair<string, RawJsonValue> kvp in val.ObjectMembers!)
+                    {
+                        writer.WritePropertyName(kvp.Key);
+                        WriteRawValue(writer, kvp.Value, forceFloat: false);
+                    }
+
+                    writer.WriteEndObject();
+                    break;
+            }
+        }
+
+        private static string NormalizeRawNumberToken(string rawLexeme, bool forceFloat)
+        {
+            bool hasFractionOrExp =
+                rawLexeme.IndexOf('.') >= 0 ||
+                rawLexeme.IndexOf('e') >= 0 ||
+                rawLexeme.IndexOf('E') >= 0;
+
+            if (rawLexeme.Length > 0 && rawLexeme[0] == '-' &&
+                double.TryParse(rawLexeme, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) &&
+                d == 0d)
+            {
+                return (forceFloat || hasFractionOrExp) ? "0.0" : "0";
+            }
+
+            if (forceFloat && !hasFractionOrExp)
+            {
+                return rawLexeme + ".0";
+            }
+
+            return rawLexeme;
+        }
     }
 }

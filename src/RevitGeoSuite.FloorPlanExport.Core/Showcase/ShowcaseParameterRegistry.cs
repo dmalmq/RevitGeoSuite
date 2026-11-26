@@ -144,7 +144,8 @@ public sealed class ShowcaseParameterAssignment
         bool isEmptyString,
         string? textValue,
         int int32Value,
-        double doubleValue)
+        double doubleValue,
+        bool isTextFallback = false)
     {
         Parameter = parameter ?? throw new ArgumentNullException(nameof(parameter));
         IsNull = isNull;
@@ -152,6 +153,7 @@ public sealed class ShowcaseParameterAssignment
         TextValue = textValue;
         Int32Value = int32Value;
         DoubleValue = doubleValue;
+        IsTextFallback = isTextFallback;
     }
 
     public ShowcaseParameterDefinition Parameter { get; }
@@ -166,14 +168,23 @@ public sealed class ShowcaseParameterAssignment
 
     public double DoubleValue { get; }
 
-    public static ShowcaseParameterAssignment ForText(ShowcaseParameterDefinition parameter, string? text)
+    /// <summary>
+    /// True when a non-Text parameter received an incompatible value that had to fall back to text,
+    /// preventing Revit builders from silently writing default <c>0</c>/<c>0.0</c>.
+    /// </summary>
+    public bool IsTextFallback { get; }
+
+    public static ShowcaseParameterAssignment ForText(
+        ShowcaseParameterDefinition parameter,
+        string? text,
+        bool isTextFallback = false)
     {
         if (text is null)
         {
-            return new ShowcaseParameterAssignment(parameter, isNull: true, isEmptyString: false, null, 0, 0d);
+            return new ShowcaseParameterAssignment(parameter, isNull: true, isEmptyString: false, null, 0, 0d, isTextFallback);
         }
 
-        return new ShowcaseParameterAssignment(parameter, isNull: false, isEmptyString: text.Length == 0, text, 0, 0d);
+        return new ShowcaseParameterAssignment(parameter, isNull: false, isEmptyString: text.Length == 0, text, 0, 0d, isTextFallback);
     }
 
     public static ShowcaseParameterAssignment ForNormalized(
@@ -200,7 +211,7 @@ public sealed class ShowcaseParameterAssignment
                         attribute.Value.Int64Value.Value);
                 }
 
-                return ForText(parameter, attribute.DisplayText ?? string.Empty);
+                return ForText(parameter, attribute.DisplayText ?? string.Empty, isTextFallback: true);
 
             case ShowcaseParameterDataType.Number:
                 if (attribute.Value.Kind == ShowcaseAttributeKind.Real)
@@ -225,7 +236,7 @@ public sealed class ShowcaseParameterAssignment
                         attribute.Value.Int64Value!.Value);
                 }
 
-                return ForText(parameter, attribute.DisplayText ?? string.Empty);
+                return ForText(parameter, attribute.DisplayText ?? string.Empty, isTextFallback: true);
 
             case ShowcaseParameterDataType.YesNo:
                 if (attribute.Value.Kind == ShowcaseAttributeKind.Boolean)
@@ -240,7 +251,7 @@ public sealed class ShowcaseParameterAssignment
                         flag);
                 }
 
-                return ForText(parameter, attribute.DisplayText ?? string.Empty);
+                return ForText(parameter, attribute.DisplayText ?? string.Empty, isTextFallback: true);
 
             case ShowcaseParameterDataType.Text:
             default:
@@ -394,6 +405,7 @@ public sealed class ShowcaseParameterRegistry
 
         List<ShowcaseParameterDefinition> direct = new();
         HashSet<string> usedParameterNames = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<Guid> usedGuids = new();
 
         if (includeBuiltInMetadata)
         {
@@ -412,12 +424,12 @@ public sealed class ShowcaseParameterRegistry
                 {
                     direct.Add(builtIn);
                     usedParameterNames.Add(builtIn.Name);
+                    usedGuids.Add(builtIn.Guid);
                 }
             }
         }
 
         // Always reserve ks_attributes_json so no source column named "attributes_json" can collide with it.
-        usedParameterNames.Add(OverflowParameterName);
         ShowcaseParameterDefinition overflowParameter = new(
             OverflowParameterName,
             ComputeParameterGuid(ShowcaseBuiltInScope, "attributes_json", ShowcaseParameterDataType.Text),
@@ -427,8 +439,11 @@ public sealed class ShowcaseParameterRegistry
             "Lossless JSON overflow bag for showcase attributes beyond the 80-parameter direct cap.",
             isBuiltIn: true,
             isOverflowContainer: true);
+        usedParameterNames.Add(OverflowParameterName);
+        usedGuids.Add(overflowParameter.Guid);
 
-        // Collect all (layerKind, fieldName) candidates deterministically across layers.
+        // Collect all (layerKind, fieldName) candidates deterministically across EVERY layer and EVERY feature value
+        // so mixed-type declared or undeclared columns widen losslessly to Text instead of staying pinned to feature 0.
         Dictionary<(ShowcaseLayerKind Kind, string FieldName), CandidateField> candidatesByKey = new();
         foreach (ShowcaseLayer layer in snapshot.Layers.OrderBy(l => l.Kind).ThenBy(l => l.Name, StringComparer.Ordinal))
         {
@@ -438,29 +453,55 @@ public sealed class ShowcaseParameterRegistry
             {
                 bool preserveAsText = preserveMap.TryGetValue(field.Name, out bool flag) && flag;
                 ShowcaseParameterDataType dataType = ResolveParameterDataType(field.FieldType, preserveAsText);
-                RegisterCandidate(candidatesByKey, layer.Kind, field.Name, dataType, field.AliasJa, field.Domain);
+                RegisterCandidate(candidatesByKey, layer.Kind, field.Name, dataType, field.AliasJa, field.Domain, isValueObservation: false);
             }
 
             foreach (ShowcaseFeature feature in layer.Features)
             {
                 foreach (KeyValuePair<string, ShowcaseAttributeValue> attr in feature.Attributes)
                 {
-                    if (candidatesByKey.ContainsKey((layer.Kind, attr.Key)))
+                    bool preserveAsText = preserveMap.TryGetValue(attr.Key, out bool flag) && flag;
+                    if (attr.Value.IsNull)
                     {
+                        // Register column existence for all-null undeclared attributes without distorting known types.
+                        if (!candidatesByKey.ContainsKey((layer.Kind, attr.Key)))
+                        {
+                            RegisterCandidate(
+                                candidatesByKey,
+                                layer.Kind,
+                                attr.Key,
+                                ShowcaseParameterDataType.Text,
+                                aliasJa: null,
+                                domain: null,
+                                isValueObservation: false,
+                                isNullOnlyInferred: true);
+                        }
+
                         continue;
                     }
 
-                    bool preserveAsText = preserveMap.TryGetValue(attr.Key, out bool flag) && flag;
                     ShowcaseFieldType inferredType = InferFieldType(attr.Value);
-                    ShowcaseParameterDataType dataType = ResolveParameterDataType(inferredType, preserveAsText);
-                    RegisterCandidate(candidatesByKey, layer.Kind, attr.Key, dataType, aliasJa: null, domain: null);
+                    ShowcaseParameterDataType observedDataType = ResolveParameterDataType(inferredType, preserveAsText);
+                    RegisterCandidate(
+                        candidatesByKey,
+                        layer.Kind,
+                        attr.Key,
+                        observedDataType,
+                        aliasJa: null,
+                        domain: null,
+                        isValueObservation: true);
                 }
             }
         }
 
-        // Deterministic priority ordering: high-priority GIS fields first, then layer kind order, then ordinal field name.
+        // Deterministic priority ordering:
+        // 1. High-priority GIS fields first
+        // 2. Canonical exact-token fields (e.g. "room_name" before "room-name", "foo" before "ks_foo")
+        // 3. Layer kind declaration order
+        // 4. Ordinal source field name
         List<CandidateField> orderedCandidates = candidatesByKey.Values
             .OrderBy(c => GetFieldPriority(c.SourceFieldName))
+            .ThenBy(c => IsExactCanonicalFieldToken(c.SourceFieldName) ? 0 : 1)
             .ThenBy(c => c.LayerKind)
             .ThenBy(c => c.SourceFieldName, StringComparer.Ordinal)
             .ToList();
@@ -468,17 +509,13 @@ public sealed class ShowcaseParameterRegistry
         Dictionary<(ShowcaseLayerKind Kind, string FieldName), ShowcaseParameterDefinition> directByLayerAndField = new();
         HashSet<(ShowcaseLayerKind Kind, string FieldName)> overflowLayerFields = new();
 
-        // Map sanitized parameter name -> existing definition so compatible cross-layer attributes share one ks_* parameter.
-        Dictionary<string, ShowcaseParameterDefinition> sharedByParamName = new(StringComparer.OrdinalIgnoreCase);
+        // Cross-layer reuse requires BOTH exact original source field name AND matching Revit data type,
+        // so distinct fields like "room-name" vs "room_name" or "foo" vs "ks_foo" NEVER collide.
+        Dictionary<(string SourceFieldName, ShowcaseParameterDataType DataType), ShowcaseParameterDefinition> sharedBySourceAndType = new();
 
         foreach (CandidateField candidate in orderedCandidates)
         {
-            string sanitizedField = SanitizeFieldToken(candidate.SourceFieldName);
-            string baseParamName = ParameterPrefix + sanitizedField;
-
-            // If another layer already registered the exact same ks_<field> with the same Revit data type, reuse it!
-            if (sharedByParamName.TryGetValue(baseParamName, out ShowcaseParameterDefinition? existingShared) &&
-                existingShared.DataType == candidate.DataType)
+            if (sharedBySourceAndType.TryGetValue((candidate.SourceFieldName, candidate.DataType), out ShowcaseParameterDefinition? existingShared))
             {
                 directByLayerAndField[(candidate.LayerKind, candidate.SourceFieldName)] = existingShared;
                 continue;
@@ -490,39 +527,72 @@ public sealed class ShowcaseParameterRegistry
                 continue;
             }
 
+            string sanitizedField = SanitizeFieldToken(candidate.SourceFieldName);
+            string baseParamName = ParameterPrefix + sanitizedField;
+
             string layerScope;
             string paramName;
             string seedField;
+            bool eligibleForCrossLayerShare;
 
             if (!usedParameterNames.Contains(baseParamName))
             {
                 layerScope = SharedAttributeScope;
                 paramName = baseParamName;
-                seedField = sanitizedField;
+                seedField = IsExactCanonicalFieldToken(candidate.SourceFieldName)
+                    ? sanitizedField
+                    : candidate.SourceFieldName;
+                eligibleForCrossLayerShare = true;
             }
             else
             {
-                // Collision with a built-in parameter (e.g. source field "key" or "layer" or "level_id") or a
-                // type-conflicting parameter in another layer: scope deterministically by layer kind.
+                // Either a built-in parameter collision (e.g. "key" / "ks_key" / "level_id") or a true
+                // sanitization collision (e.g. "room-name" vs "room_name", "foo" vs "ks_foo", or type mismatch).
+                // Disambiguate BOTH parameter name and UUIDv5 seed from the distinct original source field name.
                 string kindToken = ToLayerKindScopeToken(candidate.LayerKind);
                 string scopedName = $"{ParameterPrefix}{kindToken}_{sanitizedField}";
-                if (usedParameterNames.Contains(scopedName))
+                if (!usedParameterNames.Contains(scopedName) && IsExactCanonicalFieldToken(candidate.SourceFieldName))
                 {
-                    scopedName = $"{scopedName}_{ToSeedTypeToken(candidate.DataType)}";
+                    layerScope = kindToken;
+                    paramName = scopedName;
+                    seedField = candidate.SourceFieldName;
+                    eligibleForCrossLayerShare = false;
                 }
-
-                if (usedParameterNames.Contains(scopedName))
+                else
                 {
-                    overflowLayerFields.Add((candidate.LayerKind, candidate.SourceFieldName));
-                    continue;
+                    string disambigSuffix = ComputeShortFieldHash(candidate.SourceFieldName, kindToken);
+                    string hashedBase = $"{ParameterPrefix}{sanitizedField}_{disambigSuffix}";
+                    if (!usedParameterNames.Contains(hashedBase))
+                    {
+                        layerScope = SharedAttributeScope;
+                        paramName = hashedBase;
+                        seedField = candidate.SourceFieldName;
+                        eligibleForCrossLayerShare = true;
+                    }
+                    else
+                    {
+                        layerScope = kindToken;
+                        paramName = $"{ParameterPrefix}{kindToken}_{sanitizedField}_{disambigSuffix}";
+                        seedField = candidate.SourceFieldName;
+                        eligibleForCrossLayerShare = false;
+                    }
                 }
-
-                layerScope = kindToken;
-                paramName = scopedName;
-                seedField = sanitizedField;
             }
 
             Guid guid = ComputeParameterGuid(layerScope, seedField, candidate.DataType);
+            int salt = 2;
+            while (usedParameterNames.Contains(paramName) || usedGuids.Contains(guid))
+            {
+                string saltedSeed = $"{candidate.SourceFieldName}#{salt}";
+                string saltedHash = ComputeShortFieldHash(saltedSeed, ToLayerKindScopeToken(candidate.LayerKind));
+                layerScope = ToLayerKindScopeToken(candidate.LayerKind);
+                paramName = $"{ParameterPrefix}{layerScope}_{sanitizedField}_{saltedHash}";
+                seedField = saltedSeed;
+                guid = ComputeParameterGuid(layerScope, seedField, candidate.DataType);
+                eligibleForCrossLayerShare = false;
+                salt++;
+            }
+
             string description = BuildParameterDescription(candidate);
             ShowcaseParameterDefinition definition = new(
                 paramName,
@@ -534,9 +604,10 @@ public sealed class ShowcaseParameterRegistry
 
             direct.Add(definition);
             usedParameterNames.Add(paramName);
-            if (string.Equals(layerScope, SharedAttributeScope, StringComparison.Ordinal))
+            usedGuids.Add(guid);
+            if (eligibleForCrossLayerShare)
             {
-                sharedByParamName[paramName] = definition;
+                sharedBySourceAndType[(candidate.SourceFieldName, candidate.DataType)] = definition;
             }
 
             directByLayerAndField[(candidate.LayerKind, candidate.SourceFieldName)] = definition;
@@ -747,6 +818,25 @@ public sealed class ShowcaseParameterRegistry
         }
     }
 
+    private static bool IsExactCanonicalFieldToken(string rawFieldName)
+    {
+        if (string.IsNullOrWhiteSpace(rawFieldName))
+        {
+            return false;
+        }
+
+        string lower = rawFieldName.Trim().ToLowerInvariant();
+        if (lower.StartsWith(ParameterPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return string.Equals(lower, SanitizeFieldToken(rawFieldName), StringComparison.Ordinal);
+    }
+
+    private static string ComputeShortFieldHash(string originalFieldName, string scopeHint) =>
+        UuidV5.Create(NamespaceGuid, $"disambig/{scopeHint}/{originalFieldName}").ToString("N").Substring(0, 6);
+
     private void AddBuiltInAssignment(List<ShowcaseParameterAssignment> assignments, string paramName, string? value)
     {
         ShowcaseParameterDefinition? def = FindByName(paramName);
@@ -804,15 +894,30 @@ public sealed class ShowcaseParameterRegistry
         string fieldName,
         ShowcaseParameterDataType dataType,
         string? aliasJa,
-        string? domain)
+        string? domain,
+        bool isValueObservation,
+        bool isNullOnlyInferred = false)
     {
         (ShowcaseLayerKind, string) key = (kind, fieldName);
         if (map.TryGetValue(key, out CandidateField? existing))
         {
-            // If two layers of the same kind (e.g. 1F_unit and 2F_unit) disagree on type, widen losslessly to Text.
-            if (existing.DataType != dataType)
+            if (existing.IsNullOnlyInferred && isValueObservation)
             {
-                existing.DataType = ShowcaseParameterDataType.Text;
+                existing.DataType = dataType;
+                existing.IsNullOnlyInferred = false;
+            }
+            else if (!isNullOnlyInferred && existing.DataType != dataType)
+            {
+                // Integer + Number widens cleanly to Number; all other mixed-type mismatches widen losslessly to Text.
+                if ((existing.DataType == ShowcaseParameterDataType.Integer && dataType == ShowcaseParameterDataType.Number) ||
+                    (existing.DataType == ShowcaseParameterDataType.Number && dataType == ShowcaseParameterDataType.Integer))
+                {
+                    existing.DataType = ShowcaseParameterDataType.Number;
+                }
+                else
+                {
+                    existing.DataType = ShowcaseParameterDataType.Text;
+                }
             }
 
             if (string.IsNullOrWhiteSpace(existing.AliasJa) && !string.IsNullOrWhiteSpace(aliasJa))
@@ -828,7 +933,7 @@ public sealed class ShowcaseParameterRegistry
             return;
         }
 
-        map[key] = new CandidateField(kind, fieldName, dataType, aliasJa, domain);
+        map[key] = new CandidateField(kind, fieldName, dataType, aliasJa, domain, isNullOnlyInferred);
     }
 
     private static int GetFieldPriority(string fieldName)
@@ -887,13 +992,15 @@ public sealed class ShowcaseParameterRegistry
             string sourceFieldName,
             ShowcaseParameterDataType dataType,
             string? aliasJa,
-            string? domain)
+            string? domain,
+            bool isNullOnlyInferred)
         {
             LayerKind = layerKind;
             SourceFieldName = sourceFieldName;
             DataType = dataType;
             AliasJa = aliasJa;
             Domain = domain;
+            IsNullOnlyInferred = isNullOnlyInferred;
         }
 
         public ShowcaseLayerKind LayerKind { get; }
@@ -905,5 +1012,7 @@ public sealed class ShowcaseParameterRegistry
         public string? AliasJa { get; set; }
 
         public string? Domain { get; set; }
+
+        public bool IsNullOnlyInferred { get; set; }
     }
 }

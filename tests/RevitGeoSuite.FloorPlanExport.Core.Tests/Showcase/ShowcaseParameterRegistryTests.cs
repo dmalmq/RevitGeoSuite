@@ -203,4 +203,168 @@ public sealed class ShowcaseParameterRegistryTests
         Assert.NotEqual(a, b);
         Assert.Equal("symbol_id", ShowcaseParameterRegistry.SanitizeFieldToken("KS_Symbol-ID"));
     }
+
+    [Fact]
+    public void KeepsSanitizationCollisionsInDistinctParametersWithUniqueGuidsAndZeroOverwrites()
+    {
+        ShowcaseLayer collidingLayer = new(
+            "1F_unit",
+            ShowcaseLayerKind.Unit,
+            new[]
+            {
+                new ShowcaseField("room-name", ShowcaseFieldType.Text),
+                new ShowcaseField("room_name", ShowcaseFieldType.Text),
+                new ShowcaseField("foo", ShowcaseFieldType.Text),
+                new ShowcaseField("ks_foo", ShowcaseFieldType.Text),
+                new ShowcaseField("key", ShowcaseFieldType.Text),
+                new ShowcaseField("ks_key", ShowcaseFieldType.Text),
+            },
+            new[]
+            {
+                new ShowcaseFeature(
+                    "u-collide",
+                    "level:0",
+                    "0",
+                    new ShowcasePolygonGeometry(new IReadOnlyList<Point2D>[]
+                    {
+                        new[] { new Point2D(0, 0), new Point2D(5, 0), new Point2D(5, 5), new Point2D(0, 5), new Point2D(0, 0) },
+                    }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["room-name"] = ShowcaseAttributeValue.FromText("hyphen-val"),
+                        ["room_name"] = ShowcaseAttributeValue.FromText("underscore-val"),
+                        ["foo"] = ShowcaseAttributeValue.FromText("plain-foo"),
+                        ["ks_foo"] = ShowcaseAttributeValue.FromText("prefixed-foo"),
+                        ["key"] = ShowcaseAttributeValue.FromText("plain-key"),
+                        ["ks_key"] = ShowcaseAttributeValue.FromText("prefixed-key"),
+                    }),
+            });
+
+        ShowcaseSnapshot snapshot = ShowcaseSnapshotReader.Parse(
+            ShowcaseSnapshotReaderTests.SerializeSnapshotWithValidHash(
+                scope: "collision_test",
+                basedOn: null,
+                writtenUtc: "2026-11-27T00:00:00Z",
+                kanizu: "0.9.0",
+                epsg: 6677,
+                levels: new[] { new ShowcaseLevel("level:0", "0", 0, "1F", 0.0d, ShowcaseElevationSource.Surveyed) },
+                layers: new[] { collidingLayer },
+                quarantined: Array.Empty<QuarantinedShowcaseFeature>()));
+
+        ShowcaseParameterRegistry registry = ShowcaseParameterRegistry.Build(snapshot);
+
+        // 100% unique parameter names AND 100% unique GUIDs across AllParameters
+        Assert.Equal(
+            registry.AllParameters.Count,
+            registry.AllParameters.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal(
+            registry.AllParameters.Count,
+            registry.AllParameters.Select(p => p.Guid).Distinct().Count());
+
+        ShowcaseParameterDefinition roomDash = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "room-name")!;
+        ShowcaseParameterDefinition roomUnder = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "room_name")!;
+        ShowcaseParameterDefinition fooPlain = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "foo")!;
+        ShowcaseParameterDefinition fooPrefixed = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "ks_foo")!;
+        ShowcaseParameterDefinition keyPlain = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "key")!;
+        ShowcaseParameterDefinition keyPrefixed = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "ks_key")!;
+
+        ShowcaseParameterDefinition[] sixDefs = { roomDash, roomUnder, fooPlain, fooPrefixed, keyPlain, keyPrefixed };
+        Assert.All(sixDefs, d => Assert.NotNull(d));
+        Assert.Equal(6, sixDefs.Select(d => d.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal(6, sixDefs.Select(d => d.Guid).Distinct().Count());
+
+        // Binding produces distinct GUIDs with all 6 values intact (zero overwrites)
+        (IReadOnlyList<ShowcaseParameterAssignment> assignments, _) =
+            registry.BindFeatureAttributes(collidingLayer, collidingLayer.Features[0]);
+        Assert.Equal(assignments.Count, assignments.Select(a => a.Parameter.Guid).Distinct().Count());
+        Assert.Equal("hyphen-val", assignments.Single(a => a.Parameter.Guid == roomDash.Guid).TextValue);
+        Assert.Equal("underscore-val", assignments.Single(a => a.Parameter.Guid == roomUnder.Guid).TextValue);
+        Assert.Equal("plain-foo", assignments.Single(a => a.Parameter.Guid == fooPlain.Guid).TextValue);
+        Assert.Equal("prefixed-foo", assignments.Single(a => a.Parameter.Guid == fooPrefixed.Guid).TextValue);
+        Assert.Equal("plain-key", assignments.Single(a => a.Parameter.Guid == keyPlain.Guid).TextValue);
+        Assert.Equal("prefixed-key", assignments.Single(a => a.Parameter.Guid == keyPrefixed.Guid).TextValue);
+    }
+
+    [Fact]
+    public void WidensMixedTypeDeclaredAndUndeclaredAttributesAcrossAllFeaturesToText()
+    {
+        ShowcasePolygonGeometry poly = new(new IReadOnlyList<Point2D>[]
+        {
+            new[] { new Point2D(0, 0), new Point2D(5, 0), new Point2D(5, 5), new Point2D(0, 5), new Point2D(0, 0) },
+        });
+
+        ShowcaseLayer mixedLayer = new(
+            "1F_unit",
+            ShowcaseLayerKind.Unit,
+            new[]
+            {
+                new ShowcaseField("declared_int", ShowcaseFieldType.Integer),
+            },
+            new[]
+            {
+                new ShowcaseFeature(
+                    "u1",
+                    "level:0",
+                    "0",
+                    poly,
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["declared_int"] = ShowcaseAttributeValue.FromInteger(42),
+                        ["mixed_extra"] = ShowcaseAttributeValue.FromInteger(1),
+                        ["int_and_real"] = ShowcaseAttributeValue.FromInteger(5),
+                    }),
+                new ShowcaseFeature(
+                    "u2",
+                    "level:0",
+                    "0",
+                    poly,
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["declared_int"] = ShowcaseAttributeValue.FromText("N/A"),
+                        ["mixed_extra"] = ShowcaseAttributeValue.FromText("not-an-int"),
+                        ["int_and_real"] = ShowcaseAttributeValue.FromReal(5.5d),
+                    }),
+            });
+
+        ShowcaseSnapshot snapshot = ShowcaseSnapshotReader.Parse(
+            ShowcaseSnapshotReaderTests.SerializeSnapshotWithValidHash(
+                scope: "mixed_type_test",
+                basedOn: null,
+                writtenUtc: "2026-11-27T00:00:00Z",
+                kanizu: "0.9.0",
+                epsg: 6677,
+                levels: new[] { new ShowcaseLevel("level:0", "0", 0, "1F", 0.0d, ShowcaseElevationSource.Surveyed) },
+                layers: new[] { mixedLayer },
+                quarantined: Array.Empty<QuarantinedShowcaseFeature>()));
+
+        ShowcaseParameterRegistry registry = ShowcaseParameterRegistry.Build(snapshot);
+
+        ShowcaseParameterDefinition declaredIntParam = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "declared_int")!;
+        ShowcaseParameterDefinition mixedExtraParam = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "mixed_extra")!;
+        ShowcaseParameterDefinition intAndRealParam = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "int_and_real")!;
+
+        Assert.Equal(ShowcaseParameterDataType.Text, declaredIntParam.DataType);
+        Assert.Equal(ShowcaseParameterDataType.Text, mixedExtraParam.DataType);
+        Assert.Equal(ShowcaseParameterDataType.Number, intAndRealParam.DataType);
+
+        (IReadOnlyList<ShowcaseParameterAssignment> u2Assignments, _) =
+            registry.BindFeatureAttributes(mixedLayer, mixedLayer.Features[1]);
+        ShowcaseParameterAssignment mixedAssign = u2Assignments.Single(a => a.Parameter.Guid == mixedExtraParam.Guid);
+        Assert.False(mixedAssign.IsTextFallback);
+        Assert.Equal("not-an-int", mixedAssign.TextValue);
+
+        // Also verify IsTextFallback flag guards against silently writing default 0 if a non-Text def receives text directly
+        ShowcaseParameterDefinition strictIntDef = new(
+            "ks_strict_int",
+            ShowcaseParameterRegistry.ComputeParameterGuid("unit", "strict_int", ShowcaseParameterDataType.Integer),
+            "unit",
+            "strict_int",
+            ShowcaseParameterDataType.Integer,
+            "Strict int");
+        NormalizedShowcaseAttribute badAttr = ShowcaseAttributeNormalizer.NormalizeValue(
+            "strict_int",
+            ShowcaseAttributeValue.FromText("oops"));
+        ShowcaseParameterAssignment fallbackAssign = ShowcaseParameterAssignment.ForNormalized(strictIntDef, badAttr);
+        Assert.True(fallbackAssign.IsTextFallback);
+    }
 }

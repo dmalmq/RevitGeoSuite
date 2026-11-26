@@ -197,6 +197,68 @@ public sealed class ShowcaseGeometryPlannerTests
         Assert.Equal("1F_fixture:pt-fxt-1", ptFixture.ApplicationDataId);
     }
 
+    [Fact]
+    public void ReconcilerPlansCreateInPlaceUpdateCategoryReplaceStaleDeleteAndNullParamClears()
+    {
+        ShowcaseSnapshot snapshot = ShowcaseSnapshotReader.Parse(ShowcaseSnapshotReaderTests.BuildValidFullSnapshotJson());
+        ShowcaseGeometryPlanResult planResult = ShowcaseGeometryPlanner.Plan(snapshot, ShowcaseCoordinateTransform.Identity);
+
+        // Snapshot produces 4 elements:
+        //   1F_unit:unit-001 (OST_Floors)
+        //   1F_opening:op-001 (OST_Doors)
+        //   1F_fixture:fxt-001 (OST_SpecialityEquipment)
+        //   1F_level:level-0 (OST_GenericModel)
+        ShowcaseExistingElementInfo[] existing =
+        {
+            // Matching key & matching category -> UpdateInPlace (keeps Revit ElementId / UniqueId)
+            new(1001L, "1F_unit:unit-001", "OST_Floors"),
+            // Duplicate legacy element with same key -> pruned via DeleteStale
+            new(1002L, "1F_unit:unit-001", "OST_Floors"),
+            // Matching key but category changed (was OST_GenericModel, now OST_Doors) -> ReplaceCategoryChanged
+            new(1003L, "1F_opening:op-001", "OST_GenericModel"),
+            // Removed from snapshot -> DeleteStale
+            new(1004L, "1F_unit:deleted-old-unit", "OST_Floors"),
+            // Fixture and Level are missing from existing -> Create
+        };
+
+        ShowcaseReconciliationPlan rec = ShowcaseElementReconciler.BuildPlan(planResult.Elements, existing);
+
+        Assert.Equal(2, rec.CreateCount);
+        Assert.Equal(1, rec.UpdateInPlaceCount);
+        Assert.Equal(1, rec.ReplaceCount);
+        Assert.Equal(2, rec.DeleteStaleCount);
+
+        ShowcaseReconciliationStep unitUpdate = rec.Steps.Single(s => s.Action == ShowcaseReconciliationActionKind.UpdateInPlace);
+        Assert.Equal("1F_unit:unit-001", unitUpdate.ApplicationDataId);
+        Assert.Equal(1001L, unitUpdate.ExistingElementId);
+
+        ShowcaseReconciliationStep openingReplace = rec.Steps.Single(s => s.Action == ShowcaseReconciliationActionKind.ReplaceCategoryChanged);
+        Assert.Equal("1F_opening:op-001", openingReplace.ApplicationDataId);
+        Assert.Equal(1003L, openingReplace.ExistingElementId);
+
+        long[] deletedIds = rec.Steps
+            .Where(s => s.Action == ShowcaseReconciliationActionKind.DeleteStale)
+            .Select(s => s.ExistingElementId!.Value)
+            .OrderBy(id => id)
+            .ToArray();
+        Assert.Equal(new[] { 1002L, 1004L }, deletedIds);
+
+        // Verify null parameter clearing on in-place update:
+        // unit-001 has nullable_note = null and no overflow JSON -> both MUST be scheduled for clearing!
+        IReadOnlyList<ShowcaseParameterDefinition> cleared = ShowcaseElementReconciler.GetParametersToClearOnUpdate(
+            planResult.ParameterRegistry,
+            unitUpdate.TargetPlan!);
+
+        ShowcaseParameterDefinition nullableNoteDef = planResult.ParameterRegistry.FindDirectParameter(ShowcaseLayerKind.Unit, "nullable_note")!;
+        ShowcaseParameterDefinition emptyNoteDef = planResult.ParameterRegistry.FindDirectParameter(ShowcaseLayerKind.Unit, "empty_note")!;
+        ShowcaseParameterDefinition categoryDef = planResult.ParameterRegistry.FindDirectParameter(ShowcaseLayerKind.Unit, "category")!;
+
+        Assert.Contains(cleared, d => d.Guid == nullableNoteDef.Guid);
+        Assert.Contains(cleared, d => d.Guid == planResult.ParameterRegistry.OverflowParameter.Guid);
+        Assert.DoesNotContain(cleared, d => d.Guid == emptyNoteDef.Guid);
+        Assert.DoesNotContain(cleared, d => d.Guid == categoryDef.Guid);
+    }
+
     private static Polygon ToNtsPolygon(ShowcaseExtrusionSolid solid)
     {
         GeometryFactory factory = new();
