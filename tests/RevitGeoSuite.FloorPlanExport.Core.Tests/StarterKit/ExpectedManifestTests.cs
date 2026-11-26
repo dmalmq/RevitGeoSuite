@@ -222,6 +222,125 @@ public sealed class ExpectedManifestTests
             new ManifestCompareOptions { TriangleMode = ManifestTriangleComparisonMode.WithinBudget });
         Assert.False(overBudgetDiff.IsMatch);
         Assert.Contains(overBudgetDiff.Mismatches, f => f.Key == "KNZ_COL_Rect" && f.Property == "mediumFineTriangles");
+
+        // Zero or negative triangle counts must fail even in WithinBudget mode.
+        List<ManifestFamilyEntry> zeroOrNegative = expected.Families
+            .Select(f => f.Id == "KNZ_COL_Rect"
+                ? new ManifestFamilyEntry(
+                    f.Id,
+                    f.FamilyName,
+                    f.Category,
+                    f.SeedKind,
+                    f.IsPolygonal,
+                    f.HasCoarseKFootprint,
+                    f.HasDownwardBottomFaceAtZero,
+                    f.Subcategories,
+                    coarseTriangles: 0,
+                    f.CoarseTriangleBudget,
+                    mediumFineTriangles: 0,
+                    f.MediumFineTriangleBudget,
+                    f.SharedParameterGuids)
+                : f.Id == "KNZ_COL_Round"
+                    ? new ManifestFamilyEntry(
+                        f.Id,
+                        f.FamilyName,
+                        f.Category,
+                        f.SeedKind,
+                        f.IsPolygonal,
+                        f.HasCoarseKFootprint,
+                        f.HasDownwardBottomFaceAtZero,
+                        f.Subcategories,
+                        coarseTriangles: -2,
+                        f.CoarseTriangleBudget,
+                        mediumFineTriangles: -4,
+                        f.MediumFineTriangleBudget,
+                        f.SharedParameterGuids)
+                    : f)
+            .ToList();
+
+        ManifestComparisonResult zeroDiff = StarterKitManifestComparer.Compare(
+            expected,
+            CloneManifest(expected, families: zeroOrNegative),
+            new ManifestCompareOptions { TriangleMode = ManifestTriangleComparisonMode.WithinBudget });
+        Assert.False(zeroDiff.IsMatch);
+        Assert.Contains(zeroDiff.Mismatches, f => f.Key == "KNZ_COL_Rect" && f.Property == "coarseTriangles");
+        Assert.Contains(zeroDiff.Mismatches, f => f.Key == "KNZ_COL_Rect" && f.Property == "mediumFineTriangles");
+        Assert.Contains(zeroDiff.Mismatches, f => f.Key == "KNZ_COL_Round" && f.Property == "coarseTriangles");
+        Assert.Contains(zeroDiff.Mismatches, f => f.Key == "KNZ_COL_Round" && f.Property == "mediumFineTriangles");
+    }
+
+    [Fact]
+    public void FromJson_RejectsIncompatibleSchemaOrSchemaVersion()
+    {
+        ExpectedManifest expected = ExpectedManifest.FromSpec(StarterKitSpecLoaderTests.LoadShippedSpec());
+        Newtonsoft.Json.Linq.JObject valid = Newtonsoft.Json.Linq.JObject.Parse(expected.ToCanonicalJson());
+
+        Newtonsoft.Json.Linq.JObject wrongSchema = (Newtonsoft.Json.Linq.JObject)valid.DeepClone();
+        wrongSchema["schema"] = "kanizu.other-manifest";
+        Assert.Throws<System.IO.InvalidDataException>(() => ExpectedManifest.FromJson(wrongSchema.ToString()));
+
+        Newtonsoft.Json.Linq.JObject wrongVersion = (Newtonsoft.Json.Linq.JObject)valid.DeepClone();
+        wrongVersion["schemaVersion"] = 2;
+        Assert.Throws<System.IO.InvalidDataException>(() => ExpectedManifest.FromJson(wrongVersion.ToString()));
+
+        Newtonsoft.Json.Linq.JObject missingVersion = (Newtonsoft.Json.Linq.JObject)valid.DeepClone();
+        missingVersion.Remove("schemaVersion");
+        Assert.Throws<System.IO.InvalidDataException>(() => ExpectedManifest.FromJson(missingVersion.ToString()));
+    }
+
+    [Fact]
+    public void Comparer_DetectsHideSubcategoriesAndHideNonGisLineStylesDrift()
+    {
+        ExpectedManifest expected = ExpectedManifest.FromSpec(StarterKitSpecLoaderTests.LoadShippedSpec());
+
+        ManifestViewTemplateEntry export3d = Assert.Single(expected.ViewTemplates, v => v.Name == "Kanizu 3D Export");
+        Assert.Contains("K_Footprint", export3d.HideSubcategories);
+        ManifestViewTemplateEntry gisExport = Assert.Single(expected.ViewTemplates, v => v.Name == "GIS Export");
+        Assert.True(gisExport.HideNonGisLineStyles);
+
+        List<ManifestViewTemplateEntry> drifted = expected.ViewTemplates
+            .Select(v => v.Name == "Kanizu 3D Export"
+                ? new ManifestViewTemplateEntry(v.Name, v.ViewType, v.DetailLevel, v.IsCanonical2DExport, v.HasVisibilityHidingFilters, v.FilterNames, v.HideNonGisLineStyles, hideSubcategories: Array.Empty<string>())
+                : v.Name == "GIS Export"
+                    ? new ManifestViewTemplateEntry(v.Name, v.ViewType, v.DetailLevel, v.IsCanonical2DExport, v.HasVisibilityHidingFilters, v.FilterNames, hideNonGisLineStyles: false, v.HideSubcategories)
+                    : v)
+            .ToList();
+
+        ManifestComparisonResult diff = StarterKitManifestComparer.Compare(expected, CloneManifest(expected, viewTemplates: drifted));
+        Assert.False(diff.IsMatch);
+        Assert.Contains(diff.Missing, f => f.Section == "viewTemplates" && f.Key == "Kanizu 3D Export" && f.Property == "hideSubcategories" && f.ExpectedValue == "K_Footprint");
+        Assert.Contains(diff.Mismatches, f => f.Section == "viewTemplates" && f.Key == "GIS Export" && f.Property == "hideNonGisLineStyles");
+    }
+
+    [Fact]
+    public void Comparer_RejectsDuplicateKeysInActualManifest()
+    {
+        ExpectedManifest expected = ExpectedManifest.FromSpec(StarterKitSpecLoaderTests.LoadShippedSpec());
+
+        List<ManifestViewTemplateEntry> duplicatedTemplates = expected.ViewTemplates.ToList();
+        ManifestViewTemplateEntry gisExport = expected.ViewTemplates.Single(v => v.Name == "GIS Export");
+        duplicatedTemplates.Add(new ManifestViewTemplateEntry(
+            gisExport.Name,
+            gisExport.ViewType,
+            gisExport.DetailLevel,
+            gisExport.IsCanonical2DExport,
+            hasVisibilityHidingFilters: true,
+            gisExport.FilterNames,
+            gisExport.HideNonGisLineStyles,
+            gisExport.HideSubcategories));
+
+        List<ManifestScheduleEntry> duplicatedSchedules = expected.Schedules.ToList();
+        duplicatedSchedules.Add(expected.Schedules[0]);
+
+        ExpectedManifest actual = CloneManifest(
+            expected,
+            viewTemplates: duplicatedTemplates,
+            schedules: duplicatedSchedules);
+
+        ManifestComparisonResult diff = StarterKitManifestComparer.Compare(expected, actual);
+        Assert.False(diff.IsMatch);
+        Assert.Contains(diff.Unexpected, f => f.Section == "viewTemplates" && f.Key == "GIS Export" && f.Property == "entry");
+        Assert.Contains(diff.Unexpected, f => f.Section == "schedules" && f.Key == expected.Schedules[0].Name && f.Property == "entry");
     }
 
     private static ExpectedManifest CloneManifest(

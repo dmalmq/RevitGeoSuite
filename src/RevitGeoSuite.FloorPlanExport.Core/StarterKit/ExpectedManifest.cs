@@ -19,7 +19,9 @@ public sealed class ManifestViewTemplateEntry
         string detailLevel,
         bool isCanonical2DExport,
         bool hasVisibilityHidingFilters,
-        IEnumerable<string> filterNames)
+        IEnumerable<string> filterNames,
+        bool hideNonGisLineStyles = false,
+        IEnumerable<string>? hideSubcategories = null)
     {
         Name = name ?? string.Empty;
         ViewType = viewType ?? string.Empty;
@@ -27,6 +29,8 @@ public sealed class ManifestViewTemplateEntry
         IsCanonical2DExport = isCanonical2DExport;
         HasVisibilityHidingFilters = hasVisibilityHidingFilters;
         FilterNames = ExpectedManifest.SortStrings(filterNames);
+        HideNonGisLineStyles = hideNonGisLineStyles;
+        HideSubcategories = ExpectedManifest.SortStrings(hideSubcategories);
     }
 
     public string Name { get; }
@@ -40,6 +44,10 @@ public sealed class ManifestViewTemplateEntry
     public bool HasVisibilityHidingFilters { get; }
 
     public IReadOnlyList<string> FilterNames { get; }
+
+    public bool HideNonGisLineStyles { get; }
+
+    public IReadOnlyList<string> HideSubcategories { get; }
 }
 
 /// <summary>Canonical QA view-filter entry inside an <see cref="ExpectedManifest"/>.</summary>
@@ -402,7 +410,9 @@ public sealed class ExpectedManifest
                 vt.DetailLevel,
                 vt.IsCanonical2DExport,
                 hasHideFilter,
-                vt.Filters);
+                vt.Filters,
+                vt.HideNonGisLineStyles,
+                vt.HideSubcategories);
         });
 
         IEnumerable<ManifestQaFilterEntry> qaFilters = spec.Rte.QaViewFilters.Select(f =>
@@ -523,7 +533,9 @@ public sealed class ExpectedManifest
                 ["detailLevel"] = v.DetailLevel,
                 ["isCanonical2DExport"] = v.IsCanonical2DExport,
                 ["hasVisibilityHidingFilters"] = v.HasVisibilityHidingFilters,
+                ["hideNonGisLineStyles"] = v.HideNonGisLineStyles,
                 ["filterNames"] = new JArray(v.FilterNames),
+                ["hideSubcategories"] = new JArray(v.HideSubcategories),
             })),
             ["qaViewFilters"] = new JArray(QaViewFilters.Select(f => new JObject
             {
@@ -622,6 +634,18 @@ public sealed class ExpectedManifest
         }
 
         JObject root = JObject.Parse(json);
+        string schema = (string?)root["schema"] ?? string.Empty;
+        if (!string.Equals(schema, SchemaName, StringComparison.Ordinal))
+        {
+            throw new System.IO.InvalidDataException($"Expected manifest schema '{SchemaName}', found '{schema}'.");
+        }
+
+        JToken? schemaVersionToken = root["schemaVersion"];
+        if (schemaVersionToken == null || schemaVersionToken.Type != JTokenType.Integer || (int)schemaVersionToken != SchemaVersion)
+        {
+            throw new System.IO.InvalidDataException($"Unsupported manifest schemaVersion '{schemaVersionToken}'. Expected {SchemaVersion}.");
+        }
+
         JObject starting = root["startingView"] as JObject ?? new JObject();
         JObject hygiene = root["hygiene"] as JObject ?? new JObject();
 
@@ -643,7 +667,9 @@ public sealed class ExpectedManifest
                 (string?)o["detailLevel"] ?? string.Empty,
                 (bool?)o["isCanonical2DExport"] ?? false,
                 (bool?)o["hasVisibilityHidingFilters"] ?? false,
-                ReadStrings(o["filterNames"]))),
+                ReadStrings(o["filterNames"]),
+                (bool?)o["hideNonGisLineStyles"] ?? false,
+                ReadStrings(o["hideSubcategories"]))),
             ReadObjects(root["qaViewFilters"]).Select(o => new ManifestQaFilterEntry(
                 (string?)o["name"] ?? string.Empty,
                 (string?)o["severity"] ?? string.Empty,

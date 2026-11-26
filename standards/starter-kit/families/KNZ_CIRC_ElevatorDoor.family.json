@@ -76,8 +76,8 @@
         "name": "header_lintel",
         "subcategory": "K_Frame",
         "materialRef": "K3D_Frame",
-        "originMm": [8, 8, 2090],
-        "sizeMm": [1084, 184, 60]
+        "originMm": [8, 20, 2090],
+        "sizeMm": [1084, 160, 60]
       },
       {
         "op": "box",
@@ -88,12 +88,30 @@
         "sizeMm": [478, 48, 2086]
       },
       {
+        "op": "void",
+        "name": "vision_slit_cut_left",
+        "shape": "box",
+        "throughCut": true,
+        "targetOp": "leaf_left",
+        "originMm": [220, 76, 750],
+        "sizeMm": [160, 48, 1100]
+      },
+      {
         "op": "box",
         "name": "leaf_right",
         "subcategory": "K_Body",
         "materialRef": "K3D_Circulation",
         "originMm": [554, 76, 4],
         "sizeMm": [478, 48, 2086]
+      },
+      {
+        "op": "void",
+        "name": "vision_slit_cut_right",
+        "shape": "box",
+        "throughCut": true,
+        "targetOp": "leaf_right",
+        "originMm": [720, 76, 750],
+        "sizeMm": [160, 48, 1100]
       },
       {
         "op": "box",
@@ -116,8 +134,8 @@
         "name": "hall_indicator_accent",
         "subcategory": "K_Accent",
         "materialRef": "K3D_Accent",
-        "originMm": [470, 16, 2102],
-        "sizeMm": [160, 20, 36]
+        "originMm": [470, 8, 2102],
+        "sizeMm": [160, 12, 36]
       }
     ]
   }

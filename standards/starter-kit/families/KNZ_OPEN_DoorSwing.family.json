@@ -88,6 +88,15 @@
         "sizeMm": [784, 44, 2046]
       },
       {
+        "op": "void",
+        "name": "vision_lite_cut",
+        "shape": "box",
+        "throughCut": true,
+        "targetOp": "door_leaf",
+        "originMm": [540, 68, 950],
+        "sizeMm": [180, 44, 900]
+      },
+      {
         "op": "box",
         "name": "vision_lite",
         "subcategory": "K_Glass",

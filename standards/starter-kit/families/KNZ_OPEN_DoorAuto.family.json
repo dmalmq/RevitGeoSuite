@@ -60,8 +60,8 @@
         "name": "operator_transom_header",
         "subcategory": "K_Frame",
         "materialRef": "K3D_Frame",
-        "originMm": [8, 8, 2200],
-        "sizeMm": [2384, 204, 200]
+        "originMm": [8, 32, 2200],
+        "sizeMm": [2384, 156, 200]
       },
       {
         "op": "box",
@@ -132,8 +132,8 @@
         "name": "motion_sensor_housing",
         "subcategory": "K_Accent",
         "materialRef": "K3D_Accent",
-        "originMm": [1080, 16, 2240],
-        "sizeMm": [240, 32, 48]
+        "originMm": [1080, 8, 2240],
+        "sizeMm": [240, 24, 48]
       }
     ]
   }

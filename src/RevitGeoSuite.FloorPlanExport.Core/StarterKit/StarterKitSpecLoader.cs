@@ -271,6 +271,16 @@ public static class StarterKitSpecLoader
         "contains",
     };
 
+    private static readonly string[] ValidAlphaModes =
+    {
+        "opaque",
+        "blend",
+        "mask",
+    };
+
+    /// <summary>Supported declarative schema version for kit, rte, materials-3d, and family specs.</summary>
+    public const int SupportedSchemaVersion = 1;
+
     /// <summary>Loads the embedded Starter Kit specification shipped inside this assembly and validates it.</summary>
     public static StarterKitLoadResult LoadEmbedded()
     {
@@ -289,11 +299,15 @@ public static class StarterKitSpecLoader
             string? familyJson = TryReadEmbedded(assembly, entry.SpecPath);
             if (familyJson == null)
             {
-                loadFindings.Add(new StarterKitValidationFinding(
-                    StarterKitValidationSeverity.Error,
-                    "SK-LOAD-001",
-                    entry.SpecPath,
-                    $"Embedded family spec '{entry.SpecPath}' for '{entry.Id}' was not found."));
+                if (!entry.Optional)
+                {
+                    loadFindings.Add(new StarterKitValidationFinding(
+                        StarterKitValidationSeverity.Error,
+                        "SK-LOAD-001",
+                        entry.SpecPath,
+                        $"Embedded family spec '{entry.SpecPath}' for '{entry.Id}' was not found."));
+                }
+
                 continue;
             }
 
@@ -345,9 +359,15 @@ public static class StarterKitSpecLoader
             return new StarterKitLoadResult(null, new StarterKitValidationResult(loadFindings));
         }
 
-        string rtePath = ResolveChildPath(starterKitDirectory, header.RteSpec);
-        string materialsPath = ResolveChildPath(starterKitDirectory, header.MaterialsSpec);
-        if (!File.Exists(rtePath))
+        if (!TryResolveSafeChildPath(starterKitDirectory, header.RteSpec, out string rtePath, out string rtePathError))
+        {
+            loadFindings.Add(new StarterKitValidationFinding(
+                StarterKitValidationSeverity.Error,
+                "SK-LOAD-005",
+                header.RteSpec,
+                $"Invalid rteSpec path '{header.RteSpec}': {rtePathError}"));
+        }
+        else if (!File.Exists(rtePath))
         {
             loadFindings.Add(new StarterKitValidationFinding(
                 StarterKitValidationSeverity.Error,
@@ -356,7 +376,15 @@ public static class StarterKitSpecLoader
                 $"Referenced RTE spec '{header.RteSpec}' does not exist."));
         }
 
-        if (!File.Exists(materialsPath))
+        if (!TryResolveSafeChildPath(starterKitDirectory, header.MaterialsSpec, out string materialsPath, out string materialsPathError))
+        {
+            loadFindings.Add(new StarterKitValidationFinding(
+                StarterKitValidationSeverity.Error,
+                "SK-LOAD-005",
+                header.MaterialsSpec,
+                $"Invalid materialsSpec path '{header.MaterialsSpec}': {materialsPathError}"));
+        }
+        else if (!File.Exists(materialsPath))
         {
             loadFindings.Add(new StarterKitValidationFinding(
                 StarterKitValidationSeverity.Error,
@@ -390,14 +418,27 @@ public static class StarterKitSpecLoader
         List<FamilyGeometrySpec> families = new();
         foreach (StarterKitFamilyRegistryEntry entry in header.Families)
         {
-            string familyPath = ResolveChildPath(starterKitDirectory, entry.SpecPath);
-            if (!File.Exists(familyPath))
+            if (!TryResolveSafeChildPath(starterKitDirectory, entry.SpecPath, out string familyPath, out string familyPathError))
             {
                 loadFindings.Add(new StarterKitValidationFinding(
                     StarterKitValidationSeverity.Error,
-                    "SK-LOAD-004",
+                    "SK-LOAD-005",
                     entry.SpecPath,
-                    $"Family spec '{entry.SpecPath}' referenced by '{entry.Id}' does not exist."));
+                    $"Invalid family specPath '{entry.SpecPath}' for '{entry.Id}': {familyPathError}"));
+                continue;
+            }
+
+            if (!File.Exists(familyPath))
+            {
+                if (!entry.Optional)
+                {
+                    loadFindings.Add(new StarterKitValidationFinding(
+                        StarterKitValidationSeverity.Error,
+                        "SK-LOAD-004",
+                        entry.SpecPath,
+                        $"Family spec '{entry.SpecPath}' referenced by '{entry.Id}' does not exist."));
+                }
+
                 continue;
             }
 
@@ -704,9 +745,9 @@ public static class StarterKitSpecLoader
             AddError(findings, "SK-KIT-001", KitFileName, $"Expected schema '{StarterKitHeaderSpec.ExpectedSchema}', found '{header.Schema}'.");
         }
 
-        if (header.SchemaVersion != 1)
+        if (header.SchemaVersion != SupportedSchemaVersion)
         {
-            AddError(findings, "SK-KIT-002", KitFileName, $"Unsupported kit schemaVersion '{header.SchemaVersion}'.");
+            AddError(findings, "SK-KIT-002", KitFileName, $"Unsupported kit schemaVersion '{header.SchemaVersion}'. Expected {SupportedSchemaVersion}.");
         }
 
         if (!SemVerRegex.IsMatch(header.KitVersion))
@@ -759,6 +800,11 @@ public static class StarterKitSpecLoader
             AddError(findings, "SK-MAT-001", Materials3DFileName, $"Expected schema '{Materials3DSpec.ExpectedSchema}', found '{materialsSpec.Schema}'.");
         }
 
+        if (materialsSpec.SchemaVersion != SupportedSchemaVersion)
+        {
+            AddError(findings, "SK-MAT-013", Materials3DFileName, $"Unsupported materials-3d schemaVersion '{materialsSpec.SchemaVersion}'. Expected {SupportedSchemaVersion}.");
+        }
+
         if (materialsSpec.Materials.Count == 0)
         {
             AddError(findings, "SK-MAT-002", Materials3DFileName, "materials-3d.json must define at least one material.");
@@ -808,9 +854,23 @@ public static class StarterKitSpecLoader
                 AddError(findings, "SK-MAT-008", path, $"Material '{mat.Name}' transparency {mat.Transparency} must be in [0..100].");
             }
 
-            if (mat.Metallic < 0.0 || mat.Metallic > 1.0 || mat.Roughness < 0.0 || mat.Roughness > 1.0)
+            if (!IsFinite(mat.Metallic) || mat.Metallic < 0.0 || mat.Metallic > 1.0 ||
+                !IsFinite(mat.Roughness) || mat.Roughness < 0.0 || mat.Roughness > 1.0)
             {
-                AddError(findings, "SK-MAT-009", path, $"Material '{mat.Name}' metallic and roughness must be in [0..1].");
+                AddError(findings, "SK-MAT-009", path, $"Material '{mat.Name}' metallic and roughness must be finite and in [0..1].");
+            }
+
+            if (!ValidAlphaModes.Contains(mat.AlphaMode, StringComparer.Ordinal))
+            {
+                AddError(findings, "SK-MAT-011", path, $"Material '{mat.Name}' alphaMode '{mat.AlphaMode}' must be one of: {string.Join(", ", ValidAlphaModes)}.");
+            }
+            else if (string.Equals(mat.AlphaMode, "opaque", StringComparison.Ordinal) && mat.Transparency != 0)
+            {
+                AddError(findings, "SK-MAT-012", path, $"Material '{mat.Name}' has alphaMode 'opaque' but non-zero transparency {mat.Transparency}.");
+            }
+            else if (string.Equals(mat.AlphaMode, "blend", StringComparison.Ordinal) && mat.Transparency <= 0)
+            {
+                AddError(findings, "SK-MAT-012", path, $"Material '{mat.Name}' has alphaMode 'blend' but transparency {mat.Transparency} <= 0.");
             }
 
             if (!string.IsNullOrWhiteSpace(mat.Role))
@@ -839,6 +899,11 @@ public static class StarterKitSpecLoader
         if (!string.Equals(rte.Schema, RteTemplateSpec.ExpectedSchema, StringComparison.Ordinal))
         {
             AddError(findings, "SK-RTE-001", RteFileName, $"Expected schema '{RteTemplateSpec.ExpectedSchema}', found '{rte.Schema}'.");
+        }
+
+        if (rte.SchemaVersion != SupportedSchemaVersion)
+        {
+            AddError(findings, "SK-RTE-008", RteFileName, $"Unsupported rte schemaVersion '{rte.SchemaVersion}'. Expected {SupportedSchemaVersion}.");
         }
 
         if (rte.GisStandardVersion != GisStandard.Version)
@@ -1101,6 +1166,21 @@ public static class StarterKitSpecLoader
             {
                 AddError(findings, "SK-RTE-052", path, $"System family '{sf.Id}' has invalid gisCategory '{sf.GisCategory}'.");
             }
+
+            if (sf.ThicknessMm.HasValue && (!IsFinite(sf.ThicknessMm.Value) || sf.ThicknessMm.Value <= 0.0))
+            {
+                AddError(findings, "SK-RTE-054", path, $"System family '{sf.Id}' thicknessMm must be finite and positive.");
+            }
+
+            if (sf.DefaultHeightMm.HasValue && (!IsFinite(sf.DefaultHeightMm.Value) || sf.DefaultHeightMm.Value <= 0.0))
+            {
+                AddError(findings, "SK-RTE-054", path, $"System family '{sf.Id}' defaultHeightMm must be finite and positive.");
+            }
+
+            if (sf.TriangleBudgetPerFlight.HasValue && sf.TriangleBudgetPerFlight.Value <= 0)
+            {
+                AddError(findings, "SK-RTE-054", path, $"System family '{sf.Id}' triangleBudgetPerFlight must be positive.");
+            }
         }
 
         foreach (string requiredSf in RequiredSystemFamilyIds)
@@ -1141,6 +1221,11 @@ public static class StarterKitSpecLoader
                 AddError(findings, "SK-FAM-002", path, $"Expected schema '{FamilyGeometrySpec.ExpectedSchema}', found '{family.Schema}'.");
             }
 
+            if (family.SchemaVersion != SupportedSchemaVersion)
+            {
+                AddError(findings, "SK-FAM-014", path, $"Unsupported family schemaVersion '{family.SchemaVersion}'. Expected {SupportedSchemaVersion}.");
+            }
+
             if (registryById.TryGetValue(family.Id, out StarterKitFamilyRegistryEntry? regEntry) && regEntry != null)
             {
                 if (!string.Equals(family.Group, regEntry.Group, StringComparison.Ordinal))
@@ -1170,11 +1255,11 @@ public static class StarterKitSpecLoader
                 AddError(findings, "SK-FAM-007", path, $"Family '{family.Id}' uses seedKind 'wallHostedDoor' but category is '{family.Category}' (expected 'OST_Doors').");
             }
 
-            if (family.DefaultDimensionsMm.WidthMm <= 0 ||
-                family.DefaultDimensionsMm.DepthMm <= 0 ||
-                family.DefaultDimensionsMm.HeightMm <= 0)
+            if (!IsFinite(family.DefaultDimensionsMm.WidthMm) || family.DefaultDimensionsMm.WidthMm <= 0 ||
+                !IsFinite(family.DefaultDimensionsMm.DepthMm) || family.DefaultDimensionsMm.DepthMm <= 0 ||
+                !IsFinite(family.DefaultDimensionsMm.HeightMm) || family.DefaultDimensionsMm.HeightMm <= 0)
             {
-                AddError(findings, "SK-FAM-008", path, $"Family '{family.Id}' defaultDimensionsMm must all be positive.");
+                AddError(findings, "SK-FAM-008", path, $"Family '{family.Id}' defaultDimensionsMm must all be finite and positive.");
             }
 
             ValidateClearances(family.ClearancesMm, path, findings);
@@ -1184,9 +1269,9 @@ public static class StarterKitSpecLoader
 
         foreach (StarterKitFamilyRegistryEntry entry in spec.Header.Families)
         {
-            if (!loadedIds.Contains(entry.Id))
+            if (!entry.Optional && !loadedIds.Contains(entry.Id))
             {
-                AddError(findings, "SK-FAM-009", entry.SpecPath, $"Registered family '{entry.Id}' was not loaded.");
+                AddError(findings, "SK-FAM-009", entry.SpecPath, $"Required registered family '{entry.Id}' was not loaded.");
             }
         }
     }
@@ -1396,7 +1481,7 @@ public static class StarterKitSpecLoader
         List<StarterKitValidationFinding> findings)
     {
         HashSet<string> solidNames = new(StringComparer.Ordinal);
-        CollectSolidOpNames(ops, solidNames);
+        CollectSolidOpNames(ops, solidNames, depth: 0);
 
         bool foundBottomAtZero = false;
         foreach (GeometryOpSpec op in ops)
@@ -1420,8 +1505,13 @@ public static class StarterKitSpecLoader
         }
     }
 
-    private static void CollectSolidOpNames(IReadOnlyList<GeometryOpSpec> ops, HashSet<string> names)
+    private static void CollectSolidOpNames(IReadOnlyList<GeometryOpSpec> ops, HashSet<string> names, int depth)
     {
+        if (depth > TriangleEstimator.MaxNestingDepth)
+        {
+            return;
+        }
+
         foreach (GeometryOpSpec op in ops)
         {
             if (!string.Equals(op.Op, GeometryOpSpec.OpVoid, StringComparison.Ordinal) &&
@@ -1433,7 +1523,7 @@ public static class StarterKitSpecLoader
 
             if (string.Equals(op.Op, GeometryOpSpec.OpArray, StringComparison.Ordinal))
             {
-                CollectSolidOpNames(TriangleEstimator.CollectArrayChildren(op), names);
+                CollectSolidOpNames(TriangleEstimator.CollectArrayChildren(op), names, depth + 1);
             }
         }
     }
@@ -1463,6 +1553,11 @@ public static class StarterKitSpecLoader
                 AddError(findings, "SK-GEO-012", path, $"Array op '{op.Name}' requires count >= 1.");
             }
 
+            if (!IsFiniteVector3(op.StepMm))
+            {
+                AddError(findings, "SK-GEO-023", path, $"Array op '{op.Name}' requires a finite 3-element stepMm vector.");
+            }
+
             List<GeometryOpSpec> children = TriangleEstimator.CollectArrayChildren(op);
             if (children.Count == 0)
             {
@@ -1483,6 +1578,27 @@ public static class StarterKitSpecLoader
             if (!string.IsNullOrWhiteSpace(op.TargetOp) && !solidNames.Contains(op.TargetOp!))
             {
                 AddError(findings, "SK-GEO-014", path, $"Void op '{op.Name}' references unknown targetOp '{op.TargetOp}'.");
+            }
+
+            string voidShape = string.IsNullOrWhiteSpace(op.Shape) ? GeometryOpSpec.OpBox : op.Shape!.Trim();
+            if (string.Equals(voidShape, GeometryOpSpec.OpBox, StringComparison.Ordinal))
+            {
+                if (!IsFiniteVector3(op.OriginMm))
+                {
+                    AddError(findings, "SK-GEO-021", path, $"Box void op '{op.Name}' requires a finite 3-element originMm vector.");
+                }
+
+                if (!IsPositiveFiniteVector3(op.SizeMm))
+                {
+                    AddError(findings, "SK-GEO-022", path, $"Box void op '{op.Name}' requires a positive finite 3-element sizeMm vector.");
+                }
+            }
+            else if (string.Equals(voidShape, GeometryOpSpec.OpNPrism, StringComparison.Ordinal))
+            {
+                if (!IsFiniteVector3(op.CenterMm))
+                {
+                    AddError(findings, "SK-GEO-021", path, $"nprism void op '{op.Name}' requires a finite 3-element centerMm vector.");
+                }
             }
 
             return;
@@ -1514,30 +1630,61 @@ public static class StarterKitSpecLoader
             AddError(findings, "SK-GEO-019", path, $"Solid op '{op.Name}' references unknown materialRef '{op.MaterialRef}'.");
         }
 
-        double? zBottom = TryGetOpBottomZ(op);
+        double? zBottom = ValidateSolidPlacementAndGetBottomZ(op, path, findings);
         if (zBottom.HasValue)
         {
             if (isCoarse && Math.Abs(zBottom.Value) <= 1e-6)
             {
                 foundBottomAtZero = true;
             }
-            else if (!isCoarse && zBottom.Value + 1e-6 < slabClearMm)
+            else if (!isCoarse && (!IsFinite(slabClearMm) || zBottom.Value + 1e-6 < slabClearMm))
             {
                 AddError(findings, "SK-GEO-020", path, $"Medium/Fine solid op '{op.Name}' bottom Z ({zBottom.Value} mm) violates slab anti-Z-fighting clearance ({slabClearMm} mm).");
             }
         }
     }
 
-    private static double? TryGetOpBottomZ(GeometryOpSpec op)
+    private static double? ValidateSolidPlacementAndGetBottomZ(
+        GeometryOpSpec op,
+        string path,
+        List<StarterKitValidationFinding> findings)
     {
-        if (op.OriginMm != null && op.OriginMm.Count == 3)
+        if (string.Equals(op.Op, GeometryOpSpec.OpBox, StringComparison.Ordinal))
         {
-            return op.OriginMm[2];
+            if (!IsFiniteVector3(op.OriginMm))
+            {
+                AddError(findings, "SK-GEO-021", path, $"Box op '{op.Name}' requires a finite 3-element originMm vector.");
+                return null;
+            }
+
+            if (!IsPositiveFiniteVector3(op.SizeMm))
+            {
+                AddError(findings, "SK-GEO-022", path, $"Box op '{op.Name}' requires a positive finite 3-element sizeMm vector.");
+            }
+
+            return op.OriginMm![2];
         }
 
-        if (op.CenterMm != null && op.CenterMm.Count == 3)
+        if (string.Equals(op.Op, GeometryOpSpec.OpSlopedPrism, StringComparison.Ordinal))
         {
-            return op.CenterMm[2];
+            if (!IsFiniteVector3(op.OriginMm))
+            {
+                AddError(findings, "SK-GEO-021", path, $"slopedPrism op '{op.Name}' requires a finite 3-element originMm vector.");
+                return null;
+            }
+
+            return op.OriginMm![2];
+        }
+
+        if (string.Equals(op.Op, GeometryOpSpec.OpNPrism, StringComparison.Ordinal))
+        {
+            if (!IsFiniteVector3(op.CenterMm))
+            {
+                AddError(findings, "SK-GEO-021", path, $"nprism op '{op.Name}' requires a finite 3-element centerMm vector.");
+                return null;
+            }
+
+            return op.CenterMm![2];
         }
 
         return null;
@@ -1545,21 +1692,36 @@ public static class StarterKitSpecLoader
 
     private static void ValidateClearances(AntiZFightingClearances clearances, string path, List<StarterKitValidationFinding> findings)
     {
-        if (clearances.SlabClearMm < AntiZFightingClearances.MinimumSlabClearMm)
+        if (!IsFinite(clearances.SlabClearMm) || clearances.SlabClearMm < AntiZFightingClearances.MinimumSlabClearMm)
         {
-            AddError(findings, "SK-CLR-001", path, $"slabClearMm ({clearances.SlabClearMm}) must be >= {AntiZFightingClearances.MinimumSlabClearMm} mm.");
+            AddError(findings, "SK-CLR-001", path, $"slabClearMm ({clearances.SlabClearMm}) must be finite and >= {AntiZFightingClearances.MinimumSlabClearMm} mm.");
         }
 
-        if (clearances.SideClearMm < AntiZFightingClearances.MinimumSideClearMm)
+        if (!IsFinite(clearances.SideClearMm) || clearances.SideClearMm < AntiZFightingClearances.MinimumSideClearMm)
         {
-            AddError(findings, "SK-CLR-002", path, $"sideClearMm ({clearances.SideClearMm}) must be >= {AntiZFightingClearances.MinimumSideClearMm} mm.");
+            AddError(findings, "SK-CLR-002", path, $"sideClearMm ({clearances.SideClearMm}) must be finite and >= {AntiZFightingClearances.MinimumSideClearMm} mm.");
         }
 
-        if (clearances.GlassTuckMm < AntiZFightingClearances.MinimumGlassTuckMm)
+        if (!IsFinite(clearances.GlassTuckMm) || clearances.GlassTuckMm < AntiZFightingClearances.MinimumGlassTuckMm)
         {
-            AddError(findings, "SK-CLR-003", path, $"glassTuckMm ({clearances.GlassTuckMm}) must be >= {AntiZFightingClearances.MinimumGlassTuckMm} mm.");
+            AddError(findings, "SK-CLR-003", path, $"glassTuckMm ({clearances.GlassTuckMm}) must be finite and >= {AntiZFightingClearances.MinimumGlassTuckMm} mm.");
         }
     }
+
+    private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+    private static bool IsFiniteVector3(IReadOnlyList<double>? vector) =>
+        vector != null &&
+        vector.Count == 3 &&
+        IsFinite(vector[0]) &&
+        IsFinite(vector[1]) &&
+        IsFinite(vector[2]);
+
+    private static bool IsPositiveFiniteVector3(IReadOnlyList<double>? vector) =>
+        IsFiniteVector3(vector) &&
+        vector![0] > 0.0 &&
+        vector[1] > 0.0 &&
+        vector[2] > 0.0;
 
     private static void ValidateFilterRule(
         FilterRuleSpec rule,
@@ -1658,10 +1820,61 @@ public static class StarterKitSpecLoader
         return StarterKitReferenceStandards.LoadEmbedded();
     }
 
-    private static string ResolveChildPath(string rootDir, string relativePath)
+    internal static bool TryResolveSafeChildPath(
+        string rootDir,
+        string? relativePath,
+        out string resolvedPath,
+        out string errorReason)
     {
-        string normalized = (relativePath ?? string.Empty).Replace('/', Path.DirectorySeparatorChar);
-        return Path.Combine(rootDir, normalized);
+        resolvedPath = string.Empty;
+        errorReason = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            errorReason = "Path cannot be empty.";
+            return false;
+        }
+
+        string trimmed = relativePath!.Trim();
+        if (trimmed.IndexOf('\0') >= 0)
+        {
+            errorReason = "Path contains NUL character.";
+            return false;
+        }
+
+        // Reject rooted paths on both Windows and POSIX (including drive-letter paths evaluated on Linux).
+        bool hasWindowsDrivePrefix = trimmed.Length >= 2 && char.IsLetter(trimmed[0]) && trimmed[1] == ':';
+        if (Path.IsPathRooted(trimmed) || trimmed.StartsWith("/", StringComparison.Ordinal) || trimmed.StartsWith("\\", StringComparison.Ordinal) || hasWindowsDrivePrefix)
+        {
+            errorReason = "Rooted or absolute paths are not allowed.";
+            return false;
+        }
+
+        string[] segments = trimmed.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0 || segments.Any(s => string.Equals(s, "..", StringComparison.Ordinal)))
+        {
+            errorReason = "Parent-directory traversal ('..') is not allowed.";
+            return false;
+        }
+
+        string normalized = string.Join(Path.DirectorySeparatorChar.ToString(), segments);
+        string fullRoot = Path.GetFullPath(rootDir);
+        string rootPrefix = fullRoot.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+            ? fullRoot
+            : fullRoot + Path.DirectorySeparatorChar;
+        string candidate = Path.GetFullPath(Path.Combine(fullRoot, normalized));
+
+        StringComparison comparison = Path.DirectorySeparatorChar == '\\'
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (!candidate.StartsWith(rootPrefix, comparison))
+        {
+            errorReason = "Resolved path escapes starter-kit root directory.";
+            return false;
+        }
+
+        resolvedPath = candidate;
+        return true;
     }
 
     private static string ReadEmbedded(Assembly assembly, string relativePath)

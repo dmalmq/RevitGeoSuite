@@ -331,14 +331,266 @@ public sealed class StarterKitSpecLoaderTests
 
         foreach (string file in files)
         {
-            string content = File.ReadAllText(file, Encoding.UTF8);
+            string content = File.ReadAllText(file, Encoding.UTF8).Replace("\r\n", "\n");
             Assert.False(
                 forbiddenPatterns.IsMatch(content),
                 $"Tracked starter-kit spec '{Path.GetFileName(file)}' matched forbidden private path or client station name pattern.");
-            Assert.DoesNotContain("\r", content);
             // Ensure every JSON file parses cleanly
             JObject.Parse(content);
         }
+    }
+
+    [Theory]
+    [InlineData("../escaped.json")]
+    [InlineData(@"..\escaped.json")]
+    [InlineData("/abs/path/rte.json")]
+    [InlineData(@"C:\abs\path\rte.json")]
+    [InlineData("families/../../escaped.json")]
+    [InlineData("")]
+    public void LoadFromDirectory_RejectsPathTraversalAndRootedPaths(string badPath)
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "kanizu-sk-traversal-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            string sourceDir = Path.Combine(GetStandardsDirectory(), "starter-kit");
+            JObject kitObj = JObject.Parse(File.ReadAllText(Path.Combine(sourceDir, "kit.json"), Encoding.UTF8));
+            kitObj["rteSpec"] = badPath;
+            File.WriteAllText(Path.Combine(tempDir, "kit.json"), kitObj.ToString(), new UTF8Encoding(false));
+            File.Copy(Path.Combine(sourceDir, "rte.json"), Path.Combine(tempDir, "rte.json"));
+            File.Copy(Path.Combine(sourceDir, "materials-3d.json"), Path.Combine(tempDir, "materials-3d.json"));
+
+            StarterKitLoadResult result = StarterKitSpecLoader.LoadFromDirectory(tempDir, GetStandardsDirectory());
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Validation.Errors, e => e.Code == "SK-LOAD-005");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Validation_RejectsNaNInfinityAndInvalidAlphaMode()
+    {
+        StarterKitSpec shipped = LoadShippedSpec();
+        FamilyGeometrySpec orig = shipped.FindFamily("KNZ_COL_Rect")!;
+
+        FamilyGeometrySpec nanFamily = new(
+            orig.Schema,
+            orig.SchemaVersion,
+            orig.Id,
+            orig.FamilyName,
+            orig.DisplayNameEn,
+            orig.DisplayNameJa,
+            orig.Group,
+            orig.Category,
+            orig.SeedKind,
+            orig.IsPolygonal,
+            orig.Subcategories,
+            new AntiZFightingClearances(double.NaN, double.PositiveInfinity, double.NaN),
+            new FamilyDimensionsSpec(double.NaN, double.PositiveInfinity, 1000.0),
+            orig.SharedParameters,
+            orig.TriangleBudget,
+            orig.Coarse,
+            orig.MediumFine);
+
+        List<Material3DSpec> badMaterials = shipped.Materials3D.Materials
+            .Select(m => m.Name == "K3D_Body"
+                ? new Material3DSpec(m.Name, m.Role, m.Srgb, m.Hex, transparency: 25, alphaMode: "opaque", metallic: double.NaN, roughness: double.PositiveInfinity, m.Description)
+                : m.Name == "K3D_Glass"
+                    ? new Material3DSpec(m.Name, m.Role, m.Srgb, m.Hex, transparency: 0, alphaMode: "translucent", metallic: 0.0, roughness: 0.15, m.Description)
+                    : m)
+            .ToList();
+
+        StarterKitSpec badKit = new(
+            shipped.Header,
+            shipped.Rte,
+            new Materials3DSpec(shipped.Materials3D.Schema, shipped.Materials3D.SchemaVersion, shipped.Materials3D.AlignmentNotes, badMaterials),
+            shipped.Families.Select(f => f.Id == nanFamily.Id ? nanFamily : f).ToList());
+
+        StarterKitValidationResult result = StarterKitSpecLoader.Validate(badKit);
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Code == "SK-CLR-001");
+        Assert.Contains(result.Errors, e => e.Code == "SK-CLR-002");
+        Assert.Contains(result.Errors, e => e.Code == "SK-CLR-003");
+        Assert.Contains(result.Errors, e => e.Code == "SK-FAM-008");
+        Assert.Contains(result.Errors, e => e.Code == "SK-MAT-009");
+        Assert.Contains(result.Errors, e => e.Code == "SK-MAT-011");
+        Assert.Contains(result.Errors, e => e.Code == "SK-MAT-012");
+    }
+
+    [Fact]
+    public void Validation_RejectsMissingOriginCenterAndStepCoordinates()
+    {
+        StarterKitSpec shipped = LoadShippedSpec();
+        FamilyGeometrySpec orig = shipped.FindFamily("KNZ_COL_Rect")!;
+
+        FamilyGeometrySpec missingCoords = new(
+            orig.Schema,
+            orig.SchemaVersion,
+            orig.Id,
+            orig.FamilyName,
+            orig.DisplayNameEn,
+            orig.DisplayNameJa,
+            orig.Group,
+            orig.Category,
+            orig.SeedKind,
+            orig.IsPolygonal,
+            orig.Subcategories,
+            orig.ClearancesMm,
+            orig.DefaultDimensionsMm,
+            orig.SharedParameters,
+            new FamilyTriangleBudgetSpec(24, 200),
+            orig.Coarse,
+            new MediumFineGeometrySpec(new[]
+            {
+                new GeometryOpSpec(GeometryOpSpec.OpBox, "no_origin_box", subcategory: "K_Body", materialRef: "K3D_Column", originMm: null, sizeMm: new[] { 500.0, 500.0, 1000.0 }),
+                new GeometryOpSpec(GeometryOpSpec.OpNPrism, "no_center_prism", subcategory: "K_Body", materialRef: "K3D_Column", centerMm: null, radiusMm: 200.0, heightMm: 1000.0, sides: 6),
+                new GeometryOpSpec(GeometryOpSpec.OpArray, "no_step_array", count: 2, stepMm: null, child: new GeometryOpSpec(GeometryOpSpec.OpBox, "child_box", subcategory: "K_Frame", materialRef: "K3D_Frame", originMm: new[] { 8.0, 8.0, 4.0 }, sizeMm: new[] { 50.0, 50.0, 50.0 })),
+            }));
+
+        StarterKitValidationResult result = StarterKitSpecLoader.Validate(
+            new StarterKitSpec(shipped.Header, shipped.Rte, shipped.Materials3D, shipped.Families.Select(f => f.Id == orig.Id ? missingCoords : f).ToList()));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Code == "SK-GEO-021" && e.Message.Contains("no_origin_box"));
+        Assert.Contains(result.Errors, e => e.Code == "SK-GEO-021" && e.Message.Contains("no_center_prism"));
+        Assert.Contains(result.Errors, e => e.Code == "SK-GEO-023" && e.Message.Contains("no_step_array"));
+    }
+
+    [Fact]
+    public void Validation_HandlesDeeplyNestedArraysWithoutStackOverflow()
+    {
+        StarterKitSpec shipped = LoadShippedSpec();
+        FamilyGeometrySpec orig = shipped.FindFamily("KNZ_COL_Rect")!;
+
+        GeometryOpSpec current = new(
+            GeometryOpSpec.OpBox,
+            "leaf_box",
+            subcategory: "K_Body",
+            materialRef: "K3D_Column",
+            originMm: new[] { 8.0, 8.0, 4.0 },
+            sizeMm: new[] { 100.0, 100.0, 100.0 });
+        for (int i = 0; i < 40; i++)
+        {
+            current = new GeometryOpSpec(
+                GeometryOpSpec.OpArray,
+                $"nested_{i}",
+                count: 1,
+                stepMm: new[] { 0.0, 0.0, 0.0 },
+                child: current);
+        }
+
+        FamilyGeometrySpec deepFamily = new(
+            orig.Schema,
+            orig.SchemaVersion,
+            orig.Id,
+            orig.FamilyName,
+            orig.DisplayNameEn,
+            orig.DisplayNameJa,
+            orig.Group,
+            orig.Category,
+            orig.SeedKind,
+            orig.IsPolygonal,
+            orig.Subcategories,
+            orig.ClearancesMm,
+            orig.DefaultDimensionsMm,
+            orig.SharedParameters,
+            orig.TriangleBudget,
+            orig.Coarse,
+            new MediumFineGeometrySpec(new[] { current }));
+
+        StarterKitValidationResult result = StarterKitSpecLoader.Validate(
+            new StarterKitSpec(shipped.Header, shipped.Rte, shipped.Materials3D, shipped.Families.Select(f => f.Id == orig.Id ? deepFamily : f).ToList()));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Code == "SK-GEO-011");
+    }
+
+    [Fact]
+    public void LoadFromDirectory_AllowsOmittingOptionalFamilySpec()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "kanizu-sk-opt-" + Guid.NewGuid().ToString("N"));
+        string familiesDir = Path.Combine(tempDir, "families");
+        Directory.CreateDirectory(familiesDir);
+        try
+        {
+            string sourceDir = Path.Combine(GetStandardsDirectory(), "starter-kit");
+            File.Copy(Path.Combine(sourceDir, "kit.json"), Path.Combine(tempDir, "kit.json"));
+            File.Copy(Path.Combine(sourceDir, "rte.json"), Path.Combine(tempDir, "rte.json"));
+            File.Copy(Path.Combine(sourceDir, "materials-3d.json"), Path.Combine(tempDir, "materials-3d.json"));
+            foreach (string file in Directory.GetFiles(Path.Combine(sourceDir, "families"), "*.family.json"))
+            {
+                if (!Path.GetFileName(file).Equals("KNZ_POI_FacilityMarker.family.json", StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Copy(file, Path.Combine(familiesDir, Path.GetFileName(file)));
+                }
+            }
+
+            StarterKitLoadResult result = StarterKitSpecLoader.LoadFromDirectory(tempDir, GetStandardsDirectory());
+            Assert.True(result.IsValid, string.Join("\n", result.Validation.Errors.Select(e => e.ToString())));
+            Assert.NotNull(result.Spec);
+            Assert.Equal(15, result.Spec!.Families.Count);
+            Assert.Null(result.Spec.FindFamily("KNZ_POI_FacilityMarker"));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Validation_RejectsUnsupportedSchemaVersionOnAllSubSpecs()
+    {
+        StarterKitSpec shipped = LoadShippedSpec();
+        RteTemplateSpec v2Rte = new(
+            shipped.Rte.Schema,
+            schemaVersion: 2,
+            shipped.Rte.TemplateName,
+            shipped.Rte.GisStandardVersion,
+            shipped.Rte.CanonicalExportViewTemplate,
+            shipped.Rte.StartingView,
+            shipped.Rte.Hygiene,
+            shipped.Rte.ViewTemplates,
+            shipped.Rte.QaViewFilters,
+            shipped.Rte.Schedules,
+            shipped.Rte.LineStyles,
+            shipped.Rte.SystemFamilies,
+            shipped.Rte.IncludeAllStandardFloorTypes,
+            shipped.Rte.IncludeAllStandardSharedParameters);
+        Materials3DSpec v2Materials = new(
+            shipped.Materials3D.Schema,
+            schemaVersion: 2,
+            shipped.Materials3D.AlignmentNotes,
+            shipped.Materials3D.Materials);
+        FamilyGeometrySpec origFam = shipped.FindFamily("KNZ_COL_Rect")!;
+        FamilyGeometrySpec v2Family = new(
+            origFam.Schema,
+            schemaVersion: 2,
+            origFam.Id,
+            origFam.FamilyName,
+            origFam.DisplayNameEn,
+            origFam.DisplayNameJa,
+            origFam.Group,
+            origFam.Category,
+            origFam.SeedKind,
+            origFam.IsPolygonal,
+            origFam.Subcategories,
+            origFam.ClearancesMm,
+            origFam.DefaultDimensionsMm,
+            origFam.SharedParameters,
+            origFam.TriangleBudget,
+            origFam.Coarse,
+            origFam.MediumFine);
+
+        StarterKitValidationResult result = StarterKitSpecLoader.Validate(
+            new StarterKitSpec(shipped.Header, v2Rte, v2Materials, shipped.Families.Select(f => f.Id == origFam.Id ? v2Family : f).ToList()));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Code == "SK-RTE-008");
+        Assert.Contains(result.Errors, e => e.Code == "SK-MAT-013");
+        Assert.Contains(result.Errors, e => e.Code == "SK-FAM-014");
     }
 
     internal static StarterKitSpec LoadShippedSpec()

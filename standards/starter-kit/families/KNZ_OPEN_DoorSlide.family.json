@@ -88,12 +88,30 @@
         "sizeMm": [828, 48, 2096]
       },
       {
+        "op": "void",
+        "name": "glazing_cut_left",
+        "shape": "box",
+        "throughCut": true,
+        "targetOp": "leaf_frame_left",
+        "originMm": [148, 76, 240],
+        "sizeMm": [668, 48, 1740]
+      },
+      {
         "op": "box",
         "name": "leaf_frame_right",
         "subcategory": "K_Body",
         "materialRef": "K3D_Body",
         "originMm": [904, 76, 4],
         "sizeMm": [828, 48, 2096]
+      },
+      {
+        "op": "void",
+        "name": "glazing_cut_right",
+        "shape": "box",
+        "throughCut": true,
+        "targetOp": "leaf_frame_right",
+        "originMm": [984, 76, 240],
+        "sizeMm": [668, 48, 1740]
       },
       {
         "op": "box",

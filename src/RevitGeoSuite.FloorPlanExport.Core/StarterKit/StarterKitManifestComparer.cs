@@ -271,7 +271,9 @@ public static class StarterKitManifestComparer
         CompareScalar("viewTemplates", expected.Name, "detailLevel", expected.DetailLevel, actual.DetailLevel, findings);
         CompareScalar("viewTemplates", expected.Name, "isCanonical2DExport", expected.IsCanonical2DExport.ToString(), actual.IsCanonical2DExport.ToString(), findings);
         CompareScalar("viewTemplates", expected.Name, "hasVisibilityHidingFilters", expected.HasVisibilityHidingFilters.ToString(), actual.HasVisibilityHidingFilters.ToString(), findings);
+        CompareScalar("viewTemplates", expected.Name, "hideNonGisLineStyles", expected.HideNonGisLineStyles.ToString(), actual.HideNonGisLineStyles.ToString(), findings);
         CompareStringList("viewTemplates", expected.Name, "filterNames", expected.FilterNames, actual.FilterNames, findings);
+        CompareStringList("viewTemplates", expected.Name, "hideSubcategories", expected.HideSubcategories, actual.HideSubcategories, findings);
     }
 
     private static void CompareQaFilter(
@@ -362,7 +364,21 @@ public static class StarterKitManifestComparer
         }
         else
         {
-            if (actual.CoarseTriangles > expected.CoarseTriangleBudget)
+            if (actual.CoarseTriangles < 0 || (expected.HasCoarseKFootprint && actual.CoarseTriangles <= 0))
+            {
+                string expectedRange = expected.HasCoarseKFootprint
+                    ? $"1..{expected.CoarseTriangleBudget}"
+                    : $"0..{expected.CoarseTriangleBudget}";
+                findings.Add(new ManifestDiffFinding(
+                    ManifestDiffKind.Mismatch,
+                    "families",
+                    expected.Id,
+                    "coarseTriangles",
+                    expectedRange,
+                    actual.CoarseTriangles.ToString(CultureInfo.InvariantCulture),
+                    $"Family '{expected.Id}' coarse triangles ({actual.CoarseTriangles}) must be in {expectedRange}."));
+            }
+            else if (actual.CoarseTriangles > expected.CoarseTriangleBudget)
             {
                 findings.Add(new ManifestDiffFinding(
                     ManifestDiffKind.Mismatch,
@@ -374,7 +390,18 @@ public static class StarterKitManifestComparer
                     $"Family '{expected.Id}' coarse triangles ({actual.CoarseTriangles}) exceed budget ({expected.CoarseTriangleBudget})."));
             }
 
-            if (actual.MediumFineTriangles > expected.MediumFineTriangleBudget)
+            if (actual.MediumFineTriangles <= 0)
+            {
+                findings.Add(new ManifestDiffFinding(
+                    ManifestDiffKind.Mismatch,
+                    "families",
+                    expected.Id,
+                    "mediumFineTriangles",
+                    $"1..{expected.MediumFineTriangleBudget}",
+                    actual.MediumFineTriangles.ToString(CultureInfo.InvariantCulture),
+                    $"Family '{expected.Id}' mediumFine triangles ({actual.MediumFineTriangles}) must be > 0 and <= {expected.MediumFineTriangleBudget}."));
+            }
+            else if (actual.MediumFineTriangles > expected.MediumFineTriangleBudget)
             {
                 findings.Add(new ManifestDiffFinding(
                     ManifestDiffKind.Mismatch,
@@ -408,6 +435,17 @@ public static class StarterKitManifestComparer
             {
                 expectedMap[key] = item;
             }
+            else
+            {
+                findings.Add(new ManifestDiffFinding(
+                    ManifestDiffKind.Unexpected,
+                    section,
+                    key,
+                    "entry",
+                    "unique key",
+                    key,
+                    $"Duplicate entry '{key}' in expected manifest section '{section}'."));
+            }
         }
 
         Dictionary<string, T> actualMap = new(StringComparer.Ordinal);
@@ -417,6 +455,17 @@ public static class StarterKitManifestComparer
             if (!actualMap.ContainsKey(key))
             {
                 actualMap[key] = item;
+            }
+            else
+            {
+                findings.Add(new ManifestDiffFinding(
+                    ManifestDiffKind.Unexpected,
+                    section,
+                    key,
+                    "entry",
+                    "unique key",
+                    key,
+                    $"Duplicate entry '{key}' in actual manifest section '{section}'."));
             }
         }
 
