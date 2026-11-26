@@ -119,7 +119,8 @@ public static class FamilyBuilder
         FamilyGeometrySpec familySpec,
         StarterKitSpec kitSpec,
         FamilyBuildOptions options,
-        StarterKitReferenceStandards? standards = null)
+        StarterKitReferenceStandards? standards = null,
+        string? defaultTypeNameOverride = null)
     {
         if (application is null)
         {
@@ -173,10 +174,15 @@ public static class FamilyBuilder
                     EnsureFamilyCategory(familyDoc, familySpec, log);
                     Dictionary<string, Category> subcategories = EnsureSubcategories(familyDoc, plan.Subcategories, log);
                     Dictionary<string, ElementId> materialIds = EnsureMaterials(familyDoc, plan.RequiredMaterials, log);
-                    EnsureDefaultFamilyType(familyDoc, familySpec.FamilyName);
+                    string targetTypeName = string.IsNullOrWhiteSpace(defaultTypeNameOverride)
+                        ? familySpec.FamilyName
+                        : defaultTypeNameOverride!.Trim();
+                    EnsureDefaultFamilyType(familyDoc, targetTypeName, forceTypeName: !string.IsNullOrWhiteSpace(defaultTypeNameOverride));
+                    // Remove pre-existing seed trim GenericForms BEFORE flexing Width/Height so large spans
+                    // (e.g. KNZ_OPEN_Shutter 3000 x 2800 mm) flex only the preserved host Wall + Opening cut.
+                    RemoveSeedGenericForms(familyDoc, log);
                     EnsureDimensionParameters(familyDoc, familySpec, plan.DimensionParameters, log);
                     BindSharedParameters(application, familyDoc, plan.SharedParameters, log);
-                    RemoveSeedGenericForms(familyDoc, log);
                     SynchronizeWallHostedDoorSeed(familyDoc, plan, log);
                     CreateGeometryPrimitives(familyDoc, plan, subcategories, materialIds, log);
 
@@ -248,93 +254,15 @@ public static class FamilyBuilder
     /// <summary>Resolves the <c>.rft</c> seed template path for a Starter Kit family spec.</summary>
     public static string ResolveSeedTemplatePath(FamilyGeometrySpec familySpec, FamilyBuildOptions options)
     {
-        if (options.CustomSeedPaths.TryGetValue(familySpec.Id, out string? byId) && !string.IsNullOrWhiteSpace(byId))
+        if (options is null)
         {
-            return VerifySeedExists(byId!, familySpec.Id);
+            throw new ArgumentNullException(nameof(options));
         }
 
-        if (options.CustomSeedPaths.TryGetValue(familySpec.Category, out string? byCategory) && !string.IsNullOrWhiteSpace(byCategory))
-        {
-            return VerifySeedExists(byCategory!, familySpec.Id);
-        }
-
-        string[] candidateNames = CandidateTemplateFileNames(familySpec);
-        foreach (string fileName in candidateNames)
-        {
-            string candidate = Path.Combine(options.SeedTemplatesDirectory, fileName);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        throw new FileNotFoundException(
-            $"Could not find a seed .rft template for '{familySpec.Id}' ({familySpec.Category}) in '{options.SeedTemplatesDirectory}'. Tried: {string.Join(", ", candidateNames)}.");
-    }
-
-    private static string[] CandidateTemplateFileNames(FamilyGeometrySpec familySpec)
-    {
-        if (string.Equals(familySpec.SeedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal) ||
-            string.Equals(familySpec.Category, nameof(BuiltInCategory.OST_Doors), StringComparison.Ordinal))
-        {
-            return new[]
-            {
-                "Metric Door.rft",
-                "Door.rft",
-                "ドア(メートル単位).rft",
-            };
-        }
-
-        if (string.Equals(familySpec.Category, nameof(BuiltInCategory.OST_SpecialityEquipment), StringComparison.Ordinal))
-        {
-            return new[]
-            {
-                "Metric Specialty Equipment.rft",
-                "Specialty Equipment.rft",
-                "Metric Generic Model.rft",
-                "Generic Model.rft",
-            };
-        }
-
-        if (string.Equals(familySpec.Category, nameof(BuiltInCategory.OST_MechanicalEquipment), StringComparison.Ordinal))
-        {
-            return new[]
-            {
-                "Metric Mechanical Equipment.rft",
-                "Mechanical Equipment.rft",
-                "Metric Generic Model.rft",
-                "Generic Model.rft",
-            };
-        }
-
-        if (string.Equals(familySpec.Category, nameof(BuiltInCategory.OST_Columns), StringComparison.Ordinal))
-        {
-            return new[]
-            {
-                "Metric Column.rft",
-                "Column.rft",
-                "Metric Generic Model.rft",
-                "Generic Model.rft",
-            };
-        }
-
-        return new[]
-        {
-            "Metric Generic Model.rft",
-            "Generic Model.rft",
-            "一般モデル(メートル単位).rft",
-        };
-    }
-
-    private static string VerifySeedExists(string path, string familyId)
-    {
-        string full = Path.GetFullPath(path);
-        if (!File.Exists(full))
-        {
-            throw new FileNotFoundException($"Configured seed .rft for '{familyId}' was not found at '{full}'.", full);
-        }
-
-        return full;
+        return StarterKitSeedTemplateResolver.ResolveSeedTemplatePath(
+            familySpec,
+            options.SeedTemplatesDirectory,
+            options.CustomSeedPaths);
     }
 
     private static void EnsureFamilyCategory(Document familyDoc, FamilyGeometrySpec familySpec, List<string> log)
@@ -428,13 +356,30 @@ public static class FamilyBuilder
         return ids;
     }
 
-    private static void EnsureDefaultFamilyType(Document familyDoc, string defaultTypeName)
+    private static void EnsureDefaultFamilyType(Document familyDoc, string defaultTypeName, bool forceTypeName = false)
     {
         FamilyManager manager = familyDoc.FamilyManager;
         if (manager.CurrentType == null || string.IsNullOrWhiteSpace(manager.CurrentType.Name))
         {
             manager.CurrentType = manager.NewType(defaultTypeName);
+            return;
         }
+
+        if (!forceTypeName || string.Equals(manager.CurrentType.Name, defaultTypeName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        foreach (FamilyType ft in manager.Types)
+        {
+            if (ft != null && string.Equals(ft.Name, defaultTypeName, StringComparison.Ordinal))
+            {
+                manager.CurrentType = ft;
+                return;
+            }
+        }
+
+        manager.CurrentType = manager.NewType(defaultTypeName);
     }
 
     private static void EnsureDimensionParameters(

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
@@ -403,6 +404,142 @@ public sealed class T7OpeningsFixturesColumnsPoiTests
         Assert.False(roundReport.Passed);
         Assert.Contains(roundReport.FindingsByRule[RfaLinter.RuleCirculationContract], f => f.Subject == "Diameter");
         Assert.Contains(roundReport.FindingsByRule[RfaLinter.RuleCirculationContract], f => f.Subject == "coarseTriangles");
+        Assert.Contains(
+            roundReport.FindingsByRule[RfaLinter.RuleCirculationContract],
+            f => f.Subject == "Diameter" && f.MessageEn.StartsWith("Column family", StringComparison.Ordinal));
+
+        // Verify fixture diagnostic wording says "Fixture family", never "Circulation family"
+        Assert.Contains(
+            gateReport.FindingsByRule[RfaLinter.RuleCirculationContract],
+            f => f.Subject == GisSharedParameters.GisFixtureType && f.MessageEn.StartsWith("Fixture family", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TicketGateBankVariantPlan_PreservesG2CanonicalFamilyNameDistinguishesTypeAndOutputDirAndRejectsUnregisteredOverride()
+    {
+        StarterKitSpec kit = StarterKitSpecLoaderTests.LoadShippedSpec();
+        FamilyGeometrySpec baseSpec = kit.FindFamily(StarterKitCatalogSelector.TicketGateBankId)!;
+        string baseOutDir = Path.Combine(Path.GetTempPath(), "knz-t7-variant-test");
+
+        StarterKitVariantPlan variant5 = StarterKitArrayExpander.PlanTicketGateBankVariant(baseSpec, laneCount: 5, baseOutDir);
+        Assert.Equal("KNZ_FIX_TicketGateBank", variant5.Spec.FamilyName);
+        Assert.Equal("5-Lane", variant5.TypeName);
+        Assert.EndsWith(
+            Path.Combine("variants", "ticket-gate-5lane", "KNZ_FIX_TicketGateBank.rfa"),
+            variant5.OutputFilePath,
+            StringComparison.Ordinal);
+        Assert.NotEqual(
+            Path.GetFullPath(Path.Combine(baseOutDir, "KNZ_FIX_TicketGateBank.rfa")),
+            variant5.OutputFilePath);
+
+        // Built plan passes all 13 RfaLinter rules under strict G2 standards/families.json enforcement
+        FamilyGeometryPlan plan = FamilyGeometryPlanBuilder.Build(variant5.Spec, kit);
+        RfaLintReport report = RfaLinter.Lint(plan.BuildExpectedSnapshot(180 * 1024), variant5.Spec, kit);
+        Assert.True(report.Passed, string.Join("\n", report.Findings.Select(f => f.ToString())));
+
+        // Unregistered familyNameOverride is rejected upfront with an explicit G2 diagnostic
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            StarterKitArrayExpander.ExpandTicketGateBank(baseSpec, laneCount: 5, familyNameOverride: "KNZ_FIX_TicketGateBank_5Lane"));
+        Assert.Contains("standards/families.json", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("KNZ_FIX_TicketGateBank", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StarterKitCatalogBuildOptionsDefault_ReturnsFreshIsolatedInstanceEachCall()
+    {
+        StarterKitCatalogBuildOptions first = StarterKitCatalogBuildOptions.Default;
+        Assert.True(first.IncludeOptionalFamilies);
+
+        first.IncludeOptionalFamilies = false;
+
+        StarterKitCatalogBuildOptions second = StarterKitCatalogBuildOptions.Default;
+        Assert.NotSame(first, second);
+        Assert.True(second.IncludeOptionalFamilies);
+    }
+
+    [Fact]
+    public void SeedTemplateResolver_ResolvesAll16FamiliesForJapaneseAndMinimalJapaneseTemplateFolders()
+    {
+        StarterKitSpec kit = StarterKitSpecLoaderTests.LoadShippedSpec();
+        string tempRoot = Path.Combine(Path.GetTempPath(), "knz-t7-jp-seeds-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Case 1: Full Japanese Revit Family Templates folder
+            string fullJpDir = Path.Combine(tempRoot, "JapaneseFull");
+            Directory.CreateDirectory(fullJpDir);
+            string[] fullJpFiles =
+            {
+                "ドア(メートル単位).rft",
+                "特殊設備(メートル単位).rft",
+                "機械設備(メートル単位).rft",
+                "柱(メートル単位).rft",
+                "一般モデル(メートル単位).rft",
+            };
+            foreach (string file in fullJpFiles)
+            {
+                File.WriteAllText(Path.Combine(fullJpDir, file), string.Empty);
+            }
+
+            foreach (FamilyGeometrySpec spec in kit.Families)
+            {
+                string resolved = StarterKitSeedTemplateResolver.ResolveSeedTemplatePath(spec, fullJpDir);
+                Assert.True(File.Exists(resolved), $"Failed to resolve Japanese seed for '{spec.Id}'.");
+            }
+
+            Assert.EndsWith("機械設備(メートル単位).rft", StarterKitSeedTemplateResolver.ResolveSeedTemplatePath(kit.FindFamily("KNZ_FIX_Equipment")!, fullJpDir));
+            Assert.EndsWith("特殊設備(メートル単位).rft", StarterKitSeedTemplateResolver.ResolveSeedTemplatePath(kit.FindFamily("KNZ_FIX_TicketGateBank")!, fullJpDir));
+            Assert.EndsWith("柱(メートル単位).rft", StarterKitSeedTemplateResolver.ResolveSeedTemplatePath(kit.FindFamily("KNZ_COL_Rect")!, fullJpDir));
+            Assert.EndsWith("ドア(メートル単位).rft", StarterKitSeedTemplateResolver.ResolveSeedTemplatePath(kit.FindFamily("KNZ_OPEN_Shutter")!, fullJpDir));
+
+            // Case 2: Minimal Japanese folder with only Door + Generic Model fallbacks
+            string minJpDir = Path.Combine(tempRoot, "JapaneseMinimal");
+            Directory.CreateDirectory(minJpDir);
+            File.WriteAllText(Path.Combine(minJpDir, "ドア(メートル単位).rft"), string.Empty);
+            File.WriteAllText(Path.Combine(minJpDir, "一般モデル(メートル単位).rft"), string.Empty);
+
+            foreach (FamilyGeometrySpec spec in kit.Families)
+            {
+                string resolved = StarterKitSeedTemplateResolver.ResolveSeedTemplatePath(spec, minJpDir);
+                string expectedFile = string.Equals(spec.SeedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal)
+                    ? "ドア(メートル単位).rft"
+                    : "一般モデル(メートル単位).rft";
+                Assert.EndsWith(expectedFile, resolved);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void CatalogSelector_TreatsPoiAsOptionalEvenWhenOmittedFromHeaderRegistry()
+    {
+        StarterKitSpec shipped = StarterKitSpecLoaderTests.LoadShippedSpec();
+        List<StarterKitFamilyRegistryEntry> headerWithoutPoi = shipped.Header.Families
+            .Where(f => !string.Equals(f.Id, StarterKitCatalogSelector.PoiFacilityMarkerId, StringComparison.Ordinal))
+            .ToList();
+        StarterKitHeaderSpec syntheticHeader = new(
+            shipped.Header.Schema,
+            shipped.Header.SchemaVersion,
+            shipped.Header.KitVersion,
+            shipped.Header.GisStandardVersion,
+            shipped.Header.SupportedRevitVersions,
+            shipped.Header.RteSpec,
+            shipped.Header.MaterialsSpec,
+            shipped.Header.Budgets,
+            Array.AsReadOnly(headerWithoutPoi.ToArray()));
+        StarterKitSpec syntheticSpec = new(syntheticHeader, shipped.Rte, shipped.Materials3D, shipped.Families);
+
+        IReadOnlyList<FamilyGeometrySpec> requiredOnly = StarterKitCatalogSelector.SelectCatalogSpecs(
+            syntheticSpec,
+            includeOptionalFamilies: false);
+
+        Assert.Equal(15, requiredOnly.Count);
+        Assert.DoesNotContain(requiredOnly, f => f.Id == StarterKitCatalogSelector.PoiFacilityMarkerId);
     }
 
     private static ExpectedManifest CloneManifestWithFamilies(

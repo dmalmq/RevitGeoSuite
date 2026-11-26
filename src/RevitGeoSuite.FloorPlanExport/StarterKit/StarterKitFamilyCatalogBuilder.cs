@@ -6,18 +6,6 @@ using RevitGeoSuite.FloorPlanExport.Core.StarterKit;
 
 namespace RevitGeoSuite.FloorPlanExport.StarterKit;
 
-/// <summary>Options controlling <see cref="StarterKitFamilyCatalogBuilder.BuildCatalog"/> runs.</summary>
-public sealed class StarterKitCatalogBuildOptions
-{
-    public static StarterKitCatalogBuildOptions Default { get; } = new();
-
-    /// <summary>
-    /// When true (default), includes optional Starter Kit families such as <c>KNZ_POI_FacilityMarker</c>
-    /// (building all 16 catalog families). When false, builds only the 15 required families.
-    /// </summary>
-    public bool IncludeOptionalFamilies { get; set; } = true;
-}
-
 /// <summary>
 /// Complete deterministic result of building and linting the full Starter Kit family catalog
 /// (Circulation + Openings + Fixtures &amp; Columns + optional POI) and emitting the canonical

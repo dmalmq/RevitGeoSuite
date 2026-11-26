@@ -73,14 +73,19 @@ public static class FixtureAndColumnFamilyBuilder
     }
 
     /// <summary>
-    /// Builds a parameterized <c>KNZ_FIX_TicketGateBank</c> variant expanded to <paramref name="laneCount"/> aisles.
+    /// Builds a G2-compliant parameterized <c>KNZ_FIX_TicketGateBank</c> variant expanded to
+    /// <paramref name="laneCount"/> aisles. Preserves the canonical G2-registered family name
+    /// <c>KNZ_FIX_TicketGateBank</c> (passing both <c>RfaLinter</c> and downstream <c>GisStandardCheck</c> /
+    /// <c>TemplateReadinessCheck</c>) and distinguishes variants via <c>FamilyType</c> (<c>{laneCount}-Lane</c>)
+    /// and a non-colliding output subdirectory (<c>variants/ticket-gate-{laneCount}lane/</c>).
     /// </summary>
     public static FamilyBuildResult BuildTicketGateBankVariant(
         Application application,
         StarterKitSpec kitSpec,
         FamilyBuildOptions options,
         int laneCount,
-        string? familyNameOverride = null,
+        string? typeNameOverride = null,
+        string? variantSubdirectory = null,
         StarterKitReferenceStandards? standards = null)
     {
         if (application is null)
@@ -100,18 +105,35 @@ public static class FixtureAndColumnFamilyBuilder
 
         FamilyGeometrySpec baseSpec = kitSpec.FindFamily(TicketGateBankId)
             ?? throw new InvalidOperationException($"Starter Kit spec is missing '{TicketGateBankId}'.");
-        FamilyGeometrySpec expanded = StarterKitArrayExpander.ExpandTicketGateBank(baseSpec, laneCount, familyNameOverride);
-        return FamilyBuilder.BuildFamily(application, expanded, kitSpec, options, standards);
+        StarterKitVariantPlan variant = StarterKitArrayExpander.PlanTicketGateBankVariant(
+            baseSpec,
+            laneCount,
+            options.OutputDirectory,
+            typeNameOverride,
+            variantSubdirectory,
+            standards);
+        FamilyBuildOptions variantOptions = CreateVariantBuildOptions(options, variant.OutputDirectory);
+        return FamilyBuilder.BuildFamily(
+            application,
+            variant.Spec,
+            kitSpec,
+            variantOptions,
+            standards,
+            defaultTypeNameOverride: variant.TypeName);
     }
 
     /// <summary>
-    /// Builds a parameterized <c>KNZ_FIX_BarrierFence</c> variant expanded to <paramref name="postCount"/> stanchion posts.
+    /// Builds a parameterized <c>KNZ_FIX_BarrierFence</c> variant expanded to <paramref name="postCount"/>
+    /// stanchion posts, distinguishing variants via <c>FamilyType</c> (<c>{postCount}-Post</c>) and a
+    /// non-colliding output subdirectory (<c>variants/barrier-fence-{postCount}post/</c>).
     /// </summary>
     public static FamilyBuildResult BuildBarrierFenceVariant(
         Application application,
         StarterKitSpec kitSpec,
         FamilyBuildOptions options,
         int postCount,
+        string? typeNameOverride = null,
+        string? variantSubdirectory = null,
         string? familyNameOverride = null,
         StarterKitReferenceStandards? standards = null)
     {
@@ -132,7 +154,29 @@ public static class FixtureAndColumnFamilyBuilder
 
         FamilyGeometrySpec baseSpec = kitSpec.FindFamily(BarrierFenceId)
             ?? throw new InvalidOperationException($"Starter Kit spec is missing '{BarrierFenceId}'.");
-        FamilyGeometrySpec expanded = StarterKitArrayExpander.ExpandBarrierFence(baseSpec, postCount, familyNameOverride);
-        return FamilyBuilder.BuildFamily(application, expanded, kitSpec, options, standards);
+        StarterKitVariantPlan variant = StarterKitArrayExpander.PlanBarrierFenceVariant(
+            baseSpec,
+            postCount,
+            options.OutputDirectory,
+            typeNameOverride,
+            variantSubdirectory,
+            familyNameOverride);
+        FamilyBuildOptions variantOptions = CreateVariantBuildOptions(options, variant.OutputDirectory);
+        return FamilyBuilder.BuildFamily(
+            application,
+            variant.Spec,
+            kitSpec,
+            variantOptions,
+            standards,
+            defaultTypeNameOverride: variant.TypeName);
     }
+
+    private static FamilyBuildOptions CreateVariantBuildOptions(FamilyBuildOptions source, string outputDirectory) =>
+        new(
+            source.SeedTemplatesDirectory,
+            outputDirectory,
+            source.SharedParametersFilePath,
+            source.OverwriteExisting,
+            source.LintBeforeReturn,
+            source.CustomSeedPaths);
 }

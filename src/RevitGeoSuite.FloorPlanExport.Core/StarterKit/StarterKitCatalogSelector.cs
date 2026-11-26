@@ -4,6 +4,22 @@ using System.Linq;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.StarterKit;
 
+/// <summary>
+/// Options controlling Starter Kit catalog selection and <c>StarterKitFamilyCatalogBuilder.BuildCatalog</c> runs.
+/// <see cref="Default"/> always returns a fresh instance so mutating one options object can never leak into
+/// subsequent catalog builds.
+/// </summary>
+public sealed class StarterKitCatalogBuildOptions
+{
+    public static StarterKitCatalogBuildOptions Default => new();
+
+    /// <summary>
+    /// When true (default), includes optional Starter Kit families such as <c>KNZ_POI_FacilityMarker</c>
+    /// (building all 16 catalog families). When false, builds only the 15 required families.
+    /// </summary>
+    public bool IncludeOptionalFamilies { get; set; } = true;
+}
+
 /// <summary>Result of compiling and linting a Starter Kit catalog selection in pure C# (offline/CI).</summary>
 public sealed class StarterKitCatalogPlanResult
 {
@@ -190,10 +206,9 @@ public static class StarterKitCatalogSelector
 
         foreach (string id in AllCatalogFamilyIds)
         {
-            if (registryById.TryGetValue(id, out StarterKitFamilyRegistryEntry? regEntry) &&
-                regEntry != null &&
-                regEntry.Optional &&
-                !includeOptionalFamilies)
+            registryById.TryGetValue(id, out StarterKitFamilyRegistryEntry? regEntry);
+            bool isOptional = regEntry?.Optional ?? string.Equals(id, PoiFacilityMarkerId, StringComparison.Ordinal);
+            if (isOptional && !includeOptionalFamilies)
             {
                 continue;
             }
@@ -201,7 +216,6 @@ public static class StarterKitCatalogSelector
             FamilyGeometrySpec? spec = kitSpec.FindFamily(id);
             if (spec == null)
             {
-                bool isOptional = regEntry?.Optional ?? string.Equals(id, PoiFacilityMarkerId, StringComparison.Ordinal);
                 if (!isOptional)
                 {
                     throw new InvalidOperationException($"Starter Kit spec is missing required catalog family '{id}'.");
