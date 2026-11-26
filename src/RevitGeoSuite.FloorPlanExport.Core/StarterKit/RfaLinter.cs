@@ -194,6 +194,39 @@ public static class RfaLinter
                 $"Family '{snapshot.FamilyName}' declares gis_kind '{gisKind}' but is not registered under '{gisKind}' in standards/families.json.",
                 $"ファミリ '{snapshot.FamilyName}' は gis_kind '{gisKind}' を宣言していますが、standards/families.json の '{gisKind}' に登録されていません。");
         }
+
+        if (string.Equals(spec.SeedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal))
+        {
+            if (!string.Equals(snapshot.SeedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal))
+            {
+                AddError(
+                    findings,
+                    RuleFamilyIdentity,
+                    "seedKind",
+                    $"Wall-hosted door family '{snapshot.FamilyName}' must use seedKind '{FamilyGeometrySpec.SeedWallHostedDoor}', found '{snapshot.SeedKind}'.",
+                    $"壁ホスト扉ファミリ '{snapshot.FamilyName}' は seedKind '{FamilyGeometrySpec.SeedWallHostedDoor}' である必要があります（現在: '{snapshot.SeedKind}'）。");
+            }
+
+            if (snapshot.HasHostWallCutOpening == false)
+            {
+                AddError(
+                    findings,
+                    RuleFamilyIdentity,
+                    "wallCutOpening",
+                    $"Wall-hosted door family '{snapshot.FamilyName}' is missing its host Wall or wall-cut Opening element.",
+                    $"壁ホスト扉ファミリ '{snapshot.FamilyName}' にホスト壁または壁開口部（Opening）要素が存在しません。");
+            }
+        }
+        else if (string.Equals(spec.SeedKind, FamilyGeometrySpec.SeedProcedural, StringComparison.Ordinal) &&
+                 string.Equals(snapshot.SeedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal))
+        {
+            AddError(
+                findings,
+                RuleFamilyIdentity,
+                "seedKind",
+                $"Procedural family '{snapshot.FamilyName}' must not use wall-hosted door seed '{snapshot.SeedKind}'.",
+                $"プロシージャルファミリ '{snapshot.FamilyName}' に壁ホスト扉シード '{snapshot.SeedKind}' は使用できません。");
+        }
     }
 
     private static void EvaluateRule002SharedParameters(
@@ -1117,6 +1150,58 @@ public static class RfaLinter
                 }
             }
         }
+
+        // Group-specific mandatory non-empty domain defaults for openings and fixtures
+        bool isOpeningDoor =
+            string.Equals(spec.Group, "openings", StringComparison.OrdinalIgnoreCase) ||
+            spec.Id.StartsWith("KNZ_OPEN_", StringComparison.Ordinal) ||
+            string.Equals(spec.Id, "KNZ_CIRC_ElevatorDoor", StringComparison.Ordinal);
+        if (isOpeningDoor)
+        {
+            RequireNonEmptyDomainParam(byName, GisSharedParameters.GisDoor, findings);
+            RequireNonEmptyDomainParam(byName, GisSharedParameters.GisOpeningCategory, findings);
+            RequireNonEmptyDomainParam(byName, GisSharedParameters.GisAccessCon, findings);
+        }
+
+        bool isFixture =
+            string.Equals(spec.Group, "fixtures", StringComparison.OrdinalIgnoreCase) ||
+            spec.Id.StartsWith("KNZ_FIX_", StringComparison.Ordinal);
+        if (isFixture)
+        {
+            RequireNonEmptyDomainParam(byName, GisSharedParameters.GisCategory, findings);
+            RequireNonEmptyDomainParam(byName, GisSharedParameters.GisFixtureType, findings);
+            if (string.Equals(spec.Id, "KNZ_FIX_TicketGateBank", StringComparison.Ordinal))
+            {
+                RequireNonEmptyDomainParam(byName, GisSharedParameters.GisKind, findings);
+            }
+        }
+    }
+
+    private static void RequireNonEmptyDomainParam(
+        Dictionary<string, RfaParameterSnapshot> byName,
+        string paramName,
+        List<RfaLintFinding> findings)
+    {
+        if (!byName.TryGetValue(paramName, out RfaParameterSnapshot? actual) || actual == null)
+        {
+            AddError(
+                findings,
+                RuleValidDomainDefaults,
+                paramName,
+                $"Required domain parameter '{paramName}' is missing from family parameters.",
+                $"必須ドメインパラメータ '{paramName}' がファミリパラメータに存在しません。");
+            return;
+        }
+
+        if (!GisStandardDomains.HasValue(actual.DefaultValue))
+        {
+            AddError(
+                findings,
+                RuleValidDomainDefaults,
+                paramName,
+                $"Required domain parameter '{paramName}' must declare a non-empty default value.",
+                $"必須ドメインパラメータ '{paramName}' には空でない既定値が必要です。");
+        }
     }
 
     private static void ValidateDomainValue(
@@ -1220,44 +1305,90 @@ public static class RfaLinter
         StarterKitReferenceStandards standards,
         List<RfaLintFinding> findings)
     {
+        Dictionary<string, RfaParameterSnapshot> byName = BuildParameterMap(snapshot);
+
         bool isCirculation =
             spec.Id.StartsWith("KNZ_CIRC_", StringComparison.Ordinal) ||
             string.Equals(spec.Group, "circulation", StringComparison.OrdinalIgnoreCase);
-        if (!isCirculation)
+        if (isCirculation)
         {
+            EvaluateCirculationGroupContract(spec, byName, standards, findings);
             return;
         }
 
-        Dictionary<string, RfaParameterSnapshot> byName = BuildParameterMap(snapshot);
+        bool isOpening =
+            spec.Id.StartsWith("KNZ_OPEN_", StringComparison.Ordinal) ||
+            string.Equals(spec.Group, "openings", StringComparison.OrdinalIgnoreCase);
+        if (isOpening)
+        {
+            EvaluateOpeningGroupContract(spec, byName, findings);
+            return;
+        }
+
+        bool isFixture =
+            spec.Id.StartsWith("KNZ_FIX_", StringComparison.Ordinal) ||
+            string.Equals(spec.Group, "fixtures", StringComparison.OrdinalIgnoreCase);
+        if (isFixture)
+        {
+            EvaluateFixtureGroupContract(snapshot, spec, byName, standards, findings);
+            return;
+        }
+
+        bool isColumn =
+            spec.Id.StartsWith("KNZ_COL_", StringComparison.Ordinal) ||
+            string.Equals(spec.Group, "columns", StringComparison.OrdinalIgnoreCase);
+        if (isColumn)
+        {
+            EvaluateColumnGroupContract(snapshot, spec, byName, findings);
+            return;
+        }
+
+        bool isPoi =
+            spec.Id.StartsWith("KNZ_POI_", StringComparison.Ordinal) ||
+            string.Equals(spec.Group, "poi", StringComparison.OrdinalIgnoreCase);
+        if (isPoi)
+        {
+            EvaluatePoiGroupContract(spec, byName, findings);
+        }
+    }
+
+    private static void EvaluateCirculationGroupContract(
+        FamilyGeometrySpec spec,
+        Dictionary<string, RfaParameterSnapshot> byName,
+        StarterKitReferenceStandards standards,
+        List<RfaLintFinding> findings)
+    {
+        const string groupEn = "Circulation";
+        const string groupJa = "縦動線";
 
         // Required dimensional parameters on every KNZ_CIRC_* family: Width, Length/Depth, Height (+ Rise for Escalator)
-        RequirePositiveDimensionParam(byName, new[] { "Width" }, "Width", findings);
+        RequirePositiveDimensionParam(byName, new[] { "Width" }, "Width", groupEn, groupJa, findings);
         if (string.Equals(spec.Id, "KNZ_CIRC_Escalator", StringComparison.Ordinal) ||
             string.Equals(spec.Id, "KNZ_CIRC_MovingWalkway", StringComparison.Ordinal))
         {
-            RequirePositiveDimensionParam(byName, new[] { "Length", "Depth" }, "Length", findings);
+            RequirePositiveDimensionParam(byName, new[] { "Length", "Depth" }, "Length", groupEn, groupJa, findings);
         }
         else
         {
-            RequirePositiveDimensionParam(byName, new[] { "Depth", "Length" }, "Depth/Length", findings);
+            RequirePositiveDimensionParam(byName, new[] { "Depth", "Length" }, "Depth/Length", groupEn, groupJa, findings);
         }
 
-        RequirePositiveDimensionParam(byName, new[] { "Height" }, "Height", findings);
+        RequirePositiveDimensionParam(byName, new[] { "Height" }, "Height", groupEn, groupJa, findings);
 
         if (string.Equals(spec.Id, "KNZ_CIRC_Escalator", StringComparison.Ordinal))
         {
-            RequirePositiveDimensionParam(byName, new[] { "Rise" }, "Rise", findings);
-            RequireCirculationMetadataValue(byName, GisSharedParameters.GisKind, "escalator", findings);
+            RequirePositiveDimensionParam(byName, new[] { "Rise" }, "Rise", groupEn, groupJa, findings);
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisKind, "escalator", groupEn, groupJa, findings);
             RequireCirculationDirection(byName, standards, findings);
         }
         else if (string.Equals(spec.Id, "KNZ_CIRC_MovingWalkway", StringComparison.Ordinal))
         {
-            RequireCirculationMetadataValue(byName, GisSharedParameters.GisKind, "moving_walkway", findings);
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisKind, "moving_walkway", groupEn, groupJa, findings);
             RequireCirculationDirection(byName, standards, findings);
         }
         else if (string.Equals(spec.Id, "KNZ_CIRC_Elevator", StringComparison.Ordinal))
         {
-            RequireCirculationMetadataValue(byName, GisSharedParameters.GisKind, "elevator", findings);
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisKind, "elevator", groupEn, groupJa, findings);
             if (!byName.TryGetValue(GisSharedParameters.GisLevelsServed, out RfaParameterSnapshot? levelsServed) || !levelsServed.IsInstance)
             {
                 AddError(
@@ -1270,7 +1401,9 @@ public static class RfaLinter
         }
         else if (string.Equals(spec.Id, "KNZ_CIRC_ElevatorDoor", StringComparison.Ordinal))
         {
-            RequireCirculationMetadataValue(byName, GisSharedParameters.GisDoor, "elevator", findings);
+            RequireDimensionSync(byName, "Width", spec.DefaultDimensionsMm.WidthMm, findings);
+            RequireDimensionSync(byName, "Height", spec.DefaultDimensionsMm.HeightMm, findings);
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisDoor, "elevator", groupEn, groupJa, findings);
             if (!byName.TryGetValue(GisSharedParameters.GisAccessCon, out RfaParameterSnapshot? accessCon) || accessCon.IsInstance)
             {
                 AddError(
@@ -1293,10 +1426,208 @@ public static class RfaLinter
         }
     }
 
+    private static void EvaluateOpeningGroupContract(
+        FamilyGeometrySpec spec,
+        Dictionary<string, RfaParameterSnapshot> byName,
+        List<RfaLintFinding> findings)
+    {
+        const string groupEn = "Opening";
+        const string groupJa = "開口部";
+
+        RequirePositiveDimensionParam(byName, new[] { "Width" }, "Width", groupEn, groupJa, findings);
+        RequirePositiveDimensionParam(byName, new[] { "Depth", "Length" }, "Depth", groupEn, groupJa, findings);
+        RequirePositiveDimensionParam(byName, new[] { "Height" }, "Height", groupEn, groupJa, findings);
+        RequireDimensionSync(byName, "Width", spec.DefaultDimensionsMm.WidthMm, findings);
+        RequireDimensionSync(byName, "Height", spec.DefaultDimensionsMm.HeightMm, findings);
+
+        RequireTypeParameter(byName, GisSharedParameters.GisDoor, findings);
+        RequireTypeParameter(byName, GisSharedParameters.GisOpeningCategory, findings);
+        RequireTypeParameter(byName, GisSharedParameters.GisAccessCon, findings);
+    }
+
+    private static void EvaluateFixtureGroupContract(
+        RfaInspectionSnapshot snapshot,
+        FamilyGeometrySpec spec,
+        Dictionary<string, RfaParameterSnapshot> byName,
+        StarterKitReferenceStandards standards,
+        List<RfaLintFinding> findings)
+    {
+        const string groupEn = "Fixture";
+        const string groupJa = "備品・設備";
+
+        RequirePositiveDimensionParam(byName, new[] { "Width" }, "Width", groupEn, groupJa, findings);
+        RequirePositiveDimensionParam(byName, new[] { "Depth", "Length" }, "Depth", groupEn, groupJa, findings);
+        RequirePositiveDimensionParam(byName, new[] { "Height" }, "Height", groupEn, groupJa, findings);
+
+        RequireTypeParameter(byName, GisSharedParameters.GisCategory, findings);
+        RequireTypeParameter(byName, GisSharedParameters.GisFixtureType, findings);
+
+        if (byName.TryGetValue(GisSharedParameters.GisCategory, out RfaParameterSnapshot? catParam) &&
+            catParam != null &&
+            !string.Equals((catParam.DefaultValue ?? string.Empty).Trim(), "fixture", StringComparison.Ordinal))
+        {
+            AddError(
+                findings,
+                RuleCirculationContract,
+                GisSharedParameters.GisCategory,
+                $"Fixture family '{spec.Id}' requires gis_category = 'fixture', found '{catParam.DefaultValue}'.",
+                $"備品・設備ファミリ '{spec.Id}' の gis_category は 'fixture' である必要があります（現在: '{catParam.DefaultValue}'）。");
+        }
+
+        if (string.Equals(spec.Id, "KNZ_FIX_TicketGateBank", StringComparison.Ordinal))
+        {
+            RequireTypeParameter(byName, GisSharedParameters.GisKind, findings);
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisKind, "ticket_gate", groupEn, groupJa, findings);
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisFixtureType, "turnstile", groupEn, groupJa, findings);
+            if (standards.FamiliesByGisKind.TryGetValue("ticket_gate", out IReadOnlySetLike? registered) &&
+                registered != null &&
+                !registered.Contains(snapshot.FamilyName))
+            {
+                AddError(
+                    findings,
+                    RuleCirculationContract,
+                    GisSharedParameters.GisKind,
+                    $"Ticket gate family '{snapshot.FamilyName}' must be registered under 'ticket_gate' in standards/families.json.",
+                    $"自動改札機ファミリ '{snapshot.FamilyName}' は standards/families.json の 'ticket_gate' に登録されている必要があります。");
+            }
+        }
+        else if (string.Equals(spec.Id, "KNZ_FIX_BarrierFence", StringComparison.Ordinal))
+        {
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisFixtureType, "wall", groupEn, groupJa, findings);
+        }
+        else if (string.Equals(spec.Id, "KNZ_FIX_Kiosk", StringComparison.Ordinal))
+        {
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisFixtureType, "kiosk", groupEn, groupJa, findings);
+        }
+        else if (string.Equals(spec.Id, "KNZ_FIX_Equipment", StringComparison.Ordinal))
+        {
+            RequireExpectedMetadataValue(byName, GisSharedParameters.GisFixtureType, "equipment", groupEn, groupJa, findings);
+        }
+    }
+
+    private static void EvaluateColumnGroupContract(
+        RfaInspectionSnapshot snapshot,
+        FamilyGeometrySpec spec,
+        Dictionary<string, RfaParameterSnapshot> byName,
+        List<RfaLintFinding> findings)
+    {
+        const string groupEn = "Column";
+        const string groupJa = "柱";
+
+        RequirePositiveDimensionParam(byName, new[] { "Width" }, "Width", groupEn, groupJa, findings);
+        RequirePositiveDimensionParam(byName, new[] { "Depth", "Length" }, "Depth", groupEn, groupJa, findings);
+        RequirePositiveDimensionParam(byName, new[] { "Height" }, "Height", groupEn, groupJa, findings);
+
+        if (string.Equals(spec.Id, "KNZ_COL_Round", StringComparison.Ordinal))
+        {
+            RequirePositiveDimensionParam(byName, new[] { "Diameter" }, "Diameter", groupEn, groupJa, findings);
+            RequireDimensionSync(byName, "Diameter", spec.DefaultDimensionsMm.WidthMm, findings);
+
+            if (Math.Abs(spec.DefaultDimensionsMm.WidthMm - spec.DefaultDimensionsMm.DepthMm) > 1.0)
+            {
+                AddError(
+                    findings,
+                    RuleCirculationContract,
+                    "Diameter",
+                    $"Round column '{spec.Id}' default Width ({spec.DefaultDimensionsMm.WidthMm} mm) and Depth ({spec.DefaultDimensionsMm.DepthMm} mm) must be equal.",
+                    $"円柱ファミリ '{spec.Id}' の既定 Width（{spec.DefaultDimensionsMm.WidthMm} mm）と Depth（{spec.DefaultDimensionsMm.DepthMm} mm）は一致する必要があります。");
+            }
+
+            // A radial nprism with >= 8 sides has >= 4*8 - 4 = 28 triangles in Coarse.
+            if (snapshot.CoarseTriangles < 28)
+            {
+                AddError(
+                    findings,
+                    RuleCirculationContract,
+                    "coarseTriangles",
+                    $"Round column '{spec.Id}' Coarse footprint must be a radial n-prism with at least 8 sides (>= 28 triangles), found {snapshot.CoarseTriangles}.",
+                    $"円柱ファミリ '{spec.Id}' の簡略フットプリントは 8 角形以上の多角柱（28 三角形以上）である必要があります（現在: {snapshot.CoarseTriangles}）。");
+            }
+        }
+    }
+
+    private static void EvaluatePoiGroupContract(
+        FamilyGeometrySpec spec,
+        Dictionary<string, RfaParameterSnapshot> byName,
+        List<RfaLintFinding> findings)
+    {
+        const string groupEn = "POI";
+        const string groupJa = "POI";
+
+        RequirePositiveDimensionParam(byName, new[] { "Width" }, "Width", groupEn, groupJa, findings);
+        RequirePositiveDimensionParam(byName, new[] { "Depth", "Length" }, "Depth", groupEn, groupJa, findings);
+        RequirePositiveDimensionParam(byName, new[] { "Height" }, "Height", groupEn, groupJa, findings);
+
+        if (spec.IsPolygonal)
+        {
+            AddError(
+                findings,
+                RuleCirculationContract,
+                "isPolygonal",
+                $"Optional POI marker family '{spec.Id}' must declare isPolygonal = false.",
+                $"任意 POI マーカーファミリ '{spec.Id}' は isPolygonal = false を宣言する必要があります。");
+        }
+    }
+
+    private static void RequireTypeParameter(
+        Dictionary<string, RfaParameterSnapshot> byName,
+        string paramName,
+        List<RfaLintFinding> findings)
+    {
+        if (!byName.TryGetValue(paramName, out RfaParameterSnapshot? param) || param == null || param.IsInstance)
+        {
+            AddError(
+                findings,
+                RuleCirculationContract,
+                paramName,
+                $"Family must bind type parameter '{paramName}'.",
+                $"ファミリにはタイプパラメータ '{paramName}' のバインドが必須です。");
+        }
+    }
+
+    private static void RequireDimensionSync(
+        Dictionary<string, RfaParameterSnapshot> byName,
+        string paramName,
+        double expectedMm,
+        List<RfaLintFinding> findings)
+    {
+        if (!byName.TryGetValue(paramName, out RfaParameterSnapshot? param) ||
+            param == null ||
+            !param.NumericValueMm.HasValue ||
+            !IsFinite(param.NumericValueMm.Value))
+        {
+            return;
+        }
+
+        if (Math.Abs(param.NumericValueMm.Value - expectedMm) > BottomFaceZToleranceMm)
+        {
+            AddError(
+                findings,
+                RuleCirculationContract,
+                paramName,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Dimensional parameter '{0}' ({1:0.##} mm) does not match spec default ({2:0.##} mm within +/-{3:0.##} mm).",
+                    paramName,
+                    param.NumericValueMm.Value,
+                    expectedMm,
+                    BottomFaceZToleranceMm),
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "寸法パラメータ '{0}'（{1:0.##} mm）が仕様既定値（{2:0.##} mm、許容 +/-{3:0.##} mm）と一致しません。",
+                    paramName,
+                    param.NumericValueMm.Value,
+                    expectedMm,
+                    BottomFaceZToleranceMm));
+        }
+    }
+
     private static void RequirePositiveDimensionParam(
         Dictionary<string, RfaParameterSnapshot> byName,
         string[] candidateNames,
         string displayName,
+        string familyGroupEn,
+        string familyGroupJa,
         List<RfaLintFinding> findings)
     {
         foreach (string name in candidateNames)
@@ -1315,8 +1646,8 @@ public static class RfaLinter
                     findings,
                     RuleCirculationContract,
                     name,
-                    $"Circulation dimensional parameter '{name}' must have a finite positive length in mm.",
-                    $"縦動線ファミリの寸法パラメータ '{name}' は正の有限値（mm）である必要があります。");
+                    $"{familyGroupEn} dimensional parameter '{name}' must have a finite positive length in mm.",
+                    $"{familyGroupJa}ファミリの寸法パラメータ '{name}' は正の有限値（mm）である必要があります。");
                 return;
             }
         }
@@ -1325,14 +1656,16 @@ public static class RfaLinter
             findings,
             RuleCirculationContract,
             displayName,
-            $"Circulation family is missing required dimensional parameter '{displayName}'.",
-            $"縦動線ファミリに必須寸法パラメータ '{displayName}' が存在しません。");
+            $"{familyGroupEn} family is missing required dimensional parameter '{displayName}'.",
+            $"{familyGroupJa}ファミリに必須寸法パラメータ '{displayName}' が存在しません。");
     }
 
-    private static void RequireCirculationMetadataValue(
+    private static void RequireExpectedMetadataValue(
         Dictionary<string, RfaParameterSnapshot> byName,
         string paramName,
         string expectedValue,
+        string familyGroupEn,
+        string familyGroupJa,
         List<RfaLintFinding> findings)
     {
         if (!byName.TryGetValue(paramName, out RfaParameterSnapshot? param) ||
@@ -1344,8 +1677,8 @@ public static class RfaLinter
                 findings,
                 RuleCirculationContract,
                 paramName,
-                $"Circulation family requires '{paramName}' = '{expectedValue}', found '{actual}'.",
-                $"縦動線ファミリには '{paramName}' = '{expectedValue}' が必要です（現在値: '{actual}'）。");
+                $"{familyGroupEn} family requires '{paramName}' = '{expectedValue}', found '{actual}'.",
+                $"{familyGroupJa}ファミリには '{paramName}' = '{expectedValue}' が必要です（現在値: '{actual}'）。");
         }
     }
 

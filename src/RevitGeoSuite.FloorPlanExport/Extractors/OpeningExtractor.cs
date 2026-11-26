@@ -414,9 +414,23 @@ public sealed class OpeningExtractor
             XYZ center = locationPoint.Point;
             double widthFeet = GetOpeningWidthFeet(opening);
             XYZ axis = GetOpeningAxis(opening);
-            XYZ start = center - (axis * (widthFeet * 0.5d));
-            XYZ end = center + (axis * (widthFeet * 0.5d));
-            return TryCreateLineString(new[] { start, end }, out lineString);
+            (Point2D start2d, Point2D end2d) = OpeningGeometryHelper.ComputeCenterlineEndpoints(
+                new Point2D(center.X, center.Y),
+                widthFeet,
+                new Point2D(axis.X, axis.Y),
+                canonicalizeOrder: false);
+            Point2D projectedStart = ProjectPoint(new XYZ(start2d.X, start2d.Y, center.Z));
+            Point2D projectedEnd = ProjectPoint(new XYZ(end2d.X, end2d.Y, center.Z));
+            if (IsSamePoint(projectedStart, projectedEnd))
+            {
+                return false;
+            }
+
+            (Point2D canonicalStart, Point2D canonicalEnd) = OpeningGeometryHelper.CanonicalizeSegmentOrder(
+                projectedStart,
+                projectedEnd);
+            lineString = new LineString2D(new[] { canonicalStart, canonicalEnd });
+            return true;
         }
 
         BoundingBoxXYZ? box = opening.get_BoundingBox(null);
@@ -594,11 +608,25 @@ public sealed class OpeningExtractor
         {
             return 0d;
         }
-        return parameter.AsDouble();
+
+        double value = parameter.AsDouble();
+        return !double.IsNaN(value) && !double.IsInfinity(value) ? value : 0d;
     }
 
     private static double TryReadWidthFromElement(Element element)
     {
+        double builtInWidth = TryReadWidth(element.get_Parameter(BuiltInParameter.DOOR_WIDTH));
+        if (builtInWidth > 1e-6d)
+        {
+            return builtInWidth;
+        }
+
+        builtInWidth = TryReadWidth(element.get_Parameter(BuiltInParameter.FAMILY_WIDTH_PARAM));
+        if (builtInWidth > 1e-6d)
+        {
+            return builtInWidth;
+        }
+
         for (int i = 0; i < OpeningWidthParameterNames.Length; i++)
         {
             double width = TryReadWidth(element.LookupParameter(OpeningWidthParameterNames[i]));
@@ -613,20 +641,10 @@ public sealed class OpeningExtractor
 
     private static XYZ GetOpeningAxis(FamilyInstance opening)
     {
-        XYZ axis = new XYZ(opening.HandOrientation.X, opening.HandOrientation.Y, 0d);
-        if (axis.GetLength() > 1e-6d)
-        {
-            return axis.Normalize();
-        }
-
+        XYZ hand = opening.HandOrientation;
         XYZ facing = opening.FacingOrientation;
-        XYZ perpendicular = new XYZ(-facing.Y, facing.X, 0d);
-        if (perpendicular.GetLength() > 1e-6d)
-        {
-            return perpendicular.Normalize();
-        }
-
-        return XYZ.BasisX;
+        Point2D axis = OpeningGeometryHelper.ResolveOpeningAxis2D(hand.X, hand.Y, facing.X, facing.Y);
+        return new XYZ(axis.X, axis.Y, 0d);
     }
 
     private string GetOpeningCategory(FamilyInstance opening)

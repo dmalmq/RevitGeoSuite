@@ -86,6 +86,22 @@ public static class RevitRfaInspector
             ? FamilyGeometrySpec.SeedWallHostedDoor
             : FamilyGeometrySpec.SeedProcedural;
 
+        bool? hasHostWallCutOpening = null;
+        if (string.Equals(seedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal))
+        {
+            bool hasHostWall = new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(Wall))
+                .GetElementCount() > 0;
+            bool hasOpeningCut = new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(Opening))
+                .GetElementCount() > 0;
+            bool hasWallCuttingVoid = new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(GenericForm))
+                .Cast<GenericForm>()
+                .Any(f => !f.IsSolid && FamilyBuilder.CutsAnyHostWall(familyDoc, f));
+            hasHostWallCutOpening = hasHostWall && (hasOpeningCut || hasWallCuttingVoid);
+        }
+
         List<string> subcategories = new();
         if (familyCategory?.SubCategories != null)
         {
@@ -211,7 +227,8 @@ public static class RevitRfaInspector
             embeddedImageCount,
             nestedFamilies,
             maxNestingDepth,
-            typeParamValues);
+            typeParamValues,
+            hasHostWallCutOpening);
     }
 
     private static string ResolveFamilyName(Document familyDoc, Family? ownerFamily)
