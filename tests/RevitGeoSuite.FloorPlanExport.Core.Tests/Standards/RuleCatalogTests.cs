@@ -32,6 +32,14 @@ public sealed class RuleCatalogTests
     [InlineData("KZ-RFA-003")]
     [InlineData("KZ-RFA-004")]
     [InlineData("KZ-RFA-005")]
+    [InlineData("KZ-RFA-006")]
+    [InlineData("KZ-RFA-007")]
+    [InlineData("KZ-RFA-008")]
+    [InlineData("KZ-RFA-009")]
+    [InlineData("KZ-RFA-010")]
+    [InlineData("KZ-RFA-011")]
+    [InlineData("KZ-RFA-012")]
+    [InlineData("KZ-RFA-013")]
     [InlineData("KZ-ELEM-001")]
     [InlineData("KZ-ELEM-002")]
     [InlineData("KZ-ELEM-003")]
@@ -90,6 +98,22 @@ public sealed class RuleCatalogTests
         Assert.False(string.IsNullOrWhiteSpace(entry.Description));
         Assert.False(string.IsNullOrWhiteSpace(entry.TitleJa));
         Assert.False(string.IsNullOrWhiteSpace(entry.DescriptionJa));
+    }
+
+    [Fact]
+    public void DeepRfaLinterRules001To013HaveErrorSeverityAndBilingualMessages()
+    {
+        for (int i = 1; i <= 13; i++)
+        {
+            string ruleId = $"KZ-RFA-{i:000}";
+            RuleCatalogEntry entry = RuleCatalog.Lookup(ruleId);
+            Assert.Equal("family", entry.Group);
+            Assert.Equal(RuleSeverity.Error, entry.Severity);
+            Assert.False(string.IsNullOrWhiteSpace(entry.Title), $"{ruleId} missing English title.");
+            Assert.False(string.IsNullOrWhiteSpace(entry.Description), $"{ruleId} missing English description.");
+            Assert.False(string.IsNullOrWhiteSpace(entry.TitleJa), $"{ruleId} missing Japanese title.");
+            Assert.False(string.IsNullOrWhiteSpace(entry.DescriptionJa), $"{ruleId} missing Japanese description.");
+        }
     }
 
     [Fact]
