@@ -265,6 +265,7 @@ public static class ShowcaseGeometryPlanner
 
         Dictionary<string, ShowcaseLevel> levelsById = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ShowcaseLevel> levelsByFloorKey = new(StringComparer.OrdinalIgnoreCase);
+        List<ShowcaseLevel> knownElevationAnchors = new();
         foreach (ShowcaseLevel level in snapshot.Levels)
         {
             if (!levelsById.ContainsKey(level.LevelId))
@@ -276,7 +277,19 @@ public static class ShowcaseGeometryPlanner
             {
                 levelsByFloorKey[level.FloorKey] = level;
             }
+
+            if (level.TpM.HasValue && !double.IsNaN(level.TpM.Value) && !double.IsInfinity(level.TpM.Value))
+            {
+                knownElevationAnchors.Add(level);
+            }
         }
+
+        // Deterministic tie-breaking order: lowest anchor.Ordinal first, then ordinal-sorted LevelId.
+        knownElevationAnchors.Sort((a, b) =>
+        {
+            int cmp = a.Ordinal.CompareTo(b.Ordinal);
+            return cmp != 0 ? cmp : string.CompareOrdinal(a.LevelId, b.LevelId);
+        });
 
         List<ShowcaseElementPlan> elements = new();
         List<string> warnings = new();
@@ -292,7 +305,12 @@ public static class ShowcaseGeometryPlanner
 
             foreach (ShowcaseFeature feature in layer.Features)
             {
-                double levelElevationMeters = ResolveLevelElevationMeters(feature, levelsById, levelsByFloorKey, effectiveOptions);
+                double levelElevationMeters = ResolveLevelElevationMeters(
+                    feature,
+                    levelsById,
+                    levelsByFloorKey,
+                    knownElevationAnchors,
+                    effectiveOptions);
                 IReadOnlyList<ShowcaseExtrusionSolid> solids = BuildFeatureSolids(
                     layer.Kind,
                     feature,
@@ -378,6 +396,7 @@ public static class ShowcaseGeometryPlanner
         ShowcaseFeature feature,
         Dictionary<string, ShowcaseLevel> levelsById,
         Dictionary<string, ShowcaseLevel> levelsByFloorKey,
+        IReadOnlyList<ShowcaseLevel> knownElevationAnchors,
         ShowcaseGeometryPlanOptions options)
     {
         ShowcaseLevel? level = null;
@@ -392,7 +411,32 @@ public static class ShowcaseGeometryPlanner
 
         if (level != null)
         {
-            return level.TpM ?? (level.Ordinal * options.DefaultFloorHeightMeters);
+            if (level.TpM.HasValue)
+            {
+                return level.TpM.Value;
+            }
+
+            // Anchor missing elevations to the nearest known-elevation level by |level.Ordinal - anchor.Ordinal|
+            // (tie-breaking deterministically by lowest anchor.Ordinal, then ordinal-sorted LevelId).
+            if (knownElevationAnchors.Count > 0)
+            {
+                ShowcaseLevel bestAnchor = knownElevationAnchors[0];
+                decimal bestDistance = Math.Abs((decimal)level.Ordinal - bestAnchor.Ordinal);
+                for (int i = 1; i < knownElevationAnchors.Count; i++)
+                {
+                    ShowcaseLevel candidate = knownElevationAnchors[i];
+                    decimal distance = Math.Abs((decimal)level.Ordinal - candidate.Ordinal);
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        bestAnchor = candidate;
+                    }
+                }
+
+                return bestAnchor.TpM!.Value + ((level.Ordinal - bestAnchor.Ordinal) * options.DefaultFloorHeightMeters);
+            }
+
+            return level.Ordinal * options.DefaultFloorHeightMeters;
         }
 
         if (feature.Geometry is ShowcasePointGeometry pt && pt.Z.HasValue)

@@ -259,6 +259,154 @@ public sealed class ShowcaseGeometryPlannerTests
         Assert.DoesNotContain(cleared, d => d.Guid == categoryDef.Guid);
     }
 
+    [Fact]
+    public void AnchorsMissingLevelElevationsToNearestKnownLevelWithDeterministicTieBreak()
+    {
+        ShowcasePolygonGeometry square = new(new IReadOnlyList<Point2D>[]
+        {
+            new[] { new Point2D(0, 0), new Point2D(5, 0), new Point2D(5, 5), new Point2D(0, 5), new Point2D(0, 0) },
+        });
+
+        ShowcaseLevel[] levels =
+        {
+            new("level:-1", "-1", -1, "B1F", null, ShowcaseElevationSource.Estimated),
+            new("level:0", "0", 0, "1F", 30.0d, ShowcaseElevationSource.Surveyed),
+            new("level:1", "1", 1, "2F", null, ShowcaseElevationSource.Estimated),
+            // Add a second anchor at ordinal 3 (TP 45.0) to test equidistant tie-break for ordinal 2 (|2-0|=2 vs |2-3|=1 -> 3 wins),
+            // and ordinal 4 (TP null) -> anchored to ordinal 3 (45.0 + 4.5 = 49.5).
+            new("level:2", "2", 2, "3F", null, ShowcaseElevationSource.Estimated),
+            new("level:3", "3", 3, "4F", 45.0d, ShowcaseElevationSource.Model),
+        };
+
+        ShowcaseLayer unitLayer = new(
+            "station_unit",
+            ShowcaseLayerKind.Unit,
+            new[] { new ShowcaseField("id", ShowcaseFieldType.Text) },
+            new[]
+            {
+                new ShowcaseFeature("u-b1", "level:-1", "-1", square, new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["id"] = ShowcaseAttributeValue.FromText("u-b1") }),
+                new ShowcaseFeature("u-1f", "level:0", "0", square, new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["id"] = ShowcaseAttributeValue.FromText("u-1f") }),
+                new ShowcaseFeature("u-2f", "level:1", "1", square, new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["id"] = ShowcaseAttributeValue.FromText("u-2f") }),
+                new ShowcaseFeature("u-3f", "level:2", "2", square, new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["id"] = ShowcaseAttributeValue.FromText("u-3f") }),
+                new ShowcaseFeature("u-4f", "level:3", "3", square, new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["id"] = ShowcaseAttributeValue.FromText("u-4f") }),
+            });
+
+        ShowcaseSnapshot snapshot = ShowcaseSnapshotReader.Parse(
+            ShowcaseSnapshotReaderTests.SerializeSnapshotWithValidHash(
+                scope: "mixed_elev",
+                basedOn: null,
+                writtenUtc: "2026-11-27T00:00:00Z",
+                kanizu: "0.9.0",
+                epsg: 6677,
+                levels: levels,
+                layers: new[] { unitLayer },
+                quarantined: Array.Empty<QuarantinedShowcaseFeature>()));
+
+        ShowcaseGeometryPlanResult plan = ShowcaseGeometryPlanner.Plan(snapshot, ShowcaseCoordinateTransform.Identity);
+
+        double ElevationMetersOf(string key) =>
+            ShowcaseCoordinateTransform.FeetToMeters(plan.Elements.Single(e => e.FeatureKey == key).Solids[0].BaseElevationFeet);
+
+        Assert.InRange(Math.Abs(ElevationMetersOf("u-b1") - 25.5d), 0d, 1e-6d); // 30.0 + (-1 - 0) * 4.5
+        Assert.InRange(Math.Abs(ElevationMetersOf("u-1f") - 30.0d), 0d, 1e-6d); // surveyed anchor
+        Assert.InRange(Math.Abs(ElevationMetersOf("u-2f") - 34.5d), 0d, 1e-6d); // 30.0 + (1 - 0) * 4.5 (nearest anchor is ordinal 0)
+        Assert.InRange(Math.Abs(ElevationMetersOf("u-3f") - 40.5d), 0d, 1e-6d); // 45.0 + (2 - 3) * 4.5 (nearest anchor is ordinal 3)
+        Assert.InRange(Math.Abs(ElevationMetersOf("u-4f") - 45.0d), 0d, 1e-6d); // model anchor
+
+        // Deterministic tie-break: equidistant between ordinal 0 (10.0) and ordinal 2 (20.0) picks lowest anchor.Ordinal (0 -> 14.5 m)
+        ShowcaseLevel[] tieLevels =
+        {
+            new("level:2", "2", 2, "3F", 20.0d, ShowcaseElevationSource.Surveyed),
+            new("level:0", "0", 0, "1F", 10.0d, ShowcaseElevationSource.Surveyed),
+            new("level:1", "1", 1, "2F", null, ShowcaseElevationSource.Estimated),
+        };
+        ShowcaseLayer tieLayer = new(
+            "tie_unit",
+            ShowcaseLayerKind.Unit,
+            new[] { new ShowcaseField("id", ShowcaseFieldType.Text) },
+            new[]
+            {
+                new ShowcaseFeature("u-mid", "level:1", "1", square, new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["id"] = ShowcaseAttributeValue.FromText("u-mid") }),
+            });
+        ShowcaseSnapshot tieSnapshot = ShowcaseSnapshotReader.Parse(
+            ShowcaseSnapshotReaderTests.SerializeSnapshotWithValidHash(
+                scope: "tie_elev",
+                basedOn: null,
+                writtenUtc: "2026-11-27T00:00:00Z",
+                kanizu: "0.9.0",
+                epsg: 6677,
+                levels: tieLevels,
+                layers: new[] { tieLayer },
+                quarantined: Array.Empty<QuarantinedShowcaseFeature>()));
+        ShowcaseGeometryPlanResult tiePlan = ShowcaseGeometryPlanner.Plan(tieSnapshot, ShowcaseCoordinateTransform.Identity);
+        double midMeters = ShowcaseCoordinateTransform.FeetToMeters(tiePlan.Elements.Single().Solids[0].BaseElevationFeet);
+        Assert.InRange(Math.Abs(midMeters - 14.5d), 0d, 1e-6d);
+    }
+
+    [Fact]
+    public void ReconcilerRecreatesOnRemovedRetypedOrNulledParametersAndUpdatesInPlaceOtherwise()
+    {
+        ShowcaseSnapshot snapshot = ShowcaseSnapshotReader.Parse(ShowcaseSnapshotReaderTests.BuildValidFullSnapshotJson());
+        ShowcaseGeometryPlanResult planResult = ShowcaseGeometryPlanner.Plan(snapshot, ShowcaseCoordinateTransform.Identity);
+        ShowcaseParameterRegistry registry = planResult.ParameterRegistry;
+        ShowcaseElementPlan unitPlan = planResult.Elements.Single(e => e.ApplicationDataId == "1F_unit:unit-001");
+
+        // All GUIDs currently populated on the refreshed unit-001 (nullable_note is null -> NOT in this list)
+        Guid[] targetPopulatedGuids = unitPlan.ParameterAssignments
+            .Where(a => !a.IsNull && !a.IsTextFallback)
+            .Select(a => a.Parameter.Guid)
+            .ToArray();
+
+        ShowcaseParameterDefinition nullableNoteDef = registry.FindDirectParameter(ShowcaseLayerKind.Unit, "nullable_note")!;
+        Guid removedColumnGuid = ShowcaseParameterRegistry.ComputeParameterGuid("shared", "removed_legacy_col", ShowcaseParameterDataType.Text);
+        Guid retypedOldGuid = ShowcaseParameterRegistry.ComputeParameterGuid("shared", "category", ShowcaseParameterDataType.Integer);
+
+        // 1. Normal non-null value edit (and already-unset nullable_note remains null): MUST UpdateInPlace!
+        ShowcaseExistingElementInfo normalExisting = new(2001L, "1F_unit:unit-001", "OST_Floors", targetPopulatedGuids);
+        ShowcaseReconciliationPlan normalRec = ShowcaseElementReconciler.BuildPlan(new[] { unitPlan }, new[] { normalExisting });
+        Assert.Equal(1, normalRec.UpdateInPlaceCount);
+        Assert.Equal(0, normalRec.ReplaceCount);
+        Assert.Equal(ShowcaseReconciliationActionKind.UpdateInPlace, normalRec.Steps.Single().Action);
+
+        // 2. Column removed from refreshed schema (not even in registry.AllParameters): MUST ReplaceParametersCleared!
+        ShowcaseExistingElementInfo removedColExisting = new(
+            2002L,
+            "1F_unit:unit-001",
+            "OST_Floors",
+            targetPopulatedGuids.Concat(new[] { removedColumnGuid }));
+        ShowcaseReconciliationPlan removedRec = ShowcaseElementReconciler.BuildPlan(new[] { unitPlan }, new[] { removedColExisting });
+        Assert.Equal(0, removedRec.UpdateInPlaceCount);
+        Assert.Equal(1, removedRec.ReplaceCount);
+        ShowcaseReconciliationStep removedStep = Assert.Single(removedRec.Steps);
+        Assert.Equal(ShowcaseReconciliationActionKind.ReplaceParametersCleared, removedStep.Action);
+        Assert.Contains(removedColumnGuid, removedStep.ClearedParameterGuids);
+        Assert.Contains(removedColumnGuid, ShowcaseElementReconciler.GetClearedParameterGuids(registry, unitPlan, removedColExisting));
+
+        // 3. Column retyped to a new UUIDv5 GUID (old integer GUID still populated on existing element): MUST ReplaceParametersCleared!
+        ShowcaseExistingElementInfo retypedExisting = new(
+            2003L,
+            "1F_unit:unit-001",
+            "OST_Floors",
+            targetPopulatedGuids.Concat(new[] { retypedOldGuid }));
+        ShowcaseReconciliationPlan retypedRec = ShowcaseElementReconciler.BuildPlan(new[] { unitPlan }, new[] { retypedExisting });
+        Assert.Equal(1, retypedRec.ReplaceCount);
+        ShowcaseReconciliationStep retypedStep = Assert.Single(retypedRec.Steps);
+        Assert.Equal(ShowcaseReconciliationActionKind.ReplaceParametersCleared, retypedStep.Action);
+        Assert.Contains(retypedOldGuid, retypedStep.ClearedParameterGuids);
+
+        // 4. Previously populated attribute changed to JSON null (nullable_note was populated, now null): MUST ReplaceParametersCleared!
+        ShowcaseExistingElementInfo nulledExisting = new(
+            2004L,
+            "1F_unit:unit-001",
+            "OST_Floors",
+            targetPopulatedGuids.Concat(new[] { nullableNoteDef.Guid }));
+        ShowcaseReconciliationPlan nulledRec = ShowcaseElementReconciler.BuildPlan(new[] { unitPlan }, new[] { nulledExisting });
+        Assert.Equal(1, nulledRec.ReplaceCount);
+        ShowcaseReconciliationStep nulledStep = Assert.Single(nulledRec.Steps);
+        Assert.Equal(ShowcaseReconciliationActionKind.ReplaceParametersCleared, nulledStep.Action);
+        Assert.Contains(nullableNoteDef.Guid, nulledStep.ClearedParameterGuids);
+    }
+
     private static Polygon ToNtsPolygon(ShowcaseExtrusionSolid solid)
     {
         GeometryFactory factory = new();

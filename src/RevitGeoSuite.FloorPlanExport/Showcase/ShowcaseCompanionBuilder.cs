@@ -315,6 +315,7 @@ public sealed class ShowcaseCompanionBuilder
                     }
 
                     case ShowcaseReconciliationActionKind.ReplaceCategoryChanged:
+                    case ShowcaseReconciliationActionKind.ReplaceParametersCleared:
                     {
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
                         ElementId existingId = new(step.ExistingElementId!.Value);
@@ -399,10 +400,37 @@ public sealed class ShowcaseCompanionBuilder
             }
 
             string categoryKey = ds.Category != null ? FormatCategoryKey(ds.Category.Id) : string.Empty;
-            existing.Add(new ShowcaseExistingElementInfo(ds.Id.Value, ds.ApplicationDataId ?? string.Empty, categoryKey));
+            List<Guid> populatedKsGuids = CollectPopulatedShowcaseParameterGuids(ds);
+            existing.Add(new ShowcaseExistingElementInfo(
+                ds.Id.Value,
+                ds.ApplicationDataId ?? string.Empty,
+                categoryKey,
+                populatedKsGuids));
         }
 
         return existing;
+    }
+
+    private static List<Guid> CollectPopulatedShowcaseParameterGuids(DirectShape directShape)
+    {
+        List<Guid> guids = new();
+        foreach (Parameter? param in directShape.Parameters)
+        {
+            if (param is null || !param.IsShared || !param.HasValue)
+            {
+                continue;
+            }
+
+            string? name = param.Definition?.Name;
+            if (!ShowcaseExportGuard.IsShowcaseParameterName(name))
+            {
+                continue;
+            }
+
+            guids.Add(param.GUID);
+        }
+
+        return guids;
     }
 
     private static string FormatCategoryKey(ElementId categoryId) =>
@@ -637,7 +665,7 @@ public sealed class ShowcaseCompanionBuilder
             directShape.Name = plan.ElementName;
             directShape.SetShape(geometries);
 
-            PopulateElementParameters(directShape, plan, registry, clearOmittedOrNullParameters: false, warnings);
+            PopulateElementParameters(directShape, plan, registry, warnings);
             subTransaction.Commit();
             return true;
         }
@@ -683,7 +711,7 @@ public sealed class ShowcaseCompanionBuilder
             directShape.Name = plan.ElementName;
             directShape.SetShape(geometries);
 
-            PopulateElementParameters(directShape, plan, registry, clearOmittedOrNullParameters: true, warnings);
+            PopulateElementParameters(directShape, plan, registry, warnings);
             subTransaction.Commit();
             return true;
         }
@@ -724,7 +752,7 @@ public sealed class ShowcaseCompanionBuilder
             directShape.Name = plan.ElementName;
             directShape.SetShape(geometries);
 
-            PopulateElementParameters(directShape, plan, registry, clearOmittedOrNullParameters: false, warnings);
+            PopulateElementParameters(directShape, plan, registry, warnings);
             document.Delete(existingElementId);
             subTransaction.Commit();
             return true;
@@ -736,7 +764,7 @@ public sealed class ShowcaseCompanionBuilder
                 subTransaction.RollBack();
             }
 
-            warnings.Add($"Failed to replace DirectShape '{plan.ApplicationDataId}' across category change: {ex.Message}");
+            warnings.Add($"Failed to replace DirectShape '{plan.ApplicationDataId}': {ex.Message}");
             return false;
         }
     }
@@ -840,12 +868,12 @@ public sealed class ShowcaseCompanionBuilder
         DirectShape directShape,
         ShowcaseElementPlan plan,
         ShowcaseParameterRegistry registry,
-        bool clearOmittedOrNullParameters,
         ICollection<string> warnings)
     {
         foreach (ShowcaseParameterAssignment assignment in plan.ParameterAssignments)
         {
-            // Leave explicit SQL/JSON NULL values unset on fresh shapes (in-place updates clear stale values below).
+            // Leave explicit SQL/JSON NULL values unset (reconciliation recreates the DirectShape whenever
+            // a previously populated ks_* parameter becomes null, omitted, removed from schema, or retyped).
             if (assignment.IsNull)
             {
                 continue;
@@ -906,16 +934,6 @@ public sealed class ShowcaseCompanionBuilder
             }
         }
 
-        if (clearOmittedOrNullParameters)
-        {
-            IReadOnlyList<ShowcaseParameterDefinition> toClear =
-                ShowcaseElementReconciler.GetParametersToClearOnUpdate(registry, plan);
-            foreach (ShowcaseParameterDefinition def in toClear)
-            {
-                ClearParameterIfPopulated(directShape, def, plan.ApplicationDataId, warnings);
-            }
-        }
-
         if (!string.IsNullOrEmpty(plan.OverflowAttributesJson))
         {
             Parameter? overflowParam = directShape.get_Parameter(registry.OverflowParameter.Guid);
@@ -940,53 +958,6 @@ public sealed class ShowcaseCompanionBuilder
                         $"Could not set overflow parameter '{registry.OverflowParameter.Name}' on '{plan.ApplicationDataId}': {ex.Message}");
                 }
             }
-        }
-    }
-
-    private static void ClearParameterIfPopulated(
-        DirectShape directShape,
-        ShowcaseParameterDefinition def,
-        string applicationDataId,
-        ICollection<string> warnings)
-    {
-        Parameter? param = directShape.get_Parameter(def.Guid);
-        if (param is null || param.IsReadOnly || !param.HasValue)
-        {
-            return;
-        }
-
-        try
-        {
-            switch (param.StorageType)
-            {
-                case StorageType.String:
-                    if (!string.IsNullOrEmpty(param.AsString()))
-                    {
-                        param.Set(string.Empty);
-                    }
-
-                    break;
-
-                case StorageType.Integer:
-                    if (param.AsInteger() != 0)
-                    {
-                        param.Set(0);
-                    }
-
-                    break;
-
-                case StorageType.Double:
-                    if (param.AsDouble() != 0d)
-                    {
-                        param.Set(0d);
-                    }
-
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            warnings.Add($"Could not clear stale parameter '{def.Name}' on '{applicationDataId}': {ex.Message}");
         }
     }
 
