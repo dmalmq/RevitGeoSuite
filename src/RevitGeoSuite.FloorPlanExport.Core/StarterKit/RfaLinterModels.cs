@@ -204,12 +204,14 @@ public sealed class RfaInspectionSnapshot
         int embeddedImageCount = 0,
         IEnumerable<RfaNestedFamilySnapshot>? nestedFamilies = null,
         int maxNestingDepth = 0,
-        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? typeParameterValues = null)
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? typeParameterValues = null,
+        bool? hasHostWallCutOpening = null)
     {
         FamilyName = familyName ?? string.Empty;
         Category = category ?? string.Empty;
         SeedKind = seedKind ?? string.Empty;
         FileSizeBytes = fileSizeBytes;
+        HasHostWallCutOpening = hasHostWallCutOpening;
         Subcategories = Array.AsReadOnly(
             (subcategories ?? Array.Empty<string>())
                 .Where(s => !string.IsNullOrWhiteSpace(s))
@@ -256,6 +258,13 @@ public sealed class RfaInspectionSnapshot
     public string Category { get; }
 
     public string SeedKind { get; }
+
+    /// <summary>
+    /// For wall-hosted door families (<c>seedKind == "wallHostedDoor"</c>), indicates whether the inspected
+    /// <c>.rfa</c> contains both a host <c>Wall</c> and a wall-cut <c>Opening</c> (or wall-cutting void).
+    /// Null when not applicable or not inspected.
+    /// </summary>
+    public bool? HasHostWallCutOpening { get; }
 
     public long? FileSizeBytes { get; }
 

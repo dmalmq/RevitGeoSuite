@@ -174,9 +174,10 @@ public static class FamilyBuilder
                     Dictionary<string, Category> subcategories = EnsureSubcategories(familyDoc, plan.Subcategories, log);
                     Dictionary<string, ElementId> materialIds = EnsureMaterials(familyDoc, plan.RequiredMaterials, log);
                     EnsureDefaultFamilyType(familyDoc, familySpec.FamilyName);
-                    EnsureDimensionParameters(familyDoc, plan.DimensionParameters, log);
+                    EnsureDimensionParameters(familyDoc, familySpec, plan.DimensionParameters, log);
                     BindSharedParameters(application, familyDoc, plan.SharedParameters, log);
                     RemoveSeedGenericForms(familyDoc, log);
+                    SynchronizeWallHostedDoorSeed(familyDoc, plan, log);
                     CreateGeometryPrimitives(familyDoc, plan, subcategories, materialIds, log);
 
                     familyDoc.Regenerate();
@@ -290,6 +291,17 @@ public static class FamilyBuilder
             {
                 "Metric Specialty Equipment.rft",
                 "Specialty Equipment.rft",
+                "Metric Generic Model.rft",
+                "Generic Model.rft",
+            };
+        }
+
+        if (string.Equals(familySpec.Category, nameof(BuiltInCategory.OST_MechanicalEquipment), StringComparison.Ordinal))
+        {
+            return new[]
+            {
+                "Metric Mechanical Equipment.rft",
+                "Mechanical Equipment.rft",
                 "Metric Generic Model.rft",
                 "Generic Model.rft",
             };
@@ -427,34 +439,122 @@ public static class FamilyBuilder
 
     private static void EnsureDimensionParameters(
         Document familyDoc,
+        FamilyGeometrySpec familySpec,
         IReadOnlyList<CompiledDimensionParameter> dimensionParameters,
         List<string> log)
     {
         FamilyManager manager = familyDoc.FamilyManager;
-        Dictionary<string, FamilyParameter> existing = new(StringComparer.Ordinal);
+        Dictionary<string, FamilyParameter> existingByName = new(StringComparer.Ordinal);
+        Dictionary<BuiltInParameter, FamilyParameter> existingByBuiltIn = new();
         foreach (FamilyParameter fp in manager.Parameters)
         {
-            if (fp?.Definition != null && !string.IsNullOrWhiteSpace(fp.Definition.Name) && !existing.ContainsKey(fp.Definition.Name))
+            if (fp?.Definition == null)
             {
-                existing[fp.Definition.Name] = fp;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(fp.Definition.Name) && !existingByName.ContainsKey(fp.Definition.Name))
+            {
+                existingByName[fp.Definition.Name] = fp;
+            }
+
+            if (fp.Definition is InternalDefinition internalDef &&
+                internalDef.BuiltInParameter != BuiltInParameter.INVALID &&
+                !existingByBuiltIn.ContainsKey(internalDef.BuiltInParameter))
+            {
+                existingByBuiltIn[internalDef.BuiltInParameter] = fp;
             }
         }
+
+        bool isWallHostedDoor = string.Equals(
+            familySpec.SeedKind,
+            FamilyGeometrySpec.SeedWallHostedDoor,
+            StringComparison.Ordinal);
 
         foreach (CompiledDimensionParameter dim in dimensionParameters)
         {
-            if (!existing.TryGetValue(dim.Name, out FamilyParameter? fp))
+            double internalFeet = UnitUtils.ConvertToInternalUnits(dim.ValueMm, UnitTypeId.Millimeters);
+
+            // For wall-hosted door seeds (including localized Metric Door.rft templates), synchronize the
+            // built-in door Width/Height parameters first so the seed's wall-cut Opening resizes accurately.
+            if (isWallHostedDoor)
+            {
+                if (string.Equals(dim.Name, "Width", StringComparison.Ordinal))
+                {
+                    TrySetBuiltInLengthParameter(manager, existingByBuiltIn, BuiltInParameter.DOOR_WIDTH, internalFeet);
+                    TrySetBuiltInLengthParameter(manager, existingByBuiltIn, BuiltInParameter.FAMILY_WIDTH_PARAM, internalFeet);
+                    TrySetBuiltInLengthParameter(manager, existingByBuiltIn, BuiltInParameter.FAMILY_ROUGH_WIDTH_PARAM, internalFeet);
+                }
+                else if (string.Equals(dim.Name, "Height", StringComparison.Ordinal))
+                {
+                    TrySetBuiltInLengthParameter(manager, existingByBuiltIn, BuiltInParameter.DOOR_HEIGHT, internalFeet);
+                    TrySetBuiltInLengthParameter(manager, existingByBuiltIn, BuiltInParameter.FAMILY_HEIGHT_PARAM, internalFeet);
+                    TrySetBuiltInLengthParameter(manager, existingByBuiltIn, BuiltInParameter.FAMILY_ROUGH_HEIGHT_PARAM, internalFeet);
+                }
+            }
+
+            if (!existingByName.TryGetValue(dim.Name, out FamilyParameter? fp))
             {
                 fp = manager.AddParameter(dim.Name, GroupTypeId.Geometry, SpecTypeId.Length, dim.IsInstance);
-                existing[dim.Name] = fp;
+                existingByName[dim.Name] = fp;
                 log.Add($"Added dimension parameter '{dim.Name}' = {dim.ValueMm} mm.");
             }
 
-            if (!fp.IsReadOnly && fp.StorageType == StorageType.Double)
+            if (!fp.IsReadOnly && !fp.IsDeterminedByFormula && fp.StorageType == StorageType.Double)
             {
-                double internalFeet = UnitUtils.ConvertToInternalUnits(dim.ValueMm, UnitTypeId.Millimeters);
                 manager.Set(fp, internalFeet);
             }
         }
+    }
+
+    private static void TrySetBuiltInLengthParameter(
+        FamilyManager manager,
+        Dictionary<BuiltInParameter, FamilyParameter> existingByBuiltIn,
+        BuiltInParameter builtInParam,
+        double valueFeet)
+    {
+        if (existingByBuiltIn.TryGetValue(builtInParam, out FamilyParameter? fp) &&
+            fp != null &&
+            !fp.IsReadOnly &&
+            !fp.IsDeterminedByFormula &&
+            fp.StorageType == StorageType.Double)
+        {
+            manager.Set(fp, valueFeet);
+        }
+    }
+
+    private static void SynchronizeWallHostedDoorSeed(
+        Document familyDoc,
+        FamilyGeometryPlan plan,
+        List<string> log)
+    {
+        if (!string.Equals(plan.Spec.SeedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        int hostWallCount = new FilteredElementCollector(familyDoc)
+            .OfClass(typeof(Wall))
+            .GetElementCount();
+        int openingCutCount = new FilteredElementCollector(familyDoc)
+            .OfClass(typeof(Opening))
+            .GetElementCount();
+        int wallCuttingVoidCount = new FilteredElementCollector(familyDoc)
+            .OfClass(typeof(GenericForm))
+            .Cast<GenericForm>()
+            .Count(f => !f.IsSolid && CutsAnyHostWall(familyDoc, f));
+
+        if (hostWallCount == 0 || (openingCutCount == 0 && wallCuttingVoidCount == 0))
+        {
+            throw new InvalidOperationException(
+                $"Wall-hosted door family '{plan.Spec.FamilyName}' requires a wall-hosted door seed (.rft) with a host Wall and wall-cut Opening (found {hostWallCount} Wall(s), {openingCutCount} Opening(s), {wallCuttingVoidCount} wall-cutting void(s)).");
+        }
+
+        // Regenerate after syncing Width/Height and stripping seed trim so the host wall-cut Opening
+        // reflects defaultDimensionsMm before procedural door frames, leaves, and K_Footprint are created.
+        familyDoc.Regenerate();
+        log.Add(
+            $"Synchronized wallHostedDoor seed ({hostWallCount} host Wall, {openingCutCount} Opening cut(s), {wallCuttingVoidCount} wall-cutting void(s)) to {plan.Spec.DefaultDimensionsMm.WidthMm} x {plan.Spec.DefaultDimensionsMm.HeightMm} mm.");
     }
 
     private static void BindSharedParameters(
@@ -537,7 +637,7 @@ public static class FamilyBuilder
         }
     }
 
-    private static bool CutsAnyHostWall(Document familyDoc, GenericForm voidForm)
+    internal static bool CutsAnyHostWall(Document familyDoc, GenericForm voidForm)
     {
         try
         {
@@ -589,16 +689,17 @@ public static class FamilyBuilder
     {
         Dictionary<string, Extrusion> solidsByOpName = new(StringComparer.Ordinal);
         List<Extrusion> createdSolids = new();
+        PlanPoint3D placementOffset = FamilyGeometryPlanBuilder.ComputeSeedPlacementOffsetMm(plan.Spec);
 
         foreach (CompiledExtrusionPrimitive primitive in plan.AllPrimitives)
         {
             Plane revitPlane = Plane.CreateByOriginAndBasis(
-                ToXyz(primitive.SketchPlane.Origin),
+                ToXyz(primitive.SketchPlane.Origin, placementOffset),
                 new XYZ(primitive.SketchPlane.XAxisX, primitive.SketchPlane.XAxisY, primitive.SketchPlane.XAxisZ),
                 new XYZ(primitive.SketchPlane.YAxisX, primitive.SketchPlane.YAxisY, primitive.SketchPlane.YAxisZ));
 
             SketchPlane sketchPlane = SketchPlane.Create(familyDoc, revitPlane);
-            CurveArrArray profile = BuildProfile(primitive.ProfileVertices);
+            CurveArrArray profile = BuildProfile(primitive.ProfileVertices, placementOffset);
 
             Extrusion extrusion = familyDoc.FamilyCreate.NewExtrusion(
                 primitive.IsSolid,
@@ -668,7 +769,7 @@ public static class FamilyBuilder
         log.Add($"Created {plan.AllPrimitives.Count} procedural extrusion primitive(s) ({plan.CoarsePrimitives.Count} Coarse, {plan.MediumFinePrimitives.Count} Medium/Fine).");
     }
 
-    private static CurveArrArray BuildProfile(IReadOnlyList<PlanPoint3D> vertices)
+    private static CurveArrArray BuildProfile(IReadOnlyList<PlanPoint3D> vertices, PlanPoint3D offset)
     {
         if (vertices.Count < 3)
         {
@@ -678,8 +779,8 @@ public static class FamilyBuilder
         CurveArray loop = new();
         for (int i = 0; i < vertices.Count; i++)
         {
-            XYZ start = ToXyz(vertices[i]);
-            XYZ end = ToXyz(vertices[(i + 1) % vertices.Count]);
+            XYZ start = ToXyz(vertices[i], offset);
+            XYZ end = ToXyz(vertices[(i + 1) % vertices.Count], offset);
             loop.Append(Line.CreateBound(start, end));
         }
 
@@ -688,5 +789,6 @@ public static class FamilyBuilder
         return profile;
     }
 
-    private static XYZ ToXyz(PlanPoint3D point) => new(point.XFeet, point.YFeet, point.ZFeet);
+    private static XYZ ToXyz(PlanPoint3D point, PlanPoint3D offset) =>
+        new(point.XFeet + offset.XFeet, point.YFeet + offset.YFeet, point.ZFeet + offset.ZFeet);
 }

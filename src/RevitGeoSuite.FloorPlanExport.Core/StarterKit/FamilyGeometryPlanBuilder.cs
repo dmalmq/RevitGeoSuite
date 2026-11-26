@@ -364,6 +364,10 @@ public sealed class FamilyGeometryPlan
                 numericValueMm: dp.ValueMm));
         }
 
+        bool? hasHostWallCutOpening = string.Equals(Spec.SeedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal)
+            ? true
+            : (bool?)null;
+
         return new RfaInspectionSnapshot(
             Spec.FamilyName,
             Spec.Category,
@@ -378,7 +382,9 @@ public sealed class FamilyGeometryPlan
             importedCadCount: 0,
             embeddedImageCount: 0,
             nestedFamilies: Array.Empty<RfaNestedFamilySnapshot>(),
-            maxNestingDepth: 0);
+            maxNestingDepth: 0,
+            typeParameterValues: null,
+            hasHostWallCutOpening: hasHostWallCutOpening);
     }
 
     /// <summary>Emits a canonical <see cref="ManifestFamilyEntry"/> compatible with <see cref="ExpectedManifest"/>.</summary>
@@ -395,6 +401,31 @@ public static class FamilyGeometryPlanBuilder
 {
     public const double MillimetersPerFoot = 304.8;
     public const double MillimetersToFeet = 1.0 / MillimetersPerFoot;
+
+    /// <summary>
+    /// Computes the placement origin offset in millimetres used when inserting compiled geometry into a Revit
+    /// seed template. Wall-hosted door seeds (<c>Metric Door.rft</c>) center their host wall opening cut at
+    /// <c>X = [-Width/2, +Width/2]</c>, <c>Y = [-Depth/2, +Depth/2]</c>, so centering aligns the procedural door
+    /// frames, leaves, and Coarse <c>K_Footprint</c> symmetrically on the wall opening across flips and mirrors.
+    /// Procedural families stay anchored at <c>(0, 0, 0)</c>.
+    /// </summary>
+    public static PlanPoint3D ComputeSeedPlacementOffsetMm(FamilyGeometrySpec familySpec)
+    {
+        if (familySpec is null)
+        {
+            throw new ArgumentNullException(nameof(familySpec));
+        }
+
+        if (string.Equals(familySpec.SeedKind, FamilyGeometrySpec.SeedWallHostedDoor, StringComparison.Ordinal))
+        {
+            return new PlanPoint3D(
+                -familySpec.DefaultDimensionsMm.WidthMm * 0.5,
+                -familySpec.DefaultDimensionsMm.DepthMm * 0.5,
+                0.0);
+        }
+
+        return new PlanPoint3D(0.0, 0.0, 0.0);
+    }
 
     /// <summary>Compiles a single <see cref="FamilyGeometrySpec"/> into a deterministic <see cref="FamilyGeometryPlan"/>.</summary>
     public static FamilyGeometryPlan Build(
@@ -541,6 +572,10 @@ public static class FamilyGeometryPlanBuilder
         {
             double riseMm = FindPrimaryRiseMm(familySpec.MediumFine.Ops) ?? familySpec.DefaultDimensionsMm.HeightMm;
             dims.Add(new CompiledDimensionParameter("Rise", riseMm));
+        }
+        else if (string.Equals(familySpec.Id, "KNZ_COL_Round", StringComparison.Ordinal))
+        {
+            dims.Add(new CompiledDimensionParameter("Diameter", familySpec.DefaultDimensionsMm.WidthMm));
         }
 
         return Array.AsReadOnly(dims.ToArray());
