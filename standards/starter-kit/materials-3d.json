@@ -1,0 +1,133 @@
+{
+  "schema": "kanizu.starter-kit.materials-3d",
+  "schemaVersion": 1,
+  "alignmentNotes": {
+    "frozenGis2dMaterials": "All GIS_<area> 2D floor materials in standards/floor-types.json and standards/color_theme.json stay frozen and untouched.",
+    "tiles3dPaletteResolver": "Tiles3DMaterialPaletteResolver passes K3D_* and M3D_* materials through verbatim under Source, KanizuSoft, KanizuWhite, and KanizuFull palettes while remapping GIS_<area> floor colors.",
+    "srgbAndGlTF": "srgb values are authored as 0-255 sRGB bytes for Revit Material.Color; Tiles3DGlbWriter converts Kanizu palette colors to linear-light baseColorFactor.",
+    "glazingStrategy": "Prefer opaque recessed glazing (K3D_Glass_Opaque, transparency=0) on recessed door/elevator panes to avoid glTF BLEND depth-sorting artifacts; reserve translucent glazing (K3D_Glass, M3D_GlassGuard) for balustrades and frameless guards."
+  },
+  "materials": [
+    {
+      "name": "K3D_Body",
+      "role": "body",
+      "srgb": [236, 238, 241],
+      "hex": "#ECEEF1",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.0,
+      "roughness": 0.78,
+      "description": "Primary Mappedin-style matte light architectural massing body."
+    },
+    {
+      "name": "K3D_Glass",
+      "role": "glass",
+      "srgb": [178, 212, 230],
+      "hex": "#B2D4E6",
+      "transparency": 55,
+      "alphaMode": "blend",
+      "metallic": 0.0,
+      "roughness": 0.15,
+      "description": "Translucent tinted architectural glazing for balustrades, sliding doors, and glazed barriers."
+    },
+    {
+      "name": "K3D_Glass_Opaque",
+      "role": "glass_opaque",
+      "srgb": [184, 210, 226],
+      "hex": "#B8D2E2",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.05,
+      "roughness": 0.22,
+      "description": "Opaque recessed glazing swatch avoiding glTF BLEND alpha-sorting artifacts."
+    },
+    {
+      "name": "K3D_Accent",
+      "role": "accent",
+      "srgb": [66, 133, 180],
+      "hex": "#4285B4",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.1,
+      "roughness": 0.55,
+      "description": "Transit accent color for handrails, IC readers, indicators, and wayfinding highlights."
+    },
+    {
+      "name": "K3D_Frame",
+      "role": "frame",
+      "srgb": [92, 102, 112],
+      "hex": "#5C6670",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.35,
+      "roughness": 0.45,
+      "description": "Dark architectural mullion, jamb, track, plinth, and stanchion frame metal."
+    },
+    {
+      "name": "M3D_Stair_Monolithic",
+      "role": "monolithic_stair",
+      "srgb": [226, 229, 233],
+      "hex": "#E2E5E9",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.0,
+      "roughness": 0.82,
+      "description": "Monolithic low-poly stair run material for KNZ_Stair_Monolithic."
+    },
+    {
+      "name": "M3D_GlassGuard",
+      "role": "glass_guard",
+      "srgb": [186, 218, 235],
+      "hex": "#BADAEB",
+      "transparency": 65,
+      "alphaMode": "blend",
+      "metallic": 0.0,
+      "roughness": 0.12,
+      "description": "Frameless 1100 mm glazed atrium guard material for KNZ_Wall_GlassGuard_1100."
+    },
+    {
+      "name": "K3D_Circulation",
+      "role": "circulation",
+      "srgb": [214, 220, 226],
+      "hex": "#D6DCE2",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.15,
+      "roughness": 0.62,
+      "description": "Circulation truss, deck, and step-tread massing for escalators, moving walkways, and elevators."
+    },
+    {
+      "name": "K3D_Fixture",
+      "role": "fixture",
+      "srgb": [208, 215, 222],
+      "hex": "#D0D7DE",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.1,
+      "roughness": 0.65,
+      "description": "Station fixture massing for ticket gate banks, kiosks, and mechanical equipment."
+    },
+    {
+      "name": "K3D_Column",
+      "role": "column",
+      "srgb": [220, 223, 227],
+      "hex": "#DCDFE3",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "description": "Neutral architectural column shaft finish for rectangular and round starter columns."
+    },
+    {
+      "name": "K3D_Footprint",
+      "role": "footprint",
+      "srgb": [210, 216, 220],
+      "hex": "#D2D8DC",
+      "transparency": 0,
+      "alphaMode": "opaque",
+      "metallic": 0.0,
+      "roughness": 0.9,
+      "description": "Coarse-only 2D K_Footprint solid material (skipped by Tiles3DGeometryExtractor)."
+    }
+  ]
+}

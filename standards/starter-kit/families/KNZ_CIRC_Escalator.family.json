@@ -1,0 +1,167 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_CIRC_Escalator",
+  "familyName": "KNZ_CIRC_Escalator",
+  "displayNameEn": "Kanizu Escalator",
+  "displayNameJa": "Kanizu エスカレーター",
+  "group": "circulation",
+  "category": "OST_GenericModel",
+  "seedKind": "procedural",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Glass",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 1200,
+    "depthMm": 9600,
+    "heightMm": 4200
+  },
+  "sharedParameters": [
+    { "name": "gis_kind", "binding": "type", "required": true, "defaultValue": "escalator" },
+    { "name": "gis_category", "binding": "type", "required": true, "defaultValue": "escalator" },
+    { "name": "gis_direction", "binding": "instance", "required": true, "defaultValue": "up" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "short_name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 360
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [1200, 9600, 120]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "slopedPrism",
+        "name": "truss_inclined_body",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Circulation",
+        "originMm": [8, 1200, 4],
+        "widthMm": 1184,
+        "runMm": 7200,
+        "riseMm": 4200,
+        "thicknessMm": 420,
+        "sides": 4
+      },
+      {
+        "op": "box",
+        "name": "lower_landing_deck",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Circulation",
+        "originMm": [8, 8, 4],
+        "sizeMm": [1184, 1192, 160]
+      },
+      {
+        "op": "box",
+        "name": "upper_landing_deck",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Circulation",
+        "originMm": [8, 8400, 4044],
+        "sizeMm": [1184, 1192, 160]
+      },
+      {
+        "op": "slopedPrism",
+        "name": "balustrade_glass_left",
+        "subcategory": "K_Glass",
+        "materialRef": "K3D_Glass",
+        "originMm": [48, 1200, 424],
+        "widthMm": 20,
+        "runMm": 7200,
+        "riseMm": 4200,
+        "thicknessMm": 920,
+        "sides": 4
+      },
+      {
+        "op": "slopedPrism",
+        "name": "balustrade_glass_right",
+        "subcategory": "K_Glass",
+        "materialRef": "K3D_Glass",
+        "originMm": [1132, 1200, 424],
+        "widthMm": 20,
+        "runMm": 7200,
+        "riseMm": 4200,
+        "thicknessMm": 920,
+        "sides": 4
+      },
+      {
+        "op": "slopedPrism",
+        "name": "handrail_left",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [24, 1200, 1336],
+        "widthMm": 72,
+        "runMm": 7200,
+        "riseMm": 4200,
+        "thicknessMm": 48,
+        "sides": 4
+      },
+      {
+        "op": "slopedPrism",
+        "name": "handrail_right",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [1104, 1200, 1336],
+        "widthMm": 72,
+        "runMm": 7200,
+        "riseMm": 4200,
+        "thicknessMm": 48,
+        "sides": 4
+      },
+      {
+        "op": "box",
+        "name": "comb_plate_lower",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 164],
+        "sizeMm": [1184, 300, 24]
+      },
+      {
+        "op": "box",
+        "name": "comb_plate_upper",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 9292, 4204],
+        "sizeMm": [1184, 300, 24]
+      },
+      {
+        "op": "array",
+        "name": "step_tread_stripes",
+        "count": 16,
+        "stepMm": [0, 450, 262.5],
+        "child": {
+          "op": "box",
+          "name": "step_tread",
+          "subcategory": "K_Frame",
+          "materialRef": "K3D_Frame",
+          "originMm": [108, 1200, 424],
+          "sizeMm": [984, 400, 40]
+        }
+      }
+    ]
+  }
+}

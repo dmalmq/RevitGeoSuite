@@ -1,0 +1,138 @@
+{
+  "schema": "kanizu.starter-kit",
+  "schemaVersion": 1,
+  "kitVersion": "1.0.0",
+  "gisStandardVersion": 3,
+  "supportedRevitVersions": [
+    "2024",
+    "2027"
+  ],
+  "rteSpec": "rte.json",
+  "materialsSpec": "materials-3d.json",
+  "budgets": {
+    "maxRfaFileSizeKb": 512,
+    "maxRteFileSizeMb": 25,
+    "maxCoarseTrianglesPerFamily": 48,
+    "maxMediumTrianglesPerFamily": 600,
+    "maxStairFlightTriangles": 450,
+    "antiZFightingClearancesMm": {
+      "slabClearMm": 4.0,
+      "sideClearMm": 8.0,
+      "glassTuckMm": 8.0
+    }
+  },
+  "families": [
+    {
+      "id": "KNZ_CIRC_Escalator",
+      "specPath": "families/KNZ_CIRC_Escalator.family.json",
+      "group": "circulation",
+      "phase": "T6",
+      "optional": false
+    },
+    {
+      "id": "KNZ_CIRC_MovingWalkway",
+      "specPath": "families/KNZ_CIRC_MovingWalkway.family.json",
+      "group": "circulation",
+      "phase": "T6",
+      "optional": false
+    },
+    {
+      "id": "KNZ_CIRC_Elevator",
+      "specPath": "families/KNZ_CIRC_Elevator.family.json",
+      "group": "circulation",
+      "phase": "T6",
+      "optional": false
+    },
+    {
+      "id": "KNZ_CIRC_ElevatorDoor",
+      "specPath": "families/KNZ_CIRC_ElevatorDoor.family.json",
+      "group": "circulation",
+      "phase": "T6",
+      "optional": false
+    },
+    {
+      "id": "KNZ_OPEN_DoorSwing",
+      "specPath": "families/KNZ_OPEN_DoorSwing.family.json",
+      "group": "openings",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_OPEN_DoorSlide",
+      "specPath": "families/KNZ_OPEN_DoorSlide.family.json",
+      "group": "openings",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_OPEN_DoorAuto",
+      "specPath": "families/KNZ_OPEN_DoorAuto.family.json",
+      "group": "openings",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_OPEN_Shutter",
+      "specPath": "families/KNZ_OPEN_Shutter.family.json",
+      "group": "openings",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_OPEN_Opening",
+      "specPath": "families/KNZ_OPEN_Opening.family.json",
+      "group": "openings",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_FIX_TicketGateBank",
+      "specPath": "families/KNZ_FIX_TicketGateBank.family.json",
+      "group": "fixtures",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_FIX_BarrierFence",
+      "specPath": "families/KNZ_FIX_BarrierFence.family.json",
+      "group": "fixtures",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_FIX_Kiosk",
+      "specPath": "families/KNZ_FIX_Kiosk.family.json",
+      "group": "fixtures",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_FIX_Equipment",
+      "specPath": "families/KNZ_FIX_Equipment.family.json",
+      "group": "fixtures",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_COL_Rect",
+      "specPath": "families/KNZ_COL_Rect.family.json",
+      "group": "columns",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_COL_Round",
+      "specPath": "families/KNZ_COL_Round.family.json",
+      "group": "columns",
+      "phase": "T7",
+      "optional": false
+    },
+    {
+      "id": "KNZ_POI_FacilityMarker",
+      "specPath": "families/KNZ_POI_FacilityMarker.family.json",
+      "group": "poi",
+      "phase": "T7",
+      "optional": true
+    }
+  ]
+}

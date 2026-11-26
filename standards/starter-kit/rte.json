@@ -1,0 +1,558 @@
+{
+  "schema": "kanizu.starter-kit.rte",
+  "schemaVersion": 1,
+  "templateName": "KanizuStationStarter",
+  "gisStandardVersion": 3,
+  "canonicalExportViewTemplate": "GIS Export",
+  "startingView": {
+    "name": "00_Start_Here",
+    "viewType": "DraftingView",
+    "bilingual": true,
+    "languages": [
+      "en",
+      "ja"
+    ],
+    "titleEn": "Kanizu GIS Revit Starter Kit — Quick Start",
+    "titleJa": "Kanizu GIS Revit スターターキット — はじめに"
+  },
+  "hygiene": {
+    "requireZeroProjectIdentity": true,
+    "requireZeroWorksets": true,
+    "forbiddenIdentityFields": [
+      "GeoProjectInfo.ModelId",
+      "GeoProjectInfo.GisStationFolder",
+      "Level.level_id",
+      "Element.id",
+      "Element.gis_key"
+    ],
+    "forbiddenScheduleCategories": [
+      "OST_Levels"
+    ]
+  },
+  "viewTemplates": [
+    {
+      "name": "GIS Export",
+      "viewType": "FloorPlan",
+      "detailLevel": "Coarse",
+      "isCanonical2DExport": true,
+      "allowVisibilityHidingFilters": false,
+      "filters": [],
+      "visibleCategories": [
+        "OST_Floors",
+        "OST_Stairs",
+        "OST_Doors",
+        "OST_Windows",
+        "OST_Columns",
+        "OST_StructuralColumns",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment",
+        "OST_Lines"
+      ],
+      "visibleLineStylePrefixes": [
+        "GIS_"
+      ],
+      "hideNonGisLineStyles": true,
+      "hideSubcategories": []
+    },
+    {
+      "name": "GIS Working Plan",
+      "viewType": "FloorPlan",
+      "detailLevel": "Medium",
+      "isCanonical2DExport": false,
+      "allowVisibilityHidingFilters": false,
+      "filters": [
+        "KNZ_QA_INFO_GateSide_Check"
+      ],
+      "visibleCategories": [
+        "OST_Floors",
+        "OST_Walls",
+        "OST_Stairs",
+        "OST_Doors",
+        "OST_Windows",
+        "OST_Columns",
+        "OST_StructuralColumns",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment",
+        "OST_Lines",
+        "OST_Grids"
+      ],
+      "visibleLineStylePrefixes": [
+        "GIS_"
+      ],
+      "hideNonGisLineStyles": false,
+      "hideSubcategories": []
+    },
+    {
+      "name": "GIS QA Plan",
+      "viewType": "FloorPlan",
+      "detailLevel": "Coarse",
+      "isCanonical2DExport": false,
+      "allowVisibilityHidingFilters": false,
+      "filters": [
+        "KNZ_QA_ERR_Floor_MissingCategory",
+        "KNZ_QA_ERR_Door_MissingType",
+        "KNZ_QA_ERR_Circulation_MissingKind",
+        "KNZ_QA_WARN_Escalator_MissingDirection",
+        "KNZ_QA_WARN_Elevator_MissingLevelsServed",
+        "KNZ_QA_WARN_Fixture_MissingType",
+        "KNZ_QA_OK_Tagged_Ready",
+        "KNZ_QA_INFO_GateSide_Check"
+      ],
+      "visibleCategories": [
+        "OST_Floors",
+        "OST_Stairs",
+        "OST_Doors",
+        "OST_Windows",
+        "OST_Columns",
+        "OST_StructuralColumns",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment",
+        "OST_Lines"
+      ],
+      "visibleLineStylePrefixes": [
+        "GIS_"
+      ],
+      "hideNonGisLineStyles": true,
+      "hideSubcategories": []
+    },
+    {
+      "name": "GIS QA 3D",
+      "viewType": "ThreeD",
+      "detailLevel": "Medium",
+      "isCanonical2DExport": false,
+      "allowVisibilityHidingFilters": false,
+      "filters": [
+        "KNZ_QA_ERR_Floor_MissingCategory",
+        "KNZ_QA_ERR_Door_MissingType",
+        "KNZ_QA_ERR_Circulation_MissingKind",
+        "KNZ_QA_WARN_Escalator_MissingDirection",
+        "KNZ_QA_WARN_Elevator_MissingLevelsServed",
+        "KNZ_QA_WARN_Fixture_MissingType",
+        "KNZ_QA_OK_Tagged_Ready",
+        "KNZ_QA_INFO_GateSide_Check"
+      ],
+      "visibleCategories": [
+        "OST_Floors",
+        "OST_Walls",
+        "OST_Stairs",
+        "OST_Doors",
+        "OST_Windows",
+        "OST_Columns",
+        "OST_StructuralColumns",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
+      ],
+      "visibleLineStylePrefixes": [],
+      "hideNonGisLineStyles": false,
+      "hideSubcategories": [
+        "K_Footprint"
+      ]
+    },
+    {
+      "name": "Kanizu 3D Export",
+      "viewType": "ThreeD",
+      "detailLevel": "Medium",
+      "isCanonical2DExport": false,
+      "allowVisibilityHidingFilters": false,
+      "filters": [],
+      "visibleCategories": [
+        "OST_Floors",
+        "OST_Walls",
+        "OST_Stairs",
+        "OST_Doors",
+        "OST_Windows",
+        "OST_Columns",
+        "OST_StructuralColumns",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
+      ],
+      "visibleLineStylePrefixes": [],
+      "hideNonGisLineStyles": false,
+      "hideSubcategories": [
+        "K_Footprint"
+      ]
+    }
+  ],
+  "qaViewFilters": [
+    {
+      "name": "KNZ_QA_ERR_Floor_MissingCategory",
+      "severity": "error",
+      "visible": true,
+      "overrideColorHex": "#E53935",
+      "categories": [
+        "OST_Floors"
+      ],
+      "rules": [
+        {
+          "parameter": "gis_category",
+          "operator": "isEmpty",
+          "value": ""
+        },
+        {
+          "parameter": "category",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ],
+      "description": "Flags floors missing both type gis_category and instance category."
+    },
+    {
+      "name": "KNZ_QA_ERR_Door_MissingType",
+      "severity": "error",
+      "visible": true,
+      "overrideColorHex": "#D32F2F",
+      "categories": [
+        "OST_Doors"
+      ],
+      "rules": [
+        {
+          "parameter": "gis_door",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ],
+      "description": "Flags doors missing a closed-domain gis_door value."
+    },
+    {
+      "name": "KNZ_QA_ERR_Circulation_MissingKind",
+      "severity": "error",
+      "visible": true,
+      "overrideColorHex": "#C62828",
+      "categories": [
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
+      ],
+      "rules": [
+        {
+          "parameter": "gis_kind",
+          "operator": "isEmpty",
+          "value": ""
+        },
+        {
+          "parameter": "gis_category",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ],
+      "description": "Flags untagged circulation or fixture families missing both gis_kind and gis_category."
+    },
+    {
+      "name": "KNZ_QA_WARN_Escalator_MissingDirection",
+      "severity": "warning",
+      "visible": true,
+      "overrideColorHex": "#FB8C00",
+      "categories": [
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
+      ],
+      "rules": [
+        {
+          "parameter": "gis_kind",
+          "operator": "equals",
+          "value": "escalator"
+        },
+        {
+          "parameter": "gis_direction",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ],
+      "description": "Flags escalators missing travel direction (up, down, or both)."
+    },
+    {
+      "name": "KNZ_QA_WARN_Elevator_MissingLevelsServed",
+      "severity": "warning",
+      "visible": true,
+      "overrideColorHex": "#F57C00",
+      "categories": [
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
+      ],
+      "rules": [
+        {
+          "parameter": "gis_kind",
+          "operator": "equals",
+          "value": "elevator"
+        },
+        {
+          "parameter": "gis_levels_served",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ],
+      "description": "Flags elevators without explicit gis_levels_served stops."
+    },
+    {
+      "name": "KNZ_QA_WARN_Fixture_MissingType",
+      "severity": "warning",
+      "visible": true,
+      "overrideColorHex": "#FDD835",
+      "categories": [
+        "OST_SpecialityEquipment",
+        "OST_GenericModel",
+        "OST_MechanicalEquipment"
+      ],
+      "rules": [
+        {
+          "parameter": "gis_category",
+          "operator": "equals",
+          "value": "fixture"
+        },
+        {
+          "parameter": "gis_fixture_type",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ],
+      "description": "Flags v3 fixtures missing an explicit gis_fixture_type."
+    },
+    {
+      "name": "KNZ_QA_OK_Tagged_Ready",
+      "severity": "ok",
+      "visible": true,
+      "overrideColorHex": "#43A047",
+      "categories": [
+        "OST_Floors",
+        "OST_GenericModel",
+        "OST_SpecialityEquipment",
+        "OST_MechanicalEquipment"
+      ],
+      "rules": [
+        {
+          "parameter": "gis_category",
+          "operator": "hasValue",
+          "value": ""
+        }
+      ],
+      "description": "Highlights tagged GIS unit/circulation/fixture elements ready for export."
+    },
+    {
+      "name": "KNZ_QA_INFO_GateSide_Check",
+      "severity": "info",
+      "visible": true,
+      "overrideColorHex": "#1E88E5",
+      "secondaryColorHex": "#FFF3CD",
+      "categories": [
+        "OST_Floors"
+      ],
+      "rules": [
+        {
+          "parameter": "gis_restriction",
+          "operator": "equals",
+          "value": "rachi_nai"
+        }
+      ],
+      "valueColors": {
+        "rachi_nai": "#1E88E5",
+        "rachi_gai": "#FFF3CD"
+      },
+      "description": "Toggleable gate-side watertightness check contrasting rachi_nai (Blue) vs rachi_gai (Cream)."
+    }
+  ],
+  "schedules": [
+    {
+      "id": "qa-schedule-floors",
+      "name": "Kanizu GIS - Floors",
+      "kind": "review",
+      "category": "OST_Floors",
+      "emptyMeansPass": false,
+      "fields": [
+        "gis_category",
+        "gis_restriction",
+        "category",
+        "name",
+        "id"
+      ],
+      "filters": []
+    },
+    {
+      "id": "qa-schedule-circulation",
+      "name": "Kanizu GIS - Circulation",
+      "kind": "review",
+      "category": "",
+      "emptyMeansPass": false,
+      "fields": [
+        "gis_kind",
+        "gis_direction",
+        "gis_levels_served",
+        "name",
+        "id"
+      ],
+      "filters": [
+        {
+          "parameter": "gis_kind",
+          "operator": "hasValue",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "qa-schedule-doors",
+      "name": "Kanizu GIS - Doors",
+      "kind": "review",
+      "category": "OST_Doors",
+      "emptyMeansPass": false,
+      "fields": [
+        "gis_door",
+        "gis_access_con",
+        "gis_opening_category",
+        "name",
+        "id"
+      ],
+      "filters": []
+    },
+    {
+      "id": "qa-schedule-columns",
+      "name": "Kanizu GIS - Columns",
+      "kind": "review",
+      "category": "OST_Columns",
+      "emptyMeansPass": false,
+      "fields": [
+        "id",
+        "gis_key"
+      ],
+      "filters": []
+    },
+    {
+      "id": "qa-exception-floors-missing-category",
+      "name": "✗ Floors missing category",
+      "kind": "exception",
+      "category": "OST_Floors",
+      "emptyMeansPass": true,
+      "fields": [
+        "gis_category",
+        "category",
+        "gis_restriction",
+        "name"
+      ],
+      "filters": [
+        {
+          "parameter": "gis_category",
+          "operator": "isEmpty",
+          "value": ""
+        },
+        {
+          "parameter": "category",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "qa-exception-doors-unmapped",
+      "name": "✗ Doors unmapped",
+      "kind": "exception",
+      "category": "OST_Doors",
+      "emptyMeansPass": true,
+      "fields": [
+        "gis_door",
+        "gis_access_con",
+        "gis_opening_category",
+        "name"
+      ],
+      "filters": [
+        {
+          "parameter": "gis_door",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "qa-exception-circulation-incomplete",
+      "name": "✗ Circulation incomplete",
+      "kind": "exception",
+      "category": "",
+      "emptyMeansPass": true,
+      "fields": [
+        "gis_kind",
+        "gis_direction",
+        "gis_levels_served",
+        "name"
+      ],
+      "filters": [
+        {
+          "parameter": "gis_kind",
+          "operator": "hasValue",
+          "value": ""
+        },
+        {
+          "parameter": "gis_direction",
+          "operator": "isEmpty",
+          "value": ""
+        }
+      ]
+    }
+  ],
+  "lineStyles": [
+    {
+      "name": "GIS_detail_line",
+      "lineWeight": 2,
+      "colorHex": "#657678",
+      "linePattern": "Solid",
+      "purpose": "General 2D GIS detail linework."
+    },
+    {
+      "name": "GIS_platform_edge",
+      "lineWeight": 4,
+      "colorHex": "#E6A817",
+      "linePattern": "Solid",
+      "purpose": "Platform edge and tactile safety boundary."
+    },
+    {
+      "name": "GIS_fare_boundary",
+      "lineWeight": 5,
+      "colorHex": "#1E88E5",
+      "linePattern": "Dash",
+      "purpose": "Fare gate paid/unpaid (rachi_nai / rachi_gai) boundary."
+    },
+    {
+      "name": "GIS_curb",
+      "lineWeight": 3,
+      "colorHex": "#5C6670",
+      "linePattern": "Solid",
+      "purpose": "Exterior curb and road edge."
+    }
+  ],
+  "systemFamilies": [
+    {
+      "id": "KNZ_Stair_Monolithic",
+      "typeName": "KNZ_Stair_Monolithic",
+      "systemKind": "Stair",
+      "category": "OST_Stairs",
+      "materialRef": "M3D_Stair_Monolithic",
+      "triangleBudgetPerFlight": 450,
+      "description": "Monolithic low-poly architectural stair run without dense balusters (~350-450 tris/flight)."
+    },
+    {
+      "id": "KNZ_Wall_GlassGuard_1100",
+      "typeName": "KNZ_Wall_GlassGuard_1100",
+      "systemKind": "Wall",
+      "category": "OST_Walls",
+      "materialRef": "M3D_GlassGuard",
+      "thicknessMm": 20,
+      "defaultHeightMm": 1100,
+      "description": "1100 mm low-poly glazed balustrade/guard wall for atrium edges and mezzanines."
+    },
+    {
+      "id": "KNZ_Floor_OpenToBelow",
+      "typeName": "opentobelow",
+      "systemKind": "Floor",
+      "category": "OST_Floors",
+      "materialRef": "GIS_stairs_escalators",
+      "gisCategory": "opentobelow",
+      "thicknessMm": 50,
+      "description": "Standard opentobelow floor type for 2D/3D atrium voids."
+    }
+  ],
+  "includeAllStandardFloorTypes": true,
+  "includeAllStandardSharedParameters": true
+}

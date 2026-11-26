@@ -1,0 +1,125 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_FIX_TicketGateBank",
+  "familyName": "KNZ_FIX_TicketGateBank",
+  "displayNameEn": "Kanizu Ticket Gate Bank",
+  "displayNameJa": "Kanizu 自動改札機",
+  "group": "fixtures",
+  "category": "OST_SpecialityEquipment",
+  "seedKind": "procedural",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Glass",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 3200,
+    "depthMm": 1600,
+    "heightMm": 960
+  },
+  "sharedParameters": [
+    { "name": "gis_kind", "binding": "type", "required": true, "defaultValue": "ticket_gate" },
+    { "name": "gis_category", "binding": "type", "required": true, "defaultValue": "fixture" },
+    { "name": "gis_fixture_type", "binding": "type", "required": true, "defaultValue": "turnstile" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "short_name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 280
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [3200, 1600, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "floor_guide_plinth",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 4],
+        "sizeMm": [3184, 1584, 24]
+      },
+      {
+        "op": "array",
+        "name": "gate_cabinets",
+        "count": 4,
+        "stepMm": [960, 0, 0],
+        "child": {
+          "op": "box",
+          "name": "gate_cabinet_body",
+          "subcategory": "K_Body",
+          "materialRef": "K3D_Fixture",
+          "originMm": [16, 40, 28],
+          "sizeMm": [240, 1520, 900]
+        }
+      },
+      {
+        "op": "array",
+        "name": "ic_card_readers",
+        "count": 4,
+        "stepMm": [960, 0, 0],
+        "child": {
+          "op": "box",
+          "name": "ic_reader_pad",
+          "subcategory": "K_Accent",
+          "materialRef": "K3D_Accent",
+          "originMm": [56, 120, 928],
+          "sizeMm": [160, 220, 24]
+        }
+      },
+      {
+        "op": "array",
+        "name": "aisle_flapper_doors",
+        "count": 3,
+        "stepMm": [960, 0, 0],
+        "child": {
+          "op": "box",
+          "name": "flapper_glass_leaf",
+          "subcategory": "K_Glass",
+          "materialRef": "K3D_Glass",
+          "originMm": [264, 780, 160],
+          "sizeMm": [688, 20, 620]
+        }
+      },
+      {
+        "op": "array",
+        "name": "top_trim_caps",
+        "count": 4,
+        "stepMm": [960, 0, 0],
+        "child": {
+          "op": "box",
+          "name": "cabinet_top_trim",
+          "subcategory": "K_Frame",
+          "materialRef": "K3D_Frame",
+          "originMm": [24, 380, 928],
+          "sizeMm": [224, 1140, 20]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_CIRC_MovingWalkway",
+  "familyName": "KNZ_CIRC_MovingWalkway",
+  "displayNameEn": "Kanizu Moving Walkway",
+  "displayNameJa": "Kanizu 動く歩道",
+  "group": "circulation",
+  "category": "OST_GenericModel",
+  "seedKind": "procedural",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Glass",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 1400,
+    "depthMm": 12000,
+    "heightMm": 1100
+  },
+  "sharedParameters": [
+    { "name": "gis_kind", "binding": "type", "required": true, "defaultValue": "moving_walkway" },
+    { "name": "gis_category", "binding": "type", "required": true, "defaultValue": "movingwalkway" },
+    { "name": "gis_direction", "binding": "instance", "required": true, "defaultValue": "both" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "short_name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 240
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [1400, 12000, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "walkway_deck_body",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Circulation",
+        "originMm": [8, 8, 4],
+        "sizeMm": [1384, 11984, 140]
+      },
+      {
+        "op": "box",
+        "name": "balustrade_glass_left",
+        "subcategory": "K_Glass",
+        "materialRef": "K3D_Glass",
+        "originMm": [48, 200, 136],
+        "sizeMm": [20, 11600, 920]
+      },
+      {
+        "op": "box",
+        "name": "balustrade_glass_right",
+        "subcategory": "K_Glass",
+        "materialRef": "K3D_Glass",
+        "originMm": [1332, 200, 136],
+        "sizeMm": [20, 11600, 920]
+      },
+      {
+        "op": "box",
+        "name": "handrail_left",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [24, 160, 1048],
+        "sizeMm": [72, 11680, 48]
+      },
+      {
+        "op": "box",
+        "name": "handrail_right",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [1304, 160, 1048],
+        "sizeMm": [72, 11680, 48]
+      },
+      {
+        "op": "box",
+        "name": "entry_comb_start",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 144],
+        "sizeMm": [1384, 320, 20]
+      },
+      {
+        "op": "box",
+        "name": "entry_comb_end",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 11672, 144],
+        "sizeMm": [1384, 320, 20]
+      },
+      {
+        "op": "array",
+        "name": "pallet_ribs",
+        "count": 8,
+        "stepMm": [0, 1350, 0],
+        "child": {
+          "op": "box",
+          "name": "pallet_rib",
+          "subcategory": "K_Frame",
+          "materialRef": "K3D_Frame",
+          "originMm": [128, 600, 144],
+          "sizeMm": [1144, 120, 12]
+        }
+      }
+    ]
+  }
+}

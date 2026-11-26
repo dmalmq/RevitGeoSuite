@@ -1,0 +1,89 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_POI_FacilityMarker",
+  "familyName": "KNZ_POI_FacilityMarker",
+  "displayNameEn": "Kanizu Facility POI Marker (Optional)",
+  "displayNameJa": "Kanizu 施設POIマーカー（任意）",
+  "group": "poi",
+  "category": "OST_GenericModel",
+  "seedKind": "procedural",
+  "isPolygonal": false,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 400,
+    "depthMm": 400,
+    "heightMm": 1500
+  },
+  "sharedParameters": [
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "short_name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 120
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": false,
+    "ops": [
+      {
+        "op": "nprism",
+        "name": "marker_footprint",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "centerMm": [200, 200, 0],
+        "radiusMm": 200,
+        "heightMm": 60,
+        "sides": 6
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "nprism",
+        "name": "marker_base_disc",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "centerMm": [200, 200, 4],
+        "radiusMm": 180,
+        "heightMm": 36,
+        "sides": 8
+      },
+      {
+        "op": "nprism",
+        "name": "marker_stem",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Body",
+        "centerMm": [200, 200, 40],
+        "radiusMm": 32,
+        "heightMm": 1160,
+        "sides": 6
+      },
+      {
+        "op": "nprism",
+        "name": "marker_head",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "centerMm": [200, 200, 1200],
+        "radiusMm": 160,
+        "heightMm": 300,
+        "sides": 8
+      }
+    ]
+  }
+}

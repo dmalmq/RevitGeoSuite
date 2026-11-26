@@ -1,0 +1,132 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_OPEN_DoorSlide",
+  "familyName": "KNZ_OPEN_DoorSlide",
+  "displayNameEn": "Kanizu Sliding Door",
+  "displayNameJa": "Kanizu 引戸",
+  "group": "openings",
+  "category": "OST_Doors",
+  "seedKind": "wallHostedDoor",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Glass",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 1800,
+    "depthMm": 200,
+    "heightMm": 2200
+  },
+  "sharedParameters": [
+    { "name": "gis_door", "binding": "type", "required": true, "defaultValue": "sliding" },
+    { "name": "gis_access_con", "binding": "type", "required": true, "defaultValue": "none" },
+    { "name": "gis_opening_category", "binding": "type", "required": true, "defaultValue": "pedestrian" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 160
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [1800, 200, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "jamb_left",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 4],
+        "sizeMm": [60, 184, 2196]
+      },
+      {
+        "op": "box",
+        "name": "jamb_right",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [1732, 8, 4],
+        "sizeMm": [60, 184, 2196]
+      },
+      {
+        "op": "box",
+        "name": "top_track_header",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 2100],
+        "sizeMm": [1784, 184, 100]
+      },
+      {
+        "op": "box",
+        "name": "leaf_frame_left",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Body",
+        "originMm": [68, 76, 4],
+        "sizeMm": [828, 48, 2096]
+      },
+      {
+        "op": "box",
+        "name": "leaf_frame_right",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Body",
+        "originMm": [904, 76, 4],
+        "sizeMm": [828, 48, 2096]
+      },
+      {
+        "op": "box",
+        "name": "glazing_left",
+        "subcategory": "K_Glass",
+        "materialRef": "K3D_Glass",
+        "originMm": [148, 84, 240],
+        "sizeMm": [668, 32, 1740]
+      },
+      {
+        "op": "box",
+        "name": "glazing_right",
+        "subcategory": "K_Glass",
+        "materialRef": "K3D_Glass",
+        "originMm": [984, 84, 240],
+        "sizeMm": [668, 32, 1740]
+      },
+      {
+        "op": "box",
+        "name": "pull_handle_left",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [840, 60, 900],
+        "sizeMm": [28, 80, 320]
+      },
+      {
+        "op": "box",
+        "name": "pull_handle_right",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [932, 60, 900],
+        "sizeMm": [28, 80, 320]
+      }
+    ]
+  }
+}

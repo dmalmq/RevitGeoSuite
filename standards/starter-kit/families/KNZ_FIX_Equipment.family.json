@@ -1,0 +1,91 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_FIX_Equipment",
+  "familyName": "KNZ_FIX_Equipment",
+  "displayNameEn": "Kanizu Station Equipment",
+  "displayNameJa": "Kanizu 設備機器",
+  "group": "fixtures",
+  "category": "OST_MechanicalEquipment",
+  "seedKind": "procedural",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 1200,
+    "depthMm": 900,
+    "heightMm": 1600
+  },
+  "sharedParameters": [
+    { "name": "gis_category", "binding": "type", "required": true, "defaultValue": "fixture" },
+    { "name": "gis_fixture_type", "binding": "type", "required": true, "defaultValue": "equipment" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "short_name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 96
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [1200, 900, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "base_plinth",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 4],
+        "sizeMm": [1184, 884, 80]
+      },
+      {
+        "op": "box",
+        "name": "equipment_cabinet",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Fixture",
+        "originMm": [20, 20, 84],
+        "sizeMm": [1160, 860, 1440]
+      },
+      {
+        "op": "box",
+        "name": "top_vent_hood",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [40, 40, 1524],
+        "sizeMm": [1120, 820, 76]
+      },
+      {
+        "op": "box",
+        "name": "control_plate_accent",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [380, 12, 1120],
+        "sizeMm": [440, 20, 240]
+      }
+    ]
+  }
+}
