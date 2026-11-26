@@ -110,6 +110,11 @@ public sealed class OpeningExtractor
 
         foreach (FamilyInstance opening in openingInstances)
         {
+            if (opening == null || RevitShowcaseElementFilter.IsShowcaseElement(opening))
+            {
+                continue;
+            }
+
             if (!skipLevelFilter && !IsOnLevel(opening, level))
             {
                 continue;

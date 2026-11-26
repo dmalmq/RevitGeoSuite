@@ -67,6 +67,10 @@ public sealed class FloorExportDataPreparer
             throw new ArgumentException("At least one feature type must be selected.", nameof(featureTypes));
         }
 
+        ShowcaseExportGuard.ThrowIfAuthoringExportBlocked(
+            GisStandardStateReader.ReadModelRoleText(_document),
+            "2D floor plan");
+
         List<ViewPlan> exportViews = selectedViews
             .Where(view => view != null && view.GenLevel != null)
             .GroupBy(view => view.Id.Value)
@@ -1341,6 +1345,11 @@ public sealed class FloorExportDataPreparer
 
         foreach (LinkedViewSourceContext linkedSource in context.LinkedSources)
         {
+            if (RevitShowcaseElementFilter.IsShowcaseDocument(linkedSource.LinkedDocument))
+            {
+                continue;
+            }
+
             ExportSourceDescriptor sourceDescriptor = ExportSourceDescriptor.CreateLinked(_document, linkedSource);
             UnitExtractor linkedUnitExtractor = new(
                 linkedSource.LinkedDocument,
@@ -1437,6 +1446,11 @@ public sealed class FloorExportDataPreparer
 
         foreach (LinkedViewSourceContext linkedSource in context.LinkedSources)
         {
+            if (RevitShowcaseElementFilter.IsShowcaseDocument(linkedSource.LinkedDocument))
+            {
+                continue;
+            }
+
             DetailExtractor linkedDetailExtractor = new(
                 linkedSource.LinkedDocument,
                 geometryRepairOptions,
@@ -1482,6 +1496,11 @@ public sealed class FloorExportDataPreparer
 
         foreach (LinkedViewSourceContext linkedSource in context.LinkedSources)
         {
+            if (RevitShowcaseElementFilter.IsShowcaseDocument(linkedSource.LinkedDocument))
+            {
+                continue;
+            }
+
             int? linkedStandardVersion = GisStandardStateReader.ReadStandardVersion(linkedSource.LinkedDocument);
             OpeningExtractor linkedOpeningExtractor = new(
                 linkedSource.LinkedDocument,

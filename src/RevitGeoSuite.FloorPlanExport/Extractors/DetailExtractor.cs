@@ -108,7 +108,7 @@ public sealed class DetailExtractor
         List<ExportLineString> features = new();
         foreach (CurveElement curveElement in detailCurves)
         {
-            if (curveElement is not ModelCurve)
+            if (curveElement is not ModelCurve || RevitShowcaseElementFilter.IsShowcaseElement(curveElement))
             {
                 continue;
             }

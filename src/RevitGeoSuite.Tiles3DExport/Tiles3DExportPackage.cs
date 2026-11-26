@@ -62,6 +62,13 @@ public sealed class Tiles3DExportPackage
     /// <c>ReferenceContext.AnchorElevationMeters - GeoidHeightOffsetMeters</c>.
     /// </summary>
     public string GeoidModel { get; set; } = Tiles3DGeoidModels.Egm2008;
+
+    /// <summary>
+    /// Optional additive <c>gis_model_role</c> of the exported model (<c>"authoring"</c> or
+    /// <c>"showcase"</c>); null when unset on legacy v1/v2 models so <c>source.modelRole</c> is
+    /// omitted from <c>cesium-package.json</c>.
+    /// </summary>
+    public string? ModelRole { get; set; }
 }
 
 /// <summary>The geoid model names written to package manifests.</summary>

@@ -123,4 +123,36 @@ public sealed class CesiumPackageManifestTests
             () => CesiumPackageManifestSerializer.Deserialize(
                 "{\"schema\":\"revitgeosuite.cesium-package\",\"version\":99}"));
     }
+
+    [Theory]
+    [InlineData("authoring")]
+    [InlineData("showcase")]
+    public void SourceModelRole_RoundTripsWhenSetAndOmitsWhenNull(string modelRole)
+    {
+        CesiumPackageManifest legacy = CreateSample();
+        legacy.Source!.ModelRole = null;
+        string legacyJson = CesiumPackageManifestSerializer.Serialize(legacy);
+        Assert.DoesNotContain("\"modelRole\"", legacyJson);
+        Assert.Null(CesiumPackageManifestSerializer.Deserialize(legacyJson).Source!.ModelRole);
+
+        CesiumPackageManifest tagged = CreateSample();
+        tagged.Source!.ModelRole = modelRole;
+        string taggedJson = CesiumPackageManifestSerializer.Serialize(tagged);
+        Assert.Contains($"\"modelRole\": \"{modelRole}\"", taggedJson);
+        Assert.Equal(modelRole, CesiumPackageManifestSerializer.Deserialize(taggedJson).Source!.ModelRole);
+    }
+
+    [Theory]
+    [InlineData("authoring", "authoring", false)]
+    [InlineData("AUTHORING", "authoring", false)]
+    [InlineData("showcase", "showcase", true)]
+    [InlineData(" SHOWCASE ", "showcase", true)]
+    [InlineData(null, null, false)]
+    [InlineData("", null, false)]
+    [InlineData("unknown", null, false)]
+    public void CesiumModelRoles_NormalizeAndDetectShowcase(string? input, string? expected, bool expectedShowcase)
+    {
+        Assert.Equal(expected, CesiumModelRoles.Normalize(input));
+        Assert.Equal(expectedShowcase, CesiumModelRoles.IsShowcase(input));
+    }
 }

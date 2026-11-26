@@ -425,6 +425,7 @@ internal static class StationSend
                 AnchorEasting = context.AnchorProjectedCoordinate.Easting,
                 AnchorNorthing = context.AnchorProjectedCoordinate.Northing,
                 ModelId = modelId,
+                ModelRole = GisStandardStateReader.ReadModelRole(document),
                 LevelMap = gis.LevelMap,
                 GisLayers = new List<string> { "unit", "detail", "opening", "fixture", "level" },
                 GisRules = gis.Rules,

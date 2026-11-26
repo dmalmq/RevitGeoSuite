@@ -79,6 +79,9 @@ public sealed class GisStandardModelState
 
     /// <summary>Names of floor types in use that are not standard types and have no known <c>gis_category</c>.</summary>
     public IReadOnlyList<string> FloorTypesWithoutCategory { get; set; } = Array.Empty<string>();
+
+    /// <summary>Raw value of the <c>gis_model_role</c> shared parameter on Project Information, or empty when unset.</summary>
+    public string ModelRole { get; set; } = string.Empty;
 }
 
 public sealed class GisStandardStatus
@@ -214,6 +217,12 @@ public static class GisStandardCheck
         }
 
         AddParameterIssues(bound, issues);
+
+        ShowcaseExportGateResult roleGate = ShowcaseExportGuard.EvaluateAuthoringExportGate(model.ModelRole, "GIS");
+        if (roleGate.IsBlocked)
+        {
+            issues.Add(new GisStandardIssue(GisStandardIssueSeverity.Error, roleGate.Message, blocksExport: true));
+        }
 
         bool setUp = state != GisStandardState.NotSetUp;
         if (setUp && model.GisViewCount == 0)

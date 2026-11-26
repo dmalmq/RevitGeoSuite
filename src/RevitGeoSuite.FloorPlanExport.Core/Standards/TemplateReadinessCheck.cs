@@ -192,14 +192,15 @@ public sealed class RfaFolderValidationResult
     public bool Truncated { get; }
 }
 
-/// <summary>One linked Revit model inspected for stable ModelId readiness.</summary>
+/// <summary>One linked Revit model inspected for stable ModelId and model-role readiness.</summary>
 public sealed class LinkedModelReadinessInfo
 {
-    public LinkedModelReadinessInfo(string name, bool isLoaded, string? modelId = null)
+    public LinkedModelReadinessInfo(string name, bool isLoaded, string? modelId = null, string? modelRole = null)
     {
         Name = name ?? string.Empty;
         IsLoaded = isLoaded;
         ModelId = modelId ?? string.Empty;
+        ModelRole = modelRole ?? string.Empty;
     }
 
     public string Name { get; }
@@ -207,6 +208,9 @@ public sealed class LinkedModelReadinessInfo
     public bool IsLoaded { get; }
 
     public string ModelId { get; }
+
+    /// <summary>Raw <c>gis_model_role</c> read from the linked document's Project Information, or empty when unset.</summary>
+    public string ModelRole { get; }
 }
 
 /// <summary>Pure-data snapshot of a Revit project or .rte template evaluated by <see cref="ProjectReadinessEvaluator"/>.</summary>
@@ -270,6 +274,12 @@ public sealed class ReadinessCheckSnapshot
     public IReadOnlyList<string> ExportViewHideFilterNames { get; set; } = Array.Empty<string>();
 
     public IReadOnlyList<LinkedModelReadinessInfo> LinkedModels { get; set; } = Array.Empty<LinkedModelReadinessInfo>();
+
+    /// <summary>Raw <c>gis_model_role</c> read from the active document's Project Information, or empty when unset.</summary>
+    public string HostModelRole { get; set; } = string.Empty;
+
+    /// <summary>Showcase elements detected inside the active model (evaluated by <c>KZ-ELEM-005</c>).</summary>
+    public IReadOnlyList<ShowcaseElementFinding> ShowcaseElements { get; set; } = Array.Empty<ShowcaseElementFinding>();
 
     public ReadinessMode SuggestedMode => SuggestMode(DocumentPath, DocumentTitle, IsEmptyModel);
 
@@ -380,6 +390,8 @@ public sealed class ProjectReadinessReport
         "qa-schedule-floors", "qa-schedule-circulation", "qa-schedule-doors",
         "view-template-export-plan", "view-template-hide-filter",
         "project-crs", "model-ids", "level-metadata",
+        ShowcaseReadinessEvaluator.FederationItemId,
+        ShowcaseReadinessEvaluator.ElementsItemId,
     };
 
     public ProjectReadinessReport(
@@ -898,6 +910,7 @@ public static class ProjectReadinessEvaluator
             EvaluateTemplateHygieneGroup(snapshot, mode),
             EvaluateTemplateViewsGroup(templatePlan, snapshot),
             EvaluateProjectOnlyGroup(snapshot, mode),
+            EvaluateShowcaseIsolationGroup(snapshot),
         };
 
         return new ProjectReadinessReport(
@@ -1519,10 +1532,23 @@ public static class ProjectReadinessEvaluator
         return new ReadinessCheckGroup("template-views", "QA schedules & export view template", items);
     }
 
-    private const string ShowcaseFilterPrefix = "[KANIZU_FORMA_RO]";
-
     private static bool IsReservedShowcaseFilter(string name) =>
-        name.StartsWith(ShowcaseFilterPrefix, StringComparison.OrdinalIgnoreCase);
+        ShowcaseExportGuard.IsReservedShowcaseFilterName(name);
+
+    private static ReadinessCheckGroup EvaluateShowcaseIsolationGroup(ReadinessCheckSnapshot snapshot)
+    {
+        ReadinessCheckItem federationGuard = ShowcaseReadinessEvaluator
+            .EvaluateFederationGuard(snapshot)
+            .ToReadinessCheckItem();
+        ReadinessCheckItem elementGuard = ShowcaseReadinessEvaluator
+            .EvaluateShowcaseElements(snapshot)
+            .ToReadinessCheckItem();
+
+        return new ReadinessCheckGroup(
+            "showcase-isolation",
+            "Showcase isolation & export-loop guards",
+            new[] { federationGuard, elementGuard });
+    }
 
     private static ReadinessCheckGroup EvaluateProjectOnlyGroup(ReadinessCheckSnapshot snapshot, ReadinessMode mode)
     {

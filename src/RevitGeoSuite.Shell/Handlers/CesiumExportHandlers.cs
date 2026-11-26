@@ -266,6 +266,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
                 AnchorEasting = tiles.AnchorEasting,
                 AnchorNorthing = tiles.AnchorNorthing,
                 ModelId = tiles.ModelId,
+                ModelRole = tiles.ModelRole,
                 LevelMap = gis.LevelMap,
                 GisLayers = new List<string> { "unit", "detail", "opening", "fixture", "level" },
                 GisRules = gis.Rules,
@@ -356,6 +357,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
         public double AnchorEasting;
         public double AnchorNorthing;
         public string? ModelId;
+        public string? ModelRole;
         public Tiles3DExportState State = new();
         public CesiumPackageExport? Export;
     }
@@ -409,6 +411,7 @@ public sealed class CesiumExportRunHandler : IRpcHandler
             AnchorEasting = context.AnchorProjectedCoordinate.Easting,
             AnchorNorthing = context.AnchorProjectedCoordinate.Northing,
             ModelId = modelId,
+            ModelRole = prep.Package.ModelRole ?? GisStandardStateReader.ReadModelRole(document),
             State = exportResult.UpdatedState,
             Export = Tiles3DExportSupport.DescribeExport(scopeSelection, lod, prep.Package.UsedExactPlacement),
         };
@@ -486,6 +489,7 @@ public sealed class CesiumPushHandler : IRpcHandler
                         SourceModel = Path.GetFileName(document.PathName ?? string.Empty),
                         DocumentKey = projectKey,
                         ModelId = RevitKey.IsDocumentModelKey(modelKey) ? null : modelKey,
+                        ModelRole = GisStandardStateReader.ReadModelRole(document),
                         GeneratorVersion = typeof(CesiumPushHandler).Assembly.GetName().Version?.ToString() ?? string.Empty,
                         LevelMap = CesiumExportSupport.BuildLevelMap(document),
                     };

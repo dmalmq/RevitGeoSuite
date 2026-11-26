@@ -306,6 +306,30 @@ public sealed class CesiumPackageFolderComposerTests : IDisposable
         Assert.Equal("8d7f3c1e-2b4a-4f1e-9a51-0d3c2e1f4b6a", manifest.Source!.ModelId);
     }
 
+    [Fact]
+    public void ComposeFromFolder_WritesAndPreservesSourceModelRoleForSameModel()
+    {
+        File.WriteAllText(Path.Combine(_root, "tower.gpkg"), "gpkg");
+        CesiumPackageBuildInputs firstInputs = Inputs();
+        firstInputs.DocumentKey = "doc-key";
+        firstInputs.ModelRole = "SHOWCASE";
+
+        CesiumPackageManifest first = CesiumPackageFolderComposer.ComposeFromFolder(_root, firstInputs);
+        Assert.Equal(CesiumModelRoles.Showcase, first.Source!.ModelRole);
+
+        CesiumPackageBuildInputs secondInputs = Inputs();
+        secondInputs.DocumentKey = "DOC-KEY";
+        secondInputs.ModelRole = null;
+        CesiumPackageManifest preserved = CesiumPackageFolderComposer.ComposeFromFolder(_root, secondInputs);
+        Assert.Equal(CesiumModelRoles.Showcase, preserved.Source!.ModelRole);
+
+        CesiumPackageBuildInputs otherModelInputs = Inputs();
+        otherModelInputs.DocumentKey = "other-doc";
+        otherModelInputs.ModelRole = null;
+        CesiumPackageManifest otherModel = CesiumPackageFolderComposer.ComposeFromFolder(_root, otherModelInputs);
+        Assert.Null(otherModel.Source!.ModelRole);
+    }
+
     /// <summary>A package as the combined export leaves it in an ordinary folder: tiles/, gis/ and a full manifest.</summary>
     private void WriteExportedPackage(string documentKey)
     {

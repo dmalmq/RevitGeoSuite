@@ -6,6 +6,8 @@ using Autodesk.Revit.DB;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.CesiumHandoff;
 using RevitGeoSuite.Core.Coordinates;
+using RevitGeoSuite.FloorPlanExport.Core.Standards;
+using RevitGeoSuite.FloorPlanExport.Export;
 using RevitGeoSuite.SharedUI.Shell;
 using RevitGeoSuite.SharedUI.Web.Contracts;
 using RevitGeoSuite.Tiles3DExport;
@@ -28,6 +30,10 @@ internal static class Tiles3DExportSupport
         string requestedScope,
         string? selectedViewUniqueId)
     {
+        ShowcaseExportGuard.ThrowIfAuthoringExportBlocked(
+            GisStandardStateReader.ReadModelRoleText(document),
+            "3D Tiles");
+
         var transformer = new CoordinateTransformer(new CrsRegistry());
         var resolver = new Tiles3DExportReferenceResolver(transformer);
         Tiles3DExportReferenceContext reference = resolver.Resolve(currentState, info, ReferenceSource)

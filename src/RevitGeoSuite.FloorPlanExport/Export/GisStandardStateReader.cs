@@ -49,8 +49,32 @@ public static class GisStandardStateReader
                 .Count(view => !view.IsTemplate &&
                                (view.Name ?? string.Empty).StartsWith(GisModelFile.GisViewPrefix, StringComparison.OrdinalIgnoreCase)),
             FloorTypesWithoutCategory = ReadFloorTypesWithoutCategory(document),
+            ModelRole = ReadModelRoleText(document),
         };
     }
+
+    /// <summary>Raw trimmed text of the <c>gis_model_role</c> shared parameter on Project Information (read strictly by frozen GUID).</summary>
+    public static string ReadModelRoleText(Document? document)
+    {
+        if (document?.ProjectInformation == null)
+        {
+            return string.Empty;
+        }
+
+        Parameter? parameter = FindSharedParameter(
+            document.ProjectInformation,
+            GisSharedParameters.GisModelRole,
+            allowNameFallback: false);
+        return ReadRawOrDisplayText(parameter).Trim();
+    }
+
+    /// <summary>Normalized <c>gis_model_role</c> (<c>"authoring"</c>, <c>"showcase"</c>, or <c>null</c> when unset/unrecognized).</summary>
+    public static string? ReadModelRole(Document? document) =>
+        ShowcaseExportGuard.NormalizeModelRole(ReadModelRoleText(document));
+
+    /// <summary>True when <paramref name="document"/> is stamped with <c>gis_model_role = "showcase"</c>.</summary>
+    public static bool IsShowcaseDocument(Document? document) =>
+        ShowcaseExportGuard.IsShowcaseModelRole(ReadModelRoleText(document));
 
     public static int? ReadStandardVersion(Document? document)
     {
@@ -222,6 +246,8 @@ public static class GisStandardStateReader
             ElementsWithBakedInIdCount = elementBakedCount,
             ElementsWithBakedInIdSample = elementBakedSample,
             LinkedModels = ReadLinkedModels(document),
+            HostModelRole = ReadModelRoleText(document),
+            ShowcaseElements = ReadShowcaseElements(document),
         };
     }
 
@@ -449,10 +475,49 @@ public static class GisStandardStateReader
             }
 
             string modelId = TryLoadGeoProjectInfo(linkedDoc)?.ModelId?.Trim() ?? string.Empty;
-            links.Add(new LinkedModelReadinessInfo(name, isLoaded: true, modelId: modelId));
+            string modelRole = ReadModelRoleText(linkedDoc);
+            links.Add(new LinkedModelReadinessInfo(name, isLoaded: true, modelId: modelId, modelRole: modelRole));
         }
 
         return links;
+    }
+
+    private const int ShowcaseFindingSampleLimit = 64;
+
+    private static List<ShowcaseElementFinding> ReadShowcaseElements(Document document)
+    {
+        List<ShowcaseElementFinding> findings = new();
+        foreach (Element element in new FilteredElementCollector(document).WhereElementIsNotElementType())
+        {
+            if (element is RevitLinkInstance || element.ViewSpecific || element.Category == null)
+            {
+                continue;
+            }
+
+            if (element.Category.CategoryType != CategoryType.Model && element is not DirectShape)
+            {
+                continue;
+            }
+
+            ShowcaseElementCheckResult check = RevitShowcaseElementFilter.ClassifyElement(element);
+            if (!check.IsShowcase)
+            {
+                continue;
+            }
+
+            findings.Add(new ShowcaseElementFinding(
+                element.Id.Value,
+                RevitShowcaseElementFilter.DescribeElement(element),
+                check.Reason,
+                check.MatchedMarker));
+
+            if (findings.Count >= ShowcaseFindingSampleLimit)
+            {
+                break;
+            }
+        }
+
+        return findings;
     }
 
     private static string LinkDeduplicationKey(RevitLinkInstance link, Document? linkedDoc)

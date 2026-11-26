@@ -136,6 +136,10 @@ public sealed class FloorGeoPackageExporter
             throw new ArgumentException("At least one feature type must be selected.", nameof(featureTypes));
         }
 
+        ShowcaseExportGuard.ThrowIfAuthoringExportBlocked(
+            GisStandardStateReader.ReadModelRoleText(_document),
+            "2D GeoPackage");
+
         List<ViewPlan> exportViews = selectedViews
             .Where(view => view != null && view.GenLevel != null)
             .GroupBy(view => view.Id.Value)

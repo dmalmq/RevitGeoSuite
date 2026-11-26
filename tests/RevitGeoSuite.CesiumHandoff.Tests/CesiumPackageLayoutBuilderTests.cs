@@ -397,4 +397,24 @@ public sealed class CesiumPackageLayoutBuilderTests : IDisposable
 
         Assert.Equal(CesiumPackageContentHasher.Compute(_root, new[] { "gis/tower.gpkg" }), hash);
     }
+
+    [Fact]
+    public void WriteManifest_WritesNormalizedModelRoleAndOmitsWhenUnset()
+    {
+        var builder = new CesiumPackageLayoutBuilder();
+        CesiumPackageLayout layout = builder.CreateLayout(_root);
+        File.WriteAllText(Path.Combine(layout.TilesDirectory, "tileset.json"), "{}");
+
+        CesiumPackageBuildInputs legacyInputs = CreateInputs();
+        legacyInputs.ModelRole = null;
+        CesiumPackageManifest legacy = builder.WriteManifest(layout, legacyInputs);
+        Assert.Null(legacy.Source!.ModelRole);
+        Assert.DoesNotContain("\"modelRole\"", File.ReadAllText(layout.ManifestPath));
+
+        CesiumPackageBuildInputs v3Inputs = CreateInputs();
+        v3Inputs.ModelRole = " AUTHORING ";
+        CesiumPackageManifest authored = builder.WriteManifest(layout, v3Inputs);
+        Assert.Equal(CesiumModelRoles.Authoring, authored.Source!.ModelRole);
+        Assert.Contains("\"modelRole\": \"authoring\"", File.ReadAllText(layout.ManifestPath));
+    }
 }
