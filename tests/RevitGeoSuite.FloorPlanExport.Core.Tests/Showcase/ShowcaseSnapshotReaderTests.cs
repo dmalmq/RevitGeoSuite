@@ -370,6 +370,93 @@ public sealed class ShowcaseSnapshotReaderTests : IDisposable
         Assert.Single(parsed.Layers[0].Features);
     }
 
+    [Fact]
+    public void RejectsDuplicateLayerNames()
+    {
+        ShowcaseFeature MakeUnit(string key) => new(
+            key,
+            "level:0",
+            "0",
+            new ShowcasePolygonGeometry(new IReadOnlyList<Point2D>[]
+            {
+                new[] { new Point2D(0, 0), new Point2D(5, 0), new Point2D(5, 5), new Point2D(0, 5), new Point2D(0, 0) },
+            }),
+            new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+            {
+                ["id"] = ShowcaseAttributeValue.FromText(key),
+            });
+
+        ShowcaseLayer first = new(
+            "1F_unit",
+            ShowcaseLayerKind.Unit,
+            new[] { new ShowcaseField("id", ShowcaseFieldType.Text) },
+            new[] { MakeUnit("u-1") });
+        ShowcaseLayer duplicate = new(
+            "1F_unit",
+            ShowcaseLayerKind.Unit,
+            new[] { new ShowcaseField("id", ShowcaseFieldType.Text) },
+            new[] { MakeUnit("u-1") });
+
+        string json = SerializeSnapshotWithValidHash(
+            scope: "dup_layer_test",
+            basedOn: null,
+            writtenUtc: "2026-11-27T00:00:00Z",
+            kanizu: "0.9.0",
+            epsg: 6677,
+            levels: new[] { new ShowcaseLevel("level:0", "0", 0, "1F", 0.0d, ShowcaseElevationSource.Surveyed) },
+            layers: new[] { first, duplicate },
+            quarantined: Array.Empty<QuarantinedShowcaseFeature>());
+
+        ShowcaseSnapshotException ex = Assert.Throws<ShowcaseSnapshotException>(() => ShowcaseSnapshotReader.Parse(json));
+        Assert.Contains("Duplicate layer name '1F_unit'", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsMismatchedSummaryCountsByKindEvenWithMatchingTotalsAndValidHash()
+    {
+        string validJson = BuildValidFullSnapshotJson();
+        ShowcaseSnapshot valid = ShowcaseSnapshotReader.Parse(validJson);
+        JObject root = JObject.Parse(validJson);
+
+        // Mutate summary.countsByKind so the sum still equals totalFeatures (9) and totalLayers/totalQuarantined match,
+        // then recompute a matching contentHash so only countsByKind disagrees with the actual parsed features.
+        Dictionary<ShowcaseLayerKind, int> mutatedCounts = new();
+        foreach (KeyValuePair<ShowcaseLayerKind, int> kvp in valid.Summary.CountsByKind)
+        {
+            mutatedCounts[kvp.Key] = kvp.Value;
+        }
+
+        mutatedCounts[ShowcaseLayerKind.Unit] = 2;
+        mutatedCounts[ShowcaseLayerKind.Opening] = 0;
+        ShowcaseSummary mutatedSummary = new(
+            mutatedCounts,
+            valid.Summary.TotalLayers,
+            valid.Summary.TotalFeatures,
+            valid.Summary.TotalQuarantined);
+        ShowcaseSnapshot mutatedSnapshot = new(
+            valid.Schema,
+            valid.Version,
+            valid.Scope,
+            valid.BasedOn,
+            valid.WrittenUtc,
+            valid.Kanizu,
+            valid.Epsg,
+            contentHash: string.Empty,
+            valid.Levels,
+            valid.Layers,
+            valid.Quarantined,
+            mutatedSummary);
+
+        JObject countsByKind = (JObject)root["summary"]!["countsByKind"]!;
+        countsByKind["unit"] = 2;
+        countsByKind["opening"] = 0;
+        root["contentHash"] = ShowcaseSnapshotReader.ComputeContentHash(mutatedSnapshot);
+
+        ShowcaseSnapshotException ex = Assert.Throws<ShowcaseSnapshotException>(
+            () => ShowcaseSnapshotReader.Parse(root.ToString(Formatting.Indented)));
+        Assert.Contains("countsByKind", ex.Message, StringComparison.Ordinal);
+    }
+
     internal static string BuildValidFullSnapshotJson(string writtenUtc = "2026-05-01T00:00:00Z")
     {
         ShowcaseLevel[] levels =

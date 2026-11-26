@@ -643,7 +643,10 @@ public static class ShowcaseGeometryPlanner
                     continue;
                 }
 
-                NtsGeometry holeRim = holePoly.Buffer(bandWidthMeters * 0.5d, bufferParams).Difference(holePoly);
+                NtsGeometry innerVoid = holePoly.Buffer(-bandWidthMeters * 0.5d, bufferParams);
+                NtsGeometry holeRim = (innerVoid == null || innerVoid.IsEmpty)
+                    ? holePoly
+                    : holePoly.Difference(innerVoid);
                 AppendNtsPolygons(solids, holeRim, baseFeet, heightFeet, transform, options);
             }
         }

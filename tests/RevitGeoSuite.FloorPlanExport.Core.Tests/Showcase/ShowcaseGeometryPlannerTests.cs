@@ -407,6 +407,92 @@ public sealed class ShowcaseGeometryPlannerTests
         Assert.Contains(nullableNoteDef.Guid, nulledStep.ClearedParameterGuids);
     }
 
+    [Fact]
+    public void LevelOutlineWithInteriorAtriumHoleKeepsHoleRimStrictlyInsideHole()
+    {
+        Point2D[] exteriorMeters =
+        {
+            new(0, 0), new(20, 0), new(20, 12), new(0, 12), new(0, 0),
+        };
+        Point2D[] atriumHoleMeters =
+        {
+            new(7, 4), new(13, 4), new(13, 8), new(7, 8), new(7, 4),
+        };
+
+        ShowcaseLayer levelLayer = new(
+            "1F_level",
+            ShowcaseLayerKind.Level,
+            new[]
+            {
+                new ShowcaseField("id", ShowcaseFieldType.Text),
+                new ShowcaseField("short_name", ShowcaseFieldType.Text),
+            },
+            new[]
+            {
+                new ShowcaseFeature(
+                    "level-atrium",
+                    "level:0",
+                    "0",
+                    new ShowcasePolygonGeometry(new IReadOnlyList<Point2D>[] { exteriorMeters, atriumHoleMeters }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["id"] = ShowcaseAttributeValue.FromText("level:0"),
+                        ["short_name"] = ShowcaseAttributeValue.FromText("1F"),
+                    }),
+            });
+
+        string json = ShowcaseSnapshotReaderTests.SerializeSnapshotWithValidHash(
+            scope: "atrium_level_rim",
+            basedOn: null,
+            writtenUtc: "2026-11-27T00:00:00Z",
+            kanizu: "0.9.0",
+            epsg: 6677,
+            levels: new[] { new ShowcaseLevel("level:0", "0", 0, "1F", 0.0d, ShowcaseElevationSource.Surveyed) },
+            layers: new[] { levelLayer },
+            quarantined: Array.Empty<QuarantinedShowcaseFeature>());
+
+        ShowcaseSnapshot snapshot = ShowcaseSnapshotReader.Parse(json);
+        ShowcaseGeometryPlanResult planResult = ShowcaseGeometryPlanner.Plan(snapshot, ShowcaseCoordinateTransform.Identity);
+
+        ShowcaseElementPlan levelElement = Assert.Single(planResult.Elements);
+        Assert.Equal(2, levelElement.Solids.Count);
+
+        GeometryFactory factory = new();
+        double ToFeet(double m) => ShowcaseCoordinateTransform.MetersToFeet(m);
+
+        LinearRing outerRingFeet = factory.CreateLinearRing(new[]
+        {
+            new Coordinate(ToFeet(0), ToFeet(0)),
+            new Coordinate(ToFeet(20), ToFeet(0)),
+            new Coordinate(ToFeet(20), ToFeet(12)),
+            new Coordinate(ToFeet(0), ToFeet(12)),
+            new Coordinate(ToFeet(0), ToFeet(0)),
+        });
+        LinearRing holeRingFeet = factory.CreateLinearRing(new[]
+        {
+            new Coordinate(ToFeet(7), ToFeet(4)),
+            new Coordinate(ToFeet(13), ToFeet(4)),
+            new Coordinate(ToFeet(13), ToFeet(8)),
+            new Coordinate(ToFeet(7), ToFeet(8)),
+            new Coordinate(ToFeet(7), ToFeet(4)),
+        });
+        Polygon floorWithHole = factory.CreatePolygon(outerRingFeet, new[] { holeRingFeet });
+        Polygon holePoly = factory.CreatePolygon(holeRingFeet);
+        Point holeCenter = factory.CreatePoint(new Coordinate(ToFeet(10), ToFeet(6)));
+
+        Polygon[] plannedPolys = levelElement.Solids.Select(ToNtsPolygon).ToArray();
+        // Identify the interior hole rim solid as the one intersecting the hole polygon.
+        Polygon holeRimPoly = Assert.Single(plannedPolys, p => p.Intersection(holePoly).Area > 1e-4d);
+
+        // Rim must be strictly contained within the atrium hole (tolerance 1e-6 sq ft for float conversion)
+        // and must NOT spill onto the occupied floor footprint.
+        Assert.InRange(holeRimPoly.Difference(holePoly).Area, 0d, 1e-6d);
+        Assert.InRange(holeRimPoly.Intersection(floorWithHole).Area, 0d, 1e-6d);
+        // Center of the atrium must remain open (non-occluding annulus).
+        Assert.False(holeRimPoly.Covers(holeCenter));
+        Assert.True(holeRimPoly.Area > 1e-2d);
+    }
+
     private static Polygon ToNtsPolygon(ShowcaseExtrusionSolid solid)
     {
         GeometryFactory factory = new();

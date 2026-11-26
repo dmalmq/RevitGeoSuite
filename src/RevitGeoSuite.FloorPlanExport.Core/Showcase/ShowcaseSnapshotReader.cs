@@ -563,6 +563,7 @@ public static class ShowcaseSnapshotReader
     {
         JArray array = ReadRequiredArray(root, "layers", "top-level");
         List<ShowcaseLayer> layers = new(array.Count);
+        HashSet<string> seenLayerNames = new(StringComparer.Ordinal);
         for (int i = 0; i < array.Count; i++)
         {
             if (array[i] is not JObject obj)
@@ -572,6 +573,11 @@ public static class ShowcaseSnapshotReader
 
             string ctx = $"layers[{i}]";
             string name = ReadRequiredNonBlankString(obj, "name", ctx);
+            if (!seenLayerNames.Add(name))
+            {
+                throw new ShowcaseSnapshotException($"Duplicate layer name '{name}' in snapshot.");
+            }
+
             ShowcaseLayerKind kind = ParseLayerKind(ReadRequiredString(obj, "kind", ctx), ctx);
             IReadOnlyList<ShowcaseField> fields = ParseFields(obj, name);
             IReadOnlyList<ShowcaseFeature> features = ParseFeatures(obj, name, options);
@@ -978,11 +984,33 @@ public static class ShowcaseSnapshotReader
         int totalFeatures = ReadRequiredInt32(summaryObj, "totalFeatures", "summary");
         int totalQuarantined = ReadRequiredInt32(summaryObj, "totalQuarantined", "summary");
 
-        int actualFeatures = layers.Sum(layer => layer.Features.Count);
-        if (totalLayers != layers.Count || totalFeatures != actualFeatures || totalQuarantined != quarantined.Count)
+        ShowcaseSummary expected = ComputeSummary(layers, quarantined);
+        if (totalLayers != expected.TotalLayers
+            || totalFeatures != expected.TotalFeatures
+            || totalQuarantined != expected.TotalQuarantined)
         {
             throw new ShowcaseSnapshotException(
-                $"Showcase summary counts do not match payload (summary: {totalLayers} layers / {totalFeatures} features / {totalQuarantined} quarantined; actual: {layers.Count} / {actualFeatures} / {quarantined.Count}).");
+                $"Showcase summary counts do not match payload (summary: {totalLayers} layers / {totalFeatures} features / {totalQuarantined} quarantined; actual: {expected.TotalLayers} / {expected.TotalFeatures} / {expected.TotalQuarantined}).");
+        }
+
+        foreach (KeyValuePair<ShowcaseLayerKind, int> kvp in expected.CountsByKind)
+        {
+            int reported = countsByKind.TryGetValue(kvp.Key, out int value) ? value : 0;
+            if (reported != kvp.Value)
+            {
+                throw new ShowcaseSnapshotException(
+                    $"Showcase summary countsByKind.{ToContractString(kvp.Key)} ({reported}) does not match actual feature count ({kvp.Value}).");
+            }
+        }
+
+        foreach (KeyValuePair<ShowcaseLayerKind, int> kvp in countsByKind)
+        {
+            int actual = expected.CountsByKind.TryGetValue(kvp.Key, out int value) ? value : 0;
+            if (kvp.Value != actual)
+            {
+                throw new ShowcaseSnapshotException(
+                    $"Showcase summary countsByKind.{ToContractString(kvp.Key)} ({kvp.Value}) does not match actual feature count ({actual}).");
+            }
         }
 
         return new ShowcaseSummary(countsByKind, totalLayers, totalFeatures, totalQuarantined);
