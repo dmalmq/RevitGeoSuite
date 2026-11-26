@@ -4,6 +4,16 @@ using System.Linq;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Standards;
 
+/// <summary>Revit-API-free parameter storage kind mirror for populated-value checks.</summary>
+public enum ShowcaseParameterStorageKind
+{
+    None = 0,
+    Integer = 1,
+    Double = 2,
+    String = 3,
+    ElementId = 4,
+}
+
 /// <summary>Reason an element or document was classified as Forma Companion showcase content.</summary>
 public enum ShowcaseElementReason
 {
@@ -249,6 +259,40 @@ public static class ShowcaseExportGuard
         }
 
         return parameterName!.Trim().StartsWith(ShowcaseParameterPrefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when a <c>KS_*</c>/<c>ks_*</c> parameter carries a meaningful populated value rather than a
+    /// category-wide default (<c>None</c>, blank text, <c>InvalidElementId</c>, <c>0</c>, or <c>0.0</c>)
+    /// on an untouched authoring element.
+    /// </summary>
+    public static bool IsPopulatedParameterValue(
+        ShowcaseParameterStorageKind storageKind,
+        bool hasValue,
+        string? stringValue = null,
+        int integerValue = 0,
+        double doubleValue = 0d,
+        long? elementIdValue = null)
+    {
+        if (!hasValue)
+        {
+            return false;
+        }
+
+        switch (storageKind)
+        {
+            case ShowcaseParameterStorageKind.String:
+                return !string.IsNullOrWhiteSpace(stringValue);
+            case ShowcaseParameterStorageKind.Integer:
+                return integerValue != 0;
+            case ShowcaseParameterStorageKind.Double:
+                return !double.IsNaN(doubleValue) && !double.IsInfinity(doubleValue) && doubleValue != 0d;
+            case ShowcaseParameterStorageKind.ElementId:
+                return elementIdValue.HasValue && elementIdValue.Value != -1L;
+            case ShowcaseParameterStorageKind.None:
+            default:
+                return false;
+        }
     }
 
     /// <summary>True when a view filter name uses the reserved <c>[KANIZU_FORMA_RO]</c> showcase-exclusion prefix.</summary>

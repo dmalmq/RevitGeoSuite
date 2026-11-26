@@ -56,6 +56,134 @@ public sealed class Tiles3DShowcaseGuardInvarianceTests : IDisposable
     }
 
     [Theory]
+    [InlineData("showcase")]
+    [InlineData("SHOWCASE")]
+    [InlineData("  ShOwCaSe  ")]
+    [InlineData("authoring")]
+    [InlineData("AUTHORING")]
+    [InlineData("  Authoring ")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("draft")]
+    [InlineData("showcase\n")]
+    [InlineData("showcase\r")]
+    [InlineData("showcase\t")]
+    [InlineData("showcase\u2028")]
+    [InlineData("showcase\u2029")]
+    [InlineData("authoring\0")]
+    public void Tiles3DShowcaseGuardModelRolePredicatesMatchShowcaseExportGuard(string? rawRole)
+    {
+        Assert.Equal(
+            ShowcaseExportGuard.NormalizeModelRole(rawRole),
+            Tiles3DShowcaseGuard.NormalizeModelRole(rawRole));
+        Assert.Equal(
+            ShowcaseExportGuard.IsShowcaseModelRole(rawRole),
+            Tiles3DShowcaseGuard.IsShowcaseModelRole(rawRole));
+    }
+
+    [Theory]
+    [InlineData("Kanizu.Showcase")]
+    [InlineData("kanizu.showcase")]
+    [InlineData("  KANIZU.SHOWCASE  ")]
+    [InlineData("Kanizu.Authoring")]
+    [InlineData("Kanizu.Showcase.Extra")]
+    [InlineData("Kanizu.Showcase\n")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void Tiles3DShowcaseGuardApplicationIdPredicateMatchesShowcaseExportGuard(string? applicationId)
+    {
+        Assert.Equal(
+            ShowcaseExportGuard.IsShowcaseApplicationId(applicationId),
+            Tiles3DShowcaseGuard.IsShowcaseApplicationId(applicationId));
+    }
+
+    [Theory]
+    [InlineData("KNZ_FRM_PoiMarker")]
+    [InlineData("knz_frm_unit_extrusion")]
+    [InlineData("  Knz_Frm_NetworkRibbon ")]
+    [InlineData("KNZ_FRM_")]
+    [InlineData("KNZ_Stair_Monolithic")]
+    [InlineData("KNZ_POI_FacilityMarker")]
+    [InlineData("MY_KNZ_FRM_Box")]
+    [InlineData("j 自動改札")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void Tiles3DShowcaseGuardFamilyOrTypeNamePredicateMatchesShowcaseExportGuard(string? name)
+    {
+        Assert.Equal(
+            ShowcaseExportGuard.IsShowcaseFamilyOrTypeName(name),
+            Tiles3DShowcaseGuard.IsShowcaseFamilyOrTypeName(name));
+    }
+
+    [Theory]
+    [InlineData("ks_layer")]
+    [InlineData("KS_SymbolId")]
+    [InlineData("  ks_attributes_json ")]
+    [InlineData("KS_Id")]
+    [InlineData("KS_")]
+    [InlineData("ks")]
+    [InlineData("gis_category")]
+    [InlineData("K_Footprint")]
+    [InlineData("my_ks_param")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void Tiles3DShowcaseGuardParameterNamePredicateMatchesShowcaseExportGuard(string? parameterName)
+    {
+        Assert.Equal(
+            ShowcaseExportGuard.IsShowcaseParameterName(parameterName),
+            Tiles3DShowcaseGuard.IsShowcaseParameterName(parameterName));
+    }
+
+    [Fact]
+    public void Tiles3DShowcaseGuardPopulatedParameterValueGuardRejectsDefaultsAndMatchesCore()
+    {
+        (ShowcaseParameterStorageKind CoreKind, Tiles3DShowcaseGuard.ParameterStorageKind TilesKind, bool HasValue, string? StringValue, int IntValue, double DoubleValue, long? ElementIdValue, bool Expected)[] cases =
+        {
+            (ShowcaseParameterStorageKind.None, Tiles3DShowcaseGuard.ParameterStorageKind.None, true, null, 0, 0d, null, false),
+            (ShowcaseParameterStorageKind.String, Tiles3DShowcaseGuard.ParameterStorageKind.String, false, "unit", 0, 0d, null, false),
+            (ShowcaseParameterStorageKind.String, Tiles3DShowcaseGuard.ParameterStorageKind.String, true, null, 0, 0d, null, false),
+            (ShowcaseParameterStorageKind.String, Tiles3DShowcaseGuard.ParameterStorageKind.String, true, "", 0, 0d, null, false),
+            (ShowcaseParameterStorageKind.String, Tiles3DShowcaseGuard.ParameterStorageKind.String, true, "   \t", 0, 0d, null, false),
+            (ShowcaseParameterStorageKind.String, Tiles3DShowcaseGuard.ParameterStorageKind.String, true, "unit", 0, 0d, null, true),
+            (ShowcaseParameterStorageKind.ElementId, Tiles3DShowcaseGuard.ParameterStorageKind.ElementId, true, null, 0, 0d, null, false),
+            (ShowcaseParameterStorageKind.ElementId, Tiles3DShowcaseGuard.ParameterStorageKind.ElementId, true, null, 0, 0d, -1L, false),
+            (ShowcaseParameterStorageKind.ElementId, Tiles3DShowcaseGuard.ParameterStorageKind.ElementId, true, null, 0, 0d, 4096L, true),
+            (ShowcaseParameterStorageKind.Integer, Tiles3DShowcaseGuard.ParameterStorageKind.Integer, true, null, 0, 0d, null, false),
+            (ShowcaseParameterStorageKind.Integer, Tiles3DShowcaseGuard.ParameterStorageKind.Integer, true, null, 1, 0d, null, true),
+            (ShowcaseParameterStorageKind.Double, Tiles3DShowcaseGuard.ParameterStorageKind.Double, true, null, 0, 0.0, null, false),
+            (ShowcaseParameterStorageKind.Double, Tiles3DShowcaseGuard.ParameterStorageKind.Double, true, null, 0, -0.0, null, false),
+            (ShowcaseParameterStorageKind.Double, Tiles3DShowcaseGuard.ParameterStorageKind.Double, true, null, 0, double.NaN, null, false),
+            (ShowcaseParameterStorageKind.Double, Tiles3DShowcaseGuard.ParameterStorageKind.Double, true, null, 0, double.PositiveInfinity, null, false),
+            (ShowcaseParameterStorageKind.Double, Tiles3DShowcaseGuard.ParameterStorageKind.Double, true, null, 0, 2.5, null, true),
+        };
+
+        foreach (var item in cases)
+        {
+            bool coreResult = ShowcaseExportGuard.IsPopulatedParameterValue(
+                item.CoreKind,
+                item.HasValue,
+                item.StringValue,
+                item.IntValue,
+                item.DoubleValue,
+                item.ElementIdValue);
+            bool tilesResult = Tiles3DShowcaseGuard.IsPopulatedParameterValue(
+                item.TilesKind,
+                item.HasValue,
+                item.StringValue,
+                item.IntValue,
+                item.DoubleValue,
+                item.ElementIdValue);
+
+            Assert.Equal(item.Expected, coreResult);
+            Assert.Equal(item.Expected, tilesResult);
+        }
+    }
+
+    [Theory]
     [InlineData("K_Footprint")]
     [InlineData("KNZ_FRM_PoiMarker")]
     [InlineData("knz_frm_network_ribbon")]

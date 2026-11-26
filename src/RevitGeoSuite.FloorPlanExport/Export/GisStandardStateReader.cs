@@ -487,6 +487,7 @@ public static class GisStandardStateReader
     private static List<ShowcaseElementFinding> ReadShowcaseElements(Document document)
     {
         List<ShowcaseElementFinding> findings = new();
+        RevitShowcaseElementFilter.TypeClassificationCache typeCache = new();
         foreach (Element element in new FilteredElementCollector(document).WhereElementIsNotElementType())
         {
             if (element is RevitLinkInstance || element.ViewSpecific || element.Category == null)
@@ -499,7 +500,7 @@ public static class GisStandardStateReader
                 continue;
             }
 
-            ShowcaseElementCheckResult check = RevitShowcaseElementFilter.ClassifyElement(element);
+            ShowcaseElementCheckResult check = RevitShowcaseElementFilter.ClassifyElement(element, typeCache: typeCache);
             if (!check.IsShowcase)
             {
                 continue;

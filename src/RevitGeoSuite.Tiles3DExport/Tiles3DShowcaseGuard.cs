@@ -159,30 +159,101 @@ internal static class Tiles3DShowcaseGuard
         return false;
     }
 
+    internal enum ParameterStorageKind
+    {
+        None = 0,
+        Integer = 1,
+        Double = 2,
+        String = 3,
+        ElementId = 4,
+    }
+
+    internal static bool IsPopulatedParameterValue(
+        ParameterStorageKind storageKind,
+        bool hasValue,
+        string? stringValue = null,
+        int integerValue = 0,
+        double doubleValue = 0d,
+        long? elementIdValue = null)
+    {
+        if (!hasValue)
+        {
+            return false;
+        }
+
+        switch (storageKind)
+        {
+            case ParameterStorageKind.String:
+                return !string.IsNullOrWhiteSpace(stringValue);
+            case ParameterStorageKind.Integer:
+                return integerValue != 0;
+            case ParameterStorageKind.Double:
+                return !double.IsNaN(doubleValue) && !double.IsInfinity(doubleValue) && doubleValue != 0d;
+            case ParameterStorageKind.ElementId:
+                return elementIdValue.HasValue && elementIdValue.Value != -1L;
+            case ParameterStorageKind.None:
+            default:
+                return false;
+        }
+    }
+
     private static bool HasPopulatedShowcaseParameter(Element element)
     {
         foreach (Parameter parameter in element.Parameters)
         {
             string? name = parameter?.Definition?.Name;
-            if (!IsShowcaseParameterName(name) || !parameter!.HasValue)
+            if (!IsShowcaseParameterName(name))
             {
                 continue;
             }
 
-            if (parameter.StorageType == StorageType.String)
-            {
-                if (!string.IsNullOrWhiteSpace(parameter.AsString()))
-                {
-                    return true;
-                }
-            }
-            else
+            if (HasPopulatedValue(parameter!))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static bool HasPopulatedValue(Parameter parameter)
+    {
+        if (!parameter.HasValue)
+        {
+            return false;
+        }
+
+        switch (parameter.StorageType)
+        {
+            case StorageType.None:
+                return IsPopulatedParameterValue(ParameterStorageKind.None, hasValue: true);
+            case StorageType.String:
+                return IsPopulatedParameterValue(
+                    ParameterStorageKind.String,
+                    hasValue: true,
+                    stringValue: parameter.AsString());
+            case StorageType.Integer:
+                return IsPopulatedParameterValue(
+                    ParameterStorageKind.Integer,
+                    hasValue: true,
+                    integerValue: parameter.AsInteger());
+            case StorageType.Double:
+                return IsPopulatedParameterValue(
+                    ParameterStorageKind.Double,
+                    hasValue: true,
+                    doubleValue: parameter.AsDouble());
+            case StorageType.ElementId:
+            {
+                ElementId? id = parameter.AsElementId();
+                long? idValue = id == null || id == ElementId.InvalidElementId ? null : id.Value;
+                return IsPopulatedParameterValue(
+                    ParameterStorageKind.ElementId,
+                    hasValue: true,
+                    elementIdValue: idValue);
+            }
+            default:
+                return false;
+        }
     }
 
     private static bool ContainsDisallowedCharacters(string? value)

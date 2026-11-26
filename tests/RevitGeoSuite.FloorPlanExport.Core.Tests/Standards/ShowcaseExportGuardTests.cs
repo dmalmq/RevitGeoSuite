@@ -133,6 +133,40 @@ public sealed class ShowcaseExportGuardTests : IDisposable
     }
 
     [Fact]
+    public void PopulatedParameterValueGuardRejectsDefaultsAndAcceptsPopulatedValues()
+    {
+        // hasValue == false always returns false regardless of payload.
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.String, hasValue: false, stringValue: "unit"));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Integer, hasValue: false, integerValue: 1));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Double, hasValue: false, doubleValue: 3.5));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.ElementId, hasValue: false, elementIdValue: 42));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.None, hasValue: false));
+
+        // StorageType.None, blank/whitespace strings, InvalidElementId (-1/null), and default 0/0.0/NaN/Infinity return false.
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.None, hasValue: true));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.String, hasValue: true, stringValue: null));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.String, hasValue: true, stringValue: ""));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.String, hasValue: true, stringValue: "   \t "));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.ElementId, hasValue: true, elementIdValue: null));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.ElementId, hasValue: true, elementIdValue: -1L));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Integer, hasValue: true, integerValue: 0));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Double, hasValue: true, doubleValue: 0.0));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Double, hasValue: true, doubleValue: -0.0));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Double, hasValue: true, doubleValue: double.NaN));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Double, hasValue: true, doubleValue: double.PositiveInfinity));
+        Assert.False(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Double, hasValue: true, doubleValue: double.NegativeInfinity));
+
+        // Populated non-default values return true.
+        Assert.True(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.String, hasValue: true, stringValue: "unit"));
+        Assert.True(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.String, hasValue: true, stringValue: " 1 "));
+        Assert.True(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Integer, hasValue: true, integerValue: 1));
+        Assert.True(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Integer, hasValue: true, integerValue: -2));
+        Assert.True(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Double, hasValue: true, doubleValue: 0.25));
+        Assert.True(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.Double, hasValue: true, doubleValue: -1.5));
+        Assert.True(ShowcaseExportGuard.IsPopulatedParameterValue(ShowcaseParameterStorageKind.ElementId, hasValue: true, elementIdValue: 1001L));
+    }
+
+    [Fact]
     public void LinkedShowcaseDocumentClassifiesElementsEvenWithoutElementMarkers()
     {
         bool isShowcase = ShowcaseExportGuard.IsShowcaseElement(

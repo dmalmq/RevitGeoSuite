@@ -62,9 +62,8 @@ public static class CesiumPackageFolderComposer
         string? modelId = !string.IsNullOrWhiteSpace(previous?.Source?.ModelId)
             ? previous!.Source!.ModelId
             : inputs.ModelId;
-        string? modelRole = !string.IsNullOrWhiteSpace(previous?.Source?.ModelRole)
-            ? previous!.Source!.ModelRole
-            : inputs.ModelRole;
+        string? modelRole = CesiumModelRoles.Normalize(inputs.ModelRole)
+            ?? CesiumModelRoles.Normalize(previous?.Source?.ModelRole);
         var manifest = new CesiumPackageManifest
         {
             PackageId = Guid.NewGuid().ToString(),
@@ -75,7 +74,7 @@ public static class CesiumPackageFolderComposer
                 Model = inputs.SourceModel,
                 DocumentKey = inputs.DocumentKey,
                 ModelId = string.IsNullOrWhiteSpace(modelId) ? null : modelId,
-                ModelRole = CesiumModelRoles.Normalize(modelRole),
+                ModelRole = modelRole,
             },
             Building = new CesiumPackageBuilding
             {
