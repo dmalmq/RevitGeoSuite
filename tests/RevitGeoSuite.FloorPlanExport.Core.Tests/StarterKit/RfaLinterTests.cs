@@ -374,6 +374,142 @@ public sealed class RfaLinterTests
             f => f.Subject == GisSharedParameters.GisLevelsServed);
     }
 
+    [Fact]
+    public void Rule004_RejectsNonFiniteNormalAndZCoordinates()
+    {
+        (StarterKitSpec kit, FamilyGeometrySpec spec, RfaInspectionSnapshot valid) = LoadValid("KNZ_CIRC_Elevator");
+
+        // NegativeInfinity normal.Z previously bypassed `normal.Z < -0.9`!
+        RfaInspectionSnapshot negInfNormal = ReplaceCoarseFaces(
+            valid,
+            new[] { new RfaPlanarFaceSnapshot(0.0, 0.0, double.NegativeInfinity, 0.0, 0.0, 0.0, 4_000_000) });
+        RfaLintReport r1 = RfaLinter.Lint(negInfNormal, spec, kit);
+        Assert.False(r1.Passed);
+        Assert.True(r1.HasFinding(RfaLinter.RuleCoarseDownwardBottomFace));
+
+        // NaN normalX/normalY/OriginZ/MinZ/MaxZ
+        RfaInspectionSnapshot nanFace = ReplaceCoarseFaces(
+            valid,
+            new[] { new RfaPlanarFaceSnapshot(double.NaN, 0.0, -1.0, 0.0, 0.0, 0.0, 4_000_000) });
+        RfaLintReport r2 = RfaLinter.Lint(nanFace, spec, kit);
+        Assert.False(r2.Passed);
+        Assert.True(r2.HasFinding(RfaLinter.RuleCoarseDownwardBottomFace));
+
+        RfaInspectionSnapshot infZ = ReplaceCoarseFaces(
+            valid,
+            new[] { new RfaPlanarFaceSnapshot(0.0, 0.0, -1.0, 0.0, double.NegativeInfinity, double.PositiveInfinity, 4_000_000) });
+        RfaLintReport r3 = RfaLinter.Lint(infZ, spec, kit);
+        Assert.False(r3.Passed);
+        Assert.True(r3.HasFinding(RfaLinter.RuleCoarseDownwardBottomFace));
+    }
+
+    [Fact]
+    public void Rule005_RejectsNonFiniteOrInvertedSolidAndEnvelopeBounds()
+    {
+        (StarterKitSpec kit, FamilyGeometrySpec spec, RfaInspectionSnapshot valid) = LoadValid("KNZ_CIRC_ElevatorDoor");
+
+        // NaN & +Infinity on Medium/Fine solid coordinates previously bypassed IEEE-754 `<` comparisons!
+        List<RfaSolidSnapshot> nonFiniteSolids = valid.Solids.Select(s =>
+            s.Name == "jamb_left"
+                ? new RfaSolidSnapshot(
+                    s.Name, s.Subcategory, s.MaterialName,
+                    s.VisibleInCoarse, s.VisibleInMedium, s.VisibleInFine,
+                    double.NaN, s.MaxXMm, s.MinYMm, s.MaxYMm, double.PositiveInfinity, s.MaxZMm, s.TriangleCount, s.PlanarFaces)
+                : s.Name == "jamb_right"
+                    ? new RfaSolidSnapshot(
+                        s.Name, s.Subcategory, s.MaterialName,
+                        s.VisibleInCoarse, s.VisibleInMedium, s.VisibleInFine,
+                        minXMm: 500.0, maxXMm: 100.0, s.MinYMm, s.MaxYMm, s.MinZMm, s.MaxZMm, s.TriangleCount, s.PlanarFaces)
+                    : s).ToList();
+
+        RfaLintReport solidReport = RfaLinter.Lint(CloneSnapshot(valid, solids: nonFiniteSolids), spec, kit);
+        Assert.False(solidReport.Passed);
+        IReadOnlyList<RfaLintFinding> r005 = solidReport.FindingsByRule[RfaLinter.RuleAntiZFightingClearances];
+        Assert.Contains(r005, f => f.Subject == "jamb_left");
+        Assert.Contains(r005, f => f.Subject == "jamb_right");
+
+        // Inverted / NaN Coarse envelope bounds
+        List<RfaSolidSnapshot> badEnvelope = valid.Solids.Select(s =>
+            s.Subcategory == CoarseGeometrySpec.FootprintSubcategory
+                ? new RfaSolidSnapshot(
+                    s.Name, s.Subcategory, s.MaterialName,
+                    s.VisibleInCoarse, s.VisibleInMedium, s.VisibleInFine,
+                    double.NaN, s.MaxXMm, s.MinYMm, s.MaxYMm, s.MinZMm, s.MaxZMm, s.TriangleCount, s.PlanarFaces)
+                : s).ToList();
+        RfaLintReport envReport = RfaLinter.Lint(CloneSnapshot(valid, solids: badEnvelope), spec, kit);
+        Assert.False(envReport.Passed);
+        Assert.True(envReport.HasFinding(RfaLinter.RuleAntiZFightingClearances));
+    }
+
+    [Fact]
+    public void Rules006_007_008_RejectNegativeAndInvalidCounts()
+    {
+        (StarterKitSpec kit, FamilyGeometrySpec spec, RfaInspectionSnapshot valid) = LoadValid("KNZ_CIRC_Escalator");
+
+        List<RfaSolidSnapshot> negSolidTris = valid.Solids.Select((s, idx) =>
+            idx == 0
+                ? new RfaSolidSnapshot(
+                    s.Name, s.Subcategory, s.MaterialName,
+                    s.VisibleInCoarse, s.VisibleInMedium, s.VisibleInFine,
+                    s.MinXMm, s.MaxXMm, s.MinYMm, s.MaxYMm, s.MinZMm, s.MaxZMm, triangleCount: -4, s.PlanarFaces)
+                : s).ToList();
+
+        RfaInspectionSnapshot negativeSnapshot = CloneSnapshot(
+            valid,
+            solids: negSolidTris,
+            coarseTriangles: -12,
+            mediumFineTriangles: -24,
+            importedCadCount: -1,
+            embeddedImageCount: -2,
+            nestedFamilies: new[] { new RfaNestedFamilySnapshot("KNZ_CIRC_ElevatorDoor", nestingDepth: 0) },
+            maxNestingDepth: -1);
+
+        RfaLintReport report = RfaLinter.Lint(negativeSnapshot, spec, kit);
+
+        Assert.False(report.Passed);
+        Assert.Contains(report.FindingsByRule[RfaLinter.RuleTriangleBudgets], f => f.Subject == "coarseTriangles" && f.MessageEn.Contains("non-negative"));
+        Assert.Contains(report.FindingsByRule[RfaLinter.RuleTriangleBudgets], f => f.Subject == "mediumFineTriangles" && f.MessageEn.Contains("non-negative"));
+        Assert.Contains(report.FindingsByRule[RfaLinter.RuleTriangleBudgets], f => f.MessageEn.Contains("non-negative") && f.Subject == negSolidTris[0].Name);
+
+        Assert.Equal(2, report.FindingsByRule[RfaLinter.RuleNoImportedCadOrImages].Count);
+        Assert.All(report.FindingsByRule[RfaLinter.RuleNoImportedCadOrImages], f => Assert.Contains("non-negative", f.MessageEn));
+
+        Assert.Contains(report.FindingsByRule[RfaLinter.RuleNoUnapprovedNestedFamilies], f => f.Subject == "maxNestingDepth" && f.MessageEn.Contains("non-negative"));
+        Assert.Contains(report.FindingsByRule[RfaLinter.RuleNoUnapprovedNestedFamilies], f => f.Subject == "KNZ_CIRC_ElevatorDoor" && f.MessageEn.Contains("invalid nesting depth"));
+    }
+
+    [Fact]
+    public void ToManifestFamilyEntry_MatchesExpectedManifestForPoiMarkerAndEnforcesAllCoarseSolids()
+    {
+        StarterKitSpec kit = StarterKitSpecLoaderTests.LoadShippedSpec();
+        ExpectedManifest expected = ExpectedManifest.FromSpec(kit);
+
+        // Non-polygonal KNZ_POI_FacilityMarker has RequiresDownwardPlanarBottomAtZero == false
+        FamilyGeometrySpec poiSpec = kit.FindFamily("KNZ_POI_FacilityMarker")!;
+        FamilyGeometryPlan poiPlan = FamilyGeometryPlanBuilder.Build(poiSpec, kit);
+        ManifestFamilyEntry poiEntry = poiPlan.BuildExpectedSnapshot(64 * 1024).ToManifestFamilyEntry(poiSpec);
+        ManifestFamilyEntry expectedPoi = Assert.Single(expected.Families, f => f.Id == "KNZ_POI_FacilityMarker");
+        Assert.False(expectedPoi.HasDownwardBottomFaceAtZero);
+        Assert.Equal(expectedPoi.HasDownwardBottomFaceAtZero, poiEntry.HasDownwardBottomFaceAtZero);
+
+        // Multi-solid coarse footprint where ONE solid fails KZ-RFA-004 must yield HasDownwardBottomFaceAtZero == false
+        FamilyGeometrySpec evSpec = kit.FindFamily("KNZ_CIRC_Elevator")!;
+        RfaInspectionSnapshot evSnap = FamilyGeometryPlanBuilder.Build(evSpec, kit).BuildExpectedSnapshot(128 * 1024);
+        List<RfaSolidSnapshot> twoCoarseSolids = evSnap.Solids.ToList();
+        twoCoarseSolids.Add(new RfaSolidSnapshot(
+            "bad_second_footprint",
+            CoarseGeometrySpec.FootprintSubcategory,
+            "K3D_Footprint",
+            visibleInCoarse: true,
+            visibleInMedium: false,
+            visibleInFine: false,
+            0.0, 1000.0, 0.0, 1000.0, 20.0, 120.0, 12,
+            new[] { new RfaPlanarFaceSnapshot(0.0, 0.0, -1.0, 20.0, 20.0, 20.0, 1_000_000) }));
+
+        ManifestFamilyEntry badEvEntry = CloneSnapshot(evSnap, solids: twoCoarseSolids).ToManifestFamilyEntry(evSpec);
+        Assert.False(badEvEntry.HasDownwardBottomFaceAtZero);
+    }
+
     private static (StarterKitSpec Kit, FamilyGeometrySpec Spec, RfaInspectionSnapshot Snapshot) LoadValid(string familyId)
     {
         StarterKitSpec kit = StarterKitSpecLoaderTests.LoadShippedSpec();

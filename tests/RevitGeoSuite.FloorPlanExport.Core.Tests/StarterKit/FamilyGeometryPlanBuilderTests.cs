@@ -84,11 +84,11 @@ public sealed class FamilyGeometryPlanBuilderTests
     }
 
     [Fact]
-    public void ElevatorAndElevatorDoorPlans_OrderSolidsBeforeVoidsAndPassLinter()
+    public void ElevatorAndElevatorDoorPlans_OrderTargetSolidsThenVoidsThenNonTargetSolidsThenCoarseFootprint()
     {
         StarterKitSpec kit = StarterKitSpecLoaderTests.LoadShippedSpec();
 
-        // Elevator: 1 coarse + 7 solids + 2 blind-pocket voids
+        // Elevator: target solid (car_enclosure_body) -> its 2 voids -> non-target solids (rear_observation_glazing, floor_deck_plate, etc.) -> Coarse K_Footprint LAST
         FamilyGeometrySpec evSpec = kit.FindFamily("KNZ_CIRC_Elevator")!;
         FamilyGeometryPlan evPlan = FamilyGeometryPlanBuilder.Build(evSpec, kit);
         Assert.Single(evPlan.CoarsePrimitives);
@@ -96,10 +96,19 @@ public sealed class FamilyGeometryPlanBuilderTests
         Assert.Equal(7, evPlan.MediumFinePrimitives.Count(p => p.IsSolid));
         Assert.Equal(2, evPlan.MediumFinePrimitives.Count(p => !p.IsSolid));
 
-        // Verify voids come strictly after solids
-        int lastSolidIdx = evPlan.MediumFinePrimitives.ToList().FindLastIndex(p => p.IsSolid);
-        int firstVoidIdx = evPlan.MediumFinePrimitives.ToList().FindIndex(p => !p.IsSolid);
-        Assert.True(lastSolidIdx < firstVoidIdx, "All solids must precede void cuts in deterministic execution order.");
+        List<string> evAllNames = evPlan.AllPrimitives.Select(p => p.Name).ToList();
+        int evBodyIdx = evAllNames.IndexOf("car_enclosure_body");
+        int evDoorCutIdx = evAllNames.IndexOf("door_recess_cut");
+        int evGlazingCutIdx = evAllNames.IndexOf("rear_glazing_recess");
+        int evGlazingSolidIdx = evAllNames.IndexOf("rear_observation_glazing");
+        int evFloorDeckIdx = evAllNames.IndexOf("floor_deck_plate");
+        int evFootprintIdx = evAllNames.IndexOf("footprint_plan");
+
+        Assert.Equal(0, evBodyIdx);
+        Assert.True(evBodyIdx < evDoorCutIdx && evBodyIdx < evGlazingCutIdx, "Voids must follow their target solid.");
+        Assert.True(evDoorCutIdx < evGlazingSolidIdx && evGlazingCutIdx < evGlazingSolidIdx, "Voids must precede overlapping K_Glass glazing pane.");
+        Assert.True(evDoorCutIdx < evFloorDeckIdx && evGlazingCutIdx < evFloorDeckIdx, "Voids must precede non-target solids.");
+        Assert.Equal(evAllNames.Count - 1, evFootprintIdx);
 
         CompiledExtrusionPrimitive doorRecess = Assert.Single(evPlan.MediumFinePrimitives, p => p.Name == "door_recess_cut");
         Assert.False(doorRecess.IsSolid);
@@ -109,7 +118,7 @@ public sealed class FamilyGeometryPlanBuilderTests
         RfaLintReport evReport = RfaLinter.Lint(evPlan.BuildExpectedSnapshot(150 * 1024), evSpec, kit);
         Assert.True(evReport.Passed, string.Join("\n", evReport.Findings.Select(f => f.ToString())));
 
-        // ElevatorDoor: 1 coarse + 8 solids + 2 through-cut voids
+        // ElevatorDoor: leaf_left -> vision_slit_cut_left -> leaf_right -> vision_slit_cut_right -> non-target solids (vision_slit_left/right) -> Coarse K_Footprint LAST
         FamilyGeometrySpec doorSpec = kit.FindFamily("KNZ_CIRC_ElevatorDoor")!;
         FamilyGeometryPlan doorPlan = FamilyGeometryPlanBuilder.Build(doorSpec, kit);
         Assert.Single(doorPlan.CoarsePrimitives);
@@ -118,8 +127,57 @@ public sealed class FamilyGeometryPlanBuilderTests
         Assert.Equal(2, doorPlan.MediumFinePrimitives.Count(p => !p.IsSolid));
         Assert.All(doorPlan.MediumFinePrimitives.Where(p => !p.IsSolid), v => Assert.True(v.ThroughCut));
 
+        List<string> doorAllNames = doorPlan.AllPrimitives.Select(p => p.Name).ToList();
+        int leftLeafIdx = doorAllNames.IndexOf("leaf_left");
+        int leftCutIdx = doorAllNames.IndexOf("vision_slit_cut_left");
+        int rightLeafIdx = doorAllNames.IndexOf("leaf_right");
+        int rightCutIdx = doorAllNames.IndexOf("vision_slit_cut_right");
+        int leftGlassIdx = doorAllNames.IndexOf("vision_slit_left");
+        int rightGlassIdx = doorAllNames.IndexOf("vision_slit_right");
+        int doorFootprintIdx = doorAllNames.IndexOf("footprint_plan");
+
+        Assert.Equal(leftLeafIdx + 1, leftCutIdx);
+        Assert.Equal(rightLeafIdx + 1, rightCutIdx);
+        Assert.True(leftCutIdx < leftGlassIdx && rightCutIdx < leftGlassIdx, "Door voids must precede K_Glass vision slits.");
+        Assert.True(leftCutIdx < rightGlassIdx && rightCutIdx < rightGlassIdx, "Door voids must precede K_Glass vision slits.");
+        Assert.Equal(doorAllNames.Count - 1, doorFootprintIdx);
+
         RfaLintReport doorReport = RfaLinter.Lint(doorPlan.BuildExpectedSnapshot(160 * 1024), doorSpec, kit);
         Assert.True(doorReport.Passed, string.Join("\n", doorReport.Findings.Select(f => f.ToString())));
+    }
+
+    [Fact]
+    public void All16ShippedStarterKitFamilies_CompilePassLinterAndMatchExpectedManifestExact()
+    {
+        StarterKitSpec kit = StarterKitSpecLoaderTests.LoadShippedSpec();
+        ExpectedManifest expected = ExpectedManifest.FromSpec(kit);
+
+        Assert.Equal(16, kit.Families.Count);
+        foreach (FamilyGeometrySpec spec in kit.Families)
+        {
+            FamilyGeometryPlan plan = FamilyGeometryPlanBuilder.Build(spec, kit);
+            RfaInspectionSnapshot snapshot = plan.BuildExpectedSnapshot(fileSizeBytes: 128 * 1024);
+
+            RfaLintReport report = RfaLinter.Lint(snapshot, spec, kit);
+            Assert.True(
+                report.Passed,
+                $"Expected '{spec.Id}' to pass all 13 RfaLinter rules, but got:\n" +
+                string.Join("\n", report.Findings.Select(f => f.ToString())));
+
+            ManifestFamilyEntry compiledEntry = plan.ToExpectedManifestEntry();
+            ManifestFamilyEntry expectedEntry = Assert.Single(expected.Families, f => f.Id == spec.Id);
+
+            Assert.Equal(expectedEntry.FamilyName, compiledEntry.FamilyName);
+            Assert.Equal(expectedEntry.Category, compiledEntry.Category);
+            Assert.Equal(expectedEntry.SeedKind, compiledEntry.SeedKind);
+            Assert.Equal(expectedEntry.IsPolygonal, compiledEntry.IsPolygonal);
+            Assert.Equal(expectedEntry.HasCoarseKFootprint, compiledEntry.HasCoarseKFootprint);
+            Assert.Equal(expectedEntry.HasDownwardBottomFaceAtZero, compiledEntry.HasDownwardBottomFaceAtZero);
+            Assert.Equal(expectedEntry.CoarseTriangles, compiledEntry.CoarseTriangles);
+            Assert.Equal(expectedEntry.MediumFineTriangles, compiledEntry.MediumFineTriangles);
+            Assert.Equal(expectedEntry.Subcategories, compiledEntry.Subcategories);
+            Assert.Equal(expectedEntry.SharedParameterGuids, compiledEntry.SharedParameterGuids);
+        }
     }
 
     [Fact]

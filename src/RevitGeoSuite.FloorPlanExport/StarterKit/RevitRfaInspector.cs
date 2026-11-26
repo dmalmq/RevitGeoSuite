@@ -166,12 +166,16 @@ public static class RevitRfaInspector
 
         List<RfaMaterialSnapshot> materials = materialsById.Values
             .OrderBy(m => m.Name ?? string.Empty, StringComparer.Ordinal)
-            .Select(m => new RfaMaterialSnapshot(
-                m.Name ?? string.Empty,
-                m.Color?.Red ?? 0,
-                m.Color?.Green ?? 0,
-                m.Color?.Blue ?? 0,
-                m.Transparency))
+            .Select(m =>
+            {
+                bool hasValidColor = m.Color != null && m.Color.IsValid;
+                return new RfaMaterialSnapshot(
+                    m.Name ?? string.Empty,
+                    hasValidColor ? m.Color!.Red : -1,
+                    hasValidColor ? m.Color!.Green : -1,
+                    hasValidColor ? m.Color!.Blue : -1,
+                    m.Transparency);
+            })
             .ToList();
 
         (List<RfaParameterSnapshot> parameters, Dictionary<string, IReadOnlyDictionary<string, string>> typeParamValues) =
@@ -304,24 +308,63 @@ public static class RevitRfaInspector
         bool visibleFine,
         ViewDetailLevel detailLevel)
     {
+        bool hiddenInAllDetailLevels = !visibleCoarse && !visibleMedium && !visibleFine;
         Options options = new()
         {
             ComputeReferences = false,
-            IncludeNonVisibleObjects = false,
+            IncludeNonVisibleObjects = hiddenInAllDetailLevels,
             DetailLevel = detailLevel,
         };
 
         GeometryElement? geom = element.get_Geometry(options);
-        if (geom == null)
+        List<Solid> solids = new();
+        if (geom != null)
         {
-            return null;
+            CollectSolids(geom, solids);
         }
 
-        List<Solid> solids = new();
-        CollectSolids(geom, solids);
+        if (solids.Count == 0 && !hiddenInAllDetailLevels)
+        {
+            // Retry with IncludeNonVisibleObjects so forms hidden or reduced to zero volume (e.g. wiped out by a void)
+            // are still surfaced to RfaLinter (KZ-RFA-003 / KZ-RFA-006) rather than silently dropped.
+            Options fallbackOptions = new()
+            {
+                ComputeReferences = false,
+                IncludeNonVisibleObjects = true,
+                DetailLevel = detailLevel,
+            };
+            GeometryElement? fallbackGeom = element.get_Geometry(fallbackOptions);
+            if (fallbackGeom != null)
+            {
+                CollectSolids(fallbackGeom, solids);
+            }
+        }
+
         if (solids.Count == 0)
         {
-            return null;
+            BoundingBoxXYZ? emptyBb = element.get_BoundingBox(null);
+            double eMinX = emptyBb != null ? FeetToMm(emptyBb.Min.X) : 0.0;
+            double eMaxX = emptyBb != null ? FeetToMm(emptyBb.Max.X) : 0.0;
+            double eMinY = emptyBb != null ? FeetToMm(emptyBb.Min.Y) : 0.0;
+            double eMaxY = emptyBb != null ? FeetToMm(emptyBb.Max.Y) : 0.0;
+            double eMinZ = emptyBb != null ? FeetToMm(emptyBb.Min.Z) : 0.0;
+            double eMaxZ = emptyBb != null ? FeetToMm(emptyBb.Max.Z) : 0.0;
+
+            return new RfaSolidSnapshot(
+                name,
+                subcategory,
+                materialName,
+                visibleCoarse,
+                visibleMedium,
+                visibleFine,
+                eMinX,
+                eMaxX,
+                eMinY,
+                eMaxY,
+                eMinZ,
+                eMaxZ,
+                triangleCount: 0,
+                planarFaces: Array.Empty<RfaPlanarFaceSnapshot>());
         }
 
         double minX = double.PositiveInfinity;
@@ -557,7 +600,14 @@ public static class RevitRfaInspector
                 return iv.HasValue ? iv.Value.ToString(CultureInfo.InvariantCulture) : string.Empty;
             case StorageType.Double:
                 double? dv = familyType.AsDouble(param);
-                return dv.HasValue ? FeetToMm(dv.Value).ToString("0.###", CultureInfo.InvariantCulture) : string.Empty;
+                if (!dv.HasValue)
+                {
+                    return string.Empty;
+                }
+
+                ForgeTypeId dataType = param.Definition.GetDataType();
+                double numeric = dataType == SpecTypeId.Length ? FeetToMm(dv.Value) : dv.Value;
+                return numeric.ToString("0.###", CultureInfo.InvariantCulture);
             default:
                 return familyType.AsValueString(param) ?? string.Empty;
         }
@@ -578,7 +628,8 @@ public static class RevitRfaInspector
     private static List<RfaNestedFamilySnapshot> InspectNestedFamilies(Document familyDoc)
     {
         List<RfaNestedFamilySnapshot> nested = new();
-        HashSet<string> seen = new(StringComparer.Ordinal);
+        HashSet<string> seenKey = new(StringComparer.Ordinal);
+        HashSet<string> seenFamilyNames = new(StringComparer.Ordinal);
 
         IEnumerable<FamilyInstance> instances = new FilteredElementCollector(familyDoc)
             .OfClass(typeof(FamilyInstance))
@@ -591,18 +642,51 @@ public static class RevitRfaInspector
                 continue;
             }
 
+            // Walk the full SuperComponent ancestor chain to measure true nesting depth.
             int depth = 1;
-            if (inst.SuperComponent != null)
+            Element? parent = inst.SuperComponent;
+            HashSet<long> visited = new() { inst.Id.Value };
+            while (parent != null && visited.Add(parent.Id.Value))
             {
-                depth = 2;
+                depth++;
+                parent = parent is FamilyInstance parentInst ? parentInst.SuperComponent : null;
             }
 
             BuiltInCategory? bic = inst.Symbol?.Family?.FamilyCategory?.BuiltInCategory;
             string cat = bic.HasValue && bic.Value != BuiltInCategory.INVALID ? bic.Value.ToString() : string.Empty;
             string key = $"{famName}|{depth}";
-            if (seen.Add(key))
+            seenFamilyNames.Add(famName!);
+            if (seenKey.Add(key))
             {
                 nested.Add(new RfaNestedFamilySnapshot(famName!, depth, cat));
+            }
+        }
+
+        // Also report loaded-but-unplaced nested Family definitions embedded inside the .rfa document.
+        ElementId? ownerId = familyDoc.OwnerFamily?.Id;
+        IEnumerable<Family> loadedFamilies = new FilteredElementCollector(familyDoc)
+            .OfClass(typeof(Family))
+            .Cast<Family>();
+        foreach (Family family in loadedFamilies)
+        {
+            if (ownerId != null && family.Id == ownerId)
+            {
+                continue;
+            }
+
+            string? famName = family.Name;
+            if (string.IsNullOrWhiteSpace(famName) || seenFamilyNames.Contains(famName!))
+            {
+                continue;
+            }
+
+            BuiltInCategory? bic = family.FamilyCategory?.BuiltInCategory;
+            string cat = bic.HasValue && bic.Value != BuiltInCategory.INVALID ? bic.Value.ToString() : string.Empty;
+            string key = $"{famName}|1";
+            seenFamilyNames.Add(famName!);
+            if (seenKey.Add(key))
+            {
+                nested.Add(new RfaNestedFamilySnapshot(famName!, nestingDepth: 1, cat));
             }
         }
 

@@ -176,6 +176,7 @@ public static class FamilyBuilder
                     EnsureDefaultFamilyType(familyDoc, familySpec.FamilyName);
                     EnsureDimensionParameters(familyDoc, plan.DimensionParameters, log);
                     BindSharedParameters(application, familyDoc, plan.SharedParameters, log);
+                    RemoveSeedGenericForms(familyDoc, log);
                     CreateGeometryPrimitives(familyDoc, plan, subcategories, materialIds, log);
 
                     familyDoc.Regenerate();
@@ -514,6 +515,71 @@ public static class FamilyBuilder
         }
     }
 
+    private static void RemoveSeedGenericForms(Document familyDoc, List<string> log)
+    {
+        List<ElementId> idsToDelete = new();
+        foreach (GenericForm form in new FilteredElementCollector(familyDoc).OfClass(typeof(GenericForm)).Cast<GenericForm>())
+        {
+            // Preserve any void GenericForm that cuts a host Wall in wall-hosted door seeds;
+            // delete pre-existing seed trim/frame extrusions while keeping host Wall, Opening, and reference planes.
+            if (!form.IsSolid && CutsAnyHostWall(familyDoc, form))
+            {
+                continue;
+            }
+
+            idsToDelete.Add(form.Id);
+        }
+
+        if (idsToDelete.Count > 0)
+        {
+            familyDoc.Delete(idsToDelete);
+            log.Add($"Removed {idsToDelete.Count} pre-existing seed GenericForm element(s) while preserving host Wall, Opening, and reference planes.");
+        }
+    }
+
+    private static bool CutsAnyHostWall(Document familyDoc, GenericForm voidForm)
+    {
+        try
+        {
+            ICollection<ElementId> cutIds = InstanceVoidCutUtils.GetElementsBeingCut(voidForm);
+            if (cutIds != null)
+            {
+                foreach (ElementId cutId in cutIds)
+                {
+                    if (familyDoc.GetElement(cutId) is Wall)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Not an instance-void cutting element; check solid-solid cuts below.
+        }
+
+        try
+        {
+            ICollection<ElementId> solidCutIds = SolidSolidCutUtils.GetSolidsBeingCut(voidForm);
+            if (solidCutIds != null)
+            {
+                foreach (ElementId cutId in solidCutIds)
+                {
+                    if (familyDoc.GetElement(cutId) is Wall)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Ignore forms not participating in solid-solid cuts.
+        }
+
+        return false;
+    }
+
     private static void CreateGeometryPrimitives(
         Document familyDoc,
         FamilyGeometryPlan plan,
@@ -522,6 +588,7 @@ public static class FamilyBuilder
         List<string> log)
     {
         Dictionary<string, Extrusion> solidsByOpName = new(StringComparer.Ordinal);
+        List<Extrusion> createdSolids = new();
 
         foreach (CompiledExtrusionPrimitive primitive in plan.AllPrimitives)
         {
@@ -563,6 +630,7 @@ public static class FamilyBuilder
                 };
                 extrusion.SetVisibility(visibility);
 
+                createdSolids.Add(extrusion);
                 if (!string.IsNullOrWhiteSpace(primitive.SourceOpName) && !solidsByOpName.ContainsKey(primitive.SourceOpName))
                 {
                     solidsByOpName[primitive.SourceOpName] = extrusion;
@@ -572,7 +640,25 @@ public static class FamilyBuilder
                      solidsByOpName.TryGetValue(primitive.TargetOpName!, out Extrusion? targetSolid) &&
                      targetSolid != null)
             {
-                if (SolidSolidCutUtils.CanElementCutElement(targetSolid, extrusion, out _))
+                // Defense-in-depth: if Revit's family-editor auto-cut carved any other already-created solid
+                // that is not the designated targetOp, remove that unintended cut immediately.
+                foreach (Extrusion otherSolid in createdSolids)
+                {
+                    if (otherSolid.Id == targetSolid.Id)
+                    {
+                        continue;
+                    }
+
+                    if (SolidSolidCutUtils.CutExistsBetweenElements(otherSolid, extrusion, out _))
+                    {
+                        SolidSolidCutUtils.RemoveCutBetweenSolids(familyDoc, otherSolid, extrusion);
+                    }
+                }
+
+                // Note parameter order: CanElementCutElement(cuttingElement, cutElement, out reason)
+                // is opposite to AddCutBetweenSolids(doc, solidToBeCut, cuttingSolid).
+                if (!SolidSolidCutUtils.CutExistsBetweenElements(targetSolid, extrusion, out _) &&
+                    SolidSolidCutUtils.CanElementCutElement(extrusion, targetSolid, out _))
                 {
                     SolidSolidCutUtils.AddCutBetweenSolids(familyDoc, targetSolid, extrusion);
                 }

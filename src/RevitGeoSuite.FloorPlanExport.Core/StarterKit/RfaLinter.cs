@@ -389,6 +389,21 @@ public static class RfaLinter
         }
     }
 
+    internal static bool IsValidDownwardBottomFace(RfaPlanarFaceSnapshot face) =>
+        face != null &&
+        IsFinite(face.NormalX) &&
+        IsFinite(face.NormalY) &&
+        IsFinite(face.NormalZ) &&
+        IsFinite(face.OriginZMm) &&
+        IsFinite(face.MinZMm) &&
+        IsFinite(face.MaxZMm) &&
+        face.NormalZ < DownwardNormalZThreshold &&
+        Math.Abs(face.OriginZMm) <= BottomFaceZToleranceMm &&
+        Math.Abs(face.MinZMm) <= BottomFaceZToleranceMm &&
+        Math.Abs(face.MaxZMm) <= BottomFaceZToleranceMm;
+
+    private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
     private static void EvaluateRule004DownwardBottomFace(
         RfaInspectionSnapshot snapshot,
         FamilyGeometrySpec spec,
@@ -419,24 +434,21 @@ public static class RfaLinter
 
         foreach (RfaSolidSnapshot solid in coarseFootprints)
         {
-            bool hasValidBottom = solid.PlanarFaces.Any(face =>
-                face.NormalZ < DownwardNormalZThreshold &&
-                Math.Abs(face.OriginZMm) <= BottomFaceZToleranceMm &&
-                Math.Abs(face.MinZMm) <= BottomFaceZToleranceMm &&
-                Math.Abs(face.MaxZMm) <= BottomFaceZToleranceMm);
+            bool hasValidBottom = solid.PlanarFaces.Any(IsValidDownwardBottomFace);
 
             if (!hasValidBottom)
             {
                 RfaPlanarFaceSnapshot? closestFace = solid.PlanarFaces
-                    .OrderBy(f => f.NormalZ)
-                    .ThenBy(f => Math.Abs(f.OriginZMm))
+                    .OrderBy(f => IsFinite(f.NormalZ) && IsFinite(f.OriginZMm) ? 0 : 1)
+                    .ThenBy(f => IsFinite(f.NormalZ) ? f.NormalZ : double.MaxValue)
+                    .ThenBy(f => IsFinite(f.OriginZMm) ? Math.Abs(f.OriginZMm) : double.MaxValue)
                     .FirstOrDefault();
 
                 string detailEn = closestFace == null
                     ? "no PlanarFaces were found."
                     : string.Format(
                         CultureInfo.InvariantCulture,
-                        "best candidate face had Normal.Z={0:0.###} (requires < -0.9) and Z={1:0.##} mm (requires |Z| <= 1 mm).",
+                        "best candidate face had Normal.Z={0:0.###} (requires finite < -0.9) and Z={1:0.##} mm (requires finite |Z| <= 1 mm).",
                         closestFace.NormalZ,
                         closestFace.OriginZMm);
 
@@ -444,7 +456,7 @@ public static class RfaLinter
                     ? "PlanarFace が見つかりません。"
                     : string.Format(
                         CultureInfo.InvariantCulture,
-                        "最良候補面の Normal.Z={0:0.###}（条件: < -0.9）、Z={1:0.##} mm（条件: |Z| <= 1 mm）。",
+                        "最良候補面の Normal.Z={0:0.###}（条件: 有限値かつ < -0.9）、Z={1:0.##} mm（条件: 有限値かつ |Z| <= 1 mm）。",
                         closestFace.NormalZ,
                         closestFace.OriginZMm);
 
@@ -463,6 +475,19 @@ public static class RfaLinter
         FamilyGeometrySpec spec,
         List<RfaLintFinding> findings)
     {
+        if (!IsFinite(spec.ClearancesMm.SlabClearMm) ||
+            !IsFinite(spec.ClearancesMm.SideClearMm) ||
+            !IsFinite(spec.ClearancesMm.GlassTuckMm))
+        {
+            AddError(
+                findings,
+                RuleAntiZFightingClearances,
+                "clearancesMm",
+                $"Family '{snapshot.FamilyName}' declares non-finite anti-Z-fighting clearances.",
+                $"ファミリ '{snapshot.FamilyName}' の Z ファイティング防止クリアランスに非有限値が含まれています。");
+            return;
+        }
+
         double slabClearMm = Math.Max(AntiZFightingClearances.MinimumSlabClearMm, spec.ClearancesMm.SlabClearMm);
         double sideClearMm = Math.Max(AntiZFightingClearances.MinimumSideClearMm, spec.ClearancesMm.SideClearMm);
         double glassTuckMm = Math.Max(AntiZFightingClearances.MinimumGlassTuckMm, spec.ClearancesMm.GlassTuckMm);
@@ -472,10 +497,87 @@ public static class RfaLinter
                         string.Equals(s.Subcategory, CoarseGeometrySpec.FootprintSubcategory, StringComparison.Ordinal))
             .ToList();
 
-        double envMinX = coarseFootprints.Count > 0 ? coarseFootprints.Min(s => s.MinXMm) : 0.0;
-        double envMaxX = coarseFootprints.Count > 0 ? coarseFootprints.Max(s => s.MaxXMm) : spec.DefaultDimensionsMm.WidthMm;
-        double envMinY = coarseFootprints.Count > 0 ? coarseFootprints.Min(s => s.MinYMm) : 0.0;
-        double envMaxY = coarseFootprints.Count > 0 ? coarseFootprints.Max(s => s.MaxYMm) : spec.DefaultDimensionsMm.DepthMm;
+        double envMinX;
+        double envMaxX;
+        double envMinY;
+        double envMaxY;
+        bool envelopeValid = true;
+
+        if (coarseFootprints.Count > 0)
+        {
+            foreach (RfaSolidSnapshot fp in coarseFootprints)
+            {
+                if (!HasValidFiniteBounds(fp))
+                {
+                    AddError(
+                        findings,
+                        RuleAntiZFightingClearances,
+                        fp.Name,
+                        $"Coarse K_Footprint solid '{fp.Name}' has non-finite or inverted bounding coordinates.",
+                        $"簡略 K_Footprint ソリッド '{fp.Name}' の境界座標が非有限または反転しています。");
+                    envelopeValid = false;
+                }
+            }
+
+            if (envelopeValid)
+            {
+                envMinX = coarseFootprints.Min(s => s.MinXMm);
+                envMaxX = coarseFootprints.Max(s => s.MaxXMm);
+                envMinY = coarseFootprints.Min(s => s.MinYMm);
+                envMaxY = coarseFootprints.Max(s => s.MaxYMm);
+
+                // For radial nprism footprints (e.g. 6-gon marker or 12-gon round column), expand the
+                // AABB symmetrically to the footprint circumradius so polygonal vertex rotation cannot
+                // create false negative insets against an inner nprism of different side count.
+                bool usesRadialNPrismFootprint = spec.Coarse != null &&
+                    spec.Coarse.Ops.Count > 0 &&
+                    spec.Coarse.Ops.All(op => string.Equals(op.Op, GeometryOpSpec.OpNPrism, StringComparison.Ordinal));
+                if (usesRadialNPrismFootprint || !spec.IsPolygonal)
+                {
+                    double centerX = 0.5 * (envMinX + envMaxX);
+                    double centerY = 0.5 * (envMinY + envMaxY);
+                    double circumRadius = 0.5 * Math.Max(envMaxX - envMinX, envMaxY - envMinY);
+                    envMinX = centerX - circumRadius;
+                    envMaxX = centerX + circumRadius;
+                    envMinY = centerY - circumRadius;
+                    envMaxY = centerY + circumRadius;
+                }
+            }
+            else
+            {
+                envMinX = envMaxX = envMinY = envMaxY = double.NaN;
+            }
+        }
+        else
+        {
+            envMinX = 0.0;
+            envMaxX = spec.DefaultDimensionsMm.WidthMm;
+            envMinY = 0.0;
+            envMaxY = spec.DefaultDimensionsMm.DepthMm;
+            if (!IsFinite(envMaxX) || !IsFinite(envMaxY) || envMaxX <= 0.0 || envMaxY <= 0.0)
+            {
+                AddError(
+                    findings,
+                    RuleAntiZFightingClearances,
+                    "defaultDimensionsMm",
+                    $"Family '{snapshot.FamilyName}' has non-finite or non-positive default envelope dimensions.",
+                    $"ファミリ '{snapshot.FamilyName}' の既定外形寸法が非有限または 0 以下です。");
+                envelopeValid = false;
+            }
+        }
+
+        if (envelopeValid &&
+            (!IsFinite(envMinX) || !IsFinite(envMaxX) || !IsFinite(envMinY) || !IsFinite(envMaxY) ||
+             envMinX > envMaxX || envMinY > envMaxY))
+        {
+            AddError(
+                findings,
+                RuleAntiZFightingClearances,
+                "envelope",
+                $"Family '{snapshot.FamilyName}' computed an invalid or inverted XY footprint envelope.",
+                $"ファミリ '{snapshot.FamilyName}' の XY 外形バウンディングが不正または反転しています。");
+            envelopeValid = false;
+        }
 
         List<RfaSolidSnapshot> mediumFineSolids = snapshot.Solids
             .Where(s => !string.Equals(s.Subcategory, CoarseGeometrySpec.FootprintSubcategory, StringComparison.Ordinal))
@@ -483,6 +585,17 @@ public static class RfaLinter
 
         foreach (RfaSolidSnapshot solid in mediumFineSolids)
         {
+            if (!HasValidFiniteBounds(solid))
+            {
+                AddError(
+                    findings,
+                    RuleAntiZFightingClearances,
+                    solid.Name,
+                    $"Medium/Fine solid '{solid.Name}' has non-finite or inverted bounding coordinates.",
+                    $"標準・詳細ソリッド '{solid.Name}' の境界座標が非有限または反転しています。");
+                continue;
+            }
+
             if (solid.MinZMm + ClearanceEpsilonMm < slabClearMm)
             {
                 AddError(
@@ -503,6 +616,11 @@ public static class RfaLinter
                         slabClearMm));
             }
 
+            if (!envelopeValid)
+            {
+                continue;
+            }
+
             bool isGlass = string.Equals(solid.Subcategory, "K_Glass", StringComparison.Ordinal);
             double requiredEdgeInset = isGlass ? sideClearMm + glassTuckMm : sideClearMm;
 
@@ -512,7 +630,7 @@ public static class RfaLinter
             double maxClearY = envMaxY - solid.MaxYMm;
             double worstSideClear = Math.Min(Math.Min(minClearX, maxClearX), Math.Min(minClearY, maxClearY));
 
-            if (worstSideClear + ClearanceEpsilonMm < requiredEdgeInset)
+            if (!IsFinite(worstSideClear) || worstSideClear + ClearanceEpsilonMm < requiredEdgeInset)
             {
                 if (isGlass)
                 {
@@ -558,6 +676,17 @@ public static class RfaLinter
         }
     }
 
+    private static bool HasValidFiniteBounds(RfaSolidSnapshot solid) =>
+        IsFinite(solid.MinXMm) &&
+        IsFinite(solid.MaxXMm) &&
+        IsFinite(solid.MinYMm) &&
+        IsFinite(solid.MaxYMm) &&
+        IsFinite(solid.MinZMm) &&
+        IsFinite(solid.MaxZMm) &&
+        solid.MinXMm <= solid.MaxXMm &&
+        solid.MinYMm <= solid.MaxYMm &&
+        solid.MinZMm <= solid.MaxZMm;
+
     private static void EvaluateRule006Triangles(
         RfaInspectionSnapshot snapshot,
         FamilyGeometrySpec spec,
@@ -568,6 +697,19 @@ public static class RfaLinter
         bool requireCoarse = spec.IsPolygonal || spec.Coarse != null;
         int coarseCeiling = Math.Min(spec.TriangleBudget.CoarseMax, kitSpec.Header.Budgets.MaxCoarseTrianglesPerFamily);
         int mediumFineCeiling = Math.Min(spec.TriangleBudget.MediumFineMax, kitSpec.Header.Budgets.MaxMediumTrianglesPerFamily);
+
+        foreach (RfaSolidSnapshot solid in snapshot.Solids)
+        {
+            if (solid.TriangleCount < 0)
+            {
+                AddError(
+                    findings,
+                    RuleTriangleBudgets,
+                    solid.Name,
+                    $"Solid '{solid.Name}' triangle count ({solid.TriangleCount}) must be non-negative.",
+                    $"ソリッド '{solid.Name}' の三角形数（{solid.TriangleCount}）は 0 以上である必要があります。");
+            }
+        }
 
         if (!estimate.CoarseWithinBudget || estimate.CoarseTriangles > kitSpec.Header.Budgets.MaxCoarseTrianglesPerFamily)
         {
@@ -589,7 +731,16 @@ public static class RfaLinter
                 $"仕様の標準・詳細推定三角形数（{estimate.MediumFineTriangles}）が上限（{mediumFineCeiling}）を超えています。");
         }
 
-        if (requireCoarse && snapshot.CoarseTriangles <= 0)
+        if (snapshot.CoarseTriangles < 0)
+        {
+            AddError(
+                findings,
+                RuleTriangleBudgets,
+                "coarseTriangles",
+                $"Actual Coarse triangle count ({snapshot.CoarseTriangles}) must be non-negative.",
+                $"実測の簡略三角形数（{snapshot.CoarseTriangles}）は 0 以上である必要があります。");
+        }
+        else if (requireCoarse && snapshot.CoarseTriangles == 0)
         {
             AddError(
                 findings,
@@ -598,7 +749,7 @@ public static class RfaLinter
                 $"Coarse triangle count ({snapshot.CoarseTriangles}) must be > 0 when Coarse footprint geometry is required.",
                 $"簡略フットプリントが必要なファミリの簡略三角形数（{snapshot.CoarseTriangles}）は 0 より大きい必要があります。");
         }
-        else if (snapshot.CoarseTriangles < 0 || snapshot.CoarseTriangles > coarseCeiling)
+        else if (snapshot.CoarseTriangles > coarseCeiling)
         {
             AddError(
                 findings,
@@ -608,7 +759,16 @@ public static class RfaLinter
                 $"実測の簡略三角形数（{snapshot.CoarseTriangles}）が上限（{coarseCeiling}）を超えています。");
         }
 
-        if (snapshot.MediumFineTriangles <= 0)
+        if (snapshot.MediumFineTriangles < 0)
+        {
+            AddError(
+                findings,
+                RuleTriangleBudgets,
+                "mediumFineTriangles",
+                $"Actual Medium/Fine triangle count ({snapshot.MediumFineTriangles}) must be non-negative.",
+                $"実測の標準・詳細三角形数（{snapshot.MediumFineTriangles}）は 0 以上である必要があります。");
+        }
+        else if (snapshot.MediumFineTriangles == 0)
         {
             AddError(
                 findings,
@@ -632,7 +792,16 @@ public static class RfaLinter
         RfaInspectionSnapshot snapshot,
         List<RfaLintFinding> findings)
     {
-        if (snapshot.ImportedCadCount > 0)
+        if (snapshot.ImportedCadCount < 0)
+        {
+            AddError(
+                findings,
+                RuleNoImportedCadOrImages,
+                "ImportInstance",
+                $"Family '{snapshot.FamilyName}' imported CAD count ({snapshot.ImportedCadCount}) must be non-negative.",
+                $"ファミリ '{snapshot.FamilyName}' のインポート CAD 件数（{snapshot.ImportedCadCount}）は 0 以上である必要があります。");
+        }
+        else if (snapshot.ImportedCadCount > 0)
         {
             AddError(
                 findings,
@@ -642,7 +811,16 @@ public static class RfaLinter
                 $"ファミリ '{snapshot.FamilyName}' に {snapshot.ImportedCadCount} 件のインポート CAD/DWG/メッシュが含まれています（0 件必須）。");
         }
 
-        if (snapshot.EmbeddedImageCount > 0)
+        if (snapshot.EmbeddedImageCount < 0)
+        {
+            AddError(
+                findings,
+                RuleNoImportedCadOrImages,
+                "ImageType",
+                $"Family '{snapshot.FamilyName}' embedded raster image count ({snapshot.EmbeddedImageCount}) must be non-negative.",
+                $"ファミリ '{snapshot.FamilyName}' の埋め込みラスター画像件数（{snapshot.EmbeddedImageCount}）は 0 以上である必要があります。");
+        }
+        else if (snapshot.EmbeddedImageCount > 0)
         {
             AddError(
                 findings,
@@ -662,7 +840,16 @@ public static class RfaLinter
             kitSpec.Header.Families.Select(f => f.Id),
             StringComparer.Ordinal);
 
-        if (snapshot.MaxNestingDepth > MaxAllowedNestingDepth)
+        if (snapshot.MaxNestingDepth < 0)
+        {
+            AddError(
+                findings,
+                RuleNoUnapprovedNestedFamilies,
+                "maxNestingDepth",
+                $"Family '{snapshot.FamilyName}' nesting depth ({snapshot.MaxNestingDepth}) must be non-negative.",
+                $"ファミリ '{snapshot.FamilyName}' のネスト階層（{snapshot.MaxNestingDepth}）は 0 以上である必要があります。");
+        }
+        else if (snapshot.MaxNestingDepth > MaxAllowedNestingDepth)
         {
             AddError(
                 findings,
@@ -686,7 +873,16 @@ public static class RfaLinter
                     $"ファミリ '{snapshot.FamilyName}' に未承認の非 Starter Kit ネストファミリ '{nested.FamilyName}' が埋め込まれています。");
             }
 
-            if (nested.NestingDepth > MaxAllowedNestingDepth)
+            if (nested.NestingDepth <= 0)
+            {
+                AddError(
+                    findings,
+                    RuleNoUnapprovedNestedFamilies,
+                    nested.FamilyName,
+                    $"Nested family '{nested.FamilyName}' has invalid nesting depth ({nested.NestingDepth}); must be >= 1.",
+                    $"ネストファミリ '{nested.FamilyName}' の階層（{nested.NestingDepth}）が不正です（1 以上が必要）。");
+            }
+            else if (nested.NestingDepth > MaxAllowedNestingDepth)
             {
                 AddError(
                     findings,

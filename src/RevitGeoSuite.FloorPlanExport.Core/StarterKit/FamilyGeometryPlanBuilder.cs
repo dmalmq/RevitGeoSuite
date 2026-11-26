@@ -273,7 +273,10 @@ public sealed class FamilyGeometryPlan
         RequiredMaterials = requiredMaterials ?? Array.Empty<Material3DSpec>();
         CoarsePrimitives = coarsePrimitives ?? Array.Empty<CompiledExtrusionPrimitive>();
         MediumFinePrimitives = mediumFinePrimitives ?? Array.Empty<CompiledExtrusionPrimitive>();
-        AllPrimitives = Array.AsReadOnly(CoarsePrimitives.Concat(MediumFinePrimitives).ToArray());
+        // Emit Medium/Fine primitives (with each target solid paired immediately with its voids before
+        // non-target solids) BEFORE Coarse K_Footprint solids so Revit's family-editor auto-cut never
+        // carves notches out of K_Footprint or destroys overlapping glazing panes.
+        AllPrimitives = Array.AsReadOnly(MediumFinePrimitives.Concat(CoarsePrimitives).ToArray());
         SharedParameters = sharedParameters ?? Array.Empty<CompiledSharedParameter>();
         DimensionParameters = dimensionParameters ?? Array.Empty<CompiledDimensionParameter>();
         TriangleEstimate = triangleEstimate ?? throw new ArgumentNullException(nameof(triangleEstimate));
@@ -437,9 +440,13 @@ public static class FamilyGeometryPlanBuilder
             depth: 0,
             mediumFinePrimitives);
 
-        // Ensure deterministic ordering within each detail band: solids before voids that cut them.
-        List<CompiledExtrusionPrimitive> orderedCoarse = OrderSolidsBeforeVoids(coarsePrimitives);
-        List<CompiledExtrusionPrimitive> orderedMediumFine = OrderSolidsBeforeVoids(mediumFinePrimitives);
+        // Deterministic Revit-safe ordering:
+        //   1. Each target solid immediately followed by the void(s) targeting it
+        //   2. Any untargeted voids
+        //   3. All remaining non-target solids (e.g., glazing panes, frames, trims)
+        // Coarse K_Footprint solids are emitted in AllPrimitives AFTER all Medium/Fine primitives.
+        List<CompiledExtrusionPrimitive> orderedCoarse = OrderPrimitivesForSafeVoidCuts(coarsePrimitives);
+        List<CompiledExtrusionPrimitive> orderedMediumFine = OrderPrimitivesForSafeVoidCuts(mediumFinePrimitives);
 
         Dictionary<string, Material3DSpec> materialsByName = kitSpec.Materials3D.Materials
             .ToDictionary(m => m.Name, m => m, StringComparer.Ordinal);
@@ -554,12 +561,73 @@ public static class FamilyGeometryPlanBuilder
         return null;
     }
 
-    private static List<CompiledExtrusionPrimitive> OrderSolidsBeforeVoids(List<CompiledExtrusionPrimitive> primitives)
+    private static List<CompiledExtrusionPrimitive> OrderPrimitivesForSafeVoidCuts(List<CompiledExtrusionPrimitive> primitives)
     {
-        List<CompiledExtrusionPrimitive> solids = primitives.Where(p => p.IsSolid).ToList();
-        List<CompiledExtrusionPrimitive> voids = primitives.Where(p => !p.IsSolid).ToList();
-        solids.AddRange(voids);
-        return solids;
+        Dictionary<string, List<CompiledExtrusionPrimitive>> voidsByTarget = new(StringComparer.Ordinal);
+        List<CompiledExtrusionPrimitive> untargetedVoids = new();
+        List<CompiledExtrusionPrimitive> allSolids = new();
+
+        foreach (CompiledExtrusionPrimitive primitive in primitives)
+        {
+            if (primitive.IsSolid)
+            {
+                allSolids.Add(primitive);
+            }
+            else if (!string.IsNullOrWhiteSpace(primitive.TargetOpName))
+            {
+                string key = primitive.TargetOpName!;
+                if (!voidsByTarget.TryGetValue(key, out List<CompiledExtrusionPrimitive>? list))
+                {
+                    list = new List<CompiledExtrusionPrimitive>();
+                    voidsByTarget[key] = list;
+                }
+
+                list.Add(primitive);
+            }
+            else
+            {
+                untargetedVoids.Add(primitive);
+            }
+        }
+
+        List<CompiledExtrusionPrimitive> ordered = new(primitives.Count);
+        List<CompiledExtrusionPrimitive> nonTargetSolids = new();
+        HashSet<string> emittedTargets = new(StringComparer.Ordinal);
+
+        // Phase 1: Target solids immediately paired with their targeting voids so voids only cut their
+        // intended host solid before unrelated overlapping solids (e.g. K_Glass panes) exist.
+        foreach (CompiledExtrusionPrimitive solid in allSolids)
+        {
+            if (!string.IsNullOrWhiteSpace(solid.SourceOpName) &&
+                voidsByTarget.TryGetValue(solid.SourceOpName, out List<CompiledExtrusionPrimitive>? targetVoids))
+            {
+                ordered.Add(solid);
+                if (emittedTargets.Add(solid.SourceOpName))
+                {
+                    ordered.AddRange(targetVoids);
+                }
+            }
+            else
+            {
+                nonTargetSolids.Add(solid);
+            }
+        }
+
+        // Phase 2: Any voids whose TargetOpName didn't match a solid in this band, plus untargeted voids.
+        foreach (KeyValuePair<string, List<CompiledExtrusionPrimitive>> kv in voidsByTarget)
+        {
+            if (!emittedTargets.Contains(kv.Key))
+            {
+                ordered.AddRange(kv.Value);
+            }
+        }
+
+        ordered.AddRange(untargetedVoids);
+
+        // Phase 3: Non-target solids (glazing panes, jambs, accents, etc.) created after all void cuts.
+        ordered.AddRange(nonTargetSolids);
+
+        return ordered;
     }
 
     private static void CompileOps(

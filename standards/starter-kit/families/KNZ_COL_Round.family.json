@@ -57,7 +57,7 @@
         "subcategory": "K_Frame",
         "materialRef": "K3D_Frame",
         "centerMm": [350, 350, 4],
-        "radiusMm": 346,
+        "radiusMm": 342,
         "heightMm": 80,
         "sides": 12
       },
@@ -67,7 +67,7 @@
         "subcategory": "K_Body",
         "materialRef": "K3D_Column",
         "centerMm": [350, 350, 84],
-        "radiusMm": 342,
+        "radiusMm": 338,
         "heightMm": 3916,
         "sides": 12
       }

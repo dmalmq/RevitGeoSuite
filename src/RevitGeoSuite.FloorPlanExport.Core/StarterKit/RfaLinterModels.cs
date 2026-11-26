@@ -224,9 +224,11 @@ public sealed class RfaInspectionSnapshot
         ImportedCadCount = importedCadCount;
         EmbeddedImageCount = embeddedImageCount;
         NestedFamilies = Array.AsReadOnly((nestedFamilies ?? Array.Empty<RfaNestedFamilySnapshot>()).ToArray());
-        MaxNestingDepth = Math.Max(
-            maxNestingDepth,
-            NestedFamilies.Count == 0 ? 0 : NestedFamilies.Max(n => n.NestingDepth));
+        MaxNestingDepth = NestedFamilies.Count == 0
+            ? maxNestingDepth
+            : maxNestingDepth < 0
+                ? maxNestingDepth
+                : Math.Max(maxNestingDepth, NestedFamilies.Max(n => n.NestingDepth));
 
         Dictionary<string, IReadOnlyDictionary<string, string>> typesCopy = new(StringComparer.Ordinal);
         if (typeParameterValues != null)
@@ -288,18 +290,19 @@ public sealed class RfaInspectionSnapshot
             throw new ArgumentNullException(nameof(spec));
         }
 
-        bool hasCoarseKFootprint = Solids.Any(s =>
-            s.VisibleInCoarse &&
-            !s.VisibleInMedium &&
-            !s.VisibleInFine &&
-            string.Equals(s.Subcategory, CoarseGeometrySpec.FootprintSubcategory, StringComparison.Ordinal));
+        List<RfaSolidSnapshot> coarseFootprints = Solids
+            .Where(s =>
+                s.VisibleInCoarse &&
+                !s.VisibleInMedium &&
+                !s.VisibleInFine &&
+                string.Equals(s.Subcategory, CoarseGeometrySpec.FootprintSubcategory, StringComparison.Ordinal))
+            .ToList();
 
-        bool hasDownwardBottom = hasCoarseKFootprint && Solids
-            .Where(s => s.VisibleInCoarse &&
-                        string.Equals(s.Subcategory, CoarseGeometrySpec.FootprintSubcategory, StringComparison.Ordinal))
-            .Any(s => s.PlanarFaces.Any(f =>
-                f.NormalZ < RfaLinter.DownwardNormalZThreshold &&
-                Math.Abs(f.OriginZMm) <= RfaLinter.BottomFaceZToleranceMm));
+        bool hasCoarseKFootprint = coarseFootprints.Count > 0;
+        bool requiresDownwardBottom = spec.Coarse != null && spec.Coarse.RequiresDownwardPlanarBottomAtZero;
+        bool hasDownwardBottom = hasCoarseKFootprint &&
+            requiresDownwardBottom &&
+            coarseFootprints.All(s => s.PlanarFaces.Any(RfaLinter.IsValidDownwardBottomFace));
 
         IEnumerable<Guid> sharedGuids = Parameters
             .Where(p => p.IsShared && p.Guid.HasValue && p.Guid.Value != Guid.Empty)
