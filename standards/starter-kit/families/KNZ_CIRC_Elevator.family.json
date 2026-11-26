@@ -1,0 +1,135 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_CIRC_Elevator",
+  "familyName": "KNZ_CIRC_Elevator",
+  "displayNameEn": "Kanizu Elevator Car",
+  "displayNameJa": "Kanizu エレベーター",
+  "group": "circulation",
+  "category": "OST_SpecialityEquipment",
+  "seedKind": "procedural",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Glass",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 2000,
+    "depthMm": 2000,
+    "heightMm": 2600
+  },
+  "sharedParameters": [
+    { "name": "gis_kind", "binding": "type", "required": true, "defaultValue": "elevator" },
+    { "name": "gis_category", "binding": "type", "required": true, "defaultValue": "elevator" },
+    { "name": "gis_levels_served", "binding": "instance", "required": true, "defaultValue": "" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "short_name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 180
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [2000, 2000, 120]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "car_enclosure_body",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Circulation",
+        "originMm": [8, 32, 4],
+        "sizeMm": [1984, 1936, 2596]
+      },
+      {
+        "op": "void",
+        "name": "door_recess_cut",
+        "shape": "box",
+        "throughCut": false,
+        "targetOp": "car_enclosure_body",
+        "originMm": [450, 32, 4],
+        "sizeMm": [1100, 140, 2150]
+      },
+      {
+        "op": "void",
+        "name": "rear_glazing_recess",
+        "shape": "box",
+        "throughCut": false,
+        "targetOp": "car_enclosure_body",
+        "originMm": [250, 1936, 220],
+        "sizeMm": [1500, 32, 1900]
+      },
+      {
+        "op": "box",
+        "name": "rear_observation_glazing",
+        "subcategory": "K_Glass",
+        "materialRef": "K3D_Glass_Opaque",
+        "originMm": [250, 1940, 220],
+        "sizeMm": [1500, 20, 1900]
+      },
+      {
+        "op": "box",
+        "name": "portal_jamb_left",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [370, 8, 4],
+        "sizeMm": [80, 120, 2230]
+      },
+      {
+        "op": "box",
+        "name": "portal_jamb_right",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [1550, 8, 4],
+        "sizeMm": [80, 120, 2230]
+      },
+      {
+        "op": "box",
+        "name": "portal_header",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [370, 8, 2154],
+        "sizeMm": [1260, 120, 80]
+      },
+      {
+        "op": "box",
+        "name": "floor_deck_plate",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Body",
+        "originMm": [80, 80, 4],
+        "sizeMm": [1840, 1840, 60]
+      },
+      {
+        "op": "box",
+        "name": "roof_beacon_trim",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [450, 8, 2320],
+        "sizeMm": [1100, 24, 120]
+      }
+    ]
+  }
+}

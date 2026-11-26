@@ -26,6 +26,11 @@
     <EmbeddedResource Include="..\..\standards\families.json" LogicalName="RevitGeoSuite.Standards.families.json" />
     <EmbeddedResource Include="..\..\standards\opening-types.json" LogicalName="RevitGeoSuite.Standards.opening-types.json" />
     <EmbeddedResource Include="..\..\standards\gis-model.template.json" LogicalName="RevitGeoSuite.Standards.gis-model.template.json" />
+    <!-- Kanizu Revit Starter Kit declarative specs (T5). -->
+    <EmbeddedResource Include="..\..\standards\starter-kit\kit.json" LogicalName="RevitGeoSuite.Standards.StarterKit.kit.json" />
+    <EmbeddedResource Include="..\..\standards\starter-kit\rte.json" LogicalName="RevitGeoSuite.Standards.StarterKit.rte.json" />
+    <EmbeddedResource Include="..\..\standards\starter-kit\materials-3d.json" LogicalName="RevitGeoSuite.Standards.StarterKit.materials-3d.json" />
+    <EmbeddedResource Include="..\..\standards\starter-kit\families\*.family.json" LogicalName="RevitGeoSuite.Standards.StarterKit.families.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <Target Name="CopyReferenceAssembliesToCommonOutput" AfterTargets="Build">

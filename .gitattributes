@@ -38,6 +38,7 @@
 # already CRLF, producing literal CR CR LF. Pin the web project and its output to LF.
 src/RevitGeoSuite.SharedUI.Web/**                 text eol=lf
 src/RevitGeoSuite.SharedUI/Resources/Web/dist/**  text eol=lf
+standards/starter-kit/**                          text eol=lf
 
 # Generated output. Committed on purpose, but not worth reviewing by hand: the web bundle
 # comes from `npm run build`, and the bridge contracts come from .Contracts.Generator

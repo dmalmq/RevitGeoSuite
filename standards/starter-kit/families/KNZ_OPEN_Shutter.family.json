@@ -1,0 +1,105 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_OPEN_Shutter",
+  "familyName": "KNZ_OPEN_Shutter",
+  "displayNameEn": "Kanizu Rolling Shutter",
+  "displayNameJa": "Kanizu シャッター",
+  "group": "openings",
+  "category": "OST_Doors",
+  "seedKind": "wallHostedDoor",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 3000,
+    "depthMm": 240,
+    "heightMm": 2800
+  },
+  "sharedParameters": [
+    { "name": "gis_door", "binding": "type", "required": true, "defaultValue": "shutter" },
+    { "name": "gis_access_con", "binding": "type", "required": true, "defaultValue": "scheduled" },
+    { "name": "gis_opening_category", "binding": "type", "required": true, "defaultValue": "pedestrian" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 150
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [3000, 240, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "shutter_coil_box",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Body",
+        "originMm": [8, 8, 2460],
+        "sizeMm": [2984, 224, 340]
+      },
+      {
+        "op": "box",
+        "name": "guide_track_left",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 80, 4],
+        "sizeMm": [64, 80, 2456]
+      },
+      {
+        "op": "box",
+        "name": "guide_track_right",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [2928, 80, 4],
+        "sizeMm": [64, 80, 2456]
+      },
+      {
+        "op": "box",
+        "name": "retracted_bottom_bar",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [72, 92, 2100],
+        "sizeMm": [2856, 56, 48]
+      },
+      {
+        "op": "array",
+        "name": "upper_slat_curtain",
+        "count": 4,
+        "stepMm": [0, 0, 80],
+        "child": {
+          "op": "box",
+          "name": "shutter_slat",
+          "subcategory": "K_Body",
+          "materialRef": "K3D_Body",
+          "originMm": [72, 104, 2148],
+          "sizeMm": [2856, 32, 72]
+        }
+      }
+    ]
+  }
+}

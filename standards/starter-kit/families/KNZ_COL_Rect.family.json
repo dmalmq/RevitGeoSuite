@@ -1,0 +1,70 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_COL_Rect",
+  "familyName": "KNZ_COL_Rect",
+  "displayNameEn": "Kanizu Rectangular Column",
+  "displayNameJa": "Kanizu 角柱",
+  "group": "columns",
+  "category": "OST_Columns",
+  "seedKind": "procedural",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 700,
+    "depthMm": 700,
+    "heightMm": 4000
+  },
+  "sharedParameters": [
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 48
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [700, 700, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "base_reveal_collar",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 4],
+        "sizeMm": [684, 684, 80]
+      },
+      {
+        "op": "box",
+        "name": "column_shaft",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Column",
+        "originMm": [12, 12, 84],
+        "sizeMm": [676, 676, 3916]
+      }
+    ]
+  }
+}

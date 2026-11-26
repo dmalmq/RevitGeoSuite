@@ -1,0 +1,96 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_FIX_BarrierFence",
+  "familyName": "KNZ_FIX_BarrierFence",
+  "displayNameEn": "Kanizu Barrier Fence",
+  "displayNameJa": "Kanizu 改札柵・フェンス",
+  "group": "fixtures",
+  "category": "OST_SpecialityEquipment",
+  "seedKind": "procedural",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Glass",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 2400,
+    "depthMm": 100,
+    "heightMm": 1100
+  },
+  "sharedParameters": [
+    { "name": "gis_category", "binding": "type", "required": true, "defaultValue": "fixture" },
+    { "name": "gis_fixture_type", "binding": "type", "required": true, "defaultValue": "wall" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "short_name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 120
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [2400, 100, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "array",
+        "name": "stanchion_posts",
+        "count": 3,
+        "stepMm": [1160, 0, 0],
+        "child": {
+          "op": "box",
+          "name": "stanchion_post",
+          "subcategory": "K_Frame",
+          "materialRef": "K3D_Frame",
+          "originMm": [8, 22, 4],
+          "sizeMm": [56, 56, 1096]
+        }
+      },
+      {
+        "op": "box",
+        "name": "top_handrail",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 22, 1052],
+        "sizeMm": [2384, 56, 48]
+      },
+      {
+        "op": "box",
+        "name": "bottom_rail",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 26, 84],
+        "sizeMm": [2384, 48, 40]
+      },
+      {
+        "op": "box",
+        "name": "glazed_infill_panel",
+        "subcategory": "K_Glass",
+        "materialRef": "K3D_Glass",
+        "originMm": [64, 42, 116],
+        "sizeMm": [2272, 16, 944]
+      }
+    ]
+  }
+}

@@ -166,7 +166,7 @@ public sealed class GisAuditTests
         })));
 
         Assert.Equal(GisAuditSeverity.Warning, finding.Severity);
-        Assert.Equal("Lift : A has gis_kind elevator, but Lift is not a standard elevator family (standard: j EV). Use a standard family, or add this one to standards/families.json.", finding.Message);
+        Assert.Equal("Lift : A has gis_kind elevator, but Lift is not a standard elevator family (standard: j EV, KNZ_CIRC_Elevator). Use a standard family, or add this one to standards/families.json.", finding.Message);
     }
 
     [Fact]

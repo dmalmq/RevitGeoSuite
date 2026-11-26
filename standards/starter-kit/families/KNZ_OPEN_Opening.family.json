@@ -1,0 +1,90 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_OPEN_Opening",
+  "familyName": "KNZ_OPEN_Opening",
+  "displayNameEn": "Kanizu Open Passage",
+  "displayNameJa": "Kanizu 開口部",
+  "group": "openings",
+  "category": "OST_Doors",
+  "seedKind": "wallHostedDoor",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 2000,
+    "depthMm": 200,
+    "heightMm": 2400
+  },
+  "sharedParameters": [
+    { "name": "gis_door", "binding": "type", "required": true, "defaultValue": "open" },
+    { "name": "gis_access_con", "binding": "type", "required": true, "defaultValue": "none" },
+    { "name": "gis_opening_category", "binding": "type", "required": true, "defaultValue": "pedestrian" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 80
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [2000, 200, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "casing_jamb_left",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 4],
+        "sizeMm": [48, 184, 2396]
+      },
+      {
+        "op": "box",
+        "name": "casing_jamb_right",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [1944, 8, 4],
+        "sizeMm": [48, 184, 2396]
+      },
+      {
+        "op": "box",
+        "name": "casing_lintel",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 2352],
+        "sizeMm": [1984, 184, 48]
+      },
+      {
+        "op": "box",
+        "name": "threshold_plate",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Body",
+        "originMm": [56, 16, 4],
+        "sizeMm": [1888, 168, 12]
+      }
+    ]
+  }
+}

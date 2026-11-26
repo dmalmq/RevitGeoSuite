@@ -1,0 +1,100 @@
+{
+  "schema": "kanizu.starter-kit.family",
+  "schemaVersion": 1,
+  "id": "KNZ_FIX_Kiosk",
+  "familyName": "KNZ_FIX_Kiosk",
+  "displayNameEn": "Kanizu Ticket Kiosk",
+  "displayNameJa": "Kanizu 券売機・キオスク",
+  "group": "fixtures",
+  "category": "OST_SpecialityEquipment",
+  "seedKind": "procedural",
+  "isPolygonal": true,
+  "subcategories": [
+    "K_Footprint",
+    "K_Body",
+    "K_Accent",
+    "K_Frame"
+  ],
+  "clearancesMm": {
+    "slabClearMm": 4.0,
+    "sideClearMm": 8.0,
+    "glassTuckMm": 8.0
+  },
+  "defaultDimensionsMm": {
+    "widthMm": 900,
+    "depthMm": 800,
+    "heightMm": 1800
+  },
+  "sharedParameters": [
+    { "name": "gis_category", "binding": "type", "required": true, "defaultValue": "fixture" },
+    { "name": "gis_fixture_type", "binding": "type", "required": true, "defaultValue": "kiosk" },
+    { "name": "id", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "short_name", "binding": "instance", "required": false, "defaultValue": "" },
+    { "name": "gis_key", "binding": "instance", "required": false, "defaultValue": "" }
+  ],
+  "triangleBudget": {
+    "coarseMax": 24,
+    "mediumFineMax": 120
+  },
+  "coarse": {
+    "subcategory": "K_Footprint",
+    "materialRef": "K3D_Footprint",
+    "requiresDownwardPlanarBottomAtZero": true,
+    "ops": [
+      {
+        "op": "box",
+        "name": "footprint_plan",
+        "subcategory": "K_Footprint",
+        "materialRef": "K3D_Footprint",
+        "originMm": [0, 0, 0],
+        "sizeMm": [900, 800, 100]
+      }
+    ]
+  },
+  "mediumFine": {
+    "ops": [
+      {
+        "op": "box",
+        "name": "kiosk_cabinet_body",
+        "subcategory": "K_Body",
+        "materialRef": "K3D_Fixture",
+        "originMm": [8, 8, 4],
+        "sizeMm": [884, 784, 1796]
+      },
+      {
+        "op": "void",
+        "name": "screen_bay_recess",
+        "shape": "box",
+        "throughCut": false,
+        "targetOp": "kiosk_cabinet_body",
+        "originMm": [90, 8, 880],
+        "sizeMm": [720, 120, 640]
+      },
+      {
+        "op": "box",
+        "name": "counter_shelf",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [48, 8, 820],
+        "sizeMm": [804, 180, 48]
+      },
+      {
+        "op": "box",
+        "name": "touchscreen_display",
+        "subcategory": "K_Accent",
+        "materialRef": "K3D_Accent",
+        "originMm": [150, 112, 980],
+        "sizeMm": [600, 24, 420]
+      },
+      {
+        "op": "box",
+        "name": "top_signage_fascia",
+        "subcategory": "K_Frame",
+        "materialRef": "K3D_Frame",
+        "originMm": [8, 8, 1640],
+        "sizeMm": [884, 140, 160]
+      }
+    ]
+  }
+}
