@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
+using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.StarterKit;
 using Xunit;
@@ -591,6 +592,75 @@ public sealed class StarterKitSpecLoaderTests
         Assert.Contains(result.Errors, e => e.Code == "SK-RTE-008");
         Assert.Contains(result.Errors, e => e.Code == "SK-MAT-013");
         Assert.Contains(result.Errors, e => e.Code == "SK-FAM-014");
+    }
+
+    [Fact]
+    public void FamilyStandardValidator_AcceptsAllOfficialStarterKitCirculationAndGateFamiliesWithoutWarnings()
+    {
+        StarterKitSpec spec = LoadShippedSpec();
+        GisToolStandard standard = GisToolStandard.LoadEmbedded();
+
+        List<LoadedFamilyCheckInfo> loadedStarterFamilies = new();
+        long elementId = 1000;
+        foreach (FamilyGeometrySpec family in spec.Families)
+        {
+            FamilySharedParameterSpec? gisKindParam = family.SharedParameters
+                .FirstOrDefault(p => string.Equals(p.Name, GisSharedParameters.GisKind, StringComparison.Ordinal));
+            if (gisKindParam == null || string.IsNullOrWhiteSpace(gisKindParam.DefaultValue))
+            {
+                continue;
+            }
+
+            FamilySharedParameterSpec? gisCatParam = family.SharedParameters
+                .FirstOrDefault(p => string.Equals(p.Name, GisSharedParameters.GisCategory, StringComparison.Ordinal));
+
+            loadedStarterFamilies.Add(new LoadedFamilyCheckInfo(
+                elementId++,
+                family.FamilyName,
+                "Default",
+                family.Category,
+                gisKind: gisKindParam.DefaultValue,
+                gisCategory: gisCatParam?.DefaultValue ?? string.Empty,
+                hasGisKindParameter: true));
+        }
+
+        Assert.Equal(4, loadedStarterFamilies.Count);
+        IReadOnlyList<FamilyValidationItem> results = FamilyStandardValidator.ValidateFamilies(loadedStarterFamilies, standard);
+
+        Assert.Equal(4, results.Count);
+        Assert.All(results, item => Assert.Equal(ReadinessCheckStatus.Pass, item.Status));
+    }
+
+    [Fact]
+    public void Validation_RejectsStarterFamilyWithGisKindMissingFromClosedFamiliesJson()
+    {
+        StarterKitSpec shipped = LoadShippedSpec();
+        FamilyGeometrySpec orig = shipped.FindFamily("KNZ_CIRC_Escalator")!;
+
+        FamilyGeometrySpec unregistered = new(
+            orig.Schema,
+            orig.SchemaVersion,
+            orig.Id,
+            familyName: "KNZ_CIRC_UnregisteredEscalator",
+            orig.DisplayNameEn,
+            orig.DisplayNameJa,
+            orig.Group,
+            orig.Category,
+            orig.SeedKind,
+            orig.IsPolygonal,
+            orig.Subcategories,
+            orig.ClearancesMm,
+            orig.DefaultDimensionsMm,
+            orig.SharedParameters,
+            orig.TriangleBudget,
+            orig.Coarse,
+            orig.MediumFine);
+
+        StarterKitValidationResult result = StarterKitSpecLoader.Validate(
+            new StarterKitSpec(shipped.Header, shipped.Rte, shipped.Materials3D, shipped.Families.Select(f => f.Id == orig.Id ? unregistered : f).ToList()));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Code == "SK-FAM-015" && e.Message.Contains("KNZ_CIRC_UnregisteredEscalator"));
     }
 
     internal static StarterKitSpec LoadShippedSpec()

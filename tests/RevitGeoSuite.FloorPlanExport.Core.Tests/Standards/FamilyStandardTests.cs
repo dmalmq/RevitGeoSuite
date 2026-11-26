@@ -34,12 +34,16 @@ public sealed class FamilyStandardTests
     [Fact]
     public void TheExportCatalogTakesTheListedFamiliesAsBefore()
     {
-        // The four names the export's family catalog held before the list moved to families.json.
+        // The four legacy names plus the four Starter Kit circulation/gate families registered in standards/families.json.
         IReadOnlyDictionary<string, ZoneInfo> families = ZoneCatalog.CreateDefault().FamilyLookup;
 
         Assert.Equal(
             new[]
             {
+                ("KNZ_CIRC_Elevator", "elevator", "E0E0E0"),
+                ("KNZ_CIRC_Escalator", "escalator", "D0D0D0"),
+                ("KNZ_CIRC_MovingWalkway", "movingwalkway", "E8F6FF"),
+                ("KNZ_FIX_TicketGateBank", "fixture", "D4C5A9"),
                 ("j EV", "elevator", "E0E0E0"),
                 ("j エスカレータ-lightweight", "escalator", "D0D0D0"),
                 ("j エスカレーター-lightweight", "escalator", "D0D0D0"),

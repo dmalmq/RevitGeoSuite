@@ -26,7 +26,8 @@ public sealed class StarterKitReferenceStandards
         IReadOnlySetLike restrictions,
         IReadOnlySetLike directions,
         IReadOnlySetLike gisKinds,
-        IReadOnlySetLike floorMaterialNames)
+        IReadOnlySetLike floorMaterialNames,
+        IReadOnlyDictionary<string, IReadOnlySetLike>? familiesByGisKind = null)
     {
         ParametersByName = parametersByName ?? throw new ArgumentNullException(nameof(parametersByName));
         OpeningDomains = openingDomains ?? throw new ArgumentNullException(nameof(openingDomains));
@@ -35,6 +36,8 @@ public sealed class StarterKitReferenceStandards
         Directions = directions ?? throw new ArgumentNullException(nameof(directions));
         GisKinds = gisKinds ?? throw new ArgumentNullException(nameof(gisKinds));
         FloorMaterialNames = floorMaterialNames ?? throw new ArgumentNullException(nameof(floorMaterialNames));
+        FamiliesByGisKind = familiesByGisKind
+            ?? new ReadOnlyDictionary<string, IReadOnlySetLike>(new Dictionary<string, IReadOnlySetLike>(StringComparer.Ordinal));
     }
 
     public IReadOnlyDictionary<string, GisParameterDefinition> ParametersByName { get; }
@@ -50,6 +53,9 @@ public sealed class StarterKitReferenceStandards
     public IReadOnlySetLike GisKinds { get; }
 
     public IReadOnlySetLike FloorMaterialNames { get; }
+
+    /// <summary>Registered closed-list family names from <c>standards/families.json</c> keyed by <c>gis_kind</c>.</summary>
+    public IReadOnlyDictionary<string, IReadOnlySetLike> FamiliesByGisKind { get; }
 
     /// <summary>Loads the shipped standards embedded inside <c>RevitGeoSuite.FloorPlanExport.Core</c>.</summary>
     public static StarterKitReferenceStandards LoadEmbedded()
@@ -131,6 +137,11 @@ public sealed class StarterKitReferenceStandards
 
         HashSet<string> gisKinds = new(families.Kinds.Select(k => k.Kind), StringComparer.Ordinal);
         HashSet<string> floorMaterials = new(floorTypes.Materials.Select(m => m.Name), StringComparer.Ordinal);
+        Dictionary<string, IReadOnlySetLike> familiesByKind = new(StringComparer.Ordinal);
+        foreach (StandardFamilyKind kind in families.Kinds)
+        {
+            familiesByKind[kind.Kind] = new OrdinalStringSet(kind.Families);
+        }
 
         return new StarterKitReferenceStandards(
             new ReadOnlyDictionary<string, GisParameterDefinition>(paramsByName),
@@ -139,7 +150,8 @@ public sealed class StarterKitReferenceStandards
             new OrdinalStringSet(restrictions),
             new OrdinalStringSet(directions),
             new OrdinalStringSet(gisKinds),
-            new OrdinalStringSet(floorMaterials));
+            new OrdinalStringSet(floorMaterials),
+            new ReadOnlyDictionary<string, IReadOnlySetLike>(familiesByKind));
     }
 
     private static Dictionary<string, GisParameterDefinition> ParseSharedParameterBindings(string json)
@@ -1311,6 +1323,18 @@ public static class StarterKitSpecLoader
             if (!string.IsNullOrWhiteSpace(param.DefaultValue))
             {
                 ValidateDomainValue(param.Name, param.DefaultValue, standards, path, findings);
+
+                if (string.Equals(param.Name, GisSharedParameters.GisKind, StringComparison.Ordinal) &&
+                    standards.FamiliesByGisKind.TryGetValue(param.DefaultValue, out IReadOnlySetLike? registeredFamilies) &&
+                    registeredFamilies != null &&
+                    !registeredFamilies.Contains(family.FamilyName))
+                {
+                    AddError(
+                        findings,
+                        "SK-FAM-015",
+                        path,
+                        $"Family '{family.FamilyName}' declares gis_kind '{param.DefaultValue}' but is not registered under '{param.DefaultValue}' in standards/families.json.");
+                }
             }
         }
     }

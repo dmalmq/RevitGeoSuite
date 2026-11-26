@@ -50,6 +50,25 @@ public sealed class ManifestViewTemplateEntry
     public IReadOnlyList<string> HideSubcategories { get; }
 }
 
+/// <summary>Canonical parameter filter rule inside a QA view filter or schedule manifest entry.</summary>
+public sealed class ManifestFilterRuleEntry
+{
+    public ManifestFilterRuleEntry(string parameter, string @operator, string value)
+    {
+        Parameter = parameter ?? string.Empty;
+        Operator = @operator ?? string.Empty;
+        Value = value ?? string.Empty;
+    }
+
+    public string Parameter { get; }
+
+    public string Operator { get; }
+
+    public string Value { get; }
+
+    public string CanonicalKey => $"{Parameter}|{Operator}|{Value}";
+}
+
 /// <summary>Canonical QA view-filter entry inside an <see cref="ExpectedManifest"/>.</summary>
 public sealed class ManifestQaFilterEntry
 {
@@ -58,13 +77,31 @@ public sealed class ManifestQaFilterEntry
         string severity,
         bool visible,
         string overrideColorHex,
-        IEnumerable<string> categories)
+        IEnumerable<string> categories,
+        string? secondaryColorHex = null,
+        IEnumerable<ManifestFilterRuleEntry>? rules = null,
+        IReadOnlyDictionary<string, string>? valueColors = null)
     {
         Name = name ?? string.Empty;
         Severity = severity ?? string.Empty;
         Visible = visible;
         OverrideColorHex = (overrideColorHex ?? string.Empty).ToUpperInvariant();
+        SecondaryColorHex = string.IsNullOrWhiteSpace(secondaryColorHex)
+            ? null
+            : secondaryColorHex!.Trim().ToUpperInvariant();
         Categories = ExpectedManifest.SortStrings(categories);
+        Rules = ExpectedManifest.SortRules(rules);
+
+        Dictionary<string, string> normalizedColors = new(StringComparer.Ordinal);
+        if (valueColors != null)
+        {
+            foreach (KeyValuePair<string, string> kv in valueColors.OrderBy(e => e.Key, StringComparer.Ordinal))
+            {
+                normalizedColors[kv.Key] = (kv.Value ?? string.Empty).Trim().ToUpperInvariant();
+            }
+        }
+
+        ValueColors = new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(normalizedColors);
     }
 
     public string Name { get; }
@@ -75,7 +112,13 @@ public sealed class ManifestQaFilterEntry
 
     public string OverrideColorHex { get; }
 
+    public string? SecondaryColorHex { get; }
+
     public IReadOnlyList<string> Categories { get; }
+
+    public IReadOnlyList<ManifestFilterRuleEntry> Rules { get; }
+
+    public IReadOnlyDictionary<string, string> ValueColors { get; }
 }
 
 /// <summary>Canonical QA schedule entry inside an <see cref="ExpectedManifest"/>.</summary>
@@ -88,7 +131,8 @@ public sealed class ManifestScheduleEntry
         string category,
         bool emptyMeansPass,
         IEnumerable<string> fields,
-        bool hasGisKindFilter)
+        bool hasGisKindFilter,
+        IEnumerable<ManifestFilterRuleEntry>? filters = null)
     {
         Id = id ?? string.Empty;
         Name = name ?? string.Empty;
@@ -96,6 +140,7 @@ public sealed class ManifestScheduleEntry
         Category = category ?? string.Empty;
         EmptyMeansPass = emptyMeansPass;
         Fields = ExpectedManifest.SortStrings(fields);
+        Filters = ExpectedManifest.SortRules(filters);
         HasGisKindFilter = hasGisKindFilter;
     }
 
@@ -112,6 +157,8 @@ public sealed class ManifestScheduleEntry
     public IReadOnlyList<string> Fields { get; }
 
     public bool HasGisKindFilter { get; }
+
+    public IReadOnlyList<ManifestFilterRuleEntry> Filters { get; }
 }
 
 /// <summary>Canonical line-style entry inside an <see cref="ExpectedManifest"/>.</summary>
@@ -416,7 +463,15 @@ public sealed class ExpectedManifest
         });
 
         IEnumerable<ManifestQaFilterEntry> qaFilters = spec.Rte.QaViewFilters.Select(f =>
-            new ManifestQaFilterEntry(f.Name, f.Severity, f.Visible, f.OverrideColorHex, f.Categories));
+            new ManifestQaFilterEntry(
+                f.Name,
+                f.Severity,
+                f.Visible,
+                f.OverrideColorHex,
+                f.Categories,
+                f.SecondaryColorHex,
+                f.Rules.Select(r => new ManifestFilterRuleEntry(r.Parameter, r.Operator, r.Value)),
+                f.ValueColors));
 
         IEnumerable<ManifestScheduleEntry> schedules = spec.Rte.Schedules.Select(s =>
             new ManifestScheduleEntry(
@@ -428,7 +483,8 @@ public sealed class ExpectedManifest
                 s.Fields,
                 s.Filters.Any(r =>
                     string.Equals(r.Parameter, GisSharedParameters.GisKind, StringComparison.Ordinal) &&
-                    string.Equals(r.Operator, "hasValue", StringComparison.Ordinal))));
+                    string.Equals(r.Operator, "hasValue", StringComparison.Ordinal)),
+                s.Filters.Select(r => new ManifestFilterRuleEntry(r.Parameter, r.Operator, r.Value))));
 
         IEnumerable<ManifestLineStyleEntry> lineStyles = spec.Rte.LineStyles.Select(ls =>
             new ManifestLineStyleEntry(ls.Name, ls.LineWeight, ls.ColorHex, ls.LinePattern));
@@ -537,13 +593,30 @@ public sealed class ExpectedManifest
                 ["filterNames"] = new JArray(v.FilterNames),
                 ["hideSubcategories"] = new JArray(v.HideSubcategories),
             })),
-            ["qaViewFilters"] = new JArray(QaViewFilters.Select(f => new JObject
+            ["qaViewFilters"] = new JArray(QaViewFilters.Select(f =>
             {
-                ["name"] = f.Name,
-                ["severity"] = f.Severity,
-                ["visible"] = f.Visible,
-                ["overrideColorHex"] = f.OverrideColorHex,
-                ["categories"] = new JArray(f.Categories),
+                JObject valueColorsObj = new();
+                foreach (KeyValuePair<string, string> kv in f.ValueColors.OrderBy(e => e.Key, StringComparer.Ordinal))
+                {
+                    valueColorsObj[kv.Key] = kv.Value;
+                }
+
+                return new JObject
+                {
+                    ["name"] = f.Name,
+                    ["severity"] = f.Severity,
+                    ["visible"] = f.Visible,
+                    ["overrideColorHex"] = f.OverrideColorHex,
+                    ["secondaryColorHex"] = f.SecondaryColorHex ?? string.Empty,
+                    ["categories"] = new JArray(f.Categories),
+                    ["rules"] = new JArray(f.Rules.Select(r => new JObject
+                    {
+                        ["parameter"] = r.Parameter,
+                        ["operator"] = r.Operator,
+                        ["value"] = r.Value,
+                    })),
+                    ["valueColors"] = valueColorsObj,
+                };
             })),
             ["schedules"] = new JArray(Schedules.Select(s => new JObject
             {
@@ -554,6 +627,12 @@ public sealed class ExpectedManifest
                 ["emptyMeansPass"] = s.EmptyMeansPass,
                 ["fields"] = new JArray(s.Fields),
                 ["hasGisKindFilter"] = s.HasGisKindFilter,
+                ["filters"] = new JArray(s.Filters.Select(r => new JObject
+                {
+                    ["parameter"] = r.Parameter,
+                    ["operator"] = r.Operator,
+                    ["value"] = r.Value,
+                })),
             })),
             ["lineStyles"] = new JArray(LineStyles.Select(ls => new JObject
             {
@@ -675,7 +754,10 @@ public sealed class ExpectedManifest
                 (string?)o["severity"] ?? string.Empty,
                 (bool?)o["visible"] ?? true,
                 (string?)o["overrideColorHex"] ?? string.Empty,
-                ReadStrings(o["categories"]))),
+                ReadStrings(o["categories"]),
+                (string?)o["secondaryColorHex"],
+                ReadFilterRules(o["rules"]),
+                ReadStringDictionary(o["valueColors"]))),
             ReadObjects(root["schedules"]).Select(o => new ManifestScheduleEntry(
                 (string?)o["id"] ?? string.Empty,
                 (string?)o["name"] ?? string.Empty,
@@ -683,7 +765,8 @@ public sealed class ExpectedManifest
                 (string?)o["category"] ?? string.Empty,
                 (bool?)o["emptyMeansPass"] ?? false,
                 ReadStrings(o["fields"]),
-                (bool?)o["hasGisKindFilter"] ?? false)),
+                (bool?)o["hasGisKindFilter"] ?? false,
+                ReadFilterRules(o["filters"]))),
             ReadObjects(root["lineStyles"]).Select(o => new ManifestLineStyleEntry(
                 (string?)o["name"] ?? string.Empty,
                 (int?)o["lineWeight"] ?? 0,
@@ -730,6 +813,35 @@ public sealed class ExpectedManifest
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(v => v, StringComparer.Ordinal)
                 .ToArray());
+
+    internal static IReadOnlyList<ManifestFilterRuleEntry> SortRules(IEnumerable<ManifestFilterRuleEntry>? rules) =>
+        Array.AsReadOnly(
+            (rules ?? Array.Empty<ManifestFilterRuleEntry>())
+                .Where(r => r != null)
+                .OrderBy(r => r.Parameter, StringComparer.Ordinal)
+                .ThenBy(r => r.Operator, StringComparer.Ordinal)
+                .ThenBy(r => r.Value, StringComparer.Ordinal)
+                .ToArray());
+
+    private static IEnumerable<ManifestFilterRuleEntry> ReadFilterRules(JToken? token) =>
+        ReadObjects(token).Select(o => new ManifestFilterRuleEntry(
+            (string?)o["parameter"] ?? string.Empty,
+            (string?)o["operator"] ?? string.Empty,
+            (string?)o["value"] ?? string.Empty));
+
+    private static IReadOnlyDictionary<string, string> ReadStringDictionary(JToken? token)
+    {
+        Dictionary<string, string> map = new(StringComparer.Ordinal);
+        if (token is JObject obj)
+        {
+            foreach (JProperty prop in obj.Properties())
+            {
+                map[prop.Name] = (string?)prop.Value ?? string.Empty;
+            }
+        }
+
+        return new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(map);
+    }
 
     private static IEnumerable<string> ReadStrings(JToken? token) =>
         token is JArray array ? array.Select(t => (string)t!) : Enumerable.Empty<string>();

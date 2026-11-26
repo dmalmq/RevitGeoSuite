@@ -343,6 +343,85 @@ public sealed class ExpectedManifestTests
         Assert.Contains(diff.Unexpected, f => f.Section == "schedules" && f.Key == expected.Schedules[0].Name && f.Property == "entry");
     }
 
+    [Fact]
+    public void Comparer_DetectsQaFilterPredicateAndGateSideValueColorDrift()
+    {
+        ExpectedManifest expected = ExpectedManifest.FromSpec(StarterKitSpecLoaderTests.LoadShippedSpec());
+
+        ManifestQaFilterEntry gateSide = Assert.Single(expected.QaViewFilters, f => f.Name == "KNZ_QA_INFO_GateSide_Check");
+        Assert.Equal("#FFF3CD", gateSide.SecondaryColorHex);
+        Assert.NotEmpty(gateSide.Rules);
+        Assert.Equal("#1E88E5", gateSide.ValueColors["rachi_nai"]);
+        Assert.Equal("#FFF3CD", gateSide.ValueColors["rachi_gai"]);
+
+        List<ManifestQaFilterEntry> driftedFilters = expected.QaViewFilters
+            .Select(f => f.Name == "KNZ_QA_INFO_GateSide_Check"
+                ? new ManifestQaFilterEntry(
+                    f.Name,
+                    f.Severity,
+                    f.Visible,
+                    f.OverrideColorHex,
+                    f.Categories,
+                    secondaryColorHex: "#FFFFFF",
+                    rules: new[] { new ManifestFilterRuleEntry("gis_restriction", "equals", "rachi_gai") },
+                    valueColors: new Dictionary<string, string> { ["rachi_nai"] = "#1E88E5", ["rachi_gai"] = "#000000" })
+                : f)
+            .ToList();
+
+        ManifestComparisonResult diff = StarterKitManifestComparer.Compare(
+            expected,
+            CloneManifest(expected, qaViewFilters: driftedFilters));
+
+        Assert.False(diff.IsMatch);
+        Assert.Contains(diff.Mismatches, f => f.Section == "qaViewFilters" && f.Key == "KNZ_QA_INFO_GateSide_Check" && f.Property == "secondaryColorHex");
+        Assert.Contains(diff.Missing, f => f.Section == "qaViewFilters" && f.Key == "KNZ_QA_INFO_GateSide_Check" && f.Property == "rules");
+        Assert.Contains(diff.Unexpected, f => f.Section == "qaViewFilters" && f.Key == "KNZ_QA_INFO_GateSide_Check" && f.Property == "rules");
+        Assert.Contains(diff.Mismatches, f => f.Section == "qaViewFilters" && f.Key == "KNZ_QA_INFO_GateSide_Check" && f.Property == "valueColors[rachi_gai]");
+    }
+
+    [Fact]
+    public void Comparer_DetectsScheduleFilterRuleDrift()
+    {
+        ExpectedManifest expected = ExpectedManifest.FromSpec(StarterKitSpecLoaderTests.LoadShippedSpec());
+
+        ManifestScheduleEntry circException = Assert.Single(expected.Schedules, s => s.Id == "qa-exception-circulation-incomplete");
+        Assert.Equal(2, circException.Filters.Count);
+
+        List<ManifestScheduleEntry> driftedSchedules = expected.Schedules
+            .Select(s => s.Id == "qa-exception-circulation-incomplete"
+                ? new ManifestScheduleEntry(
+                    s.Id,
+                    s.Name,
+                    s.Kind,
+                    s.Category,
+                    s.EmptyMeansPass,
+                    s.Fields,
+                    s.HasGisKindFilter,
+                    // Drop the gis_direction isEmpty filter while keeping gis_kind hasValue!
+                    filters: s.Filters.Where(r => r.Parameter == "gis_kind"))
+                : s.Id == "qa-exception-doors-unmapped"
+                    ? new ManifestScheduleEntry(
+                        s.Id,
+                        s.Name,
+                        s.Kind,
+                        s.Category,
+                        s.EmptyMeansPass,
+                        s.Fields,
+                        s.HasGisKindFilter,
+                        // Drop every filter from Doors unmapped!
+                        filters: Array.Empty<ManifestFilterRuleEntry>())
+                    : s)
+            .ToList();
+
+        ManifestComparisonResult diff = StarterKitManifestComparer.Compare(
+            expected,
+            CloneManifest(expected, schedules: driftedSchedules));
+
+        Assert.False(diff.IsMatch);
+        Assert.Contains(diff.Missing, f => f.Section == "schedules" && f.Key == circException.Name && f.Property == "filters" && f.ExpectedValue == "gis_direction|isEmpty|");
+        Assert.Contains(diff.Missing, f => f.Section == "schedules" && f.Key == "✗ Doors unmapped" && f.Property == "filters" && f.ExpectedValue == "gis_door|isEmpty|");
+    }
+
     private static ExpectedManifest CloneManifest(
         ExpectedManifest orig,
         string? canonicalExportViewTemplate = null,

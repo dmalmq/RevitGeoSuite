@@ -4,22 +4,22 @@
   "kinds": [
     {
       "kind": "escalator",
-      "families": ["j エスカレータ-lightweight", "j エスカレーター-lightweight"],
+      "families": ["j エスカレータ-lightweight", "j エスカレーター-lightweight", "KNZ_CIRC_Escalator"],
       "required_type_parameters": ["gis_kind"]
     },
     {
       "kind": "moving_walkway",
-      "families": [],
+      "families": ["KNZ_CIRC_MovingWalkway"],
       "required_type_parameters": ["gis_kind"]
     },
     {
       "kind": "elevator",
-      "families": ["j EV"],
+      "families": ["j EV", "KNZ_CIRC_Elevator"],
       "required_type_parameters": ["gis_kind"]
     },
     {
       "kind": "ticket_gate",
-      "families": ["j 自動改札"],
+      "families": ["j 自動改札", "KNZ_FIX_TicketGateBank"],
       "required_type_parameters": ["gis_kind"]
     }
   ]

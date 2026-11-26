@@ -284,7 +284,10 @@ public static class StarterKitManifestComparer
         CompareScalar("qaViewFilters", expected.Name, "severity", expected.Severity, actual.Severity, findings);
         CompareScalar("qaViewFilters", expected.Name, "visible", expected.Visible.ToString(), actual.Visible.ToString(), findings);
         CompareScalar("qaViewFilters", expected.Name, "overrideColorHex", expected.OverrideColorHex, actual.OverrideColorHex, findings);
+        CompareScalar("qaViewFilters", expected.Name, "secondaryColorHex", expected.SecondaryColorHex ?? string.Empty, actual.SecondaryColorHex ?? string.Empty, findings);
         CompareStringList("qaViewFilters", expected.Name, "categories", expected.Categories, actual.Categories, findings);
+        CompareFilterRuleList("qaViewFilters", expected.Name, "rules", expected.Rules, actual.Rules, findings);
+        CompareStringDictionary("qaViewFilters", expected.Name, "valueColors", expected.ValueColors, actual.ValueColors, findings);
     }
 
     private static void CompareSchedule(
@@ -298,6 +301,7 @@ public static class StarterKitManifestComparer
         CompareScalar("schedules", expected.Name, "emptyMeansPass", expected.EmptyMeansPass.ToString(), actual.EmptyMeansPass.ToString(), findings);
         CompareScalar("schedules", expected.Name, "hasGisKindFilter", expected.HasGisKindFilter.ToString(), actual.HasGisKindFilter.ToString(), findings);
         CompareStringList("schedules", expected.Name, "fields", expected.Fields, actual.Fields, findings);
+        CompareFilterRuleList("schedules", expected.Name, "filters", expected.Filters, actual.Filters, findings);
     }
 
     private static void CompareLineStyle(
@@ -558,6 +562,71 @@ public static class StarterKitManifestComparer
                 string.Empty,
                 item,
                 $"Unexpected value '{item}' in {section}.{key}.{property}."));
+        }
+    }
+
+    private static void CompareFilterRuleList(
+        string section,
+        string key,
+        string property,
+        IReadOnlyList<ManifestFilterRuleEntry> expected,
+        IReadOnlyList<ManifestFilterRuleEntry> actual,
+        List<ManifestDiffFinding> findings)
+    {
+        IReadOnlyList<string> expectedKeys = Array.AsReadOnly(expected.Select(r => r.CanonicalKey).ToArray());
+        IReadOnlyList<string> actualKeys = Array.AsReadOnly(actual.Select(r => r.CanonicalKey).ToArray());
+        CompareStringList(section, key, property, expectedKeys, actualKeys, findings);
+    }
+
+    private static void CompareStringDictionary(
+        string section,
+        string key,
+        string property,
+        IReadOnlyDictionary<string, string> expected,
+        IReadOnlyDictionary<string, string> actual,
+        List<ManifestDiffFinding> findings)
+    {
+        foreach (KeyValuePair<string, string> kv in expected.OrderBy(e => e.Key, StringComparer.Ordinal))
+        {
+            string entryProp = $"{property}[{kv.Key}]";
+            if (!actual.TryGetValue(kv.Key, out string? actualVal))
+            {
+                findings.Add(new ManifestDiffFinding(
+                    ManifestDiffKind.Missing,
+                    section,
+                    key,
+                    entryProp,
+                    kv.Value,
+                    string.Empty,
+                    $"Missing expected key '{kv.Key}' in {section}.{key}.{property}."));
+            }
+            else if (!string.Equals(kv.Value, actualVal, StringComparison.Ordinal))
+            {
+                findings.Add(new ManifestDiffFinding(
+                    ManifestDiffKind.Mismatch,
+                    section,
+                    key,
+                    entryProp,
+                    kv.Value,
+                    actualVal,
+                    $"Expected '{kv.Value}' for {section}.{key}.{entryProp}, found '{actualVal}'."));
+            }
+        }
+
+        foreach (KeyValuePair<string, string> kv in actual.OrderBy(e => e.Key, StringComparer.Ordinal))
+        {
+            if (!expected.ContainsKey(kv.Key))
+            {
+                string entryProp = $"{property}[{kv.Key}]";
+                findings.Add(new ManifestDiffFinding(
+                    ManifestDiffKind.Unexpected,
+                    section,
+                    key,
+                    entryProp,
+                    string.Empty,
+                    kv.Value,
+                    $"Unexpected key '{kv.Key}' in {section}.{key}.{property}."));
+            }
         }
     }
 }
