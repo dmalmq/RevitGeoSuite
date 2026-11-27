@@ -160,6 +160,12 @@ describe('Status bar and title bar', () => {
     expect(text(line)).toBe('Read-only model Blocked')
   })
 
+  it('does not name the georeference when the only model finding is an info, as for a read-only model', () => {
+    readiness.set({ status: 'needsattention', findings: [{ code: 'read-only-document', severity: 'info', message: 'Read-only' } as any], loaded: true })
+    const line = render(StatusBar).querySelector('[role="status"]')!
+    expect(text(line)).toBe('Needs attention')
+  })
+
   it('says unknown when readiness could not be checked', () => {
     readiness.set({ status: 'unknown', findings: [], loaded: true })
     const line = render(StatusBar).querySelector('[role="status"]')!

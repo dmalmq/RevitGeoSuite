@@ -2,7 +2,7 @@
   import { t } from '$lib/i18n'
   import { Icon } from '$lib/kit'
   import { mapCursor } from './cursor'
-  import { findingHintKey, findingTitleKey, goToProblem, problems, readiness } from './readiness'
+  import { findingHintKey, findingTitleKey, goToProblem, problems, readiness, targetFor } from './readiness'
   import type { ReadinessStatus } from './status'
 
   // 28 px status bar on the frame: document, CRS, mesh code, the map position under the pointer,
@@ -19,7 +19,9 @@
   const first = $derived($problems[0] ?? null)
   const firstTitle = $derived(first ? $t(...findingTitleKey(first.code)) : '')
   const firstHint = $derived(first ? $t(findingHintKey(first.code), first.message) : '')
-  const showSubject = $derived(!first || first.target != null)
+  // With no problem to show, a model finding of any severity (read-only is only info) still keeps the
+  // subject off: the status is then about the model, not its georeference.
+  const showSubject = $derived(first ? first.target != null : !$readiness.findings.some((f) => targetFor(f.code) == null))
 
   const DOT: Record<ReadinessStatus, string> = {
     ready: 'bg-success',
