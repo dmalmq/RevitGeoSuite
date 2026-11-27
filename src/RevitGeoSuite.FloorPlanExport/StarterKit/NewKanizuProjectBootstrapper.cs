@@ -192,24 +192,7 @@ public static class NewKanizuProjectBootstrapper
         string modelRole = GisStandardStateReader.ReadModelRoleText(document);
         string kitVersion = ReadProjectInfoSharedText(document, GisSharedParameters.GisKitVersion);
 
-        List<ExistingLevelIdentityEntry> existingLevels = new();
-        foreach (Level level in new FilteredElementCollector(document)
-            .OfClass(typeof(Level))
-            .Cast<Level>()
-            .OrderBy(l => l.ProjectElevation))
-        {
-            string levelId = ReadSharedText(level, GisSharedParameters.LevelId);
-            string shortName = ReadSharedText(level, GisSharedParameters.ShortName);
-            int? ordinal = ModelSnapshotReader.ReadInteger(level, GisSharedParameters.Ordinal);
-            double elevMeters = UnitUtils.ConvertFromInternalUnits(level.ProjectElevation, UnitTypeId.Meters);
-            existingLevels.Add(new ExistingLevelIdentityEntry(
-                level.Id.Value,
-                level.Name ?? string.Empty,
-                levelId,
-                ordinal,
-                shortName,
-                elevMeters));
-        }
+        List<ExistingLevelIdentityEntry> existingLevels = ReadPersistedLevelIdentities(document);
 
         (int elemCount, List<long> elemSample) = ReadElementsWithIdentity(document);
 
@@ -480,7 +463,13 @@ public static class NewKanizuProjectBootstrapper
                 StampProjectInformationParameters(doc, plan, log, warnings);
 
                 // 2e. Create/update levels (matching via Level.ProjectElevation) and assign fresh unique level_ids, ordinals, and short_names.
-                Dictionary<string, Level> levelsByName = EnsureLevelsAndFreshIds(doc, plan.Levels, levelResults, log, warnings);
+                Dictionary<string, Level> levelsByName = EnsureLevelsAndFreshIds(
+                    doc,
+                    plan.Levels,
+                    createdFromTemplate,
+                    levelResults,
+                    log,
+                    warnings);
                 doc.Regenerate();
 
                 // 2f. Ensure canonical GIS Export view template and create per-level views (GIS Export, GIS Working Plan, GIS Area).
@@ -517,19 +506,18 @@ public static class NewKanizuProjectBootstrapper
         }
 
         // Step 3: Post-initialization readiness verification (TemplateReadinessCheck + T9 identity checks).
+        // Re-read persisted Level elements directly from doc after commit so T9-POST-LEVELIDS verifies real Revit state.
         ReadinessCheckSnapshot readinessSnapshot = GisStandardStateReader.ReadReadiness(
             doc,
             existingSnapshot: null,
             modeOverride: ReadinessMode.Project);
         string actualKitVersion = ReadProjectInfoSharedText(doc, GisSharedParameters.GisKitVersion);
-        List<ExistingLevelIdentityEntry> actualLevels = levelResults
-            .Select(l => new ExistingLevelIdentityEntry(l.LevelElementId, l.LevelName, l.LevelId, l.Ordinal, l.ShortName, l.ElevationMeters))
-            .ToList();
+        List<ExistingLevelIdentityEntry> persistedLevels = ReadPersistedLevelIdentities(doc);
 
         ProjectInitializationReadinessSummary postInitReadiness = NewKanizuProjectPlanner.EvaluatePostInitReadiness(
             plan,
             readinessSnapshot,
-            actualLevels,
+            persistedLevels,
             actualKitVersion);
 
         return new NewKanizuProjectResult(
@@ -663,6 +651,7 @@ public static class NewKanizuProjectBootstrapper
     private static Dictionary<string, Level> EnsureLevelsAndFreshIds(
         Document doc,
         IReadOnlyList<PlannedKanizuLevel> plannedLevels,
+        bool createdFromTemplate,
         List<InitializedKanizuLevelResult> results,
         List<string> log,
         List<string> warnings)
@@ -672,53 +661,81 @@ public static class NewKanizuProjectBootstrapper
             .Cast<Level>()
             .ToList();
 
+        Dictionary<long, Level> existingById = existingLevels.ToDictionary(l => l.Id.Value);
+        HashSet<long> referencedLevelIds = CollectReferencedLevelIds(doc);
+
+        List<ExistingLevelCandidate> existingCandidates = existingLevels
+            .Select(l => new ExistingLevelCandidate(
+                l.Id.Value,
+                l.Name ?? string.Empty,
+                l.ProjectElevation,
+                ModelSnapshotReader.ReadInteger(l, GisSharedParameters.Ordinal).HasValue,
+                ReadSharedText(l, GisSharedParameters.ShortName).Length > 0,
+                referencedLevelIds.Contains(l.Id.Value)))
+            .ToList();
+
+        LevelReconciliationPlan reconciliation = NewKanizuProjectPlanner.PlanLevelReconciliation(
+            plannedLevels,
+            existingCandidates,
+            createdFromTemplate,
+            LevelMatchToleranceFeet);
+
+        // Temporarily rename any existing levels being reused or deleted whose current name collides with a planned
+        // target name held by a different level so sequential renames never fail with a duplicate-name exception.
+        HashSet<string> targetNames = new(plannedLevels.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+
+        foreach (LevelReconciliationAction action in reconciliation.Actions)
+        {
+            if (action.ReusedExistingLevelId is long reusedId &&
+                existingById.TryGetValue(reusedId, out Level? reusedLevel) &&
+                !string.Equals(reusedLevel.Name, action.Planned.Name, StringComparison.OrdinalIgnoreCase) &&
+                targetNames.Contains(reusedLevel.Name ?? string.Empty))
+            {
+                TryRenameLevel(reusedLevel, $"__knz_tmp_{reusedId}", warnings);
+            }
+        }
+
+        foreach (long deleteId in reconciliation.UnclaimedSeedLevelIdsToDelete)
+        {
+            if (existingById.TryGetValue(deleteId, out Level? toDelete) &&
+                targetNames.Contains(toDelete.Name ?? string.Empty))
+            {
+                TryRenameLevel(toDelete, $"__knz_del_{deleteId}", warnings);
+            }
+        }
+
         HashSet<long> claimedIds = new();
         Dictionary<string, Level> byName = new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (PlannedKanizuLevel planned in plannedLevels)
+        foreach (LevelReconciliationAction action in reconciliation.Actions)
         {
+            PlannedKanizuLevel planned = action.Planned;
             double targetFeet = UnitUtils.ConvertToInternalUnits(planned.ElevationMeters, UnitTypeId.Meters);
-
-            // Match by exact name first, then by ProjectElevation within 0.3 mm (NEVER Level.Elevation).
-            Level? matched = existingLevels.FirstOrDefault(l =>
-                !claimedIds.Contains(l.Id.Value) &&
-                string.Equals(l.Name ?? string.Empty, planned.Name, StringComparison.OrdinalIgnoreCase));
-
-            matched ??= existingLevels.FirstOrDefault(l =>
-                !claimedIds.Contains(l.Id.Value) &&
-                Math.Abs(l.ProjectElevation - targetFeet) <= LevelMatchToleranceFeet);
 
             bool wasCreated = false;
             Level level;
-            if (matched != null)
+            if (action.ReusedExistingLevelId is long existingId && existingById.TryGetValue(existingId, out Level? matched))
             {
                 level = matched;
                 if (!string.Equals(level.Name, planned.Name, StringComparison.Ordinal))
                 {
-                    try
-                    {
-                        level.Name = planned.Name;
-                    }
-                    catch (Exception ex)
-                    {
-                        warnings.Add($"Could not rename level '{level.Name}' to '{planned.Name}': {ex.Message}");
-                    }
+                    TryRenameLevel(level, planned.Name, warnings);
                 }
 
-                if (Math.Abs(level.ProjectElevation - targetFeet) > LevelMoveToleranceFeet)
+                // Adjust by delta relative to Level.ProjectElevation (internal origin) rather than writing
+                // targetFeet raw into LEVEL_ELEV (which is relative to the LevelType Elevation Base: PBP/Survey).
+                double deltaFeet = targetFeet - level.ProjectElevation;
+                if (Math.Abs(deltaFeet) > LevelMoveToleranceFeet)
                 {
-                    Parameter? elevParam = level.get_Parameter(BuiltInParameter.LEVEL_ELEV);
-                    if (elevParam != null && !elevParam.IsReadOnly)
-                    {
-                        elevParam.Set(targetFeet);
-                    }
+                    MoveLevelToProjectElevationDelta(doc, level, deltaFeet, warnings);
                 }
             }
             else
             {
                 level = Level.Create(doc, targetFeet);
-                level.Name = planned.Name;
+                TryRenameLevel(level, planned.Name, warnings);
                 existingLevels.Add(level);
+                existingById[level.Id.Value] = level;
                 wasCreated = true;
             }
 
@@ -742,18 +759,44 @@ public static class NewKanizuProjectBootstrapper
             log.Add(string.Format(
                 CultureInfo.InvariantCulture,
                 "{0} level '{1}' (ordinal={2}, elev={3:0.00} m, level_id={4}).",
-                wasCreated ? "Created" : "Initialized",
+                wasCreated ? "Created" : (action.ReusedFromUnmatchedSeed ? "Reused seed" : "Initialized"),
                 level.Name ?? planned.Name,
                 planned.Ordinal,
                 actualMeters,
                 planned.LevelId));
         }
 
-        // Ensure any leftover unclaimed levels in the document never keep duplicate or empty level_ids.
+        // Delete leftover unreferenced seed levels on brand-new template projects after planned levels exist
+        // (always retaining at least 1 level) so fresh projects contain exactly the requested stack and pass level-metadata.
+        HashSet<long> deletedIds = new();
+        int remainingLevelCount = existingLevels.Count;
+        foreach (long seedId in reconciliation.UnclaimedSeedLevelIdsToDelete)
+        {
+            if (remainingLevelCount <= 1 || !existingById.TryGetValue(seedId, out Level? seedLevel))
+            {
+                continue;
+            }
+
+            try
+            {
+                string seedName = seedLevel.Name ?? seedId.ToString(CultureInfo.InvariantCulture);
+                doc.Delete(seedLevel.Id);
+                deletedIds.Add(seedId);
+                remainingLevelCount--;
+                log.Add($"Removed unused template seed level '{seedName}' so the project contains only the planned level stack.");
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"Could not remove unused template seed level '{seedLevel.Name}': {ex.Message}");
+            }
+        }
+
+        // Ensure any remaining unclaimed levels (e.g. InitializeOpenDocument) never keep duplicate or empty level_ids,
+        // and warn clearly if any lack ordinal/short_name metadata.
         HashSet<string> assignedLevelIds = new(
             results.Select(r => r.LevelId),
             StringComparer.OrdinalIgnoreCase);
-        foreach (Level extra in existingLevels.Where(l => !claimedIds.Contains(l.Id.Value)))
+        foreach (Level extra in existingLevels.Where(l => !claimedIds.Contains(l.Id.Value) && !deletedIds.Contains(l.Id.Value)))
         {
             string current = ReadSharedText(extra, GisSharedParameters.LevelId);
             if (current.Length == 0 || !assignedLevelIds.Add(current))
@@ -765,7 +808,101 @@ public static class NewKanizuProjectBootstrapper
             }
         }
 
+        foreach (ExistingLevelCandidate missingMeta in reconciliation.UnclaimedLevelsMissingMetadata)
+        {
+            if (!deletedIds.Contains(missingMeta.ElementId))
+            {
+                warnings.Add(
+                    $"Unclaimed existing level '{missingMeta.Name}' is missing ordinal and/or short_name; set them in Revit or Kanizu GIS Readiness before export.");
+            }
+        }
+
         return byName;
+    }
+
+    private static void MoveLevelToProjectElevationDelta(Document doc, Level level, double deltaFeet, List<string> warnings)
+    {
+        try
+        {
+            Parameter? elevParam = level.get_Parameter(BuiltInParameter.LEVEL_ELEV);
+            if (elevParam != null && !elevParam.IsReadOnly)
+            {
+                elevParam.Set(elevParam.AsDouble() + deltaFeet);
+                return;
+            }
+
+            ElementTransformUtils.MoveElement(doc, level.Id, new XYZ(0, 0, deltaFeet));
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"Could not adjust elevation of level '{level.Name}': {ex.Message}");
+        }
+    }
+
+    private static void TryRenameLevel(Level level, string newName, List<string> warnings)
+    {
+        if (string.Equals(level.Name, newName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        try
+        {
+            level.Name = newName;
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"Could not rename level '{level.Name}' to '{newName}': {ex.Message}");
+        }
+    }
+
+    private static HashSet<long> CollectReferencedLevelIds(Document doc)
+    {
+        HashSet<long> ids = new();
+        foreach (Element element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
+        {
+            if (element is Level || element is View || element.ViewSpecific || element.Category == null)
+            {
+                continue;
+            }
+
+            if (element.Category.CategoryType != CategoryType.Model)
+            {
+                continue;
+            }
+
+            ElementId levelId = element.LevelId;
+            if (levelId != ElementId.InvalidElementId)
+            {
+                ids.Add(levelId.Value);
+            }
+        }
+
+        return ids;
+    }
+
+    private static List<ExistingLevelIdentityEntry> ReadPersistedLevelIdentities(Document document)
+    {
+        List<ExistingLevelIdentityEntry> persisted = new();
+        foreach (Level level in new FilteredElementCollector(document)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .OrderBy(l => l.ProjectElevation))
+        {
+            string levelId = ReadSharedText(level, GisSharedParameters.LevelId);
+            string shortName = ReadSharedText(level, GisSharedParameters.ShortName);
+            int? ordinal = ModelSnapshotReader.ReadInteger(level, GisSharedParameters.Ordinal);
+            double elevMeters = UnitUtils.ConvertFromInternalUnits(level.ProjectElevation, UnitTypeId.Meters);
+            persisted.Add(new ExistingLevelIdentityEntry(
+                level.Id.Value,
+                level.Name ?? string.Empty,
+                levelId,
+                ordinal,
+                shortName,
+                elevMeters));
+        }
+
+        return persisted;
     }
 
     private static void EnsurePlannedViews(
@@ -790,19 +927,19 @@ public static class NewKanizuProjectBootstrapper
                 log);
         }
 
-        Dictionary<string, View> templatesByName = new FilteredElementCollector(doc)
+        Dictionary<string, View> templatesByTypeAndName = new FilteredElementCollector(doc)
             .OfClass(typeof(View))
             .Cast<View>()
             .Where(v => v.IsTemplate && !string.IsNullOrWhiteSpace(v.Name))
-            .GroupBy(v => v.Name!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(v => ViewTypeAndNameKey(v.ViewType, v.Name!), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
-        Dictionary<string, View> existingViewsByName = new FilteredElementCollector(doc)
+        Dictionary<string, View> existingViewsByTypeAndName = new FilteredElementCollector(doc)
             .OfClass(typeof(View))
             .Cast<View>()
             .Where(v => !v.IsTemplate && !string.IsNullOrWhiteSpace(v.Name))
-            .GroupBy(v => v.Name!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(v => ViewTypeAndNameKey(v.ViewType, v.Name!), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
         ElementId floorPlanTypeId = new FilteredElementCollector(doc)
             .OfClass(typeof(ViewFamilyType))
@@ -823,14 +960,19 @@ public static class NewKanizuProjectBootstrapper
                 continue;
             }
 
-            if (existingViewsByName.TryGetValue(viewPlan.ViewName, out View? existing))
-            {
-                ApplyViewTemplateIfPresent(existing, viewPlan.ViewTemplateName, templatesByName, warnings);
-                continue;
-            }
+            ViewType expectedViewType = viewPlan.ViewKind == PlannedKanizuViewKind.GisAreaPlan
+                ? ViewType.AreaPlan
+                : ViewType.FloorPlan;
+            string viewKey = ViewTypeAndNameKey(expectedViewType, viewPlan.ViewName);
 
             try
             {
+                if (existingViewsByTypeAndName.TryGetValue(viewKey, out View? existing))
+                {
+                    ApplyViewTemplateIfPresent(existing, viewPlan.ViewTemplateName, templatesByTypeAndName, warnings);
+                    continue;
+                }
+
                 ViewPlan? created = null;
                 if (viewPlan.ViewKind == PlannedKanizuViewKind.GisAreaPlan)
                 {
@@ -856,23 +998,26 @@ public static class NewKanizuProjectBootstrapper
                 if (created != null)
                 {
                     created.Name = viewPlan.ViewName;
-                    ApplyViewTemplateIfPresent(created, viewPlan.ViewTemplateName, templatesByName, warnings);
-                    existingViewsByName[viewPlan.ViewName] = created;
+                    ApplyViewTemplateIfPresent(created, viewPlan.ViewTemplateName, templatesByTypeAndName, warnings);
+                    existingViewsByTypeAndName[viewKey] = created;
                     createdViews.Add(viewPlan.ViewName);
                     log.Add($"Created view '{viewPlan.ViewName}' for level '{level.Name}'.");
                 }
             }
             catch (Exception ex)
             {
-                warnings.Add($"Could not create view '{viewPlan.ViewName}': {ex.Message}");
+                warnings.Add($"Could not configure view '{viewPlan.ViewName}': {ex.Message}");
             }
         }
     }
 
+    private static string ViewTypeAndNameKey(ViewType viewType, string viewName) =>
+        $"{(int)viewType}\0{(viewName ?? string.Empty).Trim().ToUpperInvariant()}";
+
     private static void ApplyViewTemplateIfPresent(
         View view,
         string? templateName,
-        IReadOnlyDictionary<string, View> templatesByName,
+        IReadOnlyDictionary<string, View> templatesByTypeAndName,
         List<string> warnings)
     {
         if (string.IsNullOrWhiteSpace(templateName))
@@ -880,7 +1025,8 @@ public static class NewKanizuProjectBootstrapper
             return;
         }
 
-        if (templatesByName.TryGetValue(templateName!.Trim(), out View? template) && template != null)
+        string templateKey = ViewTypeAndNameKey(view.ViewType, templateName!);
+        if (templatesByTypeAndName.TryGetValue(templateKey, out View? template) && template != null)
         {
             if (view.ViewTemplateId != template.Id)
             {
@@ -889,7 +1035,7 @@ public static class NewKanizuProjectBootstrapper
         }
         else
         {
-            warnings.Add($"View template '{templateName}' not found for view '{view.Name}'.");
+            warnings.Add($"Compatible {view.ViewType} view template '{templateName}' not found for view '{view.Name}'.");
         }
     }
 
@@ -976,6 +1122,8 @@ public static class NewKanizuProjectBootstrapper
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         ElementId worksetParamId = new(BuiltInParameter.ELEM_PARTITION_PARAM);
+        HashSet<long> allFilterableCategoryIds = new(
+            ParameterFilterUtilities.GetAllFilterableCategories().Select(id => id.Value));
 
         foreach (PlannedWorksetViewFilter filterPlan in worksetPlan.WorksetViewFilters)
         {
@@ -990,24 +1138,65 @@ public static class NewKanizuProjectBootstrapper
                 continue;
             }
 
-            List<ElementId> categoryIds = ResolveBuiltInCategoryIds(filterPlan.Categories, warnings);
-            if (categoryIds.Count == 0)
+            List<ElementId> resolvedCategoryIds = ResolveBuiltInCategoryIds(filterPlan.Categories, warnings);
+            if (resolvedCategoryIds.Count == 0)
             {
                 continue;
             }
 
+            // Intersect with Revit's filterable categories AND retain only categories that support ELEM_PARTITION_PARAM
+            // (skips unfilterable categories like OST_RvtLinks cleanly instead of throwing ArgumentException).
+            IReadOnlyList<long> validCategoryValues = NewKanizuProjectPlanner.FilterWorksetFilterableCategories(
+                resolvedCategoryIds.Select(id => id.Value),
+                allFilterableCategoryIds,
+                catVal =>
+                {
+                    ICollection<ElementId> commonParams = ParameterFilterUtilities.GetFilterableParametersInCommon(
+                        doc,
+                        new[] { new ElementId(catVal) });
+                    return commonParams != null && commonParams.Contains(worksetParamId);
+                });
+
+            if (validCategoryValues.Count == 0)
+            {
+                log.Add(
+                    $"Skipped workset parameter filter '{filterPlan.FilterName}' for workset '{filterPlan.WorksetName}': " +
+                    $"none of its categories ({string.Join(", ", filterPlan.Categories)}) support workset parameter filtering in Revit.");
+                continue;
+            }
+
+            HashSet<ElementId> validCategorySet = new(validCategoryValues.Select(v => new ElementId(v)));
+            List<ElementId> validCategoryIds = validCategorySet.ToList();
+
             FilterRule rule = ParameterFilterRuleFactory.CreateEqualsRule(worksetParamId, numericWorksetId);
             ElementFilter elementFilter = new ElementParameterFilter(rule);
 
-            if (!existingFilters.TryGetValue(filterPlan.FilterName, out ParameterFilterElement? filterElement))
+            if (!ParameterFilterElement.ElementFilterIsAcceptableForParameterFilterElement(doc, validCategorySet, elementFilter))
             {
-                filterElement = ParameterFilterElement.Create(doc, filterPlan.FilterName, categoryIds, elementFilter);
-                existingFilters[filterPlan.FilterName] = filterElement;
+                log.Add(
+                    $"Skipped workset parameter filter '{filterPlan.FilterName}' for workset '{filterPlan.WorksetName}': " +
+                    "Revit rejected the workset filter predicate for the selected categories.");
+                continue;
             }
-            else
+
+            ParameterFilterElement? filterElement;
+            try
             {
-                filterElement.SetCategories(categoryIds);
-                filterElement.SetElementFilter(elementFilter);
+                if (!existingFilters.TryGetValue(filterPlan.FilterName, out filterElement))
+                {
+                    filterElement = ParameterFilterElement.Create(doc, filterPlan.FilterName, validCategoryIds, elementFilter);
+                    existingFilters[filterPlan.FilterName] = filterElement;
+                }
+                else
+                {
+                    filterElement.SetCategories(validCategoryIds);
+                    filterElement.SetElementFilter(elementFilter);
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"Could not create or update workset filter '{filterPlan.FilterName}': {ex.Message}");
+                continue;
             }
 
             Color color = new(filterPlan.Red, filterPlan.Green, filterPlan.Blue);

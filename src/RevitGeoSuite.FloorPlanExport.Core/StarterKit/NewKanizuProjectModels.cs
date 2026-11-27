@@ -607,6 +607,77 @@ public sealed class PlannedWorksetSetup
         language == NewKanizuProjectLanguage.Japanese ? FallbackNoteJa : FallbackNoteEn;
 }
 
+/// <summary>Snapshot of an existing Revit level used by <see cref="NewKanizuProjectPlanner.PlanLevelReconciliation"/>.</summary>
+public sealed class ExistingLevelCandidate
+{
+    public ExistingLevelCandidate(
+        long elementId,
+        string name,
+        double projectElevationFeet,
+        bool hasOrdinal,
+        bool hasShortName,
+        bool isReferencedByElements = false)
+    {
+        ElementId = elementId;
+        Name = name ?? string.Empty;
+        ProjectElevationFeet = projectElevationFeet;
+        HasOrdinal = hasOrdinal;
+        HasShortName = hasShortName;
+        IsReferencedByElements = isReferencedByElements;
+    }
+
+    public long ElementId { get; }
+
+    public string Name { get; }
+
+    public double ProjectElevationFeet { get; }
+
+    public bool HasOrdinal { get; }
+
+    public bool HasShortName { get; }
+
+    public bool IsReferencedByElements { get; }
+}
+
+/// <summary>Planned action for one level during bootstrap reconciliation (reuse an existing/seed level or create new).</summary>
+public sealed class LevelReconciliationAction
+{
+    public LevelReconciliationAction(PlannedKanizuLevel planned, long? reusedExistingLevelId, bool reusedFromUnmatchedSeed)
+    {
+        Planned = planned ?? throw new ArgumentNullException(nameof(planned));
+        ReusedExistingLevelId = reusedExistingLevelId;
+        ReusedFromUnmatchedSeed = reusedFromUnmatchedSeed;
+    }
+
+    public PlannedKanizuLevel Planned { get; }
+
+    public long? ReusedExistingLevelId { get; }
+
+    public bool CreateNew => !ReusedExistingLevelId.HasValue;
+
+    public bool ReusedFromUnmatchedSeed { get; }
+}
+
+/// <summary>Pure-C# level reconciliation plan for template seed reuse/cleanup vs open-document preservation.</summary>
+public sealed class LevelReconciliationPlan
+{
+    public LevelReconciliationPlan(
+        IReadOnlyList<LevelReconciliationAction> actions,
+        IReadOnlyList<long> unclaimedSeedLevelIdsToDelete,
+        IReadOnlyList<ExistingLevelCandidate> unclaimedLevelsMissingMetadata)
+    {
+        Actions = Array.AsReadOnly((actions ?? Array.Empty<LevelReconciliationAction>()).ToArray());
+        UnclaimedSeedLevelIdsToDelete = Array.AsReadOnly((unclaimedSeedLevelIdsToDelete ?? Array.Empty<long>()).ToArray());
+        UnclaimedLevelsMissingMetadata = Array.AsReadOnly((unclaimedLevelsMissingMetadata ?? Array.Empty<ExistingLevelCandidate>()).ToArray());
+    }
+
+    public IReadOnlyList<LevelReconciliationAction> Actions { get; }
+
+    public IReadOnlyList<long> UnclaimedSeedLevelIdsToDelete { get; }
+
+    public IReadOnlyList<ExistingLevelCandidate> UnclaimedLevelsMissingMetadata { get; }
+}
+
 /// <summary>One pre-flight or post-init readiness assertion evaluated for a New Kanizu Project run.</summary>
 public sealed class ProjectInitializationCheckItem
 {

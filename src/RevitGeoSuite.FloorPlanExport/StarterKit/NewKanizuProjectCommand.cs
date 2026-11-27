@@ -15,6 +15,24 @@ using RevitGeoSuite.FloorPlanExport.UI;
 namespace RevitGeoSuite.FloorPlanExport.StarterKit;
 
 /// <summary>
+/// Allows the <c>New Kanizu Project</c> ribbon button to stay enabled in Revit's zero-document state
+/// (Revit Home / no active project open) as well as on project documents, while disabling it on family documents.
+/// </summary>
+public sealed class ZeroDocumentCommandAvailability : IExternalCommandAvailability
+{
+    public bool IsCommandAvailable(UIApplication applicationData, CategorySet selectedCategories)
+    {
+        if (applicationData is null)
+        {
+            return false;
+        }
+
+        Document? activeDoc = applicationData.ActiveUIDocument?.Document;
+        return activeDoc is null || !activeDoc.IsFamilyDocument;
+    }
+}
+
+/// <summary>
 /// Revit <see cref="IExternalCommand"/> entry point for T9 ("New Kanizu Project").
 /// Supports BOTH interactive UI execution (via <see cref="NewKanizuProjectDialog"/> + bilingual
 /// EN/JA summary <see cref="TaskDialog"/>) and headless/batch automation via the
@@ -62,25 +80,21 @@ public sealed class NewKanizuProjectCommand : IExternalCommand
             throw new ArgumentNullException(nameof(options));
         }
 
+        NewKanizuProjectPlanner.ValidateHeadlessOptions(options, hasActiveDocument: activeDocument != null);
+
         NewKanizuProjectResult result;
         if (options.InitializationMode == NewKanizuProjectInitializationMode.CreateFromTemplate)
         {
-            bool closeAfterSave = !string.IsNullOrWhiteSpace(options.SaveAsRvtPath);
             (_, result) = NewKanizuProjectBootstrapper.CreateNewProject(
                 application,
                 options,
                 kitSpec,
                 options.SaveAsRvtPath,
-                closeAfterSave: closeAfterSave);
+                closeAfterSave: true);
         }
         else
         {
-            if (activeDocument is null)
-            {
-                throw new InvalidOperationException("InitializationMode.InitializeOpenDocument requires an active Revit project document.");
-            }
-
-            result = NewKanizuProjectBootstrapper.InitializeOpenDocument(activeDocument, options, kitSpec);
+            result = NewKanizuProjectBootstrapper.InitializeOpenDocument(activeDocument!, options, kitSpec);
         }
 
         if (!string.IsNullOrWhiteSpace(options.ResultOutputPath))

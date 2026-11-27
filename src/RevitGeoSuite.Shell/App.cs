@@ -54,7 +54,8 @@ public sealed class App : IExternalApplication
                 NewKanizuProjectStrings.RibbonButtonLabel,
                 typeof(NewKanizuProjectCommand),
                 RibbonIconKind.WebNewProject,
-                NewKanizuProjectStrings.RibbonTooltip));
+                NewKanizuProjectStrings.RibbonTooltip,
+                typeof(ZeroDocumentCommandAvailability)));
 
             panel.AddSeparator();
 
@@ -111,9 +112,10 @@ public sealed class App : IExternalApplication
         string buttonText,
         Type commandType,
         RibbonIconKind iconKind,
-        string toolTip)
+        string toolTip,
+        Type? availabilityType = null)
     {
-        return new PushButtonData(
+        PushButtonData data = new PushButtonData(
             commandId,
             buttonText,
             commandType.Assembly.Location,
@@ -123,6 +125,13 @@ public sealed class App : IExternalApplication
             Image = RibbonIconFactory.CreateSmall(iconKind),
             LargeImage = RibbonIconFactory.CreateLarge(iconKind)
         };
+
+        if (availabilityType != null)
+        {
+            data.AvailabilityClassName = availabilityType.FullName;
+        }
+
+        return data;
     }
 
     private static RibbonPanel GetOrCreatePanel(UIControlledApplication application, string panelName)

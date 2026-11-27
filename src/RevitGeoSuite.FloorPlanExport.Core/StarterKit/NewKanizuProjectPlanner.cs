@@ -27,6 +27,12 @@ public static class NewKanizuProjectPlanner
     public const double MaxElevationMeters = 5000.0;
     public const double ElevationEqualityToleranceMeters = 1e-4;
 
+    /// <summary>Characters forbidden by Revit in Level and View names (<c>\ : { } [ ] | ; &lt; &gt; ? ` ~</c>).</summary>
+    public static readonly char[] ForbiddenRevitNameCharacters =
+    {
+        '\\', ':', '{', '}', '[', ']', '|', ';', '<', '>', '?', '`', '~',
+    };
+
     private static readonly string[] WorksetFilterTargetTemplates =
     {
         WorkingPlanTemplateName,
@@ -36,6 +42,225 @@ public static class NewKanizuProjectPlanner
 
     /// <summary>Net48-safe check for finite floating-point numbers (never uses <c>double.IsFinite</c>).</summary>
     public static bool IsFiniteDouble(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+    /// <summary>Returns true if <paramref name="name"/> contains any Revit-forbidden character or control character.</summary>
+    public static bool TryFindForbiddenRevitNameChar(string? name, out char offendingChar)
+    {
+        if (!string.IsNullOrEmpty(name))
+        {
+            foreach (char ch in name!)
+            {
+                if (char.IsControl(ch) || Array.IndexOf(ForbiddenRevitNameCharacters, ch) >= 0)
+                {
+                    offendingChar = ch;
+                    return true;
+                }
+            }
+        }
+
+        offendingChar = '\0';
+        return false;
+    }
+
+    /// <summary>
+    /// Pure-C# category intersection for workset <c>ParameterFilterElement</c> creation:
+    /// retains only requested categories that belong to Revit's filterable category set and
+    /// expose <c>BuiltInParameter.ELEM_PARTITION_PARAM</c> as a filterable parameter.
+    /// </summary>
+    public static IReadOnlyList<long> FilterWorksetFilterableCategories(
+        IEnumerable<long> requestedCategoryIds,
+        IEnumerable<long> allFilterableCategoryIds,
+        Func<long, bool> supportsWorksetParameter)
+    {
+        if (requestedCategoryIds is null)
+        {
+            throw new ArgumentNullException(nameof(requestedCategoryIds));
+        }
+
+        if (allFilterableCategoryIds is null)
+        {
+            throw new ArgumentNullException(nameof(allFilterableCategoryIds));
+        }
+
+        if (supportsWorksetParameter is null)
+        {
+            throw new ArgumentNullException(nameof(supportsWorksetParameter));
+        }
+
+        HashSet<long> filterable = new(allFilterableCategoryIds);
+        HashSet<long> seen = new();
+        List<long> valid = new();
+        foreach (long categoryId in requestedCategoryIds)
+        {
+            if (seen.Add(categoryId) && filterable.Contains(categoryId) && supportsWorksetParameter(categoryId))
+            {
+                valid.Add(categoryId);
+            }
+        }
+
+        return Array.AsReadOnly(valid.ToArray());
+    }
+
+    /// <summary>
+    /// Pure-C# reconciliation of planned Kanizu levels against existing document levels.
+    /// For fresh template projects (<paramref name="createdFromTemplate"/> = <c>true</c>), unclaimed seed levels
+    /// (such as Autodesk's <c>Level 1</c>/<c>Level 2</c>) are reused in sorted elevation order before creating new
+    /// levels, and any leftover unreferenced seed levels are scheduled for cleanup so post-init <c>level-metadata</c>
+    /// passes cleanly. For open documents, unclaimed levels are preserved and any lacking <c>ordinal</c>/<c>short_name</c>
+    /// are surfaced for warnings.
+    /// </summary>
+    public static LevelReconciliationPlan PlanLevelReconciliation(
+        IReadOnlyList<PlannedKanizuLevel> plannedLevels,
+        IReadOnlyList<ExistingLevelCandidate> existingLevels,
+        bool createdFromTemplate,
+        double elevationMatchToleranceFeet = 1e-3)
+    {
+        if (plannedLevels is null)
+        {
+            throw new ArgumentNullException(nameof(plannedLevels));
+        }
+
+        List<ExistingLevelCandidate> existing = (existingLevels ?? Array.Empty<ExistingLevelCandidate>())
+            .Where(l => l != null)
+            .OrderBy(l => l.ProjectElevationFeet)
+            .ThenBy(l => l.ElementId)
+            .ToList();
+
+        HashSet<long> claimedIds = new();
+        Dictionary<int, (long LevelId, bool FromUnmatchedSeed)> matchedByPlannedIndex = new();
+
+        // Pass 1: exact name match (case-insensitive)
+        for (int i = 0; i < plannedLevels.Count; i++)
+        {
+            PlannedKanizuLevel planned = plannedLevels[i];
+            ExistingLevelCandidate? byName = existing.FirstOrDefault(e =>
+                !claimedIds.Contains(e.ElementId) &&
+                string.Equals(e.Name, planned.Name, StringComparison.OrdinalIgnoreCase));
+            if (byName != null)
+            {
+                claimedIds.Add(byName.ElementId);
+                matchedByPlannedIndex[i] = (byName.ElementId, false);
+            }
+        }
+
+        // Pass 2: elevation match within tolerance (using ProjectElevation)
+        for (int i = 0; i < plannedLevels.Count; i++)
+        {
+            if (matchedByPlannedIndex.ContainsKey(i))
+            {
+                continue;
+            }
+
+            PlannedKanizuLevel planned = plannedLevels[i];
+            ExistingLevelCandidate? byElev = existing
+                .Where(e => !claimedIds.Contains(e.ElementId))
+                .OrderBy(e => Math.Abs(e.ProjectElevationFeet - planned.ElevationFeet))
+                .FirstOrDefault(e => Math.Abs(e.ProjectElevationFeet - planned.ElevationFeet) <= elevationMatchToleranceFeet);
+            if (byElev != null)
+            {
+                claimedIds.Add(byElev.ElementId);
+                matchedByPlannedIndex[i] = (byElev.ElementId, false);
+            }
+        }
+
+        // Pass 3 (template creation only): reuse remaining unclaimed seed levels in ascending elevation order
+        // before calling Level.Create so seed Level 1 / Level 2 are repurposed cleanly instead of orphaned.
+        if (createdFromTemplate)
+        {
+            List<ExistingLevelCandidate> remainingSeeds = existing
+                .Where(e => !claimedIds.Contains(e.ElementId))
+                .OrderBy(e => e.ProjectElevationFeet)
+                .ThenBy(e => e.ElementId)
+                .ToList();
+
+            List<int> unmatchedPlannedIndices = Enumerable.Range(0, plannedLevels.Count)
+                .Where(i => !matchedByPlannedIndex.ContainsKey(i))
+                .OrderBy(i => plannedLevels[i].ElevationFeet)
+                .ToList();
+
+            int reuseCount = Math.Min(remainingSeeds.Count, unmatchedPlannedIndices.Count);
+            for (int k = 0; k < reuseCount; k++)
+            {
+                ExistingLevelCandidate seed = remainingSeeds[k];
+                int plannedIdx = unmatchedPlannedIndices[k];
+                claimedIds.Add(seed.ElementId);
+                matchedByPlannedIndex[plannedIdx] = (seed.ElementId, true);
+            }
+        }
+
+        List<LevelReconciliationAction> actions = new(plannedLevels.Count);
+        for (int i = 0; i < plannedLevels.Count; i++)
+        {
+            if (matchedByPlannedIndex.TryGetValue(i, out (long LevelId, bool FromUnmatchedSeed) match))
+            {
+                actions.Add(new LevelReconciliationAction(plannedLevels[i], match.LevelId, match.FromUnmatchedSeed));
+            }
+            else
+            {
+                actions.Add(new LevelReconciliationAction(plannedLevels[i], reusedExistingLevelId: null, reusedFromUnmatchedSeed: false));
+            }
+        }
+
+        List<ExistingLevelCandidate> stillUnclaimed = existing
+            .Where(e => !claimedIds.Contains(e.ElementId))
+            .ToList();
+
+        List<long> toDelete = new();
+        List<ExistingLevelCandidate> missingMetadata = new();
+        if (createdFromTemplate)
+        {
+            foreach (ExistingLevelCandidate seed in stillUnclaimed)
+            {
+                if (!seed.IsReferencedByElements)
+                {
+                    toDelete.Add(seed.ElementId);
+                }
+                else if (!seed.HasOrdinal || !seed.HasShortName)
+                {
+                    missingMetadata.Add(seed);
+                }
+            }
+        }
+        else
+        {
+            foreach (ExistingLevelCandidate extra in stillUnclaimed)
+            {
+                if (!extra.HasOrdinal || !extra.HasShortName)
+                {
+                    missingMetadata.Add(extra);
+                }
+            }
+        }
+
+        return new LevelReconciliationPlan(actions, toDelete, missingMetadata);
+    }
+
+    /// <summary>
+    /// Validates headless execution preconditions before opening/creating any Revit document so headless runs
+    /// never leak an unsaved background document.
+    /// </summary>
+    public static void ValidateHeadlessOptions(NewKanizuProjectOptions options, bool hasActiveDocument)
+    {
+        if (options is null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
+        if (options.InitializationMode == NewKanizuProjectInitializationMode.CreateFromTemplate)
+        {
+            if (string.IsNullOrWhiteSpace(options.SaveAsRvtPath))
+            {
+                throw new ArgumentException(
+                    "SaveAsRvtPath is required when running NewKanizuProjectCommand.RunHeadless in CreateFromTemplate mode so the created project is saved and closed without leaking a background document.",
+                    nameof(options));
+            }
+        }
+        else if (!hasActiveDocument)
+        {
+            throw new InvalidOperationException(
+                "InitializationMode.InitializeOpenDocument requires an active Revit project document.");
+        }
+    }
 
     /// <summary>Formats level specs into one-per-line <c>Name, Ordinal, ElevationMeters, ShortName</c> editor text.</summary>
     public static string FormatLevelsText(IReadOnlyList<NewKanizuLevelSpec> levels) =>
@@ -806,6 +1031,19 @@ public static class NewKanizuProjectPlanner
                     field,
                     $"Level at index {index} must have a non-empty name.",
                     $"インデックス {index} のレベル名は空にできません。");
+            }
+            else if (TryFindForbiddenRevitNameChar(name, out char badNameChar))
+            {
+                rowOk = false;
+                string charDesc = char.IsControl(badNameChar)
+                    ? $"U+{((int)badNameChar):X4}"
+                    : $"'{badNameChar}'";
+                AddError(
+                    findings,
+                    "T9-LVL-010",
+                    field,
+                    $"Level name '{name}' contains Revit-forbidden character {charDesc} (disallowed in Level/View names: \\ : {{ }} [ ] | ; < > ? ` ~ and control characters).",
+                    $"レベル名 '{name}' に Revit の禁止文字 {charDesc} が含まれています（レベル／ビュー名では \\ : {{ }} [ ] | ; < > ? ` ~ および制御文字は使用できません）。");
             }
             else if (!seenNames.Add(name))
             {

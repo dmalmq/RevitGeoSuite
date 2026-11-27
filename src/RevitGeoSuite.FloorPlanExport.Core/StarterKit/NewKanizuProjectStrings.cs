@@ -59,6 +59,12 @@ public static class NewKanizuProjectStrings
     public static string HubModelIdLabel(NewKanizuProjectLanguage language) =>
         Select(language, "Hub ModelId (required for Spoke)", "ハブ ModelId（Spoke 構成では必須）");
 
+    public static string FederationPersistenceNote(NewKanizuProjectLanguage language) =>
+        Select(
+            language,
+            "Note: Federation mode and Hub ModelId are persisted in gis-model.json upon export (the 4 frozen Revit storage schemas remain unchanged).",
+            "注記: フェデレーション構成およびハブ ModelId はエクスポート時に gis-model.json へ保存されます（固定された 4 つの Revit ストレージスキーマは変更しません）。");
+
     public static string LevelsSectionLabel(NewKanizuProjectLanguage language) =>
         Select(language, "Levels (Name, Ordinal, Elevation m, Short Name — one per line)", "レベル一覧（名前, 階層番号, 高さ m, 短縮名 — 1 行 1 階）");
 
@@ -128,7 +134,7 @@ public static class NewKanizuProjectStrings
             sb.AppendLine($"新規 Kanizu プロジェクト計画: {stationName}" + (string.IsNullOrWhiteSpace(buildingSlug) ? string.Empty : $" ({buildingSlug})"));
             sb.AppendLine($"- 新規 ModelId: {modelId}");
             sb.AppendLine($"- モデル役割: gis_model_role = authoring / gis_kit_version = {kitVersion} / gis_standard_version = {gisStandardVersion}");
-            sb.AppendLine($"- フェデレーション: {FormatFederationMode(federationMode, language)}");
+            sb.AppendLine($"- フェデレーション: {FormatFederationMode(federationMode, language)}（エクスポート時に gis-model.json へ保存）");
             sb.AppendLine($"- レベル数: {levels.Count} 階（固有 level_id 発行済）、作成ビュー数: {views.Count}");
             sb.AppendLine(worksetPlan.EnableWorksharing
                 ? $"- ワークセット: {worksetPlan.Worksets.Count} 件 ({string.Join(", ", worksetPlan.Worksets.Select(w => w.Name))})"
@@ -143,7 +149,7 @@ public static class NewKanizuProjectStrings
             sb.AppendLine($"New Kanizu Project Plan: {stationName}" + (string.IsNullOrWhiteSpace(buildingSlug) ? string.Empty : $" ({buildingSlug})"));
             sb.AppendLine($"- Fresh ModelId: {modelId}");
             sb.AppendLine($"- Project Stamps: gis_model_role = authoring | gis_kit_version = {kitVersion} | gis_standard_version = {gisStandardVersion}");
-            sb.AppendLine($"- Federation: {FormatFederationMode(federationMode, language)}");
+            sb.AppendLine($"- Federation: {FormatFederationMode(federationMode, language)} (persisted in gis-model.json on export)");
             sb.AppendLine($"- Levels: {levels.Count} level(s) with unique level_ids | Planned Views: {views.Count}");
             sb.AppendLine(worksetPlan.EnableWorksharing
                 ? $"- Worksets: {worksetPlan.Worksets.Count} ({string.Join(", ", worksetPlan.Worksets.Select(w => w.Name))})"

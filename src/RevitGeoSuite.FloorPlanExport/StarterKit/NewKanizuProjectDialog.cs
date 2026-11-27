@@ -183,6 +183,15 @@ public sealed class NewKanizuProjectDialog : Window
         fedGrid.Children.Add(hubCol);
         root.Children.Add(fedGrid);
 
+        root.Children.Add(new TextBlock
+        {
+            Text = NewKanizuProjectStrings.FederationPersistenceNote(language),
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)),
+            Margin = new Thickness(0, -4, 0, 8),
+        });
+
         // Levels text area (CSV lines: Name, Ordinal, ElevationM, ShortName)
         root.Children.Add(MakeFieldLabel(NewKanizuProjectStrings.LevelsSectionLabel(language)));
         _levelsBox = new TextBox

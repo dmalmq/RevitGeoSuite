@@ -512,5 +512,192 @@ public sealed class T9NewKanizuProjectTests
         // Invalid editor input returns localized error
         Assert.False(NewKanizuProjectPlanner.TryParseLevelsText("1F, notAnInt, 0.0", NewKanizuProjectLanguage.Japanese, out _, out string? jaError));
         Assert.Contains("整数", jaError!, StringComparison.Ordinal);
+
+        // Federation persistence note explains gis-model.json cleanly in EN and JA
+        Assert.Contains("gis-model.json", NewKanizuProjectStrings.FederationPersistenceNote(NewKanizuProjectLanguage.English), StringComparison.Ordinal);
+        Assert.Contains("gis-model.json", NewKanizuProjectStrings.FederationPersistenceNote(NewKanizuProjectLanguage.Japanese), StringComparison.Ordinal);
+        Assert.Contains("gis-model.json", plan.SummaryEn, StringComparison.Ordinal);
+        Assert.Contains("gis-model.json", plan.SummaryJa, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("1F:Main", ':')]
+    [InlineData("1F\\East", '\\')]
+    [InlineData("Level{1}", '{')]
+    [InlineData("Level[1]", '[')]
+    [InlineData("1F|2F", '|')]
+    [InlineData("1F;A", ';')]
+    [InlineData("1F<A>", '<')]
+    [InlineData("1F?", '?')]
+    [InlineData("1F`", '`')]
+    [InlineData("1F~", '~')]
+    [InlineData("1F\tTab", '\t')]
+    public void Planner_RejectsRevitForbiddenCharactersInLevelNames(string badLevelName, char expectedChar)
+    {
+        Assert.True(NewKanizuProjectPlanner.TryFindForbiddenRevitNameChar(badLevelName, out char actual));
+        Assert.Equal(expectedChar, actual);
+
+        NewKanizuProjectPlan plan = NewKanizuProjectPlanner.Plan(new NewKanizuProjectOptions
+        {
+            StationName = "Tokyo",
+            Levels = new[]
+            {
+                new NewKanizuLevelSpec(badLevelName, 0, 0.0, "1F"),
+            },
+        });
+
+        Assert.False(plan.IsValid);
+        Assert.Contains(plan.Errors, e => e.Code == "T9-LVL-010");
+    }
+
+    [Fact]
+    public void PlanLevelReconciliation_ReusesTemplateSeedLevelsAndDeletesLeftoversOnFreshTemplate()
+    {
+        NewKanizuProjectPlan plan = NewKanizuProjectPlanner.Plan(new NewKanizuProjectOptions
+        {
+            StationName = "Tokyo",
+            // Default levels: B1F (-4.5m), 1F (0.0m), 2F (4.5m)
+        });
+        Assert.True(plan.IsValid);
+
+        // Typical Autodesk metric .rte seed: Level 1 at 0.0m, Level 2 at 4.0m (no ordinal/short_name)
+        ExistingLevelCandidate[] metricSeed =
+        {
+            new(10, "Level 1", 0.0, hasOrdinal: false, hasShortName: false),
+            new(11, "Level 2", 4.0 / 0.3048, hasOrdinal: false, hasShortName: false),
+        };
+
+        LevelReconciliationPlan fromTemplate = NewKanizuProjectPlanner.PlanLevelReconciliation(
+            plan.Levels,
+            metricSeed,
+            createdFromTemplate: true);
+
+        // Level 1 matches 1F by elevation (0.0m); Level 2 is reused for B1F (or remaining unmatched) instead of orphaned!
+        Assert.Equal(3, fromTemplate.Actions.Count);
+        Assert.Equal(2, fromTemplate.Actions.Count(a => a.ReusedExistingLevelId.HasValue));
+        Assert.Equal(1, fromTemplate.Actions.Count(a => a.CreateNew));
+        Assert.Empty(fromTemplate.UnclaimedSeedLevelIdsToDelete);
+        Assert.Empty(fromTemplate.UnclaimedLevelsMissingMetadata);
+
+        // If a template has MORE seed levels than requested (e.g., 3 seed levels for a 1-level project),
+        // leftover unreferenced seed levels are scheduled for deletion.
+        NewKanizuProjectPlan singleLevelPlan = NewKanizuProjectPlanner.Plan(new NewKanizuProjectOptions
+        {
+            StationName = "SmallStation",
+            Levels = new[] { new NewKanizuLevelSpec("1F", 0, 0.0, "1F") },
+        });
+        ExistingLevelCandidate[] threeSeeds =
+        {
+            new(10, "Level 1", 0.0, hasOrdinal: false, hasShortName: false),
+            new(11, "Level 2", 4.0 / 0.3048, hasOrdinal: false, hasShortName: false),
+            new(12, "Level 3", 8.0 / 0.3048, hasOrdinal: false, hasShortName: false),
+        };
+        LevelReconciliationPlan trimPlan = NewKanizuProjectPlanner.PlanLevelReconciliation(
+            singleLevelPlan.Levels,
+            threeSeeds,
+            createdFromTemplate: true);
+        Assert.Equal(new long[] { 11, 12 }, trimPlan.UnclaimedSeedLevelIdsToDelete.ToArray());
+
+        // On an already-open document (createdFromTemplate: false), unclaimed levels are NEVER deleted
+        // and any lacking ordinal/short_name are flagged in UnclaimedLevelsMissingMetadata.
+        LevelReconciliationPlan openDocPlan = NewKanizuProjectPlanner.PlanLevelReconciliation(
+            plan.Levels,
+            metricSeed,
+            createdFromTemplate: false);
+        Assert.Empty(openDocPlan.UnclaimedSeedLevelIdsToDelete);
+        ExistingLevelCandidate missing = Assert.Single(openDocPlan.UnclaimedLevelsMissingMetadata);
+        Assert.Equal(11, missing.ElementId);
+        Assert.Equal("Level 2", missing.Name);
+    }
+
+    [Fact]
+    public void FilterWorksetFilterableCategories_DropsUnfilterableCategoriesLikeRvtLinksCleanly()
+    {
+        const long ostFloors = -2000032;
+        const long ostRooms = -2000160;
+        const long ostRvtLinks = -2001352;
+        const long ostGrids = -2000220;
+
+        long[] allFilterable = { ostFloors, ostRooms, ostGrids }; // OST_RvtLinks not filterable
+        HashSet<long> supportsPartition = new() { ostFloors, ostGrids }; // OST_Rooms lacks ELEM_PARTITION_PARAM
+
+        // KNZ_Links (OST_RvtLinks only) -> returns empty cleanly without throwing
+        IReadOnlyList<long> linksResult = NewKanizuProjectPlanner.FilterWorksetFilterableCategories(
+            new[] { ostRvtLinks },
+            allFilterable,
+            supportsPartition.Contains);
+        Assert.Empty(linksResult);
+
+        // Mixed categories -> retains only filterable categories supporting ELEM_PARTITION_PARAM (deduplicated)
+        IReadOnlyList<long> mixedResult = NewKanizuProjectPlanner.FilterWorksetFilterableCategories(
+            new[] { ostFloors, ostRooms, ostRvtLinks, ostGrids, ostFloors },
+            allFilterable,
+            supportsPartition.Contains);
+        Assert.Equal(new[] { ostFloors, ostGrids }, mixedResult.ToArray());
+    }
+
+    [Fact]
+    public void ValidateHeadlessOptions_RequiresSaveAsRvtPathForTemplateModeAndActiveDocForOpenDocMode()
+    {
+        NewKanizuProjectOptions missingSavePath = new()
+        {
+            StationName = "Tokyo",
+            InitializationMode = NewKanizuProjectInitializationMode.CreateFromTemplate,
+            TemplatePath = "KanizuStationStarter.rte",
+            SaveAsRvtPath = null,
+        };
+        Assert.Throws<ArgumentException>(() => NewKanizuProjectPlanner.ValidateHeadlessOptions(missingSavePath, hasActiveDocument: false));
+
+        missingSavePath.SaveAsRvtPath = "Tokyo.rvt";
+        NewKanizuProjectPlanner.ValidateHeadlessOptions(missingSavePath, hasActiveDocument: false);
+
+        NewKanizuProjectOptions openDocMode = new()
+        {
+            StationName = "Tokyo",
+            InitializationMode = NewKanizuProjectInitializationMode.InitializeOpenDocument,
+        };
+        Assert.Throws<InvalidOperationException>(() => NewKanizuProjectPlanner.ValidateHeadlessOptions(openDocMode, hasActiveDocument: false));
+        NewKanizuProjectPlanner.ValidateHeadlessOptions(openDocMode, hasActiveDocument: true);
+    }
+
+    [Fact]
+    public void EvaluatePostInitReadiness_CatchesMissingOrDuplicatePersistedLevelIds()
+    {
+        NewKanizuProjectPlan plan = NewKanizuProjectPlanner.Plan(new NewKanizuProjectOptions
+        {
+            StationName = "Shinagawa",
+        });
+        Assert.True(plan.IsValid);
+
+        // Simulate persisted Revit levels where one level failed to persist its level_id
+        ExistingLevelIdentityEntry[] missingPersisted =
+        {
+            new(1, "B1F", plan.Levels[0].LevelId, -1, "B1F", -4.5),
+            new(2, "1F", string.Empty, 0, "1F", 0.0),
+            new(3, "2F", plan.Levels[2].LevelId, 1, "2F", 4.5),
+        };
+        ProjectInitializationReadinessSummary missingResult = NewKanizuProjectPlanner.EvaluatePostInitReadiness(
+            plan,
+            postInitSnapshot: null,
+            actualLevels: missingPersisted,
+            actualKitVersion: plan.KitVersion);
+        Assert.False(missingResult.IsReady);
+        Assert.Contains(missingResult.Items, i => i.Code == "T9-POST-LEVELIDS" && i.Status == ProjectInitializationCheckStatus.Fail);
+
+        // Simulate an extra unclaimed level carrying a duplicate level_id
+        ExistingLevelIdentityEntry[] duplicatePersisted =
+        {
+            new(1, "B1F", plan.Levels[0].LevelId, -1, "B1F", -4.5),
+            new(2, "1F", plan.Levels[1].LevelId, 0, "1F", 0.0),
+            new(3, "2F", plan.Levels[2].LevelId, 1, "2F", 4.5),
+            new(4, "Extra", plan.Levels[1].LevelId, 2, "EX", 9.0),
+        };
+        ProjectInitializationReadinessSummary dupResult = NewKanizuProjectPlanner.EvaluatePostInitReadiness(
+            plan,
+            postInitSnapshot: null,
+            actualLevels: duplicatePersisted,
+            actualKitVersion: plan.KitVersion);
+        Assert.False(dupResult.IsReady);
+        Assert.Contains(dupResult.Items, i => i.Code == "T9-POST-LEVELIDS" && i.Status == ProjectInitializationCheckStatus.Fail);
     }
 }
