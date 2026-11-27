@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using RevitGeoSuite.FloorPlanExport.Core.Federation;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 
@@ -281,6 +282,13 @@ public sealed class ReadinessCheckSnapshot
     /// <summary>Showcase elements detected inside the active model (evaluated by <c>KZ-ELEM-005</c>).</summary>
     public IReadOnlyList<ShowcaseElementFinding> ShowcaseElements { get; set; } = Array.Empty<ShowcaseElementFinding>();
 
+    /// <summary>
+    /// Optional full multi-model federation snapshot (host + linked Revit models + station folder).
+    /// When populated in Project mode, <see cref="ProjectReadinessEvaluator"/> evaluates all
+    /// <c>KZ-FED-001..009</c> rules via <see cref="FederationChecker"/> without duplicating rule IDs.
+    /// </summary>
+    public FederationCheckSnapshot? Federation { get; set; }
+
     public ReadinessMode SuggestedMode => SuggestMode(DocumentPath, DocumentTitle, IsEmptyModel);
 
     public static ReadinessMode SuggestMode(string? documentPath, string? documentTitle, bool isEmptyModel)
@@ -400,7 +408,8 @@ public sealed class ProjectReadinessReport
         IReadOnlyList<ReadinessCheckGroup> groups,
         TemplatePreparationPlan templatePlan,
         bool canSetupModel,
-        bool canFixFloorTypes)
+        bool canFixFloorTypes,
+        FederationCheckReport? federationReport = null)
     {
         Mode = mode;
         SuggestedMode = suggestedMode;
@@ -408,6 +417,7 @@ public sealed class ProjectReadinessReport
         TemplatePlan = templatePlan ?? throw new ArgumentNullException(nameof(templatePlan));
         CanSetupModel = canSetupModel;
         CanFixFloorTypes = canFixFloorTypes;
+        FederationReport = federationReport;
 
         List<ReadinessCheckItem> allItems = groups.SelectMany(group => group.Items).ToList();
         PassCount = allItems.Count(item => item.Status == ReadinessCheckStatus.Pass);
@@ -458,6 +468,9 @@ public sealed class ProjectReadinessReport
     public bool CanSetupModel { get; }
 
     public bool CanFixFloorTypes { get; }
+
+    /// <summary>Optional full <see cref="FederationCheckReport"/> when evaluated with a <see cref="FederationCheckSnapshot"/>.</summary>
+    public FederationCheckReport? FederationReport { get; }
 }
 
 /// <summary>
@@ -902,6 +915,10 @@ public static class ProjectReadinessEvaluator
         IReadOnlyList<FloorTypeProposal> proposals = FloorTypeMatcher.Propose(modelSnapshot, effective);
         bool canFixFloorTypes = FloorTypeMatcher.WriteBlocker(modelSnapshot).Length == 0 && proposals.Count > 0;
 
+        FederationCheckReport? federationReport = mode == ReadinessMode.Project && snapshot.Federation != null
+            ? FederationChecker.Evaluate(snapshot.Federation)
+            : null;
+
         List<ReadinessCheckGroup> groups = new()
         {
             EvaluateParametersGroup(modelSnapshot, effective),
@@ -909,9 +926,14 @@ public static class ProjectReadinessEvaluator
             EvaluateFamiliesGroup(snapshot, modelSnapshot, effective, mode),
             EvaluateTemplateHygieneGroup(snapshot, mode),
             EvaluateTemplateViewsGroup(templatePlan, snapshot),
-            EvaluateProjectOnlyGroup(snapshot, mode),
-            EvaluateShowcaseIsolationGroup(snapshot),
+            EvaluateProjectOnlyGroup(snapshot, mode, federationReport),
+            EvaluateShowcaseIsolationGroup(snapshot, federationReport),
         };
+
+        if (federationReport != null)
+        {
+            groups.Add(EvaluateFederationGroup(federationReport));
+        }
 
         return new ProjectReadinessReport(
             mode,
@@ -919,7 +941,8 @@ public static class ProjectReadinessEvaluator
             groups,
             templatePlan,
             canSetupModel: !setupPlan.IsEmpty,
-            canFixFloorTypes: canFixFloorTypes);
+            canFixFloorTypes: canFixFloorTypes,
+            federationReport: federationReport);
     }
 
     public static bool IsJapanPlaneRectangularEpsg(int? epsgCode) =>
@@ -1535,11 +1558,13 @@ public static class ProjectReadinessEvaluator
     private static bool IsReservedShowcaseFilter(string name) =>
         ShowcaseExportGuard.IsReservedShowcaseFilterName(name);
 
-    private static ReadinessCheckGroup EvaluateShowcaseIsolationGroup(ReadinessCheckSnapshot snapshot)
+    private static ReadinessCheckGroup EvaluateShowcaseIsolationGroup(
+        ReadinessCheckSnapshot snapshot,
+        FederationCheckReport? federationReport = null)
     {
-        ReadinessCheckItem federationGuard = ShowcaseReadinessEvaluator
-            .EvaluateFederationGuard(snapshot)
-            .ToReadinessCheckItem();
+        ReadinessCheckItem federationGuard = federationReport != null
+            ? federationReport.GetRule(FederationChecker.RuleShowcaseExclusion).ToReadinessCheckItem()
+            : ShowcaseReadinessEvaluator.EvaluateFederationGuard(snapshot).ToReadinessCheckItem();
         ReadinessCheckItem elementGuard = ShowcaseReadinessEvaluator
             .EvaluateShowcaseElements(snapshot)
             .ToReadinessCheckItem();
@@ -1550,7 +1575,25 @@ public static class ProjectReadinessEvaluator
             new[] { federationGuard, elementGuard });
     }
 
-    private static ReadinessCheckGroup EvaluateProjectOnlyGroup(ReadinessCheckSnapshot snapshot, ReadinessMode mode)
+    private static ReadinessCheckGroup EvaluateFederationGroup(FederationCheckReport federationReport)
+    {
+        return new ReadinessCheckGroup(
+            "federation",
+            "Multi-building federation checks",
+            new[]
+            {
+                federationReport.GetRule(FederationChecker.RuleNearMissLevelDrift).ToReadinessCheckItem(),
+                federationReport.GetRule(FederationChecker.RuleTilesLevelKeyCollision).ToReadinessCheckItem(),
+                federationReport.GetRule(FederationChecker.RuleStationFolderFederation).ToReadinessCheckItem(),
+                federationReport.GetRule(FederationChecker.RuleNoDoublePublishing).ToReadinessCheckItem(),
+                federationReport.GetRule(FederationChecker.RuleLinkAndRoleHygiene).ToReadinessCheckItem(),
+            });
+    }
+
+    private static ReadinessCheckGroup EvaluateProjectOnlyGroup(
+        ReadinessCheckSnapshot snapshot,
+        ReadinessMode mode,
+        FederationCheckReport? federationReport = null)
     {
         if (mode == ReadinessMode.Template)
         {
@@ -1574,6 +1617,19 @@ public static class ProjectReadinessEvaluator
                         "Level ordinal & short_name completeness",
                         ReadinessCheckStatus.NotApplicable,
                         "Not required in Template mode — assign on project levels."),
+                });
+        }
+
+        if (federationReport != null)
+        {
+            return new ReadinessCheckGroup(
+                "project-setup",
+                "Project georeferencing, Model IDs & levels",
+                new[]
+                {
+                    federationReport.GetRule(FederationChecker.RuleCrsAndPose).ToReadinessCheckItem(),
+                    federationReport.GetRule(FederationChecker.RuleUniqueModelId).ToReadinessCheckItem(),
+                    federationReport.GetRule(FederationChecker.RuleUniqueLevelId).ToReadinessCheckItem(),
                 });
         }
 

@@ -1,4 +1,5 @@
 using System;
+using RevitGeoSuite.Core.Text;
 
 namespace RevitGeoSuite.Tiles3DExport;
 
@@ -98,45 +99,8 @@ public sealed class Tiles3DObjectMetadata
 
 public static class Tiles3DLevelMetadata
 {
-    public const string UnassignedLevelKey = "unassigned";
-    public const string UnassignedLevelName = "Unassigned";
+    public const string UnassignedLevelKey = LevelKey.Unassigned;
+    public const string UnassignedLevelName = LevelKey.UnassignedName;
 
-    public static string BuildLevelKey(string? levelName)
-    {
-        string trimmed = levelName?.Trim() ?? string.Empty;
-        if (trimmed.Length == 0
-            || string.Equals(trimmed, UnassignedLevelName, StringComparison.OrdinalIgnoreCase))
-        {
-            return UnassignedLevelKey;
-        }
-
-        char[] chars = trimmed.ToLowerInvariant().ToCharArray();
-        bool lastWasSeparator = false;
-        int writeIndex = 0;
-        foreach (char c in chars)
-        {
-            bool isIdentifierChar = char.IsLetterOrDigit(c);
-            if (isIdentifierChar)
-            {
-                chars[writeIndex++] = c;
-                lastWasSeparator = false;
-                continue;
-            }
-
-            if (!lastWasSeparator && writeIndex > 0)
-            {
-                chars[writeIndex++] = '_';
-                lastWasSeparator = true;
-            }
-        }
-
-        while (writeIndex > 0 && chars[writeIndex - 1] == '_')
-        {
-            writeIndex--;
-        }
-
-        return writeIndex == 0
-            ? UnassignedLevelKey
-            : new string(chars, 0, writeIndex);
-    }
+    public static string BuildLevelKey(string? levelName) => LevelKey.Build(levelName);
 }

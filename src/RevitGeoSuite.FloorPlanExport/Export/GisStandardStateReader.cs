@@ -6,9 +6,11 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
+using RevitGeoSuite.FloorPlanExport.Core.Federation;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
+using RevitGeoSuite.FloorPlanExport.Federation;
 using RevitGeoSuite.FloorPlanExport.GisTools;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.Storage;
@@ -248,7 +250,22 @@ public static class GisStandardStateReader
             LinkedModels = ReadLinkedModels(document),
             HostModelRole = ReadModelRoleText(document),
             ShowcaseElements = ReadShowcaseElements(document),
+            Federation = effectiveMode == ReadinessMode.Project
+                ? TryReadFederationSnapshot(document)
+                : null,
         };
+    }
+
+    private static FederationCheckSnapshot? TryReadFederationSnapshot(Document document)
+    {
+        try
+        {
+            return RevitFederationSnapshotCollector.Collect(document);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private const int BakedInSampleLimit = 8;

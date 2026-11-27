@@ -54,6 +54,10 @@ public sealed class RuleCatalogTests
     [InlineData("KZ-FED-002")]
     [InlineData("KZ-FED-003")]
     [InlineData("KZ-FED-004")]
+    [InlineData("KZ-FED-005")]
+    [InlineData("KZ-FED-006")]
+    [InlineData("KZ-FED-007")]
+    [InlineData("KZ-FED-008")]
     [InlineData("KZ-FED-009")]
     public void EveryExpectedCanonicalIdIsRegistered(string ruleId)
     {
@@ -75,6 +79,11 @@ public sealed class RuleCatalogTests
     [InlineData("project-crs", "KZ-FED-001")]
     [InlineData("model-ids", "KZ-FED-002")]
     [InlineData("level-metadata", "KZ-FED-003")]
+    [InlineData("federation-level-drift", "KZ-FED-004")]
+    [InlineData("federation-tiles-level-keys", "KZ-FED-005")]
+    [InlineData("federation-station-folder", "KZ-FED-006")]
+    [InlineData("federation-double-publishing", "KZ-FED-007")]
+    [InlineData("federation-link-hygiene", "KZ-FED-008")]
     [InlineData("qa-schedule-floors", "KZ-TPL-003")]
     [InlineData("qa-schedule-circulation", "KZ-TPL-003")]
     [InlineData("qa-schedule-doors", "KZ-TPL-003")]
@@ -109,6 +118,21 @@ public sealed class RuleCatalogTests
             RuleCatalogEntry entry = RuleCatalog.Lookup(ruleId);
             Assert.Equal("family", entry.Group);
             Assert.Equal(RuleSeverity.Error, entry.Severity);
+            Assert.False(string.IsNullOrWhiteSpace(entry.Title), $"{ruleId} missing English title.");
+            Assert.False(string.IsNullOrWhiteSpace(entry.Description), $"{ruleId} missing English description.");
+            Assert.False(string.IsNullOrWhiteSpace(entry.TitleJa), $"{ruleId} missing Japanese title.");
+            Assert.False(string.IsNullOrWhiteSpace(entry.DescriptionJa), $"{ruleId} missing Japanese description.");
+        }
+    }
+
+    [Fact]
+    public void FederationRules001To009HaveBilingualMessages()
+    {
+        for (int i = 1; i <= 9; i++)
+        {
+            string ruleId = $"KZ-FED-{i:000}";
+            RuleCatalogEntry entry = RuleCatalog.Lookup(ruleId);
+            Assert.Equal("federation", entry.Group);
             Assert.False(string.IsNullOrWhiteSpace(entry.Title), $"{ruleId} missing English title.");
             Assert.False(string.IsNullOrWhiteSpace(entry.Description), $"{ruleId} missing English description.");
             Assert.False(string.IsNullOrWhiteSpace(entry.TitleJa), $"{ruleId} missing Japanese title.");

@@ -505,6 +505,14 @@ public static class NewKanizuProjectBootstrapper
             }
         }
 
+        if (plan.FederationMode != KanizuFederationMode.Standalone)
+        {
+            string federationMode = GisModelFederation.FormatMode(plan.FederationMode);
+            log.Add(GisModelSettings.SaveFederationMetadata(doc, plan.FederationMode, plan.HubModelId, warnings)
+                ? $"Recorded federation.mode = '{federationMode}' in gis-model.json."
+                : $"No station folder yet; federation.mode = '{federationMode}' is recorded once a station folder is set.");
+        }
+
         // Step 3: Post-initialization readiness verification (TemplateReadinessCheck + T9 identity checks).
         // Re-read persisted Level elements directly from doc after commit so T9-POST-LEVELIDS verifies real Revit state.
         ReadinessCheckSnapshot readinessSnapshot = GisStandardStateReader.ReadReadiness(

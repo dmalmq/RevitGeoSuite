@@ -6,6 +6,7 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.StarterKit;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Standards;
 
@@ -78,6 +79,13 @@ public sealed class GisModelFile
 
     [JsonProperty("versions")]
     public GisModelVersions Versions { get; set; } = new();
+
+    /// <summary>
+    /// Optional multi-building federation topology (<c>mode</c> and <c>hubModelId</c>).
+    /// Absent (null) on legacy v1/v2 exports so existing files and golden templates stay byte-identical.
+    /// </summary>
+    [JsonProperty("federation", NullValueHandling = NullValueHandling.Ignore)]
+    public GisModelFederation? Federation { get; set; }
 
     [JsonExtensionData]
     private IDictionary<string, JToken>? UnknownFields { get; set; }
@@ -333,6 +341,10 @@ public sealed class GisModelLevel
 
     [JsonProperty("shortName")]
     public string ShortName { get; set; } = string.Empty;
+
+    /// <summary>Optional elevation in meters (from <c>Level.ProjectElevation</c> in shared/T.P. frame); omitted when unset.</summary>
+    [JsonProperty("elevationMeters", NullValueHandling = NullValueHandling.Ignore)]
+    public double? ElevationMeters { get; set; }
 }
 
 public sealed class GisModelView
@@ -352,6 +364,62 @@ public sealed class GisModelLink
 
     [JsonProperty("name")]
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>Optional stable <c>GeoProjectInfo.ModelId</c> of the linked model; omitted when unset.</summary>
+    [JsonProperty("modelId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? ModelId { get; set; }
+}
+
+/// <summary>
+/// Optional additive multi-building federation topology stored inside <c>gis-model.json</c>.
+/// Omitted when unset so legacy v1/v2 exports stay byte-identical.
+/// </summary>
+public sealed class GisModelFederation
+{
+    /// <summary>Federation mode: <c>"standalone"</c>, <c>"hub"</c>, <c>"spoke"</c>, or <c>"independent"</c>.</summary>
+    [JsonProperty("mode", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Mode { get; set; }
+
+    /// <summary>Stable ModelId of the hub model when <see cref="Mode"/> is <c>"spoke"</c>.</summary>
+    [JsonProperty("hubModelId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? HubModelId { get; set; }
+
+    public static string FormatMode(KanizuFederationMode mode) => mode.ToString().ToLowerInvariant();
+
+    public static bool TryParseMode(string? modeText, out KanizuFederationMode mode)
+    {
+        if (string.IsNullOrWhiteSpace(modeText))
+        {
+            mode = KanizuFederationMode.Standalone;
+            return false;
+        }
+
+        switch (modeText!.Trim().ToLowerInvariant())
+        {
+            case "standalone":
+                mode = KanizuFederationMode.Standalone;
+                return true;
+            case "hub":
+                mode = KanizuFederationMode.Hub;
+                return true;
+            case "spoke":
+                mode = KanizuFederationMode.Spoke;
+                return true;
+            case "independent":
+                mode = KanizuFederationMode.Independent;
+                return true;
+            default:
+                mode = KanizuFederationMode.Standalone;
+                return false;
+        }
+    }
+
+    public static GisModelFederation Create(KanizuFederationMode mode, string? hubModelId = null) =>
+        new()
+        {
+            Mode = FormatMode(mode),
+            HubModelId = string.IsNullOrWhiteSpace(hubModelId) ? null : hubModelId!.Trim(),
+        };
 }
 
 public sealed class GisModelDrawingRules
