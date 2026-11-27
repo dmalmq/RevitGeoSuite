@@ -173,6 +173,11 @@ public static class ShowcaseMaterialCatalog
         string typeToken = ReadFirstText(attributes, "link_type", "route_type", "connector_kind", "kind", "type", "category", "structure");
         if (TryMatchCirculationMaterial(typeToken, out string circulationMaterial))
         {
+            if (circulationMaterial == NetWalk && IsExplicitlyNotStepFree(attributes))
+            {
+                return NetWalkNotStepFree;
+            }
+
             return circulationMaterial;
         }
 
@@ -204,6 +209,11 @@ public static class ShowcaseMaterialCatalog
         string typeToken = ReadFirstText(attributes, "connector_kind", "kind", "link_type", "route_type", "type", "category", "structure");
         if (TryMatchCirculationMaterial(typeToken, out string circulationMaterial))
         {
+            if (circulationMaterial == NetWalk && IsExplicitlyNotStepFree(attributes))
+            {
+                return NetWalkNotStepFree;
+            }
+
             return circulationMaterial;
         }
 

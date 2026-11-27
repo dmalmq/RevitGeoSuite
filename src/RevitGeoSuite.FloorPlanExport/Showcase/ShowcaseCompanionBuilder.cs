@@ -270,8 +270,19 @@ public sealed class ShowcaseCompanionBuilder
                 options,
                 warnings);
 
-            double minSegmentFeet = Math.Max(document.Application.ShortCurveTolerance, geometryOptions.MinSegmentLengthFeet);
+            double f3MinSegmentFeet = Math.Max(document.Application.ShortCurveTolerance, geometryOptions.MinSegmentLengthFeet);
+            double f4MinSegmentFeet = Math.Max(document.Application.ShortCurveTolerance, poiNetworkOptions.MinSegmentLengthFeet);
             SolidOptions defaultSolidOptions = new(ElementId.InvalidElementId, ElementId.InvalidElementId);
+
+            // Pre-index existing DirectShapeType elements in the document so session-transient DirectShapeLibrary
+            // can re-register them on reopen/refresh without creating duplicate DirectShapeType elements.
+            Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes =
+                CollectExistingDirectShapeTypes(document);
+            IReadOnlyList<Level> documentLevels = new FilteredElementCollector(document)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .OrderBy(l => l.Elevation)
+                .ToArray();
 
             // Reconcile existing Kanizu.Showcase DirectShapes & KNZ_FRM_PoiMarker FamilyInstances by ApplicationDataId
             // so refreshes update in-place, replace when category/parameters changed, and delete stale features.
@@ -305,16 +316,21 @@ public sealed class ShowcaseCompanionBuilder
                     {
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
                         ElementId categoryId = resolvedCategoryIdsByPref[elementPlan.PreferredCategoryName];
+                        double elementMinSegmentFeet = elementPlan.ElementKind == ShowcaseElementKind.Extrusion
+                            ? f3MinSegmentFeet
+                            : f4MinSegmentFeet;
                         if (!TryCreateShowcaseElement(
                                 document,
                                 elementPlan,
                                 categoryId,
                                 registry,
-                                minSegmentFeet,
+                                elementMinSegmentFeet,
                                 defaultSolidOptions,
                                 materialIdsByName,
                                 poiMarkerSymbols,
+                                documentLevels,
                                 directShapeLibrary,
+                                existingDirectShapeTypes,
                                 prototypeDefIdsByKey,
                                 warnings))
                         {
@@ -337,25 +353,39 @@ public sealed class ShowcaseCompanionBuilder
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
                         ElementId existingId = new(step.ExistingElementId!.Value);
                         ElementId categoryId = resolvedCategoryIdsByPref[elementPlan.PreferredCategoryName];
+                        double elementMinSegmentFeet = elementPlan.ElementKind == ShowcaseElementKind.Extrusion
+                            ? f3MinSegmentFeet
+                            : f4MinSegmentFeet;
                         if (!TryUpdateShowcaseElementInPlace(
                                 document,
                                 existingId,
                                 elementPlan,
                                 categoryId,
                                 registry,
-                                minSegmentFeet,
+                                elementMinSegmentFeet,
                                 defaultSolidOptions,
                                 materialIdsByName,
                                 poiMarkerSymbols,
+                                documentLevels,
                                 directShapeLibrary,
+                                existingDirectShapeTypes,
                                 prototypeDefIdsByKey,
-                                warnings))
+                                warnings,
+                                out bool wasReplaced))
                         {
                             skippedCount++;
                             continue;
                         }
 
-                        updatedCount++;
+                        if (wasReplaced)
+                        {
+                            replacedCount++;
+                        }
+                        else
+                        {
+                            updatedCount++;
+                        }
+
                         activeAppDataIds.Add(elementPlan.ApplicationDataId);
                         if (!string.IsNullOrEmpty(elementPlan.OverflowAttributesJson))
                         {
@@ -371,17 +401,22 @@ public sealed class ShowcaseCompanionBuilder
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
                         ElementId existingId = new(step.ExistingElementId!.Value);
                         ElementId categoryId = resolvedCategoryIdsByPref[elementPlan.PreferredCategoryName];
+                        double elementMinSegmentFeet = elementPlan.ElementKind == ShowcaseElementKind.Extrusion
+                            ? f3MinSegmentFeet
+                            : f4MinSegmentFeet;
                         if (!TryReplaceShowcaseElement(
                                 document,
                                 existingId,
                                 elementPlan,
                                 categoryId,
                                 registry,
-                                minSegmentFeet,
+                                elementMinSegmentFeet,
                                 defaultSolidOptions,
                                 materialIdsByName,
                                 poiMarkerSymbols,
+                                documentLevels,
                                 directShapeLibrary,
+                                existingDirectShapeTypes,
                                 prototypeDefIdsByKey,
                                 warnings))
                         {
@@ -847,6 +882,49 @@ public sealed class ShowcaseCompanionBuilder
         return fallback;
     }
 
+    private static Dictionary<(string Name, long CategoryId), DirectShapeType> CollectExistingDirectShapeTypes(Document document)
+    {
+        Dictionary<(string Name, long CategoryId), DirectShapeType> result = new();
+        foreach (DirectShapeType dsType in new FilteredElementCollector(document).OfClass(typeof(DirectShapeType)).Cast<DirectShapeType>())
+        {
+            if (string.IsNullOrWhiteSpace(dsType.Name))
+            {
+                continue;
+            }
+
+            long catId = dsType.Category?.Id.Value ?? ElementId.InvalidElementId.Value;
+            (string, long) key = (dsType.Name, catId);
+            if (!result.ContainsKey(key))
+            {
+                result[key] = dsType;
+            }
+        }
+
+        return result;
+    }
+
+    private static Level? ResolveNearestLevel(IReadOnlyList<Level> documentLevels, double targetZFeet)
+    {
+        if (documentLevels.Count == 0)
+        {
+            return null;
+        }
+
+        Level best = documentLevels[0];
+        double bestDist = Math.Abs(best.Elevation - targetZFeet);
+        for (int i = 1; i < documentLevels.Count; i++)
+        {
+            double dist = Math.Abs(documentLevels[i].Elevation - targetZFeet);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = documentLevels[i];
+            }
+        }
+
+        return best;
+    }
+
     private static bool TryBuildGeometryObjects(
         Document document,
         ShowcaseElementPlan plan,
@@ -855,6 +933,7 @@ public sealed class ShowcaseCompanionBuilder
         SolidOptions defaultSolidOptions,
         Dictionary<string, ElementId> materialIdsByName,
         DirectShapeLibrary directShapeLibrary,
+        Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes,
         Dictionary<string, string> prototypeDefIdsByKey,
         ICollection<string> warnings,
         out List<GeometryObject> geometries)
@@ -925,6 +1004,7 @@ public sealed class ShowcaseCompanionBuilder
                     primaryOptions,
                     minSegmentLengthFeet,
                     directShapeLibrary,
+                    existingDirectShapeTypes,
                     prototypeDefIdsByKey);
                 if (!string.IsNullOrEmpty(defId))
                 {
@@ -966,6 +1046,7 @@ public sealed class ShowcaseCompanionBuilder
         SolidOptions solidOptions,
         double minSegmentLengthFeet,
         DirectShapeLibrary library,
+        Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes,
         Dictionary<string, string> prototypeDefIdsByKey)
     {
         int radiusMm = (int)Math.Round(ShowcaseCoordinateTransform.FeetToMeters(placement.BaseRadiusFeet) * 1000d);
@@ -990,9 +1071,20 @@ public sealed class ShowcaseCompanionBuilder
             return null;
         }
 
+        // Re-register any persisted DirectShapeType from an earlier session instead of duplicating it.
+        (string, long) lookupKey = (defId, categoryId.Value);
+        if (existingDirectShapeTypes.TryGetValue(lookupKey, out DirectShapeType? existingType))
+        {
+            existingType.SetShape(prototypeSolids);
+            library.AddDefinitionType(defId, existingType.Id);
+            prototypeDefIdsByKey[defId] = defId;
+            return defId;
+        }
+
         DirectShapeType dsType = DirectShapeType.Create(document, defId, categoryId);
         dsType.SetShape(prototypeSolids);
         library.AddDefinitionType(defId, dsType.Id);
+        existingDirectShapeTypes[lookupKey] = dsType;
         prototypeDefIdsByKey[defId] = defId;
         return defId;
     }
@@ -1194,13 +1286,15 @@ public sealed class ShowcaseCompanionBuilder
         SolidOptions defaultSolidOptions,
         Dictionary<string, ElementId> materialIdsByName,
         Dictionary<string, FamilySymbol> poiMarkerSymbols,
+        IReadOnlyList<Level> documentLevels,
         DirectShapeLibrary directShapeLibrary,
+        Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes,
         Dictionary<string, string> prototypeDefIdsByKey,
         ICollection<string> warnings)
     {
         if (TryResolvePoiFamilySymbol(plan, poiMarkerSymbols, out FamilySymbol symbol))
         {
-            return TryCreatePoiFamilyInstance(document, plan, symbol, registry, warnings);
+            return TryCreatePoiFamilyInstance(document, plan, symbol, documentLevels, registry, warnings);
         }
 
         if (!TryBuildGeometryObjects(
@@ -1211,6 +1305,7 @@ public sealed class ShowcaseCompanionBuilder
                 defaultSolidOptions,
                 materialIdsByName,
                 directShapeLibrary,
+                existingDirectShapeTypes,
                 prototypeDefIdsByKey,
                 warnings,
                 out List<GeometryObject> geometries))
@@ -1244,10 +1339,139 @@ public sealed class ShowcaseCompanionBuilder
         }
     }
 
+    private static FamilyInstance PlacePoiFamilyInstanceAtExactElevation(
+        Document document,
+        FamilySymbol symbol,
+        ShowcaseMarkerPlacement placement,
+        IReadOnlyList<Level> documentLevels,
+        string applicationDataId,
+        ICollection<string> warnings)
+    {
+        if (!symbol.IsActive)
+        {
+            symbol.Activate();
+        }
+
+        XYZ targetLocation = new(placement.LocationFeet.XFeet, placement.LocationFeet.YFeet, placement.LocationFeet.ZFeet);
+        Level? hostLevel = ResolveNearestLevel(documentLevels, targetLocation.Z);
+
+        FamilyInstance instance = hostLevel != null
+            ? document.Create.NewFamilyInstance(
+                new XYZ(targetLocation.X, targetLocation.Y, hostLevel.Elevation),
+                symbol,
+                hostLevel,
+                StructuralType.NonStructural)
+            : document.Create.NewFamilyInstance(targetLocation, symbol, StructuralType.NonStructural);
+
+        ApplyFamilyInstanceElevationAndRotation(
+            document,
+            instance,
+            targetLocation,
+            hostLevel,
+            placement.RotationRadians,
+            applicationDataId,
+            warnings);
+
+        return instance;
+    }
+
+    /// <summary>
+    /// Enforces exact target Z elevation and Z-axis rotation on a <c>KNZ_FRM_PoiMarker</c> <see cref="FamilyInstance"/>
+    /// (including <c>OneLevelBased</c> families built from <c>Metric Generic Model.rft</c>) by writing host-level
+    /// elevation offset parameters and verifying <see cref="LocationPoint.Point"/> Z afterward.
+    /// </summary>
+    private static void ApplyFamilyInstanceElevationAndRotation(
+        Document document,
+        FamilyInstance instance,
+        XYZ targetLocation,
+        Level? explicitHostLevel,
+        double targetRotationRadians,
+        string applicationDataId,
+        ICollection<string> warnings)
+    {
+        Level? hostLevel = explicitHostLevel;
+        if (hostLevel == null && instance.LevelId != null && instance.LevelId != ElementId.InvalidElementId)
+        {
+            hostLevel = document.GetElement(instance.LevelId) as Level;
+        }
+
+        double hostElevation = hostLevel?.Elevation ?? 0d;
+        double requiredOffset = targetLocation.Z - hostElevation;
+
+        bool setElevationParam = TrySetWritableDoubleParameter(instance, BuiltInParameter.INSTANCE_ELEVATION_PARAM, requiredOffset);
+        bool setFreeHostParam = TrySetWritableDoubleParameter(instance, BuiltInParameter.INSTANCE_FREE_HOST_OFFSET_PARAM, requiredOffset);
+
+        if (instance.Location is LocationPoint locPt)
+        {
+            double currentZ = locPt.Point.Z;
+            double zError = targetLocation.Z - currentZ;
+            if (Math.Abs(zError) > 1e-4d && (!setElevationParam && !setFreeHostParam))
+            {
+                try
+                {
+                    ElementTransformUtils.MoveElement(document, instance.Id, new XYZ(0d, 0d, zError));
+                }
+                catch
+                {
+                    // Fall through to verification warning below.
+                }
+            }
+
+            if (instance.Location is LocationPoint verifiedLoc)
+            {
+                double remainingError = Math.Abs(targetLocation.Z - verifiedLoc.Point.Z);
+                if (remainingError > 1e-3d)
+                {
+                    // One final offset retry using observed delta if Revit shifted elevation relative to host.
+                    if (TrySetWritableDoubleParameter(instance, BuiltInParameter.INSTANCE_FREE_HOST_OFFSET_PARAM, requiredOffset) ||
+                        TrySetWritableDoubleParameter(instance, BuiltInParameter.INSTANCE_ELEVATION_PARAM, requiredOffset))
+                    {
+                        remainingError = instance.Location is LocationPoint retryLoc
+                            ? Math.Abs(targetLocation.Z - retryLoc.Point.Z)
+                            : remainingError;
+                    }
+
+                    if (remainingError > 1e-3d)
+                    {
+                        warnings.Add(
+                            $"KNZ_FRM_PoiMarker FamilyInstance '{applicationDataId}' Z elevation differed from target by {ShowcaseCoordinateTransform.FeetToMeters(remainingError):F3} m.");
+                    }
+                }
+
+                double deltaRot = targetRotationRadians - verifiedLoc.Rotation;
+                if (Math.Abs(deltaRot) > 1e-6d)
+                {
+                    XYZ axisOrigin = verifiedLoc.Point;
+                    Line axis = Line.CreateBound(axisOrigin, axisOrigin + XYZ.BasisZ);
+                    ElementTransformUtils.RotateElement(document, instance.Id, axis, deltaRot);
+                }
+            }
+        }
+    }
+
+    private static bool TrySetWritableDoubleParameter(Element element, BuiltInParameter builtInParam, double value)
+    {
+        Parameter? param = element.get_Parameter(builtInParam);
+        if (param is null || param.IsReadOnly || param.StorageType != StorageType.Double)
+        {
+            return false;
+        }
+
+        try
+        {
+            return param.Set(value);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static bool TryCreatePoiFamilyInstance(
         Document document,
         ShowcaseElementPlan plan,
         FamilySymbol symbol,
+        IReadOnlyList<Level> documentLevels,
         ShowcaseParameterRegistry registry,
         ICollection<string> warnings)
     {
@@ -1255,14 +1479,15 @@ public sealed class ShowcaseCompanionBuilder
         subTransaction.Start();
         try
         {
-            if (!symbol.IsActive)
-            {
-                symbol.Activate();
-            }
-
             ShowcaseMarkerPlacement placement = plan.MarkerPlacements[0];
-            XYZ location = new(placement.LocationFeet.XFeet, placement.LocationFeet.YFeet, placement.LocationFeet.ZFeet);
-            FamilyInstance instance = document.Create.NewFamilyInstance(location, symbol, StructuralType.NonStructural);
+            FamilyInstance instance = PlacePoiFamilyInstanceAtExactElevation(
+                document,
+                symbol,
+                placement,
+                documentLevels,
+                plan.ApplicationDataId,
+                warnings);
+
             Parameter? comments = instance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
             if (comments != null && !comments.IsReadOnly)
             {
@@ -1295,10 +1520,14 @@ public sealed class ShowcaseCompanionBuilder
         SolidOptions defaultSolidOptions,
         Dictionary<string, ElementId> materialIdsByName,
         Dictionary<string, FamilySymbol> poiMarkerSymbols,
+        IReadOnlyList<Level> documentLevels,
         DirectShapeLibrary directShapeLibrary,
+        Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes,
         Dictionary<string, string> prototypeDefIdsByKey,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        out bool wasReplaced)
     {
+        wasReplaced = false;
         Element? existingElement = document.GetElement(existingElementId);
         if (existingElement is null)
         {
@@ -1327,12 +1556,21 @@ public sealed class ShowcaseCompanionBuilder
                 XYZ targetLoc = new(placement.LocationFeet.XFeet, placement.LocationFeet.YFeet, placement.LocationFeet.ZFeet);
                 if (existingFamilyInstance.Location is LocationPoint locPt)
                 {
-                    XYZ delta = targetLoc - locPt.Point;
-                    if (delta.GetLength() > 1e-6d)
+                    XYZ xyDelta = new(targetLoc.X - locPt.Point.X, targetLoc.Y - locPt.Point.Y, 0d);
+                    if (xyDelta.GetLength() > 1e-6d)
                     {
-                        ElementTransformUtils.MoveElement(document, existingFamilyInstance.Id, delta);
+                        ElementTransformUtils.MoveElement(document, existingFamilyInstance.Id, xyDelta);
                     }
                 }
+
+                ApplyFamilyInstanceElevationAndRotation(
+                    document,
+                    existingFamilyInstance,
+                    targetLoc,
+                    explicitHostLevel: null,
+                    placement.RotationRadians,
+                    plan.ApplicationDataId,
+                    warnings);
 
                 Parameter? comments = existingFamilyInstance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
                 if (comments != null && !comments.IsReadOnly)
@@ -1358,7 +1596,8 @@ public sealed class ShowcaseCompanionBuilder
 
         if (existingElement is not DirectShape directShape || wantFamilyInstance)
         {
-            // Representation switched between FamilyInstance and DirectShape -> recreate cleanly.
+            // Representation switched between FamilyInstance and DirectShape -> recreate cleanly and report as replaced.
+            wasReplaced = true;
             return TryReplaceShowcaseElement(
                 document,
                 existingElementId,
@@ -1369,7 +1608,9 @@ public sealed class ShowcaseCompanionBuilder
                 defaultSolidOptions,
                 materialIdsByName,
                 poiMarkerSymbols,
+                documentLevels,
                 directShapeLibrary,
+                existingDirectShapeTypes,
                 prototypeDefIdsByKey,
                 warnings);
         }
@@ -1382,6 +1623,7 @@ public sealed class ShowcaseCompanionBuilder
                 defaultSolidOptions,
                 materialIdsByName,
                 directShapeLibrary,
+                existingDirectShapeTypes,
                 prototypeDefIdsByKey,
                 warnings,
                 out List<GeometryObject> geometries))
@@ -1424,7 +1666,9 @@ public sealed class ShowcaseCompanionBuilder
         SolidOptions defaultSolidOptions,
         Dictionary<string, ElementId> materialIdsByName,
         Dictionary<string, FamilySymbol> poiMarkerSymbols,
+        IReadOnlyList<Level> documentLevels,
         DirectShapeLibrary directShapeLibrary,
+        Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes,
         Dictionary<string, string> prototypeDefIdsByKey,
         ICollection<string> warnings)
     {
@@ -1434,14 +1678,15 @@ public sealed class ShowcaseCompanionBuilder
             famTx.Start();
             try
             {
-                if (!symbol.IsActive)
-                {
-                    symbol.Activate();
-                }
-
                 ShowcaseMarkerPlacement placement = plan.MarkerPlacements[0];
-                XYZ location = new(placement.LocationFeet.XFeet, placement.LocationFeet.YFeet, placement.LocationFeet.ZFeet);
-                FamilyInstance instance = document.Create.NewFamilyInstance(location, symbol, StructuralType.NonStructural);
+                FamilyInstance instance = PlacePoiFamilyInstanceAtExactElevation(
+                    document,
+                    symbol,
+                    placement,
+                    documentLevels,
+                    plan.ApplicationDataId,
+                    warnings);
+
                 Parameter? comments = instance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
                 if (comments != null && !comments.IsReadOnly)
                 {
@@ -1473,6 +1718,7 @@ public sealed class ShowcaseCompanionBuilder
                 defaultSolidOptions,
                 materialIdsByName,
                 directShapeLibrary,
+                existingDirectShapeTypes,
                 prototypeDefIdsByKey,
                 warnings,
                 out List<GeometryObject> geometries))

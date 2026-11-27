@@ -357,6 +357,20 @@ public static class ShowcasePoiAndNetworkPlanner
     public const string NetworkNodeNamePrefix = "KNZ_FRM_NetNode";
     public const string FindingPuckNamePrefix = "KNZ_FRM_NetJunction";
 
+    /// <summary>
+    /// Builds the deterministic <c>KNZ_FRM_PoiMarker.rfa</c> file path inside a unique temporary staging
+    /// directory so Revit's <c>Document.LoadFamily</c> always loads <c>Family.Name == "KNZ_FRM_PoiMarker"</c>.
+    /// </summary>
+    public static string BuildPoiMarkerTempFamilyPath(string tempDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(tempDirectory))
+        {
+            throw new ArgumentException("Temporary directory path is required.", nameof(tempDirectory));
+        }
+
+        return System.IO.Path.Combine(tempDirectory.Trim(), PoiMarkerFamilyName + ".rfa");
+    }
+
     private static readonly GeometryFactory NtsFactory = new();
 
     public static bool IsF4SupportedLayerKind(ShowcaseLayerKind kind) =>
@@ -402,8 +416,10 @@ public static class ShowcasePoiAndNetworkPlanner
         int networkNodeCount = 0;
         int findingPuckCount = 0;
 
-        // Pass 1: Plan point_facility first and index by symbol_id so point_facility_network joins cleanly.
-        Dictionary<string, PlannedPoiIndexEntry> poisBySymbolId = new(StringComparer.OrdinalIgnoreCase);
+        // Pass 1: Plan point_facility first and index explicit symbol_id separately from feature.Key fallback
+        // so a feature's Key can never shadow another POI's explicit symbol_id.
+        Dictionary<string, List<PlannedPoiIndexEntry>> poisByExplicitSymbolId = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, List<PlannedPoiIndexEntry>> poisByFeatureKey = new(StringComparer.OrdinalIgnoreCase);
         foreach (ShowcaseLayer layer in snapshot.Layers.Where(l => l.Kind == ShowcaseLayerKind.PointFacility))
         {
             IReadOnlyDictionary<string, bool> preserveMap = ShowcaseAttributeNormalizer.ComputeColumnPreserveAsTextMap(layer);
@@ -418,7 +434,8 @@ public static class ShowcasePoiAndNetworkPlanner
                     preserveMap,
                     effectiveOptions,
                     warnings,
-                    poisBySymbolId);
+                    poisByExplicitSymbolId,
+                    poisByFeatureKey);
                 if (poiPlan != null)
                 {
                     elements.Add(poiPlan);
@@ -427,9 +444,9 @@ public static class ShowcasePoiAndNetworkPlanner
             }
         }
 
-        // Pass 2: Pre-index network nodes (by node_id / key) and network links (by link_id / pathid / key)
-        // for secondary attachment validation and node connector stems.
-        Dictionary<string, ShowcasePoint3D> nodePositionsFeetById = new(StringComparer.OrdinalIgnoreCase);
+        // Pass 2: Pre-index network nodes (by explicit node_id separately from key, retaining all MultiPoint positions)
+        // and network links (by link_id / pathid / key) for secondary attachment validation and node connector stems.
+        Dictionary<string, List<ShowcasePoint3D>> nodePositionsFeetById = new(StringComparer.OrdinalIgnoreCase);
         foreach (ShowcaseLayer layer in snapshot.Layers.Where(l => l.Kind == ShowcaseLayerKind.NetworkNode))
         {
             foreach (ShowcaseFeature feature in layer.Features)
@@ -440,25 +457,46 @@ public static class ShowcasePoiAndNetworkPlanner
                     continue;
                 }
 
-                ResolvedElevation elev = ResolvePointElevation(
-                    feature,
-                    pts[0].Z,
-                    levelLookup,
-                    effectiveOptions.DefaultFloorHeightMeters,
-                    warnings: null,
-                    featureLabel: null);
-                double zMeters = elev.ElevationMeters + effectiveOptions.NetworkNodeElevationOffsetMeters;
-                ShowcasePoint3D posFeet = transform.ToRevitInternal(pts[0].Xy.X, pts[0].Xy.Y, zMeters);
-
-                string nodeKey = ReadAttributeString(feature.Attributes, "node_id", "id") ?? feature.Key;
-                if (!string.IsNullOrWhiteSpace(nodeKey) && !nodePositionsFeetById.ContainsKey(nodeKey))
+                List<ShowcasePoint3D> nodeLocs = new(pts.Count);
+                for (int i = 0; i < pts.Count; i++)
                 {
-                    nodePositionsFeetById[nodeKey] = posFeet;
+                    if (!IsFinite(pts[i].Xy.X) || !IsFinite(pts[i].Xy.Y))
+                    {
+                        continue;
+                    }
+
+                    ResolvedElevation elev = ResolvePointElevation(
+                        feature,
+                        pts[i].Z,
+                        levelLookup,
+                        effectiveOptions.DefaultFloorHeightMeters,
+                        warnings: null,
+                        featureLabel: null);
+                    double zMeters = elev.ElevationMeters + effectiveOptions.NetworkNodeElevationOffsetMeters;
+                    nodeLocs.Add(transform.ToRevitInternal(pts[i].Xy.X, pts[i].Xy.Y, zMeters));
                 }
 
-                if (!nodePositionsFeetById.ContainsKey(feature.Key))
+                if (nodeLocs.Count == 0)
                 {
-                    nodePositionsFeetById[feature.Key] = posFeet;
+                    continue;
+                }
+
+                string nodeKey = ReadAttributeString(feature.Attributes, "node_id", "id") ?? feature.Key;
+                if (!string.IsNullOrWhiteSpace(nodeKey))
+                {
+                    if (!nodePositionsFeetById.TryGetValue(nodeKey, out List<ShowcasePoint3D>? list))
+                    {
+                        list = new List<ShowcasePoint3D>();
+                        nodePositionsFeetById[nodeKey] = list;
+                    }
+
+                    list.AddRange(nodeLocs);
+                }
+
+                if (!string.Equals(feature.Key, nodeKey, StringComparison.OrdinalIgnoreCase) &&
+                    !nodePositionsFeetById.ContainsKey(feature.Key))
+                {
+                    nodePositionsFeetById[feature.Key] = new List<ShowcasePoint3D>(nodeLocs);
                 }
             }
         }
@@ -491,7 +529,8 @@ public static class ShowcasePoiAndNetworkPlanner
                     registry,
                     preserveMap,
                     effectiveOptions,
-                    poisBySymbolId,
+                    poisByExplicitSymbolId,
+                    poisByFeatureKey,
                     nodePositionsFeetById,
                     knownLinkIds,
                     attachmentJoins,
@@ -776,7 +815,8 @@ public static class ShowcasePoiAndNetworkPlanner
         IReadOnlyDictionary<string, bool> preserveMap,
         ShowcasePoiAndNetworkPlanOptions options,
         List<string> warnings,
-        Dictionary<string, PlannedPoiIndexEntry> poisBySymbolId)
+        Dictionary<string, List<PlannedPoiIndexEntry>> poisByExplicitSymbolId,
+        Dictionary<string, List<PlannedPoiIndexEntry>> poisByFeatureKey)
     {
         string appDataId = ShowcaseGeometryPlanner.BuildApplicationDataId(layer.Name, feature.Key);
         IReadOnlyList<ShowcasePointGeometry> points = ExtractPoints(feature.Geometry);
@@ -828,16 +868,31 @@ public static class ShowcasePoiAndNetworkPlanner
 
         string elementName = $"{PoiMarkerNamePrefix}_{ShowcaseGeometryPlanner.SanitizeElementKey(feature.Key)}";
 
-        string symbolId = ReadAttributeString(feature.Attributes, "symbol_id", "poi_symbol_id", "id") ?? feature.Key;
-        if (!string.IsNullOrWhiteSpace(symbolId) && !poisBySymbolId.ContainsKey(symbolId))
+        string? explicitSymbolId = ReadAttributeString(feature.Attributes, "symbol_id", "poi_symbol_id", "id");
+        ShowcasePoint3D[] allLocationsFeet = placements.Select(p => p.LocationFeet).ToArray();
+        PlannedPoiIndexEntry entry = new(appDataId, explicitSymbolId ?? feature.Key, allLocationsFeet);
+
+        if (!string.IsNullOrWhiteSpace(explicitSymbolId))
         {
-            poisBySymbolId[symbolId] = new PlannedPoiIndexEntry(appDataId, symbolId, placements[0].LocationFeet);
+            if (poisByExplicitSymbolId.TryGetValue(explicitSymbolId!, out List<PlannedPoiIndexEntry>? existingEntries))
+            {
+                warnings.Add(
+                    $"Duplicate point_facility symbol_id '{explicitSymbolId}' on '{appDataId}' (already defined by '{existingEntries[0].ApplicationDataId}'); retaining all candidate placements for nearest-point join.");
+                existingEntries.Add(entry);
+            }
+            else
+            {
+                poisByExplicitSymbolId[explicitSymbolId!] = new List<PlannedPoiIndexEntry> { entry };
+            }
         }
 
-        if (!poisBySymbolId.ContainsKey(feature.Key))
+        if (!poisByFeatureKey.TryGetValue(feature.Key, out List<PlannedPoiIndexEntry>? keyEntries))
         {
-            poisBySymbolId[feature.Key] = new PlannedPoiIndexEntry(appDataId, symbolId, placements[0].LocationFeet);
+            keyEntries = new List<PlannedPoiIndexEntry>();
+            poisByFeatureKey[feature.Key] = keyEntries;
         }
+
+        keyEntries.Add(entry);
 
         return new ShowcaseElementPlan(
             layer.Kind,
@@ -867,8 +922,9 @@ public static class ShowcasePoiAndNetworkPlanner
         ShowcaseParameterRegistry registry,
         IReadOnlyDictionary<string, bool> preserveMap,
         ShowcasePoiAndNetworkPlanOptions options,
-        Dictionary<string, PlannedPoiIndexEntry> poisBySymbolId,
-        Dictionary<string, ShowcasePoint3D> nodePositionsFeetById,
+        Dictionary<string, List<PlannedPoiIndexEntry>> poisByExplicitSymbolId,
+        Dictionary<string, List<PlannedPoiIndexEntry>> poisByFeatureKey,
+        Dictionary<string, List<ShowcasePoint3D>> nodePositionsFeetById,
         HashSet<string> knownLinkIds,
         List<ShowcasePoiAttachmentJoinRecord> attachmentJoins,
         List<string> warnings,
@@ -924,13 +980,13 @@ public static class ShowcasePoiAndNetworkPlanner
         string? linkId = ReadAttributeString(feature.Attributes, "link_id", "pathid", "net_link_id");
 
         string? matchedNodeId = null;
-        ShowcasePoint3D? matchedNodePosFeet = null;
+        IReadOnlyList<ShowcasePoint3D>? matchedNodePositionsFeet = null;
         if (!string.IsNullOrWhiteSpace(nodeId))
         {
-            if (nodePositionsFeetById.TryGetValue(nodeId!, out ShowcasePoint3D nodePos))
+            if (nodePositionsFeetById.TryGetValue(nodeId!, out List<ShowcasePoint3D>? nodePositions) && nodePositions.Count > 0)
             {
                 matchedNodeId = nodeId;
-                matchedNodePosFeet = nodePos;
+                matchedNodePositionsFeet = nodePositions;
             }
             else
             {
@@ -957,27 +1013,60 @@ public static class ShowcasePoiAndNetworkPlanner
         string? matchedPoiAppDataId = null;
         ShowcaseAttachmentJoinStatus joinStatus;
 
-        if (!string.IsNullOrWhiteSpace(symbolId) && poisBySymbolId.TryGetValue(symbolId, out PlannedPoiIndexEntry? poiEntry))
+        // Prioritize explicit symbol_id matches; only fall back to feature.Key when no explicit symbol_id matches.
+        List<PlannedPoiIndexEntry>? candidatePois = null;
+        if (!string.IsNullOrWhiteSpace(symbolId))
+        {
+            if (!poisByExplicitSymbolId.TryGetValue(symbolId, out candidatePois))
+            {
+                poisByFeatureKey.TryGetValue(symbolId, out candidatePois);
+            }
+        }
+
+        if (candidatePois != null && candidatePois.Count > 0)
         {
             matchedPoi = true;
             joinStatus = ShowcaseAttachmentJoinStatus.Matched;
-            matchedPoiAppDataId = poiEntry.ApplicationDataId;
+            double poiAnchorZOffsetFeet = ShowcaseCoordinateTransform.MetersToFeet(options.PoiMarkerHeightMeters * 0.35d);
+            double bestOverallDistFeet = double.PositiveInfinity;
 
-            ShowcasePoint3D attachPoint = placements[0].LocationFeet;
-            // Connect from POI pedestal/stem mid-point cleanly to the network attachment point.
-            ShowcasePoint3D poiAnchor = new(
-                poiEntry.LocationFeet.XFeet,
-                poiEntry.LocationFeet.YFeet,
-                poiEntry.LocationFeet.ZFeet + ShowcaseCoordinateTransform.MetersToFeet(options.PoiMarkerHeightMeters * 0.35d));
-            double stemLenFeet = Distance3D(poiAnchor, attachPoint);
-            if (stemLenFeet >= options.MinSegmentLengthFeet)
+            for (int i = 0; i < placements.Count; i++)
             {
-                connectorStems.Add(new ShowcaseSweptTubeSegment(poiAnchor, attachPoint, stemRadiusFeet, sides: 4));
-                stemLengthMeters = ShowcaseCoordinateTransform.FeetToMeters(stemLenFeet);
-            }
-            else
-            {
-                stemLengthMeters = 0d;
+                ShowcasePoint3D attachPoint = placements[i].LocationFeet;
+                double bestDistFeet = double.PositiveInfinity;
+                ShowcasePoint3D bestPoiAnchor = default;
+                string? bestEntryId = null;
+
+                for (int c = 0; c < candidatePois.Count; c++)
+                {
+                    PlannedPoiIndexEntry candidate = candidatePois[c];
+                    for (int p = 0; p < candidate.LocationsFeet.Count; p++)
+                    {
+                        ShowcasePoint3D loc = candidate.LocationsFeet[p];
+                        ShowcasePoint3D anchor = new(loc.XFeet, loc.YFeet, loc.ZFeet + poiAnchorZOffsetFeet);
+                        double distFeet = Distance3D(anchor, attachPoint);
+                        if (distFeet < bestDistFeet)
+                        {
+                            bestDistFeet = distFeet;
+                            bestPoiAnchor = anchor;
+                            bestEntryId = candidate.ApplicationDataId;
+                        }
+                    }
+                }
+
+                if (bestEntryId != null && bestDistFeet < bestOverallDistFeet)
+                {
+                    bestOverallDistFeet = bestDistFeet;
+                    matchedPoiAppDataId = bestEntryId;
+                    stemLengthMeters = bestDistFeet >= options.MinSegmentLengthFeet
+                        ? ShowcaseCoordinateTransform.FeetToMeters(bestDistFeet)
+                        : 0d;
+                }
+
+                if (bestEntryId != null && bestDistFeet >= options.MinSegmentLengthFeet)
+                {
+                    connectorStems.Add(new ShowcaseSweptTubeSegment(bestPoiAnchor, attachPoint, stemRadiusFeet, sides: 4));
+                }
             }
         }
         else
@@ -987,13 +1076,28 @@ public static class ShowcasePoiAndNetworkPlanner
                 $"point_facility_network '{appDataId}' has symbol_id '{symbolId}' with no matching point_facility feature (non-fatal unmatched join).");
         }
 
-        // If attachment also resolves a distinct network_node position, emit a thin tie stem to that node as well.
-        if (matchedNodePosFeet.HasValue)
+        // If attachment also resolves network_node position(s), emit a thin tie stem for every attachment placement to its nearest node position.
+        if (matchedNodePositionsFeet != null && matchedNodePositionsFeet.Count > 0)
         {
-            double nodeStemFeet = Distance3D(placements[0].LocationFeet, matchedNodePosFeet.Value);
-            if (nodeStemFeet >= options.MinSegmentLengthFeet)
+            for (int i = 0; i < placements.Count; i++)
             {
-                connectorStems.Add(new ShowcaseSweptTubeSegment(placements[0].LocationFeet, matchedNodePosFeet.Value, stemRadiusFeet, sides: 4));
+                ShowcasePoint3D attachPoint = placements[i].LocationFeet;
+                ShowcasePoint3D nearestNode = matchedNodePositionsFeet[0];
+                double nearestDistFeet = Distance3D(attachPoint, nearestNode);
+                for (int n = 1; n < matchedNodePositionsFeet.Count; n++)
+                {
+                    double d = Distance3D(attachPoint, matchedNodePositionsFeet[n]);
+                    if (d < nearestDistFeet)
+                    {
+                        nearestDistFeet = d;
+                        nearestNode = matchedNodePositionsFeet[n];
+                    }
+                }
+
+                if (nearestDistFeet >= options.MinSegmentLengthFeet)
+                {
+                    connectorStems.Add(new ShowcaseSweptTubeSegment(attachPoint, nearestNode, stemRadiusFeet, sides: 4));
+                }
             }
         }
 
@@ -1075,7 +1179,7 @@ public static class ShowcasePoiAndNetworkPlanner
         }
 
         // Otherwise build elevated horizontal 3D ribbons + optional directional chevrons.
-        double? firstZ = polylines[0].Zs?.FirstOrDefault(z => z.HasValue);
+        double? firstZ = FindFirstFiniteZ(polylines);
         ResolvedElevation floorElev = ResolvePointElevation(
             feature,
             firstZ,
@@ -1206,22 +1310,23 @@ public static class ShowcasePoiAndNetworkPlanner
             hasSurveyed3D = true;
         }
 
-        // Case B: Distinct start_level / end_level attributes on a 2D network_link.
+        // Case B: Always resolve explicit start_level / end_level attributes when present so mixed 2D/3D
+        // MultiLineString parts never silently fall back to Z = 0 m.
         string? startLevelToken = ReadAttributeString(feature.Attributes, "start_level", "from_level", "level_from", "start_level_id", "start_floor");
         string? endLevelToken = ReadAttributeString(feature.Attributes, "end_level", "to_level", "level_to", "end_level_id", "end_floor");
 
         bool hasLevelSpan = false;
         double startLevelElevMeters = 0d;
         double endLevelElevMeters = 0d;
-        if (!hasSurveyed3D && !string.IsNullOrWhiteSpace(startLevelToken) && !string.IsNullOrWhiteSpace(endLevelToken))
+        if (!string.IsNullOrWhiteSpace(startLevelToken) && !string.IsNullOrWhiteSpace(endLevelToken))
         {
             ResolvedElevation startElev = ResolveExplicitLevelToken(startLevelToken!, levelLookup, options.DefaultFloorHeightMeters, warnings, appDataId, "start_level");
             ResolvedElevation endElev = ResolveExplicitLevelToken(endLevelToken!, levelLookup, options.DefaultFloorHeightMeters, warnings, appDataId, "end_level");
+            startLevelElevMeters = startElev.ElevationMeters + options.NetworkRibbonElevationOffsetMeters;
+            endLevelElevMeters = endElev.ElevationMeters + options.NetworkRibbonElevationOffsetMeters;
             if (Math.Abs(endElev.ElevationMeters - startElev.ElevationMeters) >= options.VerticalTransitionMinDeltaMeters)
             {
                 hasLevelSpan = true;
-                startLevelElevMeters = startElev.ElevationMeters + options.NetworkRibbonElevationOffsetMeters;
-                endLevelElevMeters = endElev.ElevationMeters + options.NetworkRibbonElevationOffsetMeters;
             }
         }
 
@@ -1230,14 +1335,58 @@ public static class ShowcasePoiAndNetworkPlanner
             return false;
         }
 
-        ShowcaseGeometryProvenance provenance = hasSurveyed3D
+        bool hasMissingZParts = false;
+        if (hasSurveyed3D)
+        {
+            foreach ((IReadOnlyList<Point2D> coords, IReadOnlyList<double?>? zs) in polylines)
+            {
+                if (coords.Count < 2)
+                {
+                    continue;
+                }
+
+                if (zs == null || zs.Any(z => !z.HasValue || !IsFinite(z.Value)))
+                {
+                    hasMissingZParts = true;
+                    break;
+                }
+            }
+        }
+
+        // Compute non-zero fallback elevations for any 2D parts inside a mixed-dimension MultiLineString.
+        double fallback2DStartMeters = startLevelElevMeters;
+        double fallback2DEndMeters = endLevelElevMeters;
+        if (hasSurveyed3D && hasMissingZParts && !hasLevelSpan)
+        {
+            ShowcaseLevel? featureLevel = FindLevel(levelLookup, feature.LevelId, feature.FloorKey);
+            if (featureLevel != null)
+            {
+                ResolvedElevation resolvedFeatureLevel = ResolveFromShowcaseLevel(
+                    featureLevel,
+                    levelLookup,
+                    options.DefaultFloorHeightMeters,
+                    warnings,
+                    appDataId);
+                fallback2DStartMeters = resolvedFeatureLevel.ElevationMeters + options.NetworkRibbonElevationOffsetMeters;
+                fallback2DEndMeters = fallback2DStartMeters;
+            }
+            else
+            {
+                fallback2DStartMeters = minZ + options.NetworkRibbonElevationOffsetMeters;
+                fallback2DEndMeters = fallback2DStartMeters;
+            }
+        }
+
+        ShowcaseGeometryProvenance provenance = (hasSurveyed3D && !hasMissingZParts)
             ? ShowcaseGeometryProvenance.Surveyed
             : ShowcaseGeometryProvenance.Schematic;
 
         if (provenance == ShowcaseGeometryProvenance.Schematic)
         {
-            warnings.Add(
-                $"Vertical network_link '{appDataId}' has schematic elevation provenance (interpolated from start_level '{startLevelToken}' to end_level '{endLevelToken}').");
+            string reason = hasSurveyed3D && hasMissingZParts
+                ? "mixed 2D/3D MultiLineString contains 2D or partial-Z parts synthesized from resolved level/surveyed fallback elevation"
+                : $"interpolated from start_level '{startLevelToken}' to end_level '{endLevelToken}'";
+            warnings.Add($"Vertical network_link '{appDataId}' has schematic elevation provenance ({reason}).");
         }
 
         double tubeRadiusFeet = ShowcaseCoordinateTransform.MetersToFeet(
@@ -1254,14 +1403,18 @@ public static class ShowcasePoiAndNetworkPlanner
                 continue;
             }
 
-            if (hasSurveyed3D && zs != null)
+            bool partHasAnyFiniteZ = zs != null && zs.Any(z => z.HasValue && IsFinite(z.Value));
+            if (hasSurveyed3D && zs != null && partHasAnyFiniteZ)
             {
-                double fallbackZ = minZ;
+                double fallbackZ = zs.First(z => z.HasValue && IsFinite(z.Value))!.Value;
                 for (int i = 0; i < coords.Count - 1; i++)
                 {
-                    double z0 = (zs[i] ?? fallbackZ) + options.NetworkRibbonElevationOffsetMeters;
-                    double z1 = (zs[i + 1] ?? z0 - options.NetworkRibbonElevationOffsetMeters) + options.NetworkRibbonElevationOffsetMeters;
-                    fallbackZ = zs[i + 1] ?? fallbackZ;
+                    double rawZ0 = (zs[i].HasValue && IsFinite(zs[i]!.Value)) ? zs[i]!.Value : fallbackZ;
+                    double rawZ1 = (zs[i + 1].HasValue && IsFinite(zs[i + 1]!.Value)) ? zs[i + 1]!.Value : rawZ0;
+                    fallbackZ = rawZ1;
+
+                    double z0 = rawZ0 + options.NetworkRibbonElevationOffsetMeters;
+                    double z1 = rawZ1 + options.NetworkRibbonElevationOffsetMeters;
 
                     ShowcasePoint3D p0 = transform.ToRevitInternal(coords[i].X, coords[i].Y, z0);
                     ShowcasePoint3D p1 = transform.ToRevitInternal(coords[i + 1].X, coords[i + 1].Y, z1);
@@ -1276,8 +1429,8 @@ public static class ShowcasePoiAndNetworkPlanner
                 AppendInterpolatedVerticalTubeSegments(
                     segments,
                     coords,
-                    startLevelElevMeters,
-                    endLevelElevMeters,
+                    hasLevelSpan ? startLevelElevMeters : fallback2DStartMeters,
+                    hasLevelSpan ? endLevelElevMeters : fallback2DEndMeters,
                     tubeRadiusFeet,
                     sides,
                     transform,
@@ -2127,6 +2280,28 @@ public static class ShowcasePoiAndNetworkPlanner
         return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
     }
 
+    private static double? FindFirstFiniteZ(IReadOnlyList<(IReadOnlyList<Point2D> Coords, IReadOnlyList<double?>? Zs)> polylines)
+    {
+        for (int p = 0; p < polylines.Count; p++)
+        {
+            IReadOnlyList<double?>? zs = polylines[p].Zs;
+            if (zs is null)
+            {
+                continue;
+            }
+
+            for (int i = 0; i < zs.Count; i++)
+            {
+                if (zs[i].HasValue && IsFinite(zs[i]!.Value))
+                {
+                    return zs[i]!.Value;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
 
     private readonly struct ResolvedElevation
@@ -2167,17 +2342,17 @@ public static class ShowcasePoiAndNetworkPlanner
 
     private sealed class PlannedPoiIndexEntry
     {
-        public PlannedPoiIndexEntry(string applicationDataId, string symbolId, ShowcasePoint3D locationFeet)
+        public PlannedPoiIndexEntry(string applicationDataId, string symbolId, IReadOnlyList<ShowcasePoint3D> locationsFeet)
         {
             ApplicationDataId = applicationDataId;
             SymbolId = symbolId;
-            LocationFeet = locationFeet;
+            LocationsFeet = locationsFeet;
         }
 
         public string ApplicationDataId { get; }
 
         public string SymbolId { get; }
 
-        public ShowcasePoint3D LocationFeet { get; }
+        public IReadOnlyList<ShowcasePoint3D> LocationsFeet { get; }
     }
 }

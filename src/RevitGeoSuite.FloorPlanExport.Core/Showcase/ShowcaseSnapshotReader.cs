@@ -2153,10 +2153,29 @@ public static class ShowcaseSnapshotReader
             switch (type)
             {
                 case "point":
+                {
+                    RawJsonValue xyVal = geom.ObjectMembers!["xy"];
                     writer.WritePropertyName("xy");
-                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["xy"]);
-                    WriteOptionalNonNullProp(writer, geom, "z", forceFloat: true);
+                    WriteCanonicalRawXyPair(writer, xyVal);
+
+                    RawJsonValue? resolvedZ = null;
+                    if (geom.TryGetProperty("z", out RawJsonValue explicitZ) && explicitZ.Kind != RawJsonKind.Null)
+                    {
+                        resolvedZ = explicitZ;
+                    }
+                    else if (xyVal.ArrayItems != null && xyVal.ArrayItems.Count >= 3 && xyVal.ArrayItems[2].Kind != RawJsonKind.Null)
+                    {
+                        resolvedZ = xyVal.ArrayItems[2];
+                    }
+
+                    if (resolvedZ != null)
+                    {
+                        writer.WritePropertyName("z");
+                        WriteRawValue(writer, resolvedZ, forceFloat: true);
+                    }
+
                     break;
+                }
 
                 case "multiPoint":
                     if (geom.TryGetProperty("points", out RawJsonValue pointsVal))
@@ -2174,12 +2193,12 @@ public static class ShowcaseSnapshotReader
 
                 case "lineString":
                     writer.WritePropertyName("coords");
-                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["coords"]);
+                    WriteCanonicalRawCoordinateList(writer, geom.ObjectMembers!["coords"]);
                     break;
 
                 case "multiLineString":
                     writer.WritePropertyName("lines");
-                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["lines"]);
+                    WriteCanonicalRawMultiLineStrings(writer, geom.ObjectMembers!["lines"]);
                     break;
 
                 case "polygon":
@@ -2204,6 +2223,71 @@ public static class ShowcaseSnapshotReader
             }
 
             writer.WriteEndObject();
+        }
+
+        private static void WriteCanonicalRawXyPair(JsonTextWriter writer, RawJsonValue xyVal)
+        {
+            writer.WriteStartArray();
+            if (xyVal.ArrayItems != null)
+            {
+                for (int i = 0; i < Math.Min(2, xyVal.ArrayItems.Count); i++)
+                {
+                    WriteRawValue(writer, xyVal.ArrayItems[i], forceFloat: true);
+                }
+            }
+
+            writer.WriteEndArray();
+        }
+
+        private static void WriteCanonicalRawCoordWithOptionalZ(JsonTextWriter writer, RawJsonValue coordVal)
+        {
+            if (coordVal.Kind != RawJsonKind.Array || coordVal.ArrayItems == null)
+            {
+                WriteFloatArrayRecursive(writer, coordVal);
+                return;
+            }
+
+            writer.WriteStartArray();
+            int count = coordVal.ArrayItems.Count;
+            for (int i = 0; i < Math.Min(2, count); i++)
+            {
+                WriteRawValue(writer, coordVal.ArrayItems[i], forceFloat: true);
+            }
+
+            if (count >= 3 && coordVal.ArrayItems[2].Kind != RawJsonKind.Null)
+            {
+                WriteRawValue(writer, coordVal.ArrayItems[2], forceFloat: true);
+            }
+
+            writer.WriteEndArray();
+        }
+
+        private static void WriteCanonicalRawCoordinateList(JsonTextWriter writer, RawJsonValue listVal)
+        {
+            writer.WriteStartArray();
+            if (listVal.ArrayItems != null)
+            {
+                foreach (RawJsonValue coord in listVal.ArrayItems)
+                {
+                    WriteCanonicalRawCoordWithOptionalZ(writer, coord);
+                }
+            }
+
+            writer.WriteEndArray();
+        }
+
+        private static void WriteCanonicalRawMultiLineStrings(JsonTextWriter writer, RawJsonValue linesVal)
+        {
+            writer.WriteStartArray();
+            if (linesVal.ArrayItems != null)
+            {
+                foreach (RawJsonValue line in linesVal.ArrayItems)
+                {
+                    WriteCanonicalRawCoordinateList(writer, line);
+                }
+            }
+
+            writer.WriteEndArray();
         }
 
         private static void WriteCanonicalRawMultiPointItems(JsonTextWriter writer, RawJsonValue arrayVal)
@@ -2237,7 +2321,7 @@ public static class ShowcaseSnapshotReader
                     }
                     else
                     {
-                        WriteFloatArrayRecursive(writer, item);
+                        WriteCanonicalRawCoordWithOptionalZ(writer, item);
                     }
                 }
             }

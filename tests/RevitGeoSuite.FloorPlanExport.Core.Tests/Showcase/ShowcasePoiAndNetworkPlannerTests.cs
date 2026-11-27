@@ -867,6 +867,462 @@ public sealed class ShowcasePoiAndNetworkPlannerTests
         Assert.Equal(40, mlElem.EstimatedTriangleCount);
     }
 
+    [Fact]
+    public void SnapshotReaderCanonicalHashMatchesForEmbeddedZPointAndNullZCoordinates()
+    {
+        // Build the canonical model first to compute ComputeContentHash(ShowcaseSnapshot), then verify that
+        // ShowcaseSnapshotReader.Parse accepts raw JSON using embedded 3-element point.xy ([x, y, z]) AND
+        // [x, y, null] coordinates in lineString, multiLineString, and multiPoint with VerifyContentHash = true!
+        ShowcaseLayer poiLayer = new(
+            "point_facility",
+            ShowcaseLayerKind.PointFacility,
+            new[] { new ShowcaseField("symbol_id", ShowcaseFieldType.Text) },
+            new[]
+            {
+                new ShowcaseFeature(
+                    "PT-3D",
+                    "level:0",
+                    "0",
+                    new ShowcasePointGeometry(new Point2D(10, 20), 3.3d),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("PT-3D") }),
+                new ShowcaseFeature(
+                    "PT-NULLZ",
+                    "level:0",
+                    "0",
+                    new ShowcasePointGeometry(new Point2D(12, 22), null),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("PT-NULLZ") }),
+                new ShowcaseFeature(
+                    "MPT-MIX",
+                    "level:0",
+                    "0",
+                    new ShowcaseMultiPointGeometry(new[]
+                    {
+                        new ShowcasePointGeometry(new Point2D(1, 2), null),
+                        new ShowcasePointGeometry(new Point2D(3, 4), 3.3d),
+                    }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("MPT-MIX") }),
+            });
+
+        ShowcaseLayer linkLayer = new(
+            "network_link",
+            ShowcaseLayerKind.NetworkLink,
+            new[] { new ShowcaseField("link_type", ShowcaseFieldType.Text) },
+            new[]
+            {
+                new ShowcaseFeature(
+                    "LS-NULLZ",
+                    "level:0",
+                    "0",
+                    new ShowcaseLineStringGeometry(
+                        new[] { new Point2D(0, 0), new Point2D(10, 0) },
+                        new double?[] { null, 3.3d }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["link_type"] = ShowcaseAttributeValue.FromText("walkway") }),
+                new ShowcaseFeature(
+                    "MLS-NULLZ",
+                    "level:0",
+                    "0",
+                    new ShowcaseMultiLineStringGeometry(
+                        new IReadOnlyList<Point2D>[]
+                        {
+                            new[] { new Point2D(0, 5), new Point2D(5, 5) },
+                            new[] { new Point2D(5, 5), new Point2D(10, 5) },
+                        },
+                        new IReadOnlyList<double?>?[]
+                        {
+                            null,
+                            new double?[] { 3.3d, null },
+                        }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["link_type"] = ShowcaseAttributeValue.FromText("walkway") }),
+            });
+
+        ShowcaseLayer[] layers = { poiLayer, linkLayer };
+        ShowcaseSnapshot modelDraft = new(
+            ShowcaseContract.Schema,
+            ShowcaseContract.Version,
+            "raw_3d_hash_parity",
+            basedOn: null,
+            writtenUtc: "2026-11-27T00:00:00Z",
+            kanizu: "0.9.0",
+            epsg: 6677,
+            contentHash: string.Empty,
+            levels: new[] { new ShowcaseLevel("level:0", "0", 0, "1F", 3.3d, ShowcaseElevationSource.Surveyed) },
+            layers: layers,
+            quarantined: Array.Empty<QuarantinedShowcaseFeature>(),
+            summary: ShowcaseSnapshotReader.ComputeSummary(layers, Array.Empty<QuarantinedShowcaseFeature>()));
+
+        string expectedModelHash = ShowcaseSnapshotReader.ComputeContentHash(modelDraft);
+
+        string rawJson = $$"""
+        {
+          "schema": "kanizu.gis-showcase",
+          "version": 1,
+          "scope": "raw_3d_hash_parity",
+          "writtenUtc": "2026-11-27T00:00:00Z",
+          "kanizu": "0.9.0",
+          "epsg": 6677,
+          "contentHash": "{{expectedModelHash}}",
+          "levels": [
+            { "levelId": "level:0", "floorKey": "0", "ordinal": 0, "shortName": "1F", "tpM": 3.3, "elevationSource": "surveyed" }
+          ],
+          "layers": [
+            {
+              "name": "point_facility",
+              "kind": "pointFacility",
+              "fields": [ { "name": "symbol_id", "fieldType": "text", "preserveAsText": false } ],
+              "features": [
+                {
+                  "key": "PT-3D",
+                  "levelId": "level:0",
+                  "floorKey": "0",
+                  "geometry": { "type": "point", "xy": [10.0, 20.0, 3.3] },
+                  "attributes": { "symbol_id": "PT-3D" }
+                },
+                {
+                  "key": "PT-NULLZ",
+                  "levelId": "level:0",
+                  "floorKey": "0",
+                  "geometry": { "type": "point", "xy": [12.0, 22.0, null] },
+                  "attributes": { "symbol_id": "PT-NULLZ" }
+                },
+                {
+                  "key": "MPT-MIX",
+                  "levelId": "level:0",
+                  "floorKey": "0",
+                  "geometry": { "type": "multiPoint", "points": [ [1.0, 2.0, null], [3.0, 4.0, 3.3] ] },
+                  "attributes": { "symbol_id": "MPT-MIX" }
+                }
+              ]
+            },
+            {
+              "name": "network_link",
+              "kind": "networkLink",
+              "fields": [ { "name": "link_type", "fieldType": "text", "preserveAsText": false } ],
+              "features": [
+                {
+                  "key": "LS-NULLZ",
+                  "levelId": "level:0",
+                  "floorKey": "0",
+                  "geometry": { "type": "lineString", "coords": [ [0.0, 0.0, null], [10.0, 0.0, 3.3] ] },
+                  "attributes": { "link_type": "walkway" }
+                },
+                {
+                  "key": "MLS-NULLZ",
+                  "levelId": "level:0",
+                  "floorKey": "0",
+                  "geometry": {
+                    "type": "multiLineString",
+                    "lines": [
+                      [ [0.0, 5.0, null], [5.0, 5.0, null] ],
+                      [ [5.0, 5.0, 3.3], [10.0, 5.0, null] ]
+                    ]
+                  },
+                  "attributes": { "link_type": "walkway" }
+                }
+              ]
+            }
+          ],
+          "quarantined": [],
+          "summary": {
+            "countsByKind": { "pointFacility": 3, "networkLink": 2 },
+            "totalLayers": 2,
+            "totalFeatures": 5,
+            "totalQuarantined": 0
+          }
+        }
+        """;
+
+        ShowcaseSnapshot parsed = ShowcaseSnapshotReader.Parse(rawJson);
+        Assert.Equal(expectedModelHash, parsed.ContentHash);
+        Assert.Equal(expectedModelHash, ShowcaseSnapshotReader.ComputeContentHash(parsed));
+
+        ShowcasePointGeometry pt3d = Assert.IsType<ShowcasePointGeometry>(parsed.Layers[0].Features[0].Geometry);
+        Assert.Equal(3.3d, pt3d.Z);
+        ShowcasePointGeometry ptNullZ = Assert.IsType<ShowcasePointGeometry>(parsed.Layers[0].Features[1].Geometry);
+        Assert.Null(ptNullZ.Z);
+    }
+
+    [Fact]
+    public void Mixed2DAnd3DMultiLineStringVerticalLinkUsesResolvedElevationsInsteadOfZeroAndMarksSchematic()
+    {
+        ShowcaseLevel[] levels =
+        {
+            new("level:0", "0", 0, "1F", 10.0d, ShowcaseElevationSource.Surveyed),
+            new("level:1", "1", 1, "2F", 14.5d, ShowcaseElevationSource.Surveyed),
+        };
+
+        ShowcaseLayer mixedLayer = new(
+            "network_link",
+            ShowcaseLayerKind.NetworkLink,
+            new[]
+            {
+                new ShowcaseField("link_type", ShowcaseFieldType.Text),
+                new ShowcaseField("start_level", ShowcaseFieldType.Text),
+                new ShowcaseField("end_level", ShowcaseFieldType.Text),
+            },
+            new[]
+            {
+                // Mixed 2D/3D MultiLineString WITH start_level/end_level:
+                // Part 0 has surveyed 3D Z (10.0 -> 14.5m); Part 1 is 2D (zs == null) and must interpolate 10.0 -> 14.5m (NOT 0.0m!)
+                new ShowcaseFeature(
+                    "MIXED-WITH-LEVELS",
+                    "level:0",
+                    "0",
+                    new ShowcaseMultiLineStringGeometry(
+                        new IReadOnlyList<Point2D>[]
+                        {
+                            new[] { new Point2D(0, 0), new Point2D(6, 0) },
+                            new[] { new Point2D(6, 0), new Point2D(12, 0) },
+                        },
+                        new IReadOnlyList<double?>?[]
+                        {
+                            new double?[] { 10.0d, 14.5d },
+                            null,
+                        }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["link_type"] = ShowcaseAttributeValue.FromText("ramp"),
+                        ["start_level"] = ShowcaseAttributeValue.FromText("level:0"),
+                        ["end_level"] = ShowcaseAttributeValue.FromText("level:1"),
+                    }),
+                // Mixed 2D/3D MultiLineString WITHOUT start_level/end_level:
+                // Part 1 (2D) must fall back to feature's level (10.0m) or surveyed minZ, NEVER 0.0m!
+                new ShowcaseFeature(
+                    "MIXED-NO-SPAN",
+                    "level:0",
+                    "0",
+                    new ShowcaseMultiLineStringGeometry(
+                        new IReadOnlyList<Point2D>[]
+                        {
+                            new[] { new Point2D(0, 4), new Point2D(6, 4) },
+                            new[] { new Point2D(6, 4), new Point2D(12, 4) },
+                        },
+                        new IReadOnlyList<double?>?[]
+                        {
+                            new double?[] { 10.0d, 14.5d },
+                            null,
+                        }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["link_type"] = ShowcaseAttributeValue.FromText("stairs"),
+                        ["start_level"] = ShowcaseAttributeValue.Null,
+                        ["end_level"] = ShowcaseAttributeValue.Null,
+                    }),
+            });
+
+        ShowcaseSnapshot snapshot = ParseSnapshot("mixed_2d_3d_vertical", levels, new[] { mixedLayer });
+        ShowcasePoiAndNetworkPlanResult result = ShowcasePoiAndNetworkPlanner.Plan(snapshot, ShowcaseCoordinateTransform.Identity);
+
+        Assert.Equal(2, result.VerticalTubeCount);
+
+        ShowcaseElementPlan withLevels = result.Elements.Single(e => e.FeatureKey == "MIXED-WITH-LEVELS");
+        Assert.Equal(ShowcaseGeometryProvenance.Schematic, withLevels.GeometryProvenance);
+        Assert.Equal(2, withLevels.TubeSegments.Count);
+        Assert.InRange(Math.Abs(ShowcaseCoordinateTransform.FeetToMeters(withLevels.TubeSegments[1].StartFeet.ZFeet) - 10.40d), 0d, 1e-6d);
+        Assert.InRange(Math.Abs(ShowcaseCoordinateTransform.FeetToMeters(withLevels.TubeSegments[1].EndFeet.ZFeet) - 14.90d), 0d, 1e-6d);
+        Assert.Contains(result.Warnings, w => w.IndexOf("MIXED-WITH-LEVELS", StringComparison.Ordinal) >= 0 && w.IndexOf("schematic", StringComparison.OrdinalIgnoreCase) >= 0);
+
+        ShowcaseElementPlan noSpan = result.Elements.Single(e => e.FeatureKey == "MIXED-NO-SPAN");
+        Assert.Equal(ShowcaseGeometryProvenance.Schematic, noSpan.GeometryProvenance);
+        Assert.Equal(2, noSpan.TubeSegments.Count);
+        Assert.InRange(Math.Abs(ShowcaseCoordinateTransform.FeetToMeters(noSpan.TubeSegments[1].StartFeet.ZFeet) - 10.40d), 0d, 1e-6d);
+        Assert.InRange(Math.Abs(ShowcaseCoordinateTransform.FeetToMeters(noSpan.TubeSegments[1].EndFeet.ZFeet) - 10.40d), 0d, 1e-6d);
+    }
+
+    [Fact]
+    public void PoiMarkerTempFamilyPathUsesDeterministicFamilyFilenameWithoutGuidSuffix()
+    {
+        string tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "KanizuShowcase_testdir_1234");
+        string rfaPath = ShowcasePoiAndNetworkPlanner.BuildPoiMarkerTempFamilyPath(tempDir);
+
+        Assert.Equal(ShowcasePoiAndNetworkPlanner.PoiMarkerFamilyName + ".rfa", System.IO.Path.GetFileName(rfaPath));
+        Assert.Equal(ShowcasePoiAndNetworkPlanner.PoiMarkerFamilyName, System.IO.Path.GetFileNameWithoutExtension(rfaPath));
+        Assert.Equal(tempDir, System.IO.Path.GetDirectoryName(rfaPath));
+    }
+
+    [Fact]
+    public void WalkwayWithStepFreeFalseRendersOrangeNetWalkNotStepFree()
+    {
+        SortedDictionary<string, ShowcaseAttributeValue> walkwayNotStepFree = new(StringComparer.Ordinal)
+        {
+            ["link_type"] = ShowcaseAttributeValue.FromText("walkway"),
+            ["step_free"] = ShowcaseAttributeValue.FromBoolean(false),
+        };
+        SortedDictionary<string, ShowcaseAttributeValue> corridorNoWheelchair = new(StringComparer.Ordinal)
+        {
+            ["link_type"] = ShowcaseAttributeValue.FromText("corridor"),
+            ["wheelchair"] = ShowcaseAttributeValue.FromText("no"),
+        };
+        SortedDictionary<string, ShowcaseAttributeValue> walkwayStepFree = new(StringComparer.Ordinal)
+        {
+            ["link_type"] = ShowcaseAttributeValue.FromText("walkway"),
+            ["step_free"] = ShowcaseAttributeValue.FromBoolean(true),
+        };
+
+        Assert.Equal(
+            ShowcaseMaterialCatalog.NetWalkNotStepFree,
+            ShowcaseMaterialCatalog.ResolveNetworkLinkMaterialName(walkwayNotStepFree, ShowcaseGeometryProvenance.Surveyed));
+        Assert.Equal(
+            ShowcaseMaterialCatalog.NetWalkNotStepFree,
+            ShowcaseMaterialCatalog.ResolveNetworkLinkMaterialName(corridorNoWheelchair, ShowcaseGeometryProvenance.Surveyed));
+        Assert.Equal(
+            ShowcaseMaterialCatalog.NetWalk,
+            ShowcaseMaterialCatalog.ResolveNetworkLinkMaterialName(walkwayStepFree, ShowcaseGeometryProvenance.Surveyed));
+    }
+
+    [Fact]
+    public void SymbolIdJoinPreventsFeatureKeyShadowingWarnsOnDuplicatesAndHandlesAllMultiPointPlacements()
+    {
+        ShowcaseLayer poiLayer = new(
+            "point_facility",
+            ShowcaseLayerKind.PointFacility,
+            new[] { new ShowcaseField("symbol_id", ShowcaseFieldType.Text) },
+            new[]
+            {
+                // POI A's feature.Key ("SYM-2") matches POI B's explicit symbol_id ("SYM-2"): must NOT shadow POI B!
+                new ShowcaseFeature(
+                    "SYM-2",
+                    "level:0",
+                    "0",
+                    new ShowcasePointGeometry(new Point2D(0, 0), 3.3d),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("SYM-1") }),
+                new ShowcaseFeature(
+                    "POI-B",
+                    "level:0",
+                    "0",
+                    new ShowcasePointGeometry(new Point2D(10, 0), 3.3d),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("SYM-2") }),
+                // Duplicate explicit symbol_id ("SYM-DUP") on two distinct POI features -> warning + nearest match
+                new ShowcaseFeature(
+                    "DUP-1",
+                    "level:0",
+                    "0",
+                    new ShowcasePointGeometry(new Point2D(0, 20), 3.3d),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("SYM-DUP") }),
+                new ShowcaseFeature(
+                    "DUP-2",
+                    "level:0",
+                    "0",
+                    new ShowcasePointGeometry(new Point2D(30, 20), 3.3d),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("SYM-DUP") }),
+                // MultiPoint POI at x=10 and x=40
+                new ShowcaseFeature(
+                    "MP-POI",
+                    "level:0",
+                    "0",
+                    new ShowcaseMultiPointGeometry(new[]
+                    {
+                        new ShowcasePointGeometry(new Point2D(10, 40), 3.3d),
+                        new ShowcasePointGeometry(new Point2D(40, 40), 3.3d),
+                    }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("SYM-MP") }),
+            });
+
+        ShowcaseLayer attachLayer = new(
+            "point_facility_network",
+            ShowcaseLayerKind.PointFacilityNetwork,
+            new[] { new ShowcaseField("symbol_id", ShowcaseFieldType.Text) },
+            new[]
+            {
+                // Must match POI-B (explicit symbol_id "SYM-2" at x=10), NOT feature.Key "SYM-2" at x=0!
+                new ShowcaseFeature(
+                    "ATT-SHADOW",
+                    "level:0",
+                    "0",
+                    new ShowcasePointGeometry(new Point2D(11, 0), 3.3d),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("SYM-2") }),
+                // Near DUP-2 (x=30) -> must connect to DUP-2 (~1m), not DUP-1 (30m away)!
+                new ShowcaseFeature(
+                    "ATT-DUP",
+                    "level:0",
+                    "0",
+                    new ShowcasePointGeometry(new Point2D(31, 20), 3.3d),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("SYM-DUP") }),
+                // MultiPoint attachment (at x=11 and x=39) -> must emit TWO short ~1m stems to x=10 and x=40!
+                new ShowcaseFeature(
+                    "ATT-MP",
+                    "level:0",
+                    "0",
+                    new ShowcaseMultiPointGeometry(new[]
+                    {
+                        new ShowcasePointGeometry(new Point2D(11, 40), 3.3d),
+                        new ShowcasePointGeometry(new Point2D(39, 40), 3.3d),
+                    }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal) { ["symbol_id"] = ShowcaseAttributeValue.FromText("SYM-MP") }),
+            });
+
+        ShowcaseSnapshot snapshot = ParseSnapshot(
+            "poi_join_edge_cases",
+            new[] { new ShowcaseLevel("level:0", "0", 0, "1F", 3.3d, ShowcaseElevationSource.Surveyed) },
+            new[] { poiLayer, attachLayer });
+
+        ShowcasePoiAndNetworkPlanResult result = ShowcasePoiAndNetworkPlanner.Plan(snapshot, ShowcaseCoordinateTransform.Identity);
+
+        // 1. Explicit symbol_id beats feature.Key shadowing
+        ShowcasePoiAttachmentJoinRecord shadowJoin = result.AttachmentJoins.Single(j => j.AttachmentApplicationDataId == "point_facility_network:ATT-SHADOW");
+        Assert.Equal(ShowcaseAttachmentJoinStatus.Matched, shadowJoin.Status);
+        Assert.Equal("point_facility:POI-B", shadowJoin.MatchedPoiApplicationDataId);
+        Assert.True(shadowJoin.ConnectorStemLengthMeters < 2.0d);
+
+        // 2. Duplicate symbol_id warns AND picks nearest candidate (DUP-2)
+        Assert.Contains(result.Warnings, w => w.IndexOf("Duplicate point_facility symbol_id 'SYM-DUP'", StringComparison.Ordinal) >= 0);
+        ShowcasePoiAttachmentJoinRecord dupJoin = result.AttachmentJoins.Single(j => j.AttachmentApplicationDataId == "point_facility_network:ATT-DUP");
+        Assert.Equal("point_facility:DUP-2", dupJoin.MatchedPoiApplicationDataId);
+        Assert.True(dupJoin.ConnectorStemLengthMeters < 2.0d);
+
+        // 3. MultiPoint POI + MultiPoint attachment emits 2 short stems (~1 m each)
+        ShowcaseElementPlan mpAttach = result.Elements.Single(e => e.FeatureKey == "ATT-MP");
+        Assert.Equal(2, mpAttach.MarkerPlacements.Count);
+        Assert.Equal(2, mpAttach.TubeSegments.Count);
+        Assert.All(mpAttach.TubeSegments, seg =>
+            Assert.True(ShowcaseCoordinateTransform.FeetToMeters(seg.LengthFeet) < 2.0d, "Each MultiPoint attachment should stem to its nearest MultiPoint POI placement."));
+    }
+
+    [Fact]
+    public void HorizontalMultiLineStringScansAllPartsForFirstFiniteZ()
+    {
+        ShowcaseLayer multiLineLayer = new(
+            "network_link",
+            ShowcaseLayerKind.NetworkLink,
+            new[] { new ShowcaseField("link_type", ShowcaseFieldType.Text) },
+            new[]
+            {
+                // No levelId/floorKey; part 0 has null Zs, part 1 has surveyed Z = 6.5 m -> resolves 6.5m surveyed with zero missing-level warning!
+                new ShowcaseFeature(
+                    "ML-HORIZ-Z",
+                    null,
+                    null,
+                    new ShowcaseMultiLineStringGeometry(
+                        new IReadOnlyList<Point2D>[]
+                        {
+                            new[] { new Point2D(0, 0), new Point2D(5, 0) },
+                            new[] { new Point2D(5, 0), new Point2D(10, 0) },
+                        },
+                        new IReadOnlyList<double?>?[]
+                        {
+                            null,
+                            new double?[] { 6.5d, 6.5d },
+                        }),
+                    new SortedDictionary<string, ShowcaseAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["link_type"] = ShowcaseAttributeValue.FromText("walkway"),
+                    }),
+            });
+
+        ShowcaseSnapshot snapshot = ParseSnapshot(
+            "horiz_multiline_z",
+            Array.Empty<ShowcaseLevel>(),
+            new[] { multiLineLayer });
+
+        ShowcasePoiAndNetworkPlanResult result = ShowcasePoiAndNetworkPlanner.Plan(snapshot, ShowcaseCoordinateTransform.Identity);
+
+        Assert.Empty(result.Warnings);
+        ShowcaseElementPlan ribbon = Assert.Single(result.Elements);
+        Assert.Equal(ShowcaseElementKind.NetworkRibbon, ribbon.ElementKind);
+        Assert.Equal(ShowcaseGeometryProvenance.Surveyed, ribbon.GeometryProvenance);
+        double baseMeters = ShowcaseCoordinateTransform.FeetToMeters(ribbon.Solids[0].BaseElevationFeet);
+        Assert.InRange(Math.Abs(baseMeters - (6.5d + 0.40d)), 0d, 1e-6d);
+    }
+
     private static ShowcaseSnapshot ParseSnapshot(
         string scope,
         IReadOnlyList<ShowcaseLevel> levels,

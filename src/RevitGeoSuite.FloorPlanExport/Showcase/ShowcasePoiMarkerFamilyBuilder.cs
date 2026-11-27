@@ -94,11 +94,11 @@ public static class ShowcasePoiMarkerFamilyBuilder
                 return new Dictionary<string, FamilySymbol>(StringComparer.OrdinalIgnoreCase);
             }
 
-            string tempRfaPath = Path.Combine(
-                Path.GetTempPath(),
-                $"{FamilyName}.{Guid.NewGuid():N}.rfa");
+            string tempDir = CreateUniqueTempDirectory();
+            string tempRfaPath = BuildTempFamilyPath(tempDir);
             try
             {
+                Directory.CreateDirectory(tempDir);
                 BuildPoiMarkerFamilyFile(
                     companionDocument.Application,
                     rftPath,
@@ -117,12 +117,27 @@ public static class ShowcasePoiMarkerFamilyBuilder
             }
             finally
             {
-                TryDeleteFile(tempRfaPath);
+                TryDeleteDirectory(tempDir);
             }
         }
 
         return new Dictionary<string, FamilySymbol>(StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>Creates a unique temporary subdirectory path for staging a deterministic <c>KNZ_FRM_PoiMarker.rfa</c>.</summary>
+    public static string CreateUniqueTempDirectory(string? rootTempPath = null)
+    {
+        string baseDir = string.IsNullOrWhiteSpace(rootTempPath) ? Path.GetTempPath() : rootTempPath!.Trim();
+        return Path.Combine(baseDir, $"KanizuShowcase_{Guid.NewGuid():N}");
+    }
+
+    /// <summary>
+    /// Returns the deterministic <c>KNZ_FRM_PoiMarker.rfa</c> file path inside <paramref name="tempDirectory"/>
+    /// so <see cref="Document.LoadFamily(string, IFamilyLoadOptions, out Family)"/> always loads
+    /// <c>Family.Name == "KNZ_FRM_PoiMarker"</c> with no random GUID suffix.
+    /// </summary>
+    public static string BuildTempFamilyPath(string tempDirectory) =>
+        ShowcasePoiAndNetworkPlanner.BuildPoiMarkerTempFamilyPath(tempDirectory);
 
     /// <summary>
     /// Programmatically builds and saves a lightweight 44-triangle <c>KNZ_FRM_PoiMarker.rfa</c> Generic Model family
@@ -274,7 +289,7 @@ public static class ShowcasePoiMarkerFamilyBuilder
                 continue;
             }
 
-            if (!symbol.Family.Name.StartsWith(FamilyName, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(symbol.Family.Name, FamilyName, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -355,18 +370,18 @@ public static class ShowcasePoiMarkerFamilyBuilder
         return curves;
     }
 
-    private static void TryDeleteFile(string path)
+    private static void TryDeleteDirectory(string path)
     {
         try
         {
-            if (File.Exists(path))
+            if (Directory.Exists(path))
             {
-                File.Delete(path);
+                Directory.Delete(path, recursive: true);
             }
         }
         catch
         {
-            // Best-effort temp file cleanup.
+            // Best-effort temp directory cleanup.
         }
     }
 
