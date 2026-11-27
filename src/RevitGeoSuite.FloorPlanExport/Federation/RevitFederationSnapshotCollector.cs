@@ -89,7 +89,7 @@ public static class RevitFederationSnapshotCollector
             HostCrsEpsg = hostEpsg,
             HostCrsName = hostCrsName,
             IsHostGeoreferenceVerified = hostGeo?.Confidence == GeoConfidenceLevel.Verified,
-            HostHeightDatum = NormalizeStoredDatum(hostTilesMeta?.LastHeightDatum),
+            HostHeightDatum = CesiumHeightDatums.ForComparison(hostTilesMeta?.LastHeightDatum),
             HostGeoidModel = string.Empty,
             HostGeoidOffsetMeters = hostTilesMeta != null && hostTilesMeta.HasGeoidOffset ? hostTilesMeta.LastGeoidHeightOffsetMeters : (double?)null,
             HostStationFolder = stationFolder,
@@ -164,7 +164,7 @@ public static class RevitFederationSnapshotCollector
                 crsEpsg: linkEpsg,
                 crsName: linkCrsName,
                 isGeoreferenceVerified: linkGeo?.Confidence == GeoConfidenceLevel.Verified,
-                heightDatum: NormalizeStoredDatum(linkTilesMeta?.LastHeightDatum),
+                heightDatum: CesiumHeightDatums.ForComparison(linkTilesMeta?.LastHeightDatum),
                 geoidModel: string.Empty,
                 geoidOffsetMeters: linkTilesMeta != null && linkTilesMeta.HasGeoidOffset ? linkTilesMeta.LastGeoidHeightOffsetMeters : (double?)null,
                 controlPoints: pose?.ControlPoints,
@@ -387,19 +387,6 @@ public static class RevitFederationSnapshotCollector
         }
 
         return string.Empty;
-    }
-
-    private static string NormalizeStoredDatum(string? datum)
-    {
-        if (string.IsNullOrWhiteSpace(datum))
-        {
-            return string.Empty;
-        }
-
-        string trimmed = datum!.Trim();
-        return string.Equals(trimmed, CesiumHeightDatums.Unknown, StringComparison.OrdinalIgnoreCase)
-            ? string.Empty
-            : CesiumHeightDatums.Normalize(trimmed);
     }
 
     private static string ReadSharedString(Element element, string parameterName)

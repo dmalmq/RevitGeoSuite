@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { datumAnswer, type DatumAnswer } from './heightDatum'
   import { request } from '$lib/bridge/rpc'
   import { startJob } from '$lib/bridge/jobs'
   import type {
@@ -108,7 +109,8 @@
   let cesiumPush = $state(true)
   let cesiumLod = $state('fine')
   let cesiumPreciseCrs = $state(true)
-  let cesiumHeightDatum = $state('unknown')
+  // '' until the model's survey point question is answered; then 'TP' or 'notTp'.
+  let cesiumHeightDatum = $state<DatumAnswer>('')
   let cesiumKeepVersions = $state(false)
   let cesiumRunning = $state(false)
   let cesiumProgress = $state<any>(null)
@@ -125,7 +127,7 @@
       if (!cesiumProfile) cesiumProfile = state.floorPlanProfiles[0] ?? ''
       if (!cesiumOutputFolder) cesiumOutputFolder = state.lastOutputFolder
       cesiumViewerUrl = state.viewerUrl
-      cesiumHeightDatum = state.lastHeightDatum === 'TP' ? 'TP' : 'unknown'
+      cesiumHeightDatum = datumAnswer(state.lastHeightDatum)
       cesiumKeepVersions = state.lastKeepVersions
     } catch (err: any) {
       cesiumError = err?.message ?? 'Failed to load Cesium export state'
@@ -169,6 +171,8 @@
       cesiumError = $t('Export.Cesium.ProfileRequired', 'Choose a floor-plan export profile')
       return
     }
+    // Export stays disabled until the question is answered, and the dialog says so under it.
+    if (!cesiumHeightDatum) return
 
     cesiumRunning = true
     cesiumError = null

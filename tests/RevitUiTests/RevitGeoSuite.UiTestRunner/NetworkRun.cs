@@ -308,9 +308,10 @@ internal sealed partial class GisStandardRun
     /// <summary>
     /// Exports the model to Cesium as a station folder (a new version under revit/), through the page's
     /// bridge with the first floor plan profile. This records <paramref name="station"/> as the model's
-    /// station folder, which is where the Network tab looks for Kanizu's file.
+    /// station folder, which is where the Network tab looks for Kanizu's file. The survey point answer
+    /// is <paramref name="heightDatum"/>, else the one the copy remembers, else "notTp".
     /// </summary>
-    private async Task<CesiumRun?> ExportCesium(StepResult step, string station, string? profileName = null, CesiumAttempt? attempt = null)
+    private async Task<CesiumRun?> ExportCesium(StepResult step, string station, string? profileName = null, CesiumAttempt? attempt = null, string? heightDatum = null)
     {
         JsonNode? state = await Shell.RpcAsync("cesium.export.getState");
         string[] profiles = state?["floorPlanProfiles"]?.AsArray().Select(name => name!.GetValue<string>()).ToArray() ?? Array.Empty<string>();
@@ -345,7 +346,9 @@ internal sealed partial class GisStandardRun
                 scope = "whole",
                 lod = "coarse",
                 preciseCrs = true,
-                heightDatum = state?["lastHeightDatum"]?.GetValue<string>() ?? "unknown",
+                // The export refuses an unanswered survey point question. Keep the copy's answer; a
+                // copy never answered says "not from T.P.", since the run cannot vouch for its datum.
+                heightDatum = heightDatum ?? (state?["lastHeightDatum"]?.GetValue<string>() is "TP" or "notTp" ? state["lastHeightDatum"]!.GetValue<string>() : "notTp"),
                 keepVersions = true,
                 selectedLinkUniqueIds = Array.Empty<string>(),
             }, CesiumWait);
