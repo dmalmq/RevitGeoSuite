@@ -281,7 +281,7 @@ public sealed class ShowcaseCompanionBuilder
             IReadOnlyList<Level> documentLevels = new FilteredElementCollector(document)
                 .OfClass(typeof(Level))
                 .Cast<Level>()
-                .OrderBy(l => l.Elevation)
+                .OrderBy(l => l.ProjectElevation)
                 .ToArray();
 
             // Reconcile existing Kanizu.Showcase DirectShapes & KNZ_FRM_PoiMarker FamilyInstances by ApplicationDataId
@@ -911,10 +911,10 @@ public sealed class ShowcaseCompanionBuilder
         }
 
         Level best = documentLevels[0];
-        double bestDist = Math.Abs(best.Elevation - targetZFeet);
+        double bestDist = Math.Abs(best.ProjectElevation - targetZFeet);
         for (int i = 1; i < documentLevels.Count; i++)
         {
-            double dist = Math.Abs(documentLevels[i].Elevation - targetZFeet);
+            double dist = Math.Abs(documentLevels[i].ProjectElevation - targetZFeet);
             if (dist < bestDist)
             {
                 bestDist = dist;
@@ -1357,7 +1357,7 @@ public sealed class ShowcaseCompanionBuilder
 
         FamilyInstance instance = hostLevel != null
             ? document.Create.NewFamilyInstance(
-                new XYZ(targetLocation.X, targetLocation.Y, hostLevel.Elevation),
+                new XYZ(targetLocation.X, targetLocation.Y, hostLevel.ProjectElevation),
                 symbol,
                 hostLevel,
                 StructuralType.NonStructural)
@@ -1395,7 +1395,7 @@ public sealed class ShowcaseCompanionBuilder
             hostLevel = document.GetElement(instance.LevelId) as Level;
         }
 
-        double hostElevation = hostLevel?.Elevation ?? 0d;
+        double hostElevation = hostLevel?.ProjectElevation ?? 0d;
         double requiredOffset = targetLocation.Z - hostElevation;
 
         bool setElevationParam = TrySetWritableDoubleParameter(instance, BuiltInParameter.INSTANCE_ELEVATION_PARAM, requiredOffset);
