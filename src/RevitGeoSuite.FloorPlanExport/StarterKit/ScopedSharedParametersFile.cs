@@ -61,12 +61,52 @@ public sealed class ScopedSharedParametersFile : IDisposable
         string content = GisStandardFiles.ReadSharedParameterFile();
         string filePath = Path.Combine(FloorPlanExportAppDataPaths.CurrentBaseDirectory, GisSharedParameters.FileName);
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-        if (!File.Exists(filePath) || !string.Equals(File.ReadAllText(filePath), content, StringComparison.Ordinal))
-        {
-            File.WriteAllText(filePath, content, new UTF8Encoding(false));
-        }
+        WriteUtf16LeBomIfChanged(filePath, content);
 
         return filePath;
+    }
+
+    /// <summary>
+    /// Writes a Revit shared-parameter <c>.txt</c> file using UTF-16 LE with BOM (<see cref="Encoding.Unicode"/>),
+    /// matching Revit's canonical shared-parameter parser across English and Japanese Windows locales.
+    /// </summary>
+    public static void WriteUtf16LeBomIfChanged(string filePath, string content)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            throw new ArgumentException("Shared parameter file path is required.", nameof(filePath));
+        }
+
+        Encoding utf16LeBom = Encoding.Unicode;
+        byte[] preamble = utf16LeBom.GetPreamble();
+        byte[] payload = utf16LeBom.GetBytes(content ?? string.Empty);
+        byte[] expected = new byte[preamble.Length + payload.Length];
+        Buffer.BlockCopy(preamble, 0, expected, 0, preamble.Length);
+        Buffer.BlockCopy(payload, 0, expected, preamble.Length, payload.Length);
+
+        if (File.Exists(filePath))
+        {
+            byte[] existing = File.ReadAllBytes(filePath);
+            if (existing.Length == expected.Length)
+            {
+                bool same = true;
+                for (int i = 0; i < existing.Length; i++)
+                {
+                    if (existing[i] != expected[i])
+                    {
+                        same = false;
+                        break;
+                    }
+                }
+
+                if (same)
+                {
+                    return;
+                }
+            }
+        }
+
+        File.WriteAllBytes(filePath, expected);
     }
 
     public void Dispose()
