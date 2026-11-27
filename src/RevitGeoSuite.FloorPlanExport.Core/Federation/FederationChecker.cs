@@ -951,12 +951,26 @@ public static class FederationChecker
             }
         }
 
+        if (scopes.Count > 1)
+        {
+            foreach (ModelLevelScope skipped in scopes.Where(scope => !scope.Levels.Any(IsDriftComparable)))
+            {
+                issues.Add(new FederationIssue(
+                    RuleNearMissLevelDrift,
+                    ReadinessCheckStatus.Warn,
+                    "LEVEL-DRIFT-NOT-CHECKED",
+                    $"KZ-FED-004 not checked for '{skipped.ModelLabel}': it has no export levels with an elevation (no view levels in its gis-model.json and no GIS_ plan views). Re-export it into the station folder to record its export levels.",
+                    $"'{skipped.ModelLabel}' は KZ-FED-004 の対象外です。エクスポートレベル（gis-model.json のビューのレベル、または GIS_ 平面ビュー）がありません。ステーションフォルダーへ再エクスポートしてエクスポートレベルを記録してください。",
+                    modelA: skipped.ModelLabel));
+            }
+        }
+
         if (issues.Count > 0)
         {
             return BuildRuleResult(
                 rule,
                 ItemNearMissLevelDrift,
-                ReadinessCheckStatus.Fail,
+                issues.Any(issue => issue.Status == ReadinessCheckStatus.Fail) ? ReadinessCheckStatus.Fail : ReadinessCheckStatus.Warn,
                 SummarizeIssuesEn(issues),
                 SummarizeIssuesJa(issues),
                 issues);
@@ -995,12 +1009,12 @@ public static class FederationChecker
 
         foreach (FederationLevelSnapshot levelB in elevB)
         {
-            CheckNearestLevelAgainstSet(ruleId, modelBLabel, levelB, modelALabel, elevA, options, reportedPairs, issues);
+            CheckNearestLevelAgainstSet(ruleId, modelBLabel, levelB, elevB, modelALabel, elevA, options, reportedPairs, issues);
         }
 
         foreach (FederationLevelSnapshot levelA in elevA)
         {
-            CheckNearestLevelAgainstSet(ruleId, modelALabel, levelA, modelBLabel, elevB, options, reportedPairs, issues);
+            CheckNearestLevelAgainstSet(ruleId, modelALabel, levelA, elevA, modelBLabel, elevB, options, reportedPairs, issues);
         }
     }
 
@@ -1012,10 +1026,24 @@ public static class FederationChecker
     private static bool IsDriftComparable(FederationLevelSnapshot level) =>
         level.HasElevation && level.IsExportLevel;
 
+    /// <summary>
+    /// A level aligned with one in the other model already matches it. A level of the other model
+    /// that only sits near it, such as an exported GL under a shared 1FL, is a level without a
+    /// counterpart there, not drift: drift is two levels that each miss their partner.
+    /// </summary>
+    private static bool HasAlignedPartner(
+        FederationLevelSnapshot level,
+        IReadOnlyList<FederationLevelSnapshot> otherModelLevels,
+        FederationCheckOptions options) =>
+        otherModelLevels.Any(other =>
+            Math.Abs(level.ProjectElevationMeters!.Value - other.ProjectElevationMeters!.Value) * 1000.0d
+                < options.LevelAlignedToleranceMm - BoundaryEpsilonMm);
+
     private static void CheckNearestLevelAgainstSet(
         string ruleId,
         string sourceModel,
         FederationLevelSnapshot sourceLevel,
+        IReadOnlyList<FederationLevelSnapshot> sourceLevels,
         string targetModel,
         IReadOnlyList<FederationLevelSnapshot> targetLevels,
         FederationCheckOptions options,
@@ -1047,7 +1075,7 @@ public static class FederationChecker
         if (minDeltaMm >= options.LevelAlignedToleranceMm - BoundaryEpsilonMm
             && minDeltaMm <= options.LevelNearMissMaxMm + BoundaryEpsilonMm)
         {
-            if (!reportedPairs.Add("DRIFT:" + pairKey))
+            if (HasAlignedPartner(nearest, sourceLevels, options) || !reportedPairs.Add("DRIFT:" + pairKey))
             {
                 return;
             }

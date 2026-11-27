@@ -350,18 +350,100 @@ public sealed class FederationCheckerTests : IDisposable
         snapshot.LinkedModels = new[]
         {
             BuildLink(
-                "Structure.rvt",
-                "struct-002",
+                "EastWing.rvt",
+                "east-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(601, "s-1", "1SL", levelId: "struct-1sl", ordinal: 0, shortName: "1S", projectElevationMeters: -0.100, hasFloors: true),
-                    new FederationLevelSnapshot(602, "s-2", "2SL", levelId: "struct-2sl", ordinal: 1, shortName: "2S", projectElevationMeters: 3.900, hasFloors: true),
+                    new FederationLevelSnapshot(601, "e-1", "1FL", levelId: "east-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.000, isExportLevel: true),
+                    new FederationLevelSnapshot(602, "e-2s", "2SL", levelId: "east-2sl", ordinal: null, shortName: "2S", projectElevationMeters: 3.900, hasFloors: true),
+                    new FederationLevelSnapshot(603, "e-2", "2FL", levelId: "east-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000, isExportLevel: true),
                 }),
         };
 
         FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
 
         Assert.Equal(ReadinessCheckStatus.Pass, rule.Status);
+    }
+
+    [Fact]
+    public void KzFed004_WarnsInsteadOfPassingForALinkWithoutExportLevels()
+    {
+        FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
+        snapshot.HostLevels = new[]
+        {
+            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "arch-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000, isExportLevel: true),
+        };
+        snapshot.LinkedModels = new[]
+        {
+            BuildLink(
+                "Structure.rvt",
+                "struct-002",
+                levels: new[]
+                {
+                    new FederationLevelSnapshot(602, "s-2", "2SL", levelId: "struct-2sl", ordinal: 1, shortName: "2S", projectElevationMeters: 3.900, hasFloors: true),
+                }),
+        };
+
+        FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
+
+        Assert.Equal(ReadinessCheckStatus.Warn, rule.Status);
+        FederationIssue issue = Assert.Single(rule.Issues);
+        Assert.Equal("LEVEL-DRIFT-NOT-CHECKED", issue.Code);
+        Assert.Contains("Structure.rvt", issue.MessageEn);
+    }
+
+    [Fact]
+    public void KzFed004_PassesAnExportLevelWithoutACounterpartBelowASharedFloor()
+    {
+        FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
+        snapshot.HostLevels = new[]
+        {
+            new FederationLevelSnapshot(500, "h-0", "GL", levelId: "arch-gl", ordinal: 0, shortName: "GL", projectElevationMeters: 0.000, isExportLevel: true),
+            new FederationLevelSnapshot(501, "h-1", "1FL", levelId: "arch-1fl", ordinal: 1, shortName: "1F", projectElevationMeters: 0.150, isExportLevel: true),
+        };
+        snapshot.LinkedModels = new[]
+        {
+            BuildLink(
+                "EastWing.rvt",
+                "east-002",
+                levels: new[]
+                {
+                    new FederationLevelSnapshot(601, "e-1", "1FL", levelId: "east-1fl", ordinal: 1, shortName: "1F", projectElevationMeters: 0.150, isExportLevel: true),
+                }),
+        };
+
+        FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
+
+        Assert.Equal(ReadinessCheckStatus.Pass, rule.Status);
+    }
+
+    [Fact]
+    public void KzFed004_FailsWhenBothNearLevelsMissTheirPartner()
+    {
+        FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
+        snapshot.HostLevels = new[]
+        {
+            new FederationLevelSnapshot(501, "h-1", "1FL", levelId: "arch-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.000, isExportLevel: true),
+            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "arch-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000, isExportLevel: true),
+        };
+        snapshot.LinkedModels = new[]
+        {
+            BuildLink(
+                "EastWing.rvt",
+                "east-002",
+                levels: new[]
+                {
+                    new FederationLevelSnapshot(601, "e-1", "1FL", levelId: "east-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.000, isExportLevel: true),
+                    new FederationLevelSnapshot(602, "e-2", "2FL", levelId: "east-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 3.950, isExportLevel: true),
+                }),
+        };
+
+        FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
+
+        Assert.Equal(ReadinessCheckStatus.Fail, rule.Status);
+        FederationIssue issue = Assert.Single(rule.Issues);
+        Assert.Equal("NEAR-MISS-LEVEL-DRIFT", issue.Code);
+        Assert.Equal(50d, issue.Metrics["deltaZMm"], 6);
     }
 
     [Fact]
@@ -566,6 +648,45 @@ public sealed class FederationCheckerTests : IDisposable
         Assert.True(report.IsPassed, report.ToJson());
         Assert.Equal(ReadinessCheckStatus.Pass, report.GetRule(FederationChecker.RuleStationFolderFederation).Status);
         Assert.Equal(ReadinessCheckStatus.Pass, report.GetRule(FederationChecker.RuleNoDoublePublishing).Status);
+    }
+
+    [Fact]
+    public void KzFed004_StationFolderCheck_WarnsForABuildingWhoseGisModelPredatesViewLevels()
+    {
+        string station = Path.Combine(_tempDir, "old-gis-model-station");
+        Directory.CreateDirectory(station);
+        WriteStationBuilding(
+            station,
+            "arch-01",
+            "Arch",
+            "Arch.rvt",
+            "doc-arch",
+            6677,
+            "TP",
+            "EGM2008",
+            36.70,
+            KanizuFederationMode.Independent,
+            levels: new[] { ("u-a-2", "2FL", "arch-2fl", 2, "2F", 4.000) });
+        WriteStationBuilding(
+            station,
+            "annex-02",
+            "Annex",
+            "Annex.rvt",
+            "doc-annex",
+            6677,
+            "TP",
+            "EGM2008",
+            36.70,
+            KanizuFederationMode.Independent,
+            levels: new[] { ("u-n-2", "2FL", "annex-2fl", 2, "2F", 3.900) },
+            legacyViewsWithoutLevels: true);
+
+        FederationRuleResult rule = StationFolderFederationCheck.EvaluateFolder(station).GetRule(FederationChecker.RuleNearMissLevelDrift);
+
+        Assert.Equal(ReadinessCheckStatus.Warn, rule.Status);
+        FederationIssue issue = Assert.Single(rule.Issues);
+        Assert.Equal("LEVEL-DRIFT-NOT-CHECKED", issue.Code);
+        Assert.Contains("Annex", issue.MessageEn);
     }
 
     [Fact]
@@ -1145,7 +1266,8 @@ public sealed class FederationCheckerTests : IDisposable
         IEnumerable<(string UniqueId, string Name, string LevelId, int Ordinal, string ShortName, double ElevationMeters)>? levels = null,
         double anchorOrthometricMeters = 0.0,
         bool legacyGisModelWithoutElevations = false,
-        IEnumerable<string>? levelsWithoutExportView = null)
+        IEnumerable<string>? levelsWithoutExportView = null,
+        bool legacyViewsWithoutLevels = false)
     {
         GisModelFile gisModel = GisModelFile.CreateDefault();
         gisModel.Identity.ModelId = modelId;
@@ -1180,7 +1302,7 @@ public sealed class FederationCheckerTests : IDisposable
         HashSet<string> noView = new(levelsWithoutExportView ?? Array.Empty<string>(), StringComparer.Ordinal);
         gisModel.Views = levelList
             .Where(l => !noView.Contains(l.UniqueId))
-            .Select(l => new GisModelView { UniqueId = "view-" + l.UniqueId, Name = "GIS_" + l.Name, LevelUniqueId = l.UniqueId })
+            .Select(l => new GisModelView { UniqueId = "view-" + l.UniqueId, Name = "GIS_" + l.Name, LevelUniqueId = legacyViewsWithoutLevels ? null : l.UniqueId })
             .ToList();
 
         gisModel.Save(GisModelFile.PathFor(stationRoot, modelId));
