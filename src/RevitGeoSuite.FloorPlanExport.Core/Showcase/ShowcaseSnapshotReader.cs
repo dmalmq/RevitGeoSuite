@@ -664,18 +664,46 @@ public static class ShowcaseSnapshotReader
         {
             case "point":
             {
-                Point2D xy = ParseXyPair(geomObj["xy"], $"point geometry of {featureLabel}");
-                double? z = ReadOptionalFiniteDouble(geomObj, "z", $"point geometry of {featureLabel}");
+                (Point2D xy, double? embeddedZ) = ParseXyWithOptionalZ(geomObj["xy"], $"point geometry of {featureLabel}");
+                double? z = ReadOptionalFiniteDouble(geomObj, "z", $"point geometry of {featureLabel}") ?? embeddedZ;
                 return new ShowcasePointGeometry(xy, z);
+            }
+
+            case "multiPoint":
+            {
+                JToken? pointsToken = geomObj["points"] ?? geomObj["coords"];
+                if (pointsToken is not JArray pointsArray || pointsArray.Count == 0)
+                {
+                    throw new ShowcaseSnapshotException($"multiPoint geometry of {featureLabel} must have at least one point.");
+                }
+
+                List<ShowcasePointGeometry> points = new(pointsArray.Count);
+                for (int i = 0; i < pointsArray.Count; i++)
+                {
+                    JToken item = pointsArray[i];
+                    if (item is JObject ptObj)
+                    {
+                        (Point2D xy, double? embeddedZ) = ParseXyWithOptionalZ(ptObj["xy"], $"multiPoint[{i}] of {featureLabel}");
+                        double? z = ReadOptionalFiniteDouble(ptObj, "z", $"multiPoint[{i}] of {featureLabel}") ?? embeddedZ;
+                        points.Add(new ShowcasePointGeometry(xy, z));
+                    }
+                    else
+                    {
+                        (Point2D xy, double? embeddedZ) = ParseXyWithOptionalZ(item, $"multiPoint[{i}] of {featureLabel}");
+                        points.Add(new ShowcasePointGeometry(xy, embeddedZ));
+                    }
+                }
+
+                return new ShowcaseMultiPointGeometry(points);
             }
 
             case "lineString":
             {
-                IReadOnlyList<Point2D> coords = ParseCoordinateList(
+                (IReadOnlyList<Point2D> coords, IReadOnlyList<double?>? zs) = ParseCoordinateListWithOptionalZ(
                     geomObj["coords"],
                     minCount: 2,
                     $"lineString geometry of {featureLabel}");
-                return new ShowcaseLineStringGeometry(coords);
+                return new ShowcaseLineStringGeometry(coords, zs);
             }
 
             case "multiLineString":
@@ -686,12 +714,23 @@ public static class ShowcaseSnapshotReader
                 }
 
                 List<IReadOnlyList<Point2D>> lines = new(linesArray.Count);
+                List<IReadOnlyList<double?>?> lineZs = new(linesArray.Count);
+                bool anyZ = false;
                 for (int i = 0; i < linesArray.Count; i++)
                 {
-                    lines.Add(ParseCoordinateList(linesArray[i], minCount: 2, $"multiLineString[{i}] of {featureLabel}"));
+                    (IReadOnlyList<Point2D> coords, IReadOnlyList<double?>? zs) = ParseCoordinateListWithOptionalZ(
+                        linesArray[i],
+                        minCount: 2,
+                        $"multiLineString[{i}] of {featureLabel}");
+                    lines.Add(coords);
+                    lineZs.Add(zs);
+                    if (zs != null)
+                    {
+                        anyZ = true;
+                    }
                 }
 
-                return new ShowcaseMultiLineStringGeometry(lines);
+                return new ShowcaseMultiLineStringGeometry(lines, anyZ ? lineZs : null);
             }
 
             case "polygon":
@@ -822,6 +861,51 @@ public static class ShowcaseSnapshotReader
         }
 
         return twiceArea * 0.5d;
+    }
+
+    private static (IReadOnlyList<Point2D> Coords, IReadOnlyList<double?>? Zs) ParseCoordinateListWithOptionalZ(
+        JToken? token,
+        int minCount,
+        string context)
+    {
+        if (token is not JArray array || array.Count < minCount)
+        {
+            throw new ShowcaseSnapshotException($"{context} must be a coordinate array with at least {minCount} positions.");
+        }
+
+        List<Point2D> coords = new(array.Count);
+        List<double?> zs = new(array.Count);
+        bool anyZ = false;
+        for (int i = 0; i < array.Count; i++)
+        {
+            (Point2D xy, double? z) = ParseXyWithOptionalZ(array[i], $"{context}[{i}]");
+            coords.Add(xy);
+            zs.Add(z);
+            if (z.HasValue)
+            {
+                anyZ = true;
+            }
+        }
+
+        return (coords, anyZ ? zs : null);
+    }
+
+    private static (Point2D Xy, double? Z) ParseXyWithOptionalZ(JToken? token, string context)
+    {
+        if (token is not JArray pair || pair.Count < 2)
+        {
+            throw new ShowcaseSnapshotException($"{context} must be a 2-element [x, y] or 3-element [x, y, z] coordinate array.");
+        }
+
+        double x = ParseFiniteDouble(pair[0], $"{context}[0]");
+        double y = ParseFiniteDouble(pair[1], $"{context}[1]");
+        double? z = null;
+        if (pair.Count >= 3 && pair[2].Type != JTokenType.Null)
+        {
+            z = ParseFiniteDouble(pair[2], $"{context}[2]");
+        }
+
+        return (new Point2D(x == 0d ? 0d : x, y == 0d ? 0d : y), z);
     }
 
     private static IReadOnlyList<Point2D> ParseCoordinateList(JToken? token, int minCount, string context)
@@ -1394,11 +1478,31 @@ public static class ShowcaseSnapshotReader
 
                 break;
 
+            case ShowcaseMultiPointGeometry multiPoint:
+                writer.WritePropertyName("type");
+                writer.WriteValue("multiPoint");
+                writer.WritePropertyName("points");
+                writer.WriteStartArray();
+                foreach (ShowcasePointGeometry pt in multiPoint.Points)
+                {
+                    if (pt.Z.HasValue)
+                    {
+                        WriteCanonicalXyz(writer, pt.Xy, pt.Z.Value);
+                    }
+                    else
+                    {
+                        WriteCanonicalXy(writer, pt.Xy);
+                    }
+                }
+
+                writer.WriteEndArray();
+                break;
+
             case ShowcaseLineStringGeometry line:
                 writer.WritePropertyName("type");
                 writer.WriteValue("lineString");
                 writer.WritePropertyName("coords");
-                WriteCanonicalCoordinateList(writer, line.Coords);
+                WriteCanonicalCoordinateListWithOptionalZ(writer, line.Coords, line.Zs);
                 break;
 
             case ShowcaseMultiLineStringGeometry multiLine:
@@ -1406,9 +1510,12 @@ public static class ShowcaseSnapshotReader
                 writer.WriteValue("multiLineString");
                 writer.WritePropertyName("lines");
                 writer.WriteStartArray();
-                foreach (IReadOnlyList<Point2D> l in multiLine.Lines)
+                for (int i = 0; i < multiLine.Lines.Count; i++)
                 {
-                    WriteCanonicalCoordinateList(writer, l);
+                    IReadOnlyList<double?>? zs = multiLine.LineZs != null && i < multiLine.LineZs.Count
+                        ? multiLine.LineZs[i]
+                        : null;
+                    WriteCanonicalCoordinateListWithOptionalZ(writer, multiLine.Lines[i], zs);
                 }
 
                 writer.WriteEndArray();
@@ -1488,6 +1595,37 @@ public static class ShowcaseSnapshotReader
             WriteCanonicalCoordinateList(writer, ring);
         }
 
+        writer.WriteEndArray();
+    }
+
+    private static void WriteCanonicalCoordinateListWithOptionalZ(
+        JsonTextWriter writer,
+        IReadOnlyList<Point2D> coords,
+        IReadOnlyList<double?>? zs)
+    {
+        writer.WriteStartArray();
+        for (int i = 0; i < coords.Count; i++)
+        {
+            double? z = zs != null && i < zs.Count ? zs[i] : null;
+            if (z.HasValue)
+            {
+                WriteCanonicalXyz(writer, coords[i], z.Value);
+            }
+            else
+            {
+                WriteCanonicalXy(writer, coords[i]);
+            }
+        }
+
+        writer.WriteEndArray();
+    }
+
+    private static void WriteCanonicalXyz(JsonTextWriter writer, Point2D pt, double z)
+    {
+        writer.WriteStartArray();
+        WriteCanonicalDouble(writer, pt.X);
+        WriteCanonicalDouble(writer, pt.Y);
+        WriteCanonicalDouble(writer, z);
         writer.WriteEndArray();
     }
 
@@ -2015,19 +2153,52 @@ public static class ShowcaseSnapshotReader
             switch (type)
             {
                 case "point":
+                {
+                    RawJsonValue xyVal = geom.ObjectMembers!["xy"];
                     writer.WritePropertyName("xy");
-                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["xy"]);
-                    WriteOptionalNonNullProp(writer, geom, "z", forceFloat: true);
+                    WriteCanonicalRawXyPair(writer, xyVal);
+
+                    RawJsonValue? resolvedZ = null;
+                    if (geom.TryGetProperty("z", out RawJsonValue explicitZ) && explicitZ.Kind != RawJsonKind.Null)
+                    {
+                        resolvedZ = explicitZ;
+                    }
+                    else if (xyVal.ArrayItems != null && xyVal.ArrayItems.Count >= 3 && xyVal.ArrayItems[2].Kind != RawJsonKind.Null)
+                    {
+                        resolvedZ = xyVal.ArrayItems[2];
+                    }
+
+                    if (resolvedZ != null)
+                    {
+                        writer.WritePropertyName("z");
+                        WriteRawValue(writer, resolvedZ, forceFloat: true);
+                    }
+
+                    break;
+                }
+
+                case "multiPoint":
+                    if (geom.TryGetProperty("points", out RawJsonValue pointsVal))
+                    {
+                        writer.WritePropertyName("points");
+                        WriteCanonicalRawMultiPointItems(writer, pointsVal);
+                    }
+                    else if (geom.TryGetProperty("coords", out RawJsonValue coordsVal))
+                    {
+                        writer.WritePropertyName("points");
+                        WriteCanonicalRawMultiPointItems(writer, coordsVal);
+                    }
+
                     break;
 
                 case "lineString":
                     writer.WritePropertyName("coords");
-                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["coords"]);
+                    WriteCanonicalRawCoordinateList(writer, geom.ObjectMembers!["coords"]);
                     break;
 
                 case "multiLineString":
                     writer.WritePropertyName("lines");
-                    WriteFloatArrayRecursive(writer, geom.ObjectMembers!["lines"]);
+                    WriteCanonicalRawMultiLineStrings(writer, geom.ObjectMembers!["lines"]);
                     break;
 
                 case "polygon":
@@ -2052,6 +2223,110 @@ public static class ShowcaseSnapshotReader
             }
 
             writer.WriteEndObject();
+        }
+
+        private static void WriteCanonicalRawXyPair(JsonTextWriter writer, RawJsonValue xyVal)
+        {
+            writer.WriteStartArray();
+            if (xyVal.ArrayItems != null)
+            {
+                for (int i = 0; i < Math.Min(2, xyVal.ArrayItems.Count); i++)
+                {
+                    WriteRawValue(writer, xyVal.ArrayItems[i], forceFloat: true);
+                }
+            }
+
+            writer.WriteEndArray();
+        }
+
+        private static void WriteCanonicalRawCoordWithOptionalZ(JsonTextWriter writer, RawJsonValue coordVal)
+        {
+            if (coordVal.Kind != RawJsonKind.Array || coordVal.ArrayItems == null)
+            {
+                WriteFloatArrayRecursive(writer, coordVal);
+                return;
+            }
+
+            writer.WriteStartArray();
+            int count = coordVal.ArrayItems.Count;
+            for (int i = 0; i < Math.Min(2, count); i++)
+            {
+                WriteRawValue(writer, coordVal.ArrayItems[i], forceFloat: true);
+            }
+
+            if (count >= 3 && coordVal.ArrayItems[2].Kind != RawJsonKind.Null)
+            {
+                WriteRawValue(writer, coordVal.ArrayItems[2], forceFloat: true);
+            }
+
+            writer.WriteEndArray();
+        }
+
+        private static void WriteCanonicalRawCoordinateList(JsonTextWriter writer, RawJsonValue listVal)
+        {
+            writer.WriteStartArray();
+            if (listVal.ArrayItems != null)
+            {
+                foreach (RawJsonValue coord in listVal.ArrayItems)
+                {
+                    WriteCanonicalRawCoordWithOptionalZ(writer, coord);
+                }
+            }
+
+            writer.WriteEndArray();
+        }
+
+        private static void WriteCanonicalRawMultiLineStrings(JsonTextWriter writer, RawJsonValue linesVal)
+        {
+            writer.WriteStartArray();
+            if (linesVal.ArrayItems != null)
+            {
+                foreach (RawJsonValue line in linesVal.ArrayItems)
+                {
+                    WriteCanonicalRawCoordinateList(writer, line);
+                }
+            }
+
+            writer.WriteEndArray();
+        }
+
+        private static void WriteCanonicalRawMultiPointItems(JsonTextWriter writer, RawJsonValue arrayVal)
+        {
+            writer.WriteStartArray();
+            if (arrayVal.ArrayItems != null)
+            {
+                foreach (RawJsonValue item in arrayVal.ArrayItems)
+                {
+                    if (item.Kind == RawJsonKind.Object && item.ObjectMembers != null && item.TryGetProperty("xy", out RawJsonValue xyVal))
+                    {
+                        writer.WriteStartArray();
+                        if (xyVal.ArrayItems != null)
+                        {
+                            for (int i = 0; i < Math.Min(2, xyVal.ArrayItems.Count); i++)
+                            {
+                                WriteRawValue(writer, xyVal.ArrayItems[i], forceFloat: true);
+                            }
+                        }
+
+                        if (item.TryGetProperty("z", out RawJsonValue zVal) && zVal.Kind != RawJsonKind.Null)
+                        {
+                            WriteRawValue(writer, zVal, forceFloat: true);
+                        }
+                        else if (xyVal.ArrayItems != null && xyVal.ArrayItems.Count >= 3 && xyVal.ArrayItems[2].Kind != RawJsonKind.Null)
+                        {
+                            WriteRawValue(writer, xyVal.ArrayItems[2], forceFloat: true);
+                        }
+
+                        writer.WriteEndArray();
+                    }
+                    else
+                    {
+                        WriteCanonicalRawCoordWithOptionalZ(writer, item);
+                    }
+                }
+            }
+
+            writer.WriteEndArray();
         }
 
         private static void WriteCanonicalRawEndpoint(JsonTextWriter writer, RawJsonValue ep)

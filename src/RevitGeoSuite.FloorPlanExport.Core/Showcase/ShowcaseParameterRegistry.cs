@@ -282,6 +282,7 @@ public sealed class ShowcaseParameterRegistry
     public const string KeyParameterName = "ks_key";
     public const string LevelIdParameterName = "ks_level_id";
     public const string FloorKeyParameterName = "ks_floor_key";
+    public const string GeometryProvenanceParameterName = "ks_geometry_provenance";
     public const string OverflowParameterName = "ks_attributes_json";
 
     private const string ShowcaseBuiltInScope = "showcase";
@@ -305,6 +306,17 @@ public sealed class ShowcaseParameterRegistry
         "level_id",
         "revit_key",
         "source",
+        "node_id",
+        "link_id",
+        "pathid",
+        "link_type",
+        "connector_kind",
+        "direction",
+        "oneway",
+        "start_level",
+        "end_level",
+        "finding_kind",
+        "severity",
     };
 
     private readonly Dictionary<(ShowcaseLayerKind Kind, string FieldName), ShowcaseParameterDefinition> _directByLayerAndField;
@@ -409,7 +421,7 @@ public sealed class ShowcaseParameterRegistry
 
         if (includeBuiltInMetadata)
         {
-            ShowcaseParameterDefinition[] builtIns =
+            List<ShowcaseParameterDefinition> builtIns = new()
             {
                 CreateBuiltInDefinition(LayerParameterName, "layer", "Source GIS layer name in the Kanizu showcase snapshot."),
                 CreateBuiltInDefinition(LayerKindParameterName, "layer_kind", "Semantic layer classification (unit, opening, fixture, level, etc.)."),
@@ -417,6 +429,11 @@ public sealed class ShowcaseParameterRegistry
                 CreateBuiltInDefinition(LevelIdParameterName, "level_id", "Resolved showcase level identifier."),
                 CreateBuiltInDefinition(FloorKeyParameterName, "floor_key", "Resolved showcase floor key."),
             };
+
+            if (snapshot.Layers.Any(l => ShowcasePoiAndNetworkPlanner.IsF4SupportedLayerKind(l.Kind)))
+            {
+                builtIns.Add(CreateGeometryProvenanceDefinition());
+            }
 
             foreach (ShowcaseParameterDefinition builtIn in builtIns)
             {
@@ -845,6 +862,12 @@ public sealed class ShowcaseParameterRegistry
             assignments.Add(ShowcaseParameterAssignment.ForText(def, value));
         }
     }
+
+    public static ShowcaseParameterDefinition CreateGeometryProvenanceDefinition() =>
+        CreateBuiltInDefinition(
+            GeometryProvenanceParameterName,
+            "geometry_provenance",
+            "Explicit geometry provenance ('surveyed' or 'schematic') recorded for showcase markers and network elements.");
 
     private static ShowcaseParameterDefinition CreateBuiltInDefinition(string name, string seedField, string description) =>
         new(

@@ -67,6 +67,7 @@ public enum ShowcaseConnectorGeometryOrigin
 public enum ShowcaseGeometryType
 {
     Point,
+    MultiPoint,
     LineString,
     MultiLineString,
     Polygon,
@@ -363,26 +364,71 @@ public sealed class ShowcasePointGeometry : ShowcaseGeometry
     public double? Z { get; }
 }
 
+public sealed class ShowcaseMultiPointGeometry : ShowcaseGeometry
+{
+    public ShowcaseMultiPointGeometry(IReadOnlyList<ShowcasePointGeometry> points)
+        : base(ShowcaseGeometryType.MultiPoint)
+    {
+        if (points is null)
+        {
+            throw new ArgumentNullException(nameof(points));
+        }
+
+        if (points.Count == 0)
+        {
+            throw new ArgumentException("A multi-point must contain at least one point.", nameof(points));
+        }
+
+        Points = points;
+    }
+
+    public IReadOnlyList<ShowcasePointGeometry> Points { get; }
+}
+
 public sealed class ShowcaseLineStringGeometry : ShowcaseGeometry
 {
-    public ShowcaseLineStringGeometry(IReadOnlyList<Point2D> coords)
+    public ShowcaseLineStringGeometry(IReadOnlyList<Point2D> coords, IReadOnlyList<double?>? zs = null)
         : base(ShowcaseGeometryType.LineString)
     {
         Coords = coords ?? throw new ArgumentNullException(nameof(coords));
+        if (zs != null && zs.Count != coords.Count)
+        {
+            throw new ArgumentException("Optional Z coordinate count must match XY coordinate count.", nameof(zs));
+        }
+
+        Zs = zs;
     }
 
     public IReadOnlyList<Point2D> Coords { get; }
+
+    /// <summary>Optional per-vertex surveyed elevations (metres). <c>null</c> for pure 2D line strings.</summary>
+    public IReadOnlyList<double?>? Zs { get; }
+
+    public bool HasZCoordinates => Zs != null && Zs.Any(z => z.HasValue);
 }
 
 public sealed class ShowcaseMultiLineStringGeometry : ShowcaseGeometry
 {
-    public ShowcaseMultiLineStringGeometry(IReadOnlyList<IReadOnlyList<Point2D>> lines)
+    public ShowcaseMultiLineStringGeometry(
+        IReadOnlyList<IReadOnlyList<Point2D>> lines,
+        IReadOnlyList<IReadOnlyList<double?>?>? lineZs = null)
         : base(ShowcaseGeometryType.MultiLineString)
     {
         Lines = lines ?? throw new ArgumentNullException(nameof(lines));
+        if (lineZs != null && lineZs.Count != lines.Count)
+        {
+            throw new ArgumentException("Optional per-line Z coordinate list count must match line count.", nameof(lineZs));
+        }
+
+        LineZs = lineZs;
     }
 
     public IReadOnlyList<IReadOnlyList<Point2D>> Lines { get; }
+
+    /// <summary>Optional per-line, per-vertex surveyed elevations (metres). <c>null</c> for pure 2D multi-line strings.</summary>
+    public IReadOnlyList<IReadOnlyList<double?>?>? LineZs { get; }
+
+    public bool HasZCoordinates => LineZs != null && LineZs.Any(zs => zs != null && zs.Any(z => z.HasValue));
 }
 
 public sealed class ShowcasePolygonGeometry : ShowcaseGeometry

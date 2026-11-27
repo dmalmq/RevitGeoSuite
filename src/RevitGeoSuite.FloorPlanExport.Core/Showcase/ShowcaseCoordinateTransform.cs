@@ -279,14 +279,35 @@ public sealed class ShowcaseCoordinateTransform
 
                 break;
 
+            case ShowcaseMultiPointGeometry multiPt:
+                foreach (ShowcasePointGeometry pt in multiPt.Points)
+                {
+                    IncludePoint(pt.Xy, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                    if (pt.Z.HasValue && IsFinite(pt.Z.Value) && pt.Z.Value < minZ)
+                    {
+                        minZ = pt.Z.Value;
+                    }
+                }
+
+                break;
+
             case ShowcaseLineStringGeometry line:
                 IncludePoints(line.Coords, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                IncludeElevations(line.Zs, ref minZ);
                 break;
 
             case ShowcaseMultiLineStringGeometry multiLine:
                 foreach (IReadOnlyList<Point2D> l in multiLine.Lines)
                 {
                     IncludePoints(l, ref minX, ref maxX, ref minY, ref maxY, ref hasPlanarCoords);
+                }
+
+                if (multiLine.LineZs != null)
+                {
+                    foreach (IReadOnlyList<double?>? zs in multiLine.LineZs)
+                    {
+                        IncludeElevations(zs, ref minZ);
+                    }
                 }
 
                 break;
@@ -325,6 +346,23 @@ public sealed class ShowcaseCoordinateTransform
                 }
 
                 break;
+        }
+    }
+
+    private static void IncludeElevations(IReadOnlyList<double?>? zs, ref double minZ)
+    {
+        if (zs is null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < zs.Count; i++)
+        {
+            double? z = zs[i];
+            if (z.HasValue && IsFinite(z.Value) && z.Value < minZ)
+            {
+                minZ = z.Value;
+            }
         }
     }
 
