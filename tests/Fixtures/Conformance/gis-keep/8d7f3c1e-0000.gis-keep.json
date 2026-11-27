@@ -1,0 +1,23 @@
+{
+  "schema": "kanizu.gis-keep",
+  "version": 1,
+  "model": "8d7f3c1e-0000",
+  "entries": [
+    {
+      "revitKey": "8d7f3c1e-0000|u-2|0",
+      "layer": "unit",
+      "field": "category",
+      "revit": "retail",
+      "gdb": "walkway",
+      "keptUtc": "2026-11-21T09:30:00Z"
+    },
+    {
+      "revitKey": "8d7f3c1e-0000|lvl|0",
+      "layer": "level",
+      "field": "ordinal",
+      "revit": "1",
+      "gdb": "3",
+      "keptUtc": "2026-11-20T08:00:00Z"
+    }
+  ]
+}

@@ -45,3 +45,6 @@ standards/starter-kit/**                          text eol=lf
 # (regenerate and check with tools/VerifyContracts.ps1 - never hand-edit).
 src/RevitGeoSuite.SharedUI/Resources/Web/dist/**                      linguist-generated=true
 src/RevitGeoSuite.SharedUI.Web/src/lib/bridge/contracts.generated.ts  linguist-generated=true
+
+# Conformance bytes another repository pins by hash: never convert line endings.
+tests/Fixtures/Conformance/gis-keep/*.json -text
