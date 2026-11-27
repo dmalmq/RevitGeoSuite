@@ -56,4 +56,29 @@ public sealed class ShowcaseCompanionBuildOptions
     /// <c>DirectShapeType</c> prototypes when no family template is supplied.
     /// </summary>
     public bool UsePoiMarkerFamilyInstances { get; set; } = true;
+
+    /// <summary>
+    /// When <c>true</c> (default), creates/updates pre-configured Autodesk Forma Publish Settings 3D views
+    /// (Overview, Network &amp; POIs, and per-floor section boxes) and saves the <c>Kanizu Forma Publish</c> view set.
+    /// </summary>
+    public bool ConfigureFormaPublishViews { get; set; } = true;
+
+    /// <summary>F5 3D view naming, section-box margin, and Publish Settings view-set configuration.</summary>
+    public ShowcaseViewPlanOptions ViewOptions { get; set; } = new();
+
+    /// <summary>F5 Forma-safe triangle, element, marker, parameter, and file-size budget limits.</summary>
+    public ShowcaseBudgetLimits BudgetLimits { get; set; } = new();
+
+    /// <summary>
+    /// Policy applied to <see cref="ShowcaseBudgetEvaluator"/> results (default <see cref="ShowcaseBudgetEnforcementMode.WarnOnly"/>).
+    /// Setting <see cref="EnforceHardBudgets"/> to <c>true</c> automatically upgrades enforcement to
+    /// <see cref="ShowcaseBudgetEnforcementMode.FailOnHardLimit"/>.
+    /// </summary>
+    public ShowcaseBudgetEnforcementMode BudgetEnforcementMode { get; set; } = ShowcaseBudgetEnforcementMode.WarnOnly;
+
+    /// <summary>When <c>true</c>, fails the companion build with <see cref="ShowcaseBudgetExceededException"/> on any hard budget violation.</summary>
+    public bool EnforceHardBudgets { get; set; }
+
+    public ShowcaseBudgetEnforcementMode ResolveEffectiveBudgetEnforcementMode() =>
+        EnforceHardBudgets ? ShowcaseBudgetEnforcementMode.FailOnHardLimit : BudgetEnforcementMode;
 }
