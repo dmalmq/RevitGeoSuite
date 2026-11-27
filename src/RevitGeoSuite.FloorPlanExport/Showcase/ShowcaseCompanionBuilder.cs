@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using Autodesk.Revit.ApplicationServices;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Structure;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Showcase;
@@ -111,7 +112,13 @@ public sealed class ShowcaseCompanionBuilder
                 buildResult.Warnings,
                 buildResult.UpdatedElementCount,
                 buildResult.ReplacedElementCount,
-                buildResult.DeletedElementCount);
+                buildResult.DeletedElementCount,
+                buildResult.PoiMarkerCount,
+                buildResult.AttachmentMarkerCount,
+                buildResult.NetworkLinkCount,
+                buildResult.VerticalTubeCount,
+                buildResult.FindingPuckCount,
+                buildResult.EstimatedTriangleCount);
         }
         finally
         {
@@ -220,10 +227,21 @@ public sealed class ShowcaseCompanionBuilder
         ShowcaseGeometryPlanOptions geometryOptions = CloneGeometryOptionsWithDocumentTolerance(
             options.GeometryOptions,
             document.Application.ShortCurveTolerance);
+        ShowcasePoiAndNetworkPlanOptions poiNetworkOptions = ClonePoiAndNetworkOptionsWithDocumentTolerance(
+            options.PoiAndNetworkOptions,
+            document.Application.ShortCurveTolerance);
 
-        ShowcaseGeometryPlanResult plan = ShowcaseGeometryPlanner.Plan(snapshot, transform, registry, geometryOptions);
+        ShowcaseGeometryPlanResult f3Plan = ShowcaseGeometryPlanner.Plan(snapshot, transform, registry, geometryOptions);
+        ShowcasePoiAndNetworkPlanResult f4Plan = ShowcasePoiAndNetworkPlanner.Plan(snapshot, transform, registry, poiNetworkOptions);
 
-        List<string> warnings = new(plan.Warnings);
+        List<ShowcaseElementPlan> allPlannedElements = new(f3Plan.Elements.Count + f4Plan.Elements.Count);
+        allPlannedElements.AddRange(f3Plan.Elements);
+        allPlannedElements.AddRange(f4Plan.Elements);
+
+        List<string> warnings = new(f3Plan.Warnings.Count + f4Plan.Warnings.Count);
+        warnings.AddRange(f3Plan.Warnings);
+        warnings.AddRange(f4Plan.Warnings);
+
         List<string> activeAppDataIds = new();
         int createdCount = 0;
         int updatedCount = 0;
@@ -232,6 +250,7 @@ public sealed class ShowcaseCompanionBuilder
         int skippedCount = 0;
         int boundParamCount = 0;
         int overflowFeatureCount = 0;
+        int totalEstimatedTriangles = allPlannedElements.Sum(e => e.EstimatedTriangleCount);
 
         ExecuteInTransaction(document, () =>
         {
@@ -245,12 +264,18 @@ public sealed class ShowcaseCompanionBuilder
 
             StampShowcaseModelRole(document);
 
-            double minSegmentFeet = Math.Max(document.Application.ShortCurveTolerance, geometryOptions.MinSegmentLengthFeet);
-            SolidOptions solidOptions = new(ElementId.InvalidElementId, ElementId.InvalidElementId);
+            Dictionary<string, ElementId> materialIdsByName = EnsureShowcaseMaterials(document, allPlannedElements);
+            Dictionary<string, FamilySymbol> poiMarkerSymbols = ShowcasePoiMarkerFamilyBuilder.TryEnsurePoiMarkerSymbols(
+                document,
+                options,
+                warnings);
 
-            // Reconcile existing Kanizu.Showcase DirectShapes by ApplicationDataId so refreshes update in-place,
-            // replace when category changed, clear nulled parameters, and delete stale features.
-            IReadOnlyList<ShowcaseExistingElementInfo> existingShowcase = CollectExistingShowcaseDirectShapes(document);
+            double minSegmentFeet = Math.Max(document.Application.ShortCurveTolerance, geometryOptions.MinSegmentLengthFeet);
+            SolidOptions defaultSolidOptions = new(ElementId.InvalidElementId, ElementId.InvalidElementId);
+
+            // Reconcile existing Kanizu.Showcase DirectShapes & KNZ_FRM_PoiMarker FamilyInstances by ApplicationDataId
+            // so refreshes update in-place, replace when category/parameters changed, and delete stale features.
+            IReadOnlyList<ShowcaseExistingElementInfo> existingShowcase = CollectExistingShowcaseElements(document, registry);
             Dictionary<string, ElementId> resolvedCategoryIdsByPref = new(StringComparer.Ordinal);
             string ResolveCategoryKey(ShowcaseElementPlan p)
             {
@@ -264,10 +289,12 @@ public sealed class ShowcaseCompanionBuilder
             }
 
             ShowcaseReconciliationPlan reconciliation = ShowcaseElementReconciler.BuildPlan(
-                plan.Elements,
+                allPlannedElements,
                 existingShowcase,
                 ResolveCategoryKey);
 
+            Dictionary<string, string> prototypeDefIdsByKey = new(StringComparer.Ordinal);
+            DirectShapeLibrary directShapeLibrary = DirectShapeLibrary.GetDirectShapeLibrary(document);
             List<ElementId> staleIdsToDelete = new();
 
             foreach (ShowcaseReconciliationStep step in reconciliation.Steps)
@@ -278,7 +305,18 @@ public sealed class ShowcaseCompanionBuilder
                     {
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
                         ElementId categoryId = resolvedCategoryIdsByPref[elementPlan.PreferredCategoryName];
-                        if (!TryCreateDirectShape(document, elementPlan, categoryId, registry, minSegmentFeet, solidOptions, warnings))
+                        if (!TryCreateShowcaseElement(
+                                document,
+                                elementPlan,
+                                categoryId,
+                                registry,
+                                minSegmentFeet,
+                                defaultSolidOptions,
+                                materialIdsByName,
+                                poiMarkerSymbols,
+                                directShapeLibrary,
+                                prototypeDefIdsByKey,
+                                warnings))
                         {
                             skippedCount++;
                             continue;
@@ -298,7 +336,20 @@ public sealed class ShowcaseCompanionBuilder
                     {
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
                         ElementId existingId = new(step.ExistingElementId!.Value);
-                        if (!TryUpdateDirectShapeInPlace(document, existingId, elementPlan, registry, minSegmentFeet, solidOptions, warnings))
+                        ElementId categoryId = resolvedCategoryIdsByPref[elementPlan.PreferredCategoryName];
+                        if (!TryUpdateShowcaseElementInPlace(
+                                document,
+                                existingId,
+                                elementPlan,
+                                categoryId,
+                                registry,
+                                minSegmentFeet,
+                                defaultSolidOptions,
+                                materialIdsByName,
+                                poiMarkerSymbols,
+                                directShapeLibrary,
+                                prototypeDefIdsByKey,
+                                warnings))
                         {
                             skippedCount++;
                             continue;
@@ -320,7 +371,19 @@ public sealed class ShowcaseCompanionBuilder
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
                         ElementId existingId = new(step.ExistingElementId!.Value);
                         ElementId categoryId = resolvedCategoryIdsByPref[elementPlan.PreferredCategoryName];
-                        if (!TryReplaceDirectShape(document, existingId, elementPlan, categoryId, registry, minSegmentFeet, solidOptions, warnings))
+                        if (!TryReplaceShowcaseElement(
+                                document,
+                                existingId,
+                                elementPlan,
+                                categoryId,
+                                registry,
+                                minSegmentFeet,
+                                defaultSolidOptions,
+                                materialIdsByName,
+                                poiMarkerSymbols,
+                                directShapeLibrary,
+                                prototypeDefIdsByKey,
+                                warnings))
                         {
                             skippedCount++;
                             continue;
@@ -358,7 +421,7 @@ public sealed class ShowcaseCompanionBuilder
                 }
                 catch (Exception ex)
                 {
-                    warnings.Add($"Failed to delete {staleIdsToDelete.Count} stale showcase DirectShape(s): {ex.Message}");
+                    warnings.Add($"Failed to delete {staleIdsToDelete.Count} stale showcase element(s): {ex.Message}");
                 }
             }
         });
@@ -376,7 +439,13 @@ public sealed class ShowcaseCompanionBuilder
             warnings,
             updatedCount,
             replacedCount,
-            deletedCount);
+            deletedCount,
+            f4Plan.PoiMarkerCount,
+            f4Plan.AttachmentMarkerCount,
+            f4Plan.HorizontalLinkCount,
+            f4Plan.VerticalTubeCount,
+            f4Plan.FindingPuckCount,
+            totalEstimatedTriangles);
     }
 
     private static void ConfigureLocalizedProjectPosition(Document document, ShowcaseCoordinateTransform transform)
@@ -389,7 +458,9 @@ public sealed class ShowcaseCompanionBuilder
         document.ActiveProjectLocation.SetProjectPosition(XYZ.Zero, projectPosition);
     }
 
-    private static IReadOnlyList<ShowcaseExistingElementInfo> CollectExistingShowcaseDirectShapes(Document document)
+    private static IReadOnlyList<ShowcaseExistingElementInfo> CollectExistingShowcaseElements(
+        Document document,
+        ShowcaseParameterRegistry registry)
     {
         List<ShowcaseExistingElementInfo> existing = new();
         foreach (DirectShape ds in new FilteredElementCollector(document).OfClass(typeof(DirectShape)).Cast<DirectShape>())
@@ -408,13 +479,47 @@ public sealed class ShowcaseCompanionBuilder
                 populatedKsGuids));
         }
 
+        Guid? layerGuid = registry.FindByName(ShowcaseParameterRegistry.LayerParameterName)?.Guid;
+        Guid? keyGuid = registry.FindByName(ShowcaseParameterRegistry.KeyParameterName)?.Guid;
+        foreach (FamilyInstance fi in new FilteredElementCollector(document).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>())
+        {
+            string? familyName = fi.Symbol?.FamilyName;
+            if (!ShowcaseExportGuard.IsShowcaseFamilyOrTypeName(familyName))
+            {
+                continue;
+            }
+
+            string appDataId = ReconstructFamilyInstanceApplicationDataId(fi, layerGuid, keyGuid);
+            string categoryKey = fi.Category != null ? FormatCategoryKey(fi.Category.Id) : string.Empty;
+            List<Guid> populatedKsGuids = CollectPopulatedShowcaseParameterGuids(fi);
+            existing.Add(new ShowcaseExistingElementInfo(
+                fi.Id.Value,
+                appDataId,
+                categoryKey,
+                populatedKsGuids));
+        }
+
         return existing;
     }
 
-    private static List<Guid> CollectPopulatedShowcaseParameterGuids(DirectShape directShape)
+    private static string ReconstructFamilyInstanceApplicationDataId(FamilyInstance fi, Guid? layerGuid, Guid? keyGuid)
+    {
+        string? layer = layerGuid.HasValue ? fi.get_Parameter(layerGuid.Value)?.AsString() : null;
+        string? key = keyGuid.HasValue ? fi.get_Parameter(keyGuid.Value)?.AsString() : null;
+        if (!string.IsNullOrWhiteSpace(layer) && !string.IsNullOrWhiteSpace(key))
+        {
+            return ShowcaseGeometryPlanner.BuildApplicationDataId(layer!.Trim(), key!.Trim());
+        }
+
+        Parameter? comments = fi.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+        string? commentValue = comments?.AsString();
+        return string.IsNullOrWhiteSpace(commentValue) ? string.Empty : commentValue!.Trim();
+    }
+
+    private static List<Guid> CollectPopulatedShowcaseParameterGuids(Element element)
     {
         List<Guid> guids = new();
-        foreach (Parameter? param in directShape.Parameters)
+        foreach (Parameter? param in element.Parameters)
         {
             if (param is null || !param.IsShared || !param.HasValue)
             {
@@ -431,6 +536,95 @@ public sealed class ShowcaseCompanionBuilder
         }
 
         return guids;
+    }
+
+    private static Dictionary<string, ElementId> EnsureShowcaseMaterials(
+        Document document,
+        IReadOnlyList<ShowcaseElementPlan> plannedElements)
+    {
+        HashSet<string> neededNames = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ShowcaseElementPlan plan in plannedElements)
+        {
+            if (!string.IsNullOrWhiteSpace(plan.MaterialName))
+            {
+                neededNames.Add(plan.MaterialName!);
+            }
+
+            if (!string.IsNullOrWhiteSpace(plan.AccentMaterialName))
+            {
+                neededNames.Add(plan.AccentMaterialName!);
+            }
+        }
+
+        Dictionary<string, Material> existing = new FilteredElementCollector(document)
+            .OfClass(typeof(Material))
+            .Cast<Material>()
+            .GroupBy(m => m.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        Dictionary<string, ElementId> result = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string name in neededNames)
+        {
+            if (!ShowcaseMaterialCatalog.TryGet(name, out ShowcaseMaterialSpec spec))
+            {
+                continue;
+            }
+
+            if (!existing.TryGetValue(spec.MaterialName, out Material? material))
+            {
+                ElementId createdId = Material.Create(document, spec.MaterialName);
+                material = (Material)document.GetElement(createdId);
+                existing[spec.MaterialName] = material;
+            }
+
+            material.Color = new Color(spec.Color.R, spec.Color.G, spec.Color.B);
+            material.Transparency = spec.Color.TransparencyPercent;
+            material.UseRenderAppearanceForShading = false;
+            result[spec.MaterialName] = material.Id;
+        }
+
+        return result;
+    }
+
+    private static ShowcasePoiAndNetworkPlanOptions ClonePoiAndNetworkOptionsWithDocumentTolerance(
+        ShowcasePoiAndNetworkPlanOptions? source,
+        double shortCurveToleranceFeet)
+    {
+        ShowcasePoiAndNetworkPlanOptions baseOpts = source ?? ShowcasePoiAndNetworkPlanOptions.Default;
+        double safeMinFeet = Math.Max(baseOpts.MinSegmentLengthFeet, Math.Max(shortCurveToleranceFeet * 1.1d, 0.003d));
+        return new ShowcasePoiAndNetworkPlanOptions
+        {
+            PoiBaseElevationOffsetMeters = baseOpts.PoiBaseElevationOffsetMeters,
+            PoiMarkerRadiusMeters = baseOpts.PoiMarkerRadiusMeters,
+            PoiMarkerHeightMeters = baseOpts.PoiMarkerHeightMeters,
+            AttachmentBaseElevationOffsetMeters = baseOpts.AttachmentBaseElevationOffsetMeters,
+            AttachmentMarkerRadiusMeters = baseOpts.AttachmentMarkerRadiusMeters,
+            AttachmentMarkerHeightMeters = baseOpts.AttachmentMarkerHeightMeters,
+            AttachmentStemRadiusMeters = baseOpts.AttachmentStemRadiusMeters,
+            NetworkRibbonElevationOffsetMeters = baseOpts.NetworkRibbonElevationOffsetMeters,
+            NetworkRibbonWidthMeters = baseOpts.NetworkRibbonWidthMeters,
+            NetworkRibbonThicknessMeters = baseOpts.NetworkRibbonThicknessMeters,
+            ChevronSpacingMeters = baseOpts.ChevronSpacingMeters,
+            MinChevronLinkLengthMeters = baseOpts.MinChevronLinkLengthMeters,
+            ChevronLengthMeters = baseOpts.ChevronLengthMeters,
+            ChevronHalfWidthMeters = baseOpts.ChevronHalfWidthMeters,
+            ChevronHeightMeters = baseOpts.ChevronHeightMeters,
+            ChevronElevationGapMeters = baseOpts.ChevronElevationGapMeters,
+            MaxChevronsPerLink = baseOpts.MaxChevronsPerLink,
+            VerticalTubeRadiusMeters = baseOpts.VerticalTubeRadiusMeters,
+            SchematicVerticalTubeRadiusMeters = baseOpts.SchematicVerticalTubeRadiusMeters,
+            VerticalTubeSides = baseOpts.VerticalTubeSides,
+            VerticalTransitionMinDeltaMeters = baseOpts.VerticalTransitionMinDeltaMeters,
+            NetworkNodeElevationOffsetMeters = baseOpts.NetworkNodeElevationOffsetMeters,
+            NetworkNodeRadiusMeters = baseOpts.NetworkNodeRadiusMeters,
+            NetworkNodeHeightMeters = baseOpts.NetworkNodeHeightMeters,
+            FindingPuckElevationOffsetMeters = baseOpts.FindingPuckElevationOffsetMeters,
+            FindingPuckRadiusMeters = baseOpts.FindingPuckRadiusMeters,
+            FindingPuckHeightMeters = baseOpts.FindingPuckHeightMeters,
+            DefaultFloorHeightMeters = baseOpts.DefaultFloorHeightMeters,
+            MinSegmentLengthFeet = safeMinFeet,
+            MinNetworkSegmentMeters = baseOpts.MinNetworkSegmentMeters,
+        };
     }
 
     private static string FormatCategoryKey(ElementId categoryId) =>
@@ -608,19 +802,74 @@ public sealed class ShowcaseCompanionBuilder
         }
     }
 
-    private static bool TryBuildGeometryObjects(
+    private static bool TryResolvePoiFamilySymbol(
         ShowcaseElementPlan plan,
+        Dictionary<string, FamilySymbol> poiMarkerSymbols,
+        out FamilySymbol symbol)
+    {
+        if (plan.ElementKind == ShowcaseElementKind.PoiMarker &&
+            plan.MarkerPlacements.Count == 1 &&
+            poiMarkerSymbols.Count > 0)
+        {
+            if (!string.IsNullOrWhiteSpace(plan.MaterialName) &&
+                poiMarkerSymbols.TryGetValue(plan.MaterialName!, out FamilySymbol? exact))
+            {
+                symbol = exact;
+                return true;
+            }
+
+            if (poiMarkerSymbols.TryGetValue(ShowcaseMaterialCatalog.PoiGeneral, out FamilySymbol? fallback))
+            {
+                symbol = fallback;
+                return true;
+            }
+
+            symbol = poiMarkerSymbols.Values.First();
+            return true;
+        }
+
+        symbol = null!;
+        return false;
+    }
+
+    private static SolidOptions ResolveSolidOptions(
+        string? materialName,
+        Dictionary<string, ElementId> materialIdsByName,
+        SolidOptions fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(materialName) &&
+            materialIdsByName.TryGetValue(materialName!, out ElementId? materialId) &&
+            materialId != ElementId.InvalidElementId)
+        {
+            return new SolidOptions(materialId, ElementId.InvalidElementId);
+        }
+
+        return fallback;
+    }
+
+    private static bool TryBuildGeometryObjects(
+        Document document,
+        ShowcaseElementPlan plan,
+        ElementId categoryId,
         double minSegmentLengthFeet,
-        SolidOptions solidOptions,
+        SolidOptions defaultSolidOptions,
+        Dictionary<string, ElementId> materialIdsByName,
+        DirectShapeLibrary directShapeLibrary,
+        Dictionary<string, string> prototypeDefIdsByKey,
         ICollection<string> warnings,
         out List<GeometryObject> geometries)
     {
-        geometries = new List<GeometryObject>(plan.Solids.Count);
+        geometries = new List<GeometryObject>(
+            plan.Solids.Count + plan.AccentSolids.Count + plan.MarkerPlacements.Count + plan.TubeSegments.Count);
+
+        SolidOptions primaryOptions = ResolveSolidOptions(plan.MaterialName, materialIdsByName, defaultSolidOptions);
+        SolidOptions accentOptions = ResolveSolidOptions(plan.AccentMaterialName ?? plan.MaterialName, materialIdsByName, primaryOptions);
+
         foreach (ShowcaseExtrusionSolid solidPlan in plan.Solids)
         {
             try
             {
-                Solid? solid = BuildExtrusionSolid(solidPlan, minSegmentLengthFeet, solidOptions);
+                Solid? solid = BuildExtrusionSolid(solidPlan, minSegmentLengthFeet, primaryOptions);
                 if (solid != null && solid.Volume > 1e-9d)
                 {
                     geometries.Add(solid);
@@ -632,25 +881,339 @@ public sealed class ShowcaseCompanionBuilder
             }
         }
 
+        foreach (ShowcaseExtrusionSolid accentPlan in plan.AccentSolids)
+        {
+            try
+            {
+                Solid? solid = BuildExtrusionSolid(accentPlan, minSegmentLengthFeet, accentOptions);
+                if (solid != null && solid.Volume > 1e-9d)
+                {
+                    geometries.Add(solid);
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"Skipped one accent solid of '{plan.ApplicationDataId}': {ex.Message}");
+            }
+        }
+
+        foreach (ShowcaseSweptTubeSegment tubePlan in plan.TubeSegments)
+        {
+            try
+            {
+                Solid? tube = BuildSweptTubeSolid(tubePlan, minSegmentLengthFeet, primaryOptions);
+                if (tube != null && tube.Volume > 1e-9d)
+                {
+                    geometries.Add(tube);
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"Skipped one 3D tube segment of '{plan.ApplicationDataId}': {ex.Message}");
+            }
+        }
+
+        foreach (ShowcaseMarkerPlacement placement in plan.MarkerPlacements)
+        {
+            try
+            {
+                string? defId = EnsureInstancedMarkerPrototype(
+                    document,
+                    categoryId,
+                    placement,
+                    plan.MaterialName,
+                    primaryOptions,
+                    minSegmentLengthFeet,
+                    directShapeLibrary,
+                    prototypeDefIdsByKey);
+                if (!string.IsNullOrEmpty(defId))
+                {
+                    Transform placementTransform = Transform.CreateTranslation(
+                        new XYZ(placement.LocationFeet.XFeet, placement.LocationFeet.YFeet, placement.LocationFeet.ZFeet));
+                    if (Math.Abs(placement.RotationRadians) > 1e-6d)
+                    {
+                        placementTransform = placementTransform.Multiply(
+                            Transform.CreateRotation(XYZ.BasisZ, placement.RotationRadians));
+                    }
+
+                    IList<GeometryObject> instanced = DirectShape.CreateGeometryInstance(document, defId, placementTransform);
+                    foreach (GeometryObject obj in instanced)
+                    {
+                        geometries.Add(obj);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"Skipped one instanced marker of '{plan.ApplicationDataId}': {ex.Message}");
+            }
+        }
+
         if (geometries.Count == 0)
         {
-            warnings.Add($"Skipped '{plan.ApplicationDataId}' because Revit could not create a valid extrusion solid.");
+            warnings.Add($"Skipped '{plan.ApplicationDataId}' because Revit could not create any valid showcase geometry.");
             return false;
         }
 
         return true;
     }
 
-    private static bool TryCreateDirectShape(
+    private static string? EnsureInstancedMarkerPrototype(
+        Document document,
+        ElementId categoryId,
+        ShowcaseMarkerPlacement placement,
+        string? materialName,
+        SolidOptions solidOptions,
+        double minSegmentLengthFeet,
+        DirectShapeLibrary library,
+        Dictionary<string, string> prototypeDefIdsByKey)
+    {
+        int radiusMm = (int)Math.Round(ShowcaseCoordinateTransform.FeetToMeters(placement.BaseRadiusFeet) * 1000d);
+        int heightMm = (int)Math.Round(ShowcaseCoordinateTransform.FeetToMeters(placement.HeightFeet) * 1000d);
+        string matToken = string.IsNullOrWhiteSpace(materialName) ? "Default" : materialName!.Trim();
+        string defId = $"KNZ_FRM_Proto_{placement.ShapeKind}_{matToken}_{radiusMm}_{heightMm}";
+
+        if (prototypeDefIdsByKey.TryGetValue(defId, out string? cached))
+        {
+            return cached;
+        }
+
+        if (library.ContainsType(defId))
+        {
+            prototypeDefIdsByKey[defId] = defId;
+            return defId;
+        }
+
+        List<GeometryObject> prototypeSolids = BuildMarkerPrototypeSolids(placement, solidOptions, minSegmentLengthFeet);
+        if (prototypeSolids.Count == 0)
+        {
+            return null;
+        }
+
+        DirectShapeType dsType = DirectShapeType.Create(document, defId, categoryId);
+        dsType.SetShape(prototypeSolids);
+        library.AddDefinitionType(defId, dsType.Id);
+        prototypeDefIdsByKey[defId] = defId;
+        return defId;
+    }
+
+    /// <summary>
+    /// Builds compact planar marker solids at local origin (0, 0, 0), strictly &lt;= 48 triangles per marker.
+    /// </summary>
+    private static List<GeometryObject> BuildMarkerPrototypeSolids(
+        ShowcaseMarkerPlacement placement,
+        SolidOptions solidOptions,
+        double minSegmentLengthFeet)
+    {
+        List<GeometryObject> solids = new();
+        double r = placement.BaseRadiusFeet;
+        double h = placement.HeightFeet;
+        if (r <= minSegmentLengthFeet || h <= minSegmentLengthFeet)
+        {
+            return solids;
+        }
+
+        switch (placement.ShapeKind)
+        {
+            case ShowcaseMarkerShapeKind.PoiPin:
+            {
+                // 6-sided pedestal (20 tris) + 4-sided lower frustum (12 tris) + 4-sided upper cap (12 tris) = 44 tris
+                double pedH = Math.Max(minSegmentLengthFeet * 2d, h * 0.12d);
+                double midZ = Math.Max(pedH + (minSegmentLengthFeet * 2d), h * 0.72d);
+                TryAddRegularPrism(solids, r, sides: 6, zBaseFeet: 0d, heightFeet: pedH, angleOffset: 0d, solidOptions, minSegmentLengthFeet);
+                TryAddRegularFrustum(solids, r * 0.28d, r * 0.90d, sides: 4, zBottomFeet: pedH, zTopFeet: midZ, angleOffset: Math.PI * 0.25d, solidOptions, minSegmentLengthFeet);
+                TryAddRegularFrustum(solids, r * 0.90d, r * 0.22d, sides: 4, zBottomFeet: midZ, zTopFeet: h, angleOffset: Math.PI * 0.25d, solidOptions, minSegmentLengthFeet);
+                break;
+            }
+
+            case ShowcaseMarkerShapeKind.FindingPuck:
+            {
+                // 8-sided alert puck (28 tris) + 4-sided raised alert spire (12 tris) = 40 tris
+                double puckH = Math.Max(minSegmentLengthFeet * 2d, h * 0.25d);
+                TryAddRegularPrism(solids, r, sides: 8, zBaseFeet: 0d, heightFeet: puckH, angleOffset: 0d, solidOptions, minSegmentLengthFeet);
+                TryAddRegularPrism(solids, Math.Max(minSegmentLengthFeet * 2d, r * 0.24d), sides: 4, zBaseFeet: puckH, heightFeet: Math.Max(minSegmentLengthFeet * 2d, h - puckH), angleOffset: Math.PI * 0.25d, solidOptions, minSegmentLengthFeet);
+                break;
+            }
+
+            case ShowcaseMarkerShapeKind.PoiAttachment:
+            case ShowcaseMarkerShapeKind.NetworkNode:
+            default:
+            {
+                // 6-sided compact disc/collar = 20 tris
+                TryAddRegularPrism(solids, r, sides: 6, zBaseFeet: 0d, heightFeet: h, angleOffset: 0d, solidOptions, minSegmentLengthFeet);
+                break;
+            }
+        }
+
+        return solids;
+    }
+
+    private static void TryAddRegularPrism(
+        List<GeometryObject> target,
+        double radiusFeet,
+        int sides,
+        double zBaseFeet,
+        double heightFeet,
+        double angleOffset,
+        SolidOptions solidOptions,
+        double minSegmentLengthFeet)
+    {
+        if (radiusFeet <= minSegmentLengthFeet || heightFeet <= minSegmentLengthFeet)
+        {
+            return;
+        }
+
+        CurveLoop? loop = BuildRegularHorizontalCurveLoop(radiusFeet, sides, zBaseFeet, angleOffset, minSegmentLengthFeet);
+        if (loop == null)
+        {
+            return;
+        }
+
+        Solid solid = GeometryCreationUtilities.CreateExtrusionGeometry(new[] { loop }, XYZ.BasisZ, heightFeet, solidOptions);
+        if (solid != null && solid.Volume > 1e-9d)
+        {
+            target.Add(solid);
+        }
+    }
+
+    private static void TryAddRegularFrustum(
+        List<GeometryObject> target,
+        double bottomRadiusFeet,
+        double topRadiusFeet,
+        int sides,
+        double zBottomFeet,
+        double zTopFeet,
+        double angleOffset,
+        SolidOptions solidOptions,
+        double minSegmentLengthFeet)
+    {
+        if (bottomRadiusFeet <= minSegmentLengthFeet ||
+            topRadiusFeet <= minSegmentLengthFeet ||
+            (zTopFeet - zBottomFeet) <= minSegmentLengthFeet)
+        {
+            return;
+        }
+
+        CurveLoop? bottomLoop = BuildRegularHorizontalCurveLoop(bottomRadiusFeet, sides, zBottomFeet, angleOffset, minSegmentLengthFeet);
+        CurveLoop? topLoop = BuildRegularHorizontalCurveLoop(topRadiusFeet, sides, zTopFeet, angleOffset, minSegmentLengthFeet);
+        if (bottomLoop == null || topLoop == null)
+        {
+            return;
+        }
+
+        Solid solid = GeometryCreationUtilities.CreateBlendGeometry(bottomLoop, topLoop, vertexPairs: null, solidOptions);
+        if (solid != null && solid.Volume > 1e-9d)
+        {
+            target.Add(solid);
+        }
+    }
+
+    private static CurveLoop? BuildRegularHorizontalCurveLoop(
+        double radiusFeet,
+        int sides,
+        double zFeet,
+        double angleOffset,
+        double minSegmentLengthFeet)
+    {
+        XYZ[] pts = new XYZ[sides];
+        double step = (2d * Math.PI) / sides;
+        for (int i = 0; i < sides; i++)
+        {
+            double angle = angleOffset + (i * step);
+            pts[i] = new XYZ(radiusFeet * Math.Cos(angle), radiusFeet * Math.Sin(angle), zFeet);
+        }
+
+        CurveLoop loop = new();
+        for (int i = 0; i < sides; i++)
+        {
+            XYZ a = pts[i];
+            XYZ b = pts[(i + 1) % sides];
+            if (a.DistanceTo(b) < minSegmentLengthFeet)
+            {
+                return null;
+            }
+
+            loop.Append(Line.CreateBound(a, b));
+        }
+
+        return loop;
+    }
+
+    private static Solid? BuildSweptTubeSolid(
+        ShowcaseSweptTubeSegment tubePlan,
+        double minSegmentLengthFeet,
+        SolidOptions solidOptions)
+    {
+        XYZ start = new(tubePlan.StartFeet.XFeet, tubePlan.StartFeet.YFeet, tubePlan.StartFeet.ZFeet);
+        XYZ end = new(tubePlan.EndFeet.XFeet, tubePlan.EndFeet.YFeet, tubePlan.EndFeet.ZFeet);
+        XYZ delta = end - start;
+        double lengthFeet = delta.GetLength();
+        if (lengthFeet < minSegmentLengthFeet || tubePlan.RadiusFeet <= minSegmentLengthFeet)
+        {
+            return null;
+        }
+
+        XYZ dir = delta / lengthFeet;
+        XYZ refAxis = Math.Abs(dir.Z) < 0.9d ? XYZ.BasisZ : XYZ.BasisX;
+        XYZ u = refAxis.CrossProduct(dir).Normalize();
+        XYZ v = dir.CrossProduct(u).Normalize();
+
+        int sides = Math.Max(3, tubePlan.Sides);
+        XYZ[] ring = new XYZ[sides];
+        double step = (2d * Math.PI) / sides;
+        for (int i = 0; i < sides; i++)
+        {
+            double angle = i * step;
+            double cos = Math.Cos(angle) * tubePlan.RadiusFeet;
+            double sin = Math.Sin(angle) * tubePlan.RadiusFeet;
+            ring[i] = start + (u * cos) + (v * sin);
+        }
+
+        CurveLoop profile = new();
+        for (int i = 0; i < sides; i++)
+        {
+            XYZ a = ring[i];
+            XYZ b = ring[(i + 1) % sides];
+            if (a.DistanceTo(b) < minSegmentLengthFeet)
+            {
+                return null;
+            }
+
+            profile.Append(Line.CreateBound(a, b));
+        }
+
+        return GeometryCreationUtilities.CreateExtrusionGeometry(new[] { profile }, dir, lengthFeet, solidOptions);
+    }
+
+    private static bool TryCreateShowcaseElement(
         Document document,
         ShowcaseElementPlan plan,
         ElementId categoryId,
         ShowcaseParameterRegistry registry,
         double minSegmentLengthFeet,
-        SolidOptions solidOptions,
+        SolidOptions defaultSolidOptions,
+        Dictionary<string, ElementId> materialIdsByName,
+        Dictionary<string, FamilySymbol> poiMarkerSymbols,
+        DirectShapeLibrary directShapeLibrary,
+        Dictionary<string, string> prototypeDefIdsByKey,
         ICollection<string> warnings)
     {
-        if (!TryBuildGeometryObjects(plan, minSegmentLengthFeet, solidOptions, warnings, out List<GeometryObject> geometries))
+        if (TryResolvePoiFamilySymbol(plan, poiMarkerSymbols, out FamilySymbol symbol))
+        {
+            return TryCreatePoiFamilyInstance(document, plan, symbol, registry, warnings);
+        }
+
+        if (!TryBuildGeometryObjects(
+                document,
+                plan,
+                categoryId,
+                minSegmentLengthFeet,
+                defaultSolidOptions,
+                materialIdsByName,
+                directShapeLibrary,
+                prototypeDefIdsByKey,
+                warnings,
+                out List<GeometryObject> geometries))
         {
             return false;
         }
@@ -681,37 +1244,32 @@ public sealed class ShowcaseCompanionBuilder
         }
     }
 
-    private static bool TryUpdateDirectShapeInPlace(
+    private static bool TryCreatePoiFamilyInstance(
         Document document,
-        ElementId existingElementId,
         ShowcaseElementPlan plan,
+        FamilySymbol symbol,
         ShowcaseParameterRegistry registry,
-        double minSegmentLengthFeet,
-        SolidOptions solidOptions,
         ICollection<string> warnings)
     {
-        if (!TryBuildGeometryObjects(plan, minSegmentLengthFeet, solidOptions, warnings, out List<GeometryObject> geometries))
-        {
-            return false;
-        }
-
         using SubTransaction subTransaction = new(document);
         subTransaction.Start();
         try
         {
-            if (document.GetElement(existingElementId) is not DirectShape directShape)
+            if (!symbol.IsActive)
             {
-                subTransaction.RollBack();
-                warnings.Add($"Existing showcase DirectShape '{plan.ApplicationDataId}' (#{existingElementId.Value}) was not found for in-place update.");
-                return false;
+                symbol.Activate();
             }
 
-            directShape.ApplicationId = plan.ApplicationId;
-            directShape.ApplicationDataId = plan.ApplicationDataId;
-            directShape.Name = plan.ElementName;
-            directShape.SetShape(geometries);
+            ShowcaseMarkerPlacement placement = plan.MarkerPlacements[0];
+            XYZ location = new(placement.LocationFeet.XFeet, placement.LocationFeet.YFeet, placement.LocationFeet.ZFeet);
+            FamilyInstance instance = document.Create.NewFamilyInstance(location, symbol, StructuralType.NonStructural);
+            Parameter? comments = instance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+            if (comments != null && !comments.IsReadOnly)
+            {
+                comments.Set(plan.ApplicationDataId);
+            }
 
-            PopulateElementParameters(directShape, plan, registry, warnings);
+            PopulateElementParameters(instance, plan, registry, warnings);
             subTransaction.Commit();
             return true;
         }
@@ -722,22 +1280,202 @@ public sealed class ShowcaseCompanionBuilder
                 subTransaction.RollBack();
             }
 
+            warnings.Add($"Failed to create KNZ_FRM_PoiMarker FamilyInstance '{plan.ApplicationDataId}': {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TryUpdateShowcaseElementInPlace(
+        Document document,
+        ElementId existingElementId,
+        ShowcaseElementPlan plan,
+        ElementId categoryId,
+        ShowcaseParameterRegistry registry,
+        double minSegmentLengthFeet,
+        SolidOptions defaultSolidOptions,
+        Dictionary<string, ElementId> materialIdsByName,
+        Dictionary<string, FamilySymbol> poiMarkerSymbols,
+        DirectShapeLibrary directShapeLibrary,
+        Dictionary<string, string> prototypeDefIdsByKey,
+        ICollection<string> warnings)
+    {
+        Element? existingElement = document.GetElement(existingElementId);
+        if (existingElement is null)
+        {
+            warnings.Add($"Existing showcase element '{plan.ApplicationDataId}' (#{existingElementId.Value}) was not found for in-place update.");
+            return false;
+        }
+
+        bool wantFamilyInstance = TryResolvePoiFamilySymbol(plan, poiMarkerSymbols, out FamilySymbol targetSymbol);
+        if (existingElement is FamilyInstance existingFamilyInstance && wantFamilyInstance)
+        {
+            using SubTransaction subTransaction = new(document);
+            subTransaction.Start();
+            try
+            {
+                if (!targetSymbol.IsActive)
+                {
+                    targetSymbol.Activate();
+                }
+
+                if (existingFamilyInstance.Symbol.Id != targetSymbol.Id)
+                {
+                    existingFamilyInstance.Symbol = targetSymbol;
+                }
+
+                ShowcaseMarkerPlacement placement = plan.MarkerPlacements[0];
+                XYZ targetLoc = new(placement.LocationFeet.XFeet, placement.LocationFeet.YFeet, placement.LocationFeet.ZFeet);
+                if (existingFamilyInstance.Location is LocationPoint locPt)
+                {
+                    XYZ delta = targetLoc - locPt.Point;
+                    if (delta.GetLength() > 1e-6d)
+                    {
+                        ElementTransformUtils.MoveElement(document, existingFamilyInstance.Id, delta);
+                    }
+                }
+
+                Parameter? comments = existingFamilyInstance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+                if (comments != null && !comments.IsReadOnly)
+                {
+                    comments.Set(plan.ApplicationDataId);
+                }
+
+                PopulateElementParameters(existingFamilyInstance, plan, registry, warnings);
+                subTransaction.Commit();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (subTransaction.GetStatus() == TransactionStatus.Started)
+                {
+                    subTransaction.RollBack();
+                }
+
+                warnings.Add($"Failed to update KNZ_FRM_PoiMarker FamilyInstance '{plan.ApplicationDataId}' in-place: {ex.Message}");
+                return false;
+            }
+        }
+
+        if (existingElement is not DirectShape directShape || wantFamilyInstance)
+        {
+            // Representation switched between FamilyInstance and DirectShape -> recreate cleanly.
+            return TryReplaceShowcaseElement(
+                document,
+                existingElementId,
+                plan,
+                categoryId,
+                registry,
+                minSegmentLengthFeet,
+                defaultSolidOptions,
+                materialIdsByName,
+                poiMarkerSymbols,
+                directShapeLibrary,
+                prototypeDefIdsByKey,
+                warnings);
+        }
+
+        if (!TryBuildGeometryObjects(
+                document,
+                plan,
+                categoryId,
+                minSegmentLengthFeet,
+                defaultSolidOptions,
+                materialIdsByName,
+                directShapeLibrary,
+                prototypeDefIdsByKey,
+                warnings,
+                out List<GeometryObject> geometries))
+        {
+            return false;
+        }
+
+        using SubTransaction dsTx = new(document);
+        dsTx.Start();
+        try
+        {
+            directShape.ApplicationId = plan.ApplicationId;
+            directShape.ApplicationDataId = plan.ApplicationDataId;
+            directShape.Name = plan.ElementName;
+            directShape.SetShape(geometries);
+
+            PopulateElementParameters(directShape, plan, registry, warnings);
+            dsTx.Commit();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (dsTx.GetStatus() == TransactionStatus.Started)
+            {
+                dsTx.RollBack();
+            }
+
             warnings.Add($"Failed to update DirectShape '{plan.ApplicationDataId}' in-place: {ex.Message}");
             return false;
         }
     }
 
-    private static bool TryReplaceDirectShape(
+    private static bool TryReplaceShowcaseElement(
         Document document,
         ElementId existingElementId,
         ShowcaseElementPlan plan,
         ElementId newCategoryId,
         ShowcaseParameterRegistry registry,
         double minSegmentLengthFeet,
-        SolidOptions solidOptions,
+        SolidOptions defaultSolidOptions,
+        Dictionary<string, ElementId> materialIdsByName,
+        Dictionary<string, FamilySymbol> poiMarkerSymbols,
+        DirectShapeLibrary directShapeLibrary,
+        Dictionary<string, string> prototypeDefIdsByKey,
         ICollection<string> warnings)
     {
-        if (!TryBuildGeometryObjects(plan, minSegmentLengthFeet, solidOptions, warnings, out List<GeometryObject> geometries))
+        if (TryResolvePoiFamilySymbol(plan, poiMarkerSymbols, out FamilySymbol symbol))
+        {
+            using SubTransaction famTx = new(document);
+            famTx.Start();
+            try
+            {
+                if (!symbol.IsActive)
+                {
+                    symbol.Activate();
+                }
+
+                ShowcaseMarkerPlacement placement = plan.MarkerPlacements[0];
+                XYZ location = new(placement.LocationFeet.XFeet, placement.LocationFeet.YFeet, placement.LocationFeet.ZFeet);
+                FamilyInstance instance = document.Create.NewFamilyInstance(location, symbol, StructuralType.NonStructural);
+                Parameter? comments = instance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+                if (comments != null && !comments.IsReadOnly)
+                {
+                    comments.Set(plan.ApplicationDataId);
+                }
+
+                PopulateElementParameters(instance, plan, registry, warnings);
+                document.Delete(existingElementId);
+                famTx.Commit();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (famTx.GetStatus() == TransactionStatus.Started)
+                {
+                    famTx.RollBack();
+                }
+
+                warnings.Add($"Failed to replace showcase FamilyInstance '{plan.ApplicationDataId}': {ex.Message}");
+                return false;
+            }
+        }
+
+        if (!TryBuildGeometryObjects(
+                document,
+                plan,
+                newCategoryId,
+                minSegmentLengthFeet,
+                defaultSolidOptions,
+                materialIdsByName,
+                directShapeLibrary,
+                prototypeDefIdsByKey,
+                warnings,
+                out List<GeometryObject> geometries))
         {
             return false;
         }
@@ -865,21 +1603,21 @@ public sealed class ShowcaseCompanionBuilder
     }
 
     private static void PopulateElementParameters(
-        DirectShape directShape,
+        Element element,
         ShowcaseElementPlan plan,
         ShowcaseParameterRegistry registry,
         ICollection<string> warnings)
     {
         foreach (ShowcaseParameterAssignment assignment in plan.ParameterAssignments)
         {
-            // Leave explicit SQL/JSON NULL values unset (reconciliation recreates the DirectShape whenever
+            // Leave explicit SQL/JSON NULL values unset (reconciliation recreates the element whenever
             // a previously populated ks_* parameter becomes null, omitted, removed from schema, or retyped).
             if (assignment.IsNull)
             {
                 continue;
             }
 
-            Parameter? param = directShape.get_Parameter(assignment.Parameter.Guid);
+            Parameter? param = element.get_Parameter(assignment.Parameter.Guid);
             if (param is null || param.IsReadOnly)
             {
                 continue;
@@ -936,7 +1674,7 @@ public sealed class ShowcaseCompanionBuilder
 
         if (!string.IsNullOrEmpty(plan.OverflowAttributesJson))
         {
-            Parameter? overflowParam = directShape.get_Parameter(registry.OverflowParameter.Guid);
+            Parameter? overflowParam = element.get_Parameter(registry.OverflowParameter.Guid);
             if (overflowParam is null || overflowParam.IsReadOnly || overflowParam.StorageType != StorageType.String)
             {
                 warnings.Add(

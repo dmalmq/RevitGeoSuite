@@ -20,7 +20,13 @@ public sealed class ShowcaseCompanionBuildResult
         IReadOnlyList<string> warnings,
         int updatedElementCount = 0,
         int replacedElementCount = 0,
-        int deletedElementCount = 0)
+        int deletedElementCount = 0,
+        int poiMarkerCount = 0,
+        int attachmentMarkerCount = 0,
+        int networkLinkCount = 0,
+        int verticalTubeCount = 0,
+        int findingPuckCount = 0,
+        int estimatedTriangleCount = 0)
     {
         Document = document;
         SavedFilePath = savedFilePath;
@@ -35,6 +41,12 @@ public sealed class ShowcaseCompanionBuildResult
         OverflowFeatureCount = overflowFeatureCount;
         CreatedApplicationDataIds = createdApplicationDataIds ?? Array.Empty<string>();
         Warnings = warnings ?? Array.Empty<string>();
+        PoiMarkerCount = poiMarkerCount;
+        AttachmentMarkerCount = attachmentMarkerCount;
+        NetworkLinkCount = networkLinkCount;
+        VerticalTubeCount = verticalTubeCount;
+        FindingPuckCount = findingPuckCount;
+        EstimatedTriangleCount = estimatedTriangleCount;
     }
 
     /// <summary>The companion document (or <c>null</c> if <see cref="ShowcaseCompanionBuildOptions.CloseDocumentAfterSave"/> closed it).</summary>
@@ -63,4 +75,16 @@ public sealed class ShowcaseCompanionBuildResult
     public IReadOnlyList<string> CreatedApplicationDataIds { get; }
 
     public IReadOnlyList<string> Warnings { get; }
+
+    public int PoiMarkerCount { get; }
+
+    public int AttachmentMarkerCount { get; }
+
+    public int NetworkLinkCount { get; }
+
+    public int VerticalTubeCount { get; }
+
+    public int FindingPuckCount { get; }
+
+    public int EstimatedTriangleCount { get; }
 }

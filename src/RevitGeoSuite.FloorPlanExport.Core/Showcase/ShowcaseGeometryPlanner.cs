@@ -122,8 +122,20 @@ public sealed class ShowcaseExtrusionSolid
     public double HeightFeet { get; }
 }
 
+/// <summary>Geometric representation kind for a planned Forma Companion showcase element.</summary>
+public enum ShowcaseElementKind
+{
+    Extrusion,
+    PoiMarker,
+    PoiAttachment,
+    NetworkRibbon,
+    VerticalTube,
+    NetworkNode,
+    FindingPuck,
+}
+
 /// <summary>
-/// Complete Revit-API-free plan for one Forma Companion <c>DirectShape</c> element.
+/// Complete Revit-API-free plan for one Forma Companion showcase element (<c>DirectShape</c> or instanced marker).
 /// Every planned element carries all 4 F2 export-loop isolation markers.
 /// </summary>
 public sealed class ShowcaseElementPlan
@@ -141,7 +153,15 @@ public sealed class ShowcaseElementPlan
         bool isNonOccludingOutlineBand,
         IReadOnlyList<ShowcaseExtrusionSolid> solids,
         IReadOnlyList<ShowcaseParameterAssignment> parameterAssignments,
-        string? overflowAttributesJson)
+        string? overflowAttributesJson,
+        ShowcaseElementKind elementKind = ShowcaseElementKind.Extrusion,
+        string? materialName = null,
+        string? accentMaterialName = null,
+        ShowcaseGeometryProvenance geometryProvenance = ShowcaseGeometryProvenance.Surveyed,
+        IReadOnlyList<ShowcaseMarkerPlacement>? markerPlacements = null,
+        IReadOnlyList<ShowcaseSweptTubeSegment>? tubeSegments = null,
+        IReadOnlyList<ShowcaseExtrusionSolid>? accentSolids = null,
+        int? estimatedTriangleCount = null)
     {
         LayerKind = layerKind;
         SourceLayerName = sourceLayerName ?? throw new ArgumentNullException(nameof(sourceLayerName));
@@ -156,6 +176,14 @@ public sealed class ShowcaseElementPlan
         Solids = solids ?? throw new ArgumentNullException(nameof(solids));
         ParameterAssignments = parameterAssignments ?? throw new ArgumentNullException(nameof(parameterAssignments));
         OverflowAttributesJson = overflowAttributesJson;
+        ElementKind = elementKind;
+        MaterialName = materialName;
+        AccentMaterialName = accentMaterialName;
+        GeometryProvenance = geometryProvenance;
+        MarkerPlacements = markerPlacements ?? Array.Empty<ShowcaseMarkerPlacement>();
+        TubeSegments = tubeSegments ?? Array.Empty<ShowcaseSweptTubeSegment>();
+        AccentSolids = accentSolids ?? Array.Empty<ShowcaseExtrusionSolid>();
+        EstimatedTriangleCount = estimatedTriangleCount ?? ComputeEstimatedTriangleCount(Solids, AccentSolids, MarkerPlacements, TubeSegments);
     }
 
     public ShowcaseLayerKind LayerKind { get; }
@@ -169,7 +197,7 @@ public sealed class ShowcaseElementPlan
     /// <summary>Stable incremental-update key formatted strictly as <c>"&lt;layer&gt;:&lt;key&gt;"</c>.</summary>
     public string ApplicationDataId { get; }
 
-    /// <summary>Element name prefixed with <c>KNZ_FRM_</c> (<c>KNZ_FRM_Unit_*</c>, <c>KNZ_FRM_Opening_*</c>, <c>KNZ_FRM_Fixture_*</c>, <c>KNZ_FRM_LevelBand_*</c>).</summary>
+    /// <summary>Element name prefixed with <c>KNZ_FRM_</c> (<c>KNZ_FRM_Unit_*</c>, <c>KNZ_FRM_PoiMarker_*</c>, <c>KNZ_FRM_NetRibbon_*</c>, etc.).</summary>
     public string ElementName { get; }
 
     /// <summary>Preferred Revit <c>BuiltInCategory</c> name (builder falls back to <c>OST_GenericModel</c> if invalid).</summary>
@@ -188,6 +216,29 @@ public sealed class ShowcaseElementPlan
 
     public string? OverflowAttributesJson { get; }
 
+    public ShowcaseElementKind ElementKind { get; }
+
+    /// <summary>Optional <c>M_KS_*</c> showcase material name for primary geometry.</summary>
+    public string? MaterialName { get; }
+
+    /// <summary>Optional <c>M_KS_*</c> showcase material name for accent geometry (e.g. directional chevrons).</summary>
+    public string? AccentMaterialName { get; }
+
+    /// <summary>Explicit geometric provenance (<c>Surveyed</c> vs <c>Schematic</c>).</summary>
+    public ShowcaseGeometryProvenance GeometryProvenance { get; }
+
+    /// <summary>Instanced 3D marker placements (POI pins, attachments, nodes, finding pucks).</summary>
+    public IReadOnlyList<ShowcaseMarkerPlacement> MarkerPlacements { get; }
+
+    /// <summary>3D swept/extruded cylindrical/hexagonal tube segments (vertical connectors and POI connector stems).</summary>
+    public IReadOnlyList<ShowcaseSweptTubeSegment> TubeSegments { get; }
+
+    /// <summary>Secondary accent extrusions (e.g. one-way directional chevrons on top of network ribbons).</summary>
+    public IReadOnlyList<ShowcaseExtrusionSolid> AccentSolids { get; }
+
+    /// <summary>Deterministic pure-C# triangle count estimate for geometry budget verification.</summary>
+    public int EstimatedTriangleCount { get; }
+
     /// <summary>Builds a <see cref="ShowcaseElementDescriptor"/> for verifying F2's <see cref="ShowcaseExportGuard"/>.</summary>
     public ShowcaseElementDescriptor ToGuardDescriptor(string? sourceDocumentModelRole = ShowcaseExportGuard.ShowcaseModelRole)
     {
@@ -200,13 +251,47 @@ public sealed class ShowcaseElementPlan
             parameterNames.Add(ShowcaseParameterRegistry.OverflowParameterName);
         }
 
+        string? familyName = ElementKind == ShowcaseElementKind.PoiMarker
+            ? ShowcasePoiAndNetworkPlanner.PoiMarkerFamilyName
+            : null;
+
         return new ShowcaseElementDescriptor(
             applicationId: ApplicationId,
-            familyName: null,
+            familyName: familyName,
             typeName: ElementName,
             parameterNames: parameterNames,
             sourceDocumentModelRole: sourceDocumentModelRole,
             categoryName: PreferredCategoryName);
+    }
+
+    public static int ComputeEstimatedTriangleCount(
+        IReadOnlyList<ShowcaseExtrusionSolid> solids,
+        IReadOnlyList<ShowcaseExtrusionSolid> accentSolids,
+        IReadOnlyList<ShowcaseMarkerPlacement> markers,
+        IReadOnlyList<ShowcaseSweptTubeSegment> tubes)
+    {
+        int total = 0;
+        for (int i = 0; i < solids.Count; i++)
+        {
+            total += ShowcaseGeometryPlanner.EstimateExtrusionTriangles(solids[i]);
+        }
+
+        for (int i = 0; i < accentSolids.Count; i++)
+        {
+            total += ShowcaseGeometryPlanner.EstimateExtrusionTriangles(accentSolids[i]);
+        }
+
+        for (int i = 0; i < markers.Count; i++)
+        {
+            total += markers[i].EstimatedTriangles;
+        }
+
+        for (int i = 0; i < tubes.Count; i++)
+        {
+            total += tubes[i].EstimatedTriangles;
+        }
+
+        return total;
     }
 }
 
@@ -893,7 +978,27 @@ public static class ShowcaseGeometryPlanner
         return Math.Sqrt((dx * dx) + (dy * dy));
     }
 
-    private static string SanitizeElementKey(string key)
+    /// <summary>Estimates planar triangle count for a single extruded polygon prism (<c>4n - 4</c> without holes).</summary>
+    public static int EstimateExtrusionTriangles(ShowcaseExtrusionSolid solid)
+    {
+        if (solid is null || solid.OuterRingFeet.Count < 3)
+        {
+            return 0;
+        }
+
+        int totalVertices = solid.OuterRingFeet.Count;
+        int holeCount = solid.InteriorRingsFeet.Count;
+        for (int i = 0; i < holeCount; i++)
+        {
+            totalVertices += solid.InteriorRingsFeet[i].Count;
+        }
+
+        int capTriangles = Math.Max(1, totalVertices + (2 * holeCount) - 2);
+        int sideTriangles = 2 * totalVertices;
+        return (2 * capTriangles) + sideTriangles;
+    }
+
+    internal static string SanitizeElementKey(string key)
     {
         if (string.IsNullOrWhiteSpace(key))
         {
