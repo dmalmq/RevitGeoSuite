@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Operation.Buffer;
@@ -239,6 +240,176 @@ public sealed class ShowcaseElementPlan
     /// <summary>Deterministic pure-C# triangle count estimate for geometry budget verification.</summary>
     public int EstimatedTriangleCount { get; }
 
+    private string? _contentDigest;
+
+    /// <summary>
+    /// Computes a deterministic cross-framework (<c>net48</c> + <c>net10.0</c>) SHA-256 content digest covering
+    /// this element's identity, category, material, complete 3D geometry, parameter assignments, and overflow JSON.
+    /// Used by <see cref="ShowcaseElementReconciler"/> for idempotent <c>SkipUnchanged</c> refreshes.
+    /// </summary>
+    public string ComputeContentDigest()
+    {
+        if (_contentDigest != null)
+        {
+            return _contentDigest;
+        }
+
+        StringBuilder sb = new(512);
+        sb.Append("v1|")
+            .Append(ApplicationId).Append('|')
+            .Append(ApplicationDataId).Append('|')
+            .Append(ElementName).Append('|')
+            .Append(PreferredCategoryName).Append('|')
+            .Append((int)LayerKind).Append('|')
+            .Append((int)ElementKind).Append('|')
+            .Append(IsNonOccludingOutlineBand ? '1' : '0').Append('|')
+            .Append((int)GeometryProvenance).Append('|')
+            .Append(MaterialName ?? string.Empty).Append('|')
+            .Append(AccentMaterialName ?? string.Empty).Append('|');
+
+        AppendSolidsDigest(sb, "S", Solids);
+        AppendSolidsDigest(sb, "A", AccentSolids);
+        AppendMarkersDigest(sb, MarkerPlacements);
+        AppendTubesDigest(sb, TubeSegments);
+
+        sb.Append("|P:");
+        foreach (ShowcaseParameterAssignment assignment in ParameterAssignments
+                     .OrderBy(a => a.Parameter.Guid)
+                     .ThenBy(a => a.Parameter.Name, StringComparer.Ordinal))
+        {
+            sb.Append(assignment.Parameter.Guid.ToString("N")).Append('=')
+                .Append((int)assignment.Parameter.DataType).Append(',')
+                .Append(assignment.IsNull ? 'N' : assignment.IsEmptyString ? 'E' : 'V').Append(',')
+                .Append(assignment.IsTextFallback ? 'F' : 'D').Append(',');
+
+            if (!assignment.IsNull)
+            {
+                switch (assignment.Parameter.DataType)
+                {
+                    case ShowcaseParameterDataType.Integer:
+                    case ShowcaseParameterDataType.YesNo:
+                        sb.Append(assignment.IsTextFallback
+                            ? EscapeDigestText(assignment.TextValue)
+                            : assignment.Int32Value.ToString(CultureInfo.InvariantCulture));
+                        break;
+                    case ShowcaseParameterDataType.Number:
+                        sb.Append(assignment.IsTextFallback
+                            ? EscapeDigestText(assignment.TextValue)
+                            : ShowcaseSnapshotReader.FormatRyuDouble(assignment.DoubleValue));
+                        break;
+                    case ShowcaseParameterDataType.Text:
+                    default:
+                        sb.Append(EscapeDigestText(assignment.TextValue));
+                        break;
+                }
+            }
+
+            sb.Append(';');
+        }
+
+        sb.Append("|O:");
+        if (!string.IsNullOrEmpty(OverflowAttributesJson))
+        {
+            sb.Append(OverflowAttributesJson!.Length.ToString(CultureInfo.InvariantCulture))
+                .Append(':')
+                .Append(OverflowAttributesJson);
+        }
+
+        byte[] utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(sb.ToString());
+        using SHA256 sha256 = SHA256.Create();
+        byte[] hash = sha256.ComputeHash(utf8);
+        StringBuilder hex = new(hash.Length * 2);
+        for (int i = 0; i < hash.Length; i++)
+        {
+            hex.Append(hash[i].ToString("x2", CultureInfo.InvariantCulture));
+        }
+
+        _contentDigest = hex.ToString();
+        return _contentDigest;
+    }
+
+    private static void AppendSolidsDigest(StringBuilder sb, string tag, IReadOnlyList<ShowcaseExtrusionSolid> solids)
+    {
+        sb.Append('|').Append(tag).Append('[').Append(solids.Count.ToString(CultureInfo.InvariantCulture)).Append("]:");
+        for (int i = 0; i < solids.Count; i++)
+        {
+            ShowcaseExtrusionSolid solid = solids[i];
+            sb.Append('(')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(solid.BaseElevationFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(solid.HeightFeet)).Append('|');
+            AppendRingDigest(sb, solid.OuterRingFeet);
+            for (int h = 0; h < solid.InteriorRingsFeet.Count; h++)
+            {
+                sb.Append('#');
+                AppendRingDigest(sb, solid.InteriorRingsFeet[h]);
+            }
+
+            sb.Append(')');
+        }
+    }
+
+    private static void AppendRingDigest(StringBuilder sb, IReadOnlyList<Point2D> ring)
+    {
+        for (int i = 0; i < ring.Count; i++)
+        {
+            if (i > 0)
+            {
+                sb.Append(';');
+            }
+
+            sb.Append(ShowcaseSnapshotReader.FormatRyuDouble(ring[i].X))
+                .Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(ring[i].Y));
+        }
+    }
+
+    private static void AppendMarkersDigest(StringBuilder sb, IReadOnlyList<ShowcaseMarkerPlacement> markers)
+    {
+        sb.Append("|M[").Append(markers.Count.ToString(CultureInfo.InvariantCulture)).Append("]:");
+        for (int i = 0; i < markers.Count; i++)
+        {
+            ShowcaseMarkerPlacement m = markers[i];
+            sb.Append('(')
+                .Append((int)m.ShapeKind).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(m.LocationFeet.XFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(m.LocationFeet.YFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(m.LocationFeet.ZFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(m.BaseRadiusFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(m.HeightFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(m.RotationRadians))
+                .Append(')');
+        }
+    }
+
+    private static void AppendTubesDigest(StringBuilder sb, IReadOnlyList<ShowcaseSweptTubeSegment> tubes)
+    {
+        sb.Append("|T[").Append(tubes.Count.ToString(CultureInfo.InvariantCulture)).Append("]:");
+        for (int i = 0; i < tubes.Count; i++)
+        {
+            ShowcaseSweptTubeSegment t = tubes[i];
+            sb.Append('(')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(t.StartFeet.XFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(t.StartFeet.YFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(t.StartFeet.ZFeet)).Append("->")
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(t.EndFeet.XFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(t.EndFeet.YFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(t.EndFeet.ZFeet)).Append(',')
+                .Append(ShowcaseSnapshotReader.FormatRyuDouble(t.RadiusFeet)).Append(',')
+                .Append(t.Sides.ToString(CultureInfo.InvariantCulture))
+                .Append(')');
+        }
+    }
+
+    private static string EscapeDigestText(string? value)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        return value.Length.ToString(CultureInfo.InvariantCulture) + ":" + value;
+    }
+
     /// <summary>Builds a <see cref="ShowcaseElementDescriptor"/> for verifying F2's <see cref="ShowcaseExportGuard"/>.</summary>
     public ShowcaseElementDescriptor ToGuardDescriptor(string? sourceDocumentModelRole = ShowcaseExportGuard.ShowcaseModelRole)
     {
@@ -444,9 +615,62 @@ public static class ShowcaseGeometryPlanner
         kind == ShowcaseLayerKind.Fixture ||
         kind == ShowcaseLayerKind.Level;
 
-    /// <summary>Builds the deterministic F5-ready <c>DirectShape.ApplicationDataId</c> (<c>"&lt;layer&gt;:&lt;key&gt;"</c>).</summary>
-    public static string BuildApplicationDataId(string layerName, string featureKey) =>
-        $"{layerName}:{featureKey}";
+    /// <summary>
+    /// Builds the deterministic, collision-free <c>DirectShape.ApplicationDataId</c> for (<paramref name="layerName"/>, <paramref name="featureKey"/>).
+    /// Preserves exact backward-compatible <c>"&lt;layer&gt;:&lt;key&gt;"</c> formatting whenever neither segment contains
+    /// <c>':'</c> or <c>'%'</c>; otherwise percent-escapes <c>'%'</c> (<c>%25</c>) and <c>':'</c> (<c>%3A</c>) in both segments
+    /// so distinct pairs (e.g. <c>("a:b", "c")</c> vs <c>("a", "b:c")</c>) can never collide.
+    /// </summary>
+    public static string BuildApplicationDataId(string layerName, string featureKey)
+    {
+        string layer = layerName ?? string.Empty;
+        string key = featureKey ?? string.Empty;
+        if (!RequiresApplicationDataIdEscaping(layer) && !RequiresApplicationDataIdEscaping(key))
+        {
+            return $"{layer}:{key}";
+        }
+
+        return $"{EscapeApplicationDataIdSegment(layer)}:{EscapeApplicationDataIdSegment(key)}";
+    }
+
+    /// <summary>
+    /// Legacy unescaped <c>"&lt;layer&gt;:&lt;key&gt;"</c> identifier used prior to F5 colon-escaping, retained for
+    /// unambiguous in-place upgrade matching during incremental refresh of pre-F5 companion models.
+    /// </summary>
+    public static string BuildLegacyApplicationDataId(string layerName, string featureKey) =>
+        $"{layerName ?? string.Empty}:{featureKey ?? string.Empty}";
+
+    /// <summary>Escapes <c>'%'</c> and <c>':'</c> in one <c>ApplicationDataId</c> segment so the delimiter is unambiguous.</summary>
+    public static string EscapeApplicationDataIdSegment(string segment)
+    {
+        if (string.IsNullOrEmpty(segment) || !RequiresApplicationDataIdEscaping(segment))
+        {
+            return segment ?? string.Empty;
+        }
+
+        StringBuilder sb = new(segment.Length + 6);
+        for (int i = 0; i < segment.Length; i++)
+        {
+            char c = segment[i];
+            if (c == '%')
+            {
+                sb.Append("%25");
+            }
+            else if (c == ':')
+            {
+                sb.Append("%3A");
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static bool RequiresApplicationDataIdEscaping(string segment) =>
+        segment.IndexOf(':') >= 0 || segment.IndexOf('%') >= 0;
 
     /// <summary>Builds a deterministic <c>KNZ_FRM_*</c> element name caught by <see cref="ShowcaseExportGuard"/>.</summary>
     public static string BuildElementName(ShowcaseLayerKind kind, string featureKey)

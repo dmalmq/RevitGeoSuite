@@ -284,6 +284,16 @@ public sealed class ShowcaseParameterRegistry
     public const string FloorKeyParameterName = "ks_floor_key";
     public const string GeometryProvenanceParameterName = "ks_geometry_provenance";
     public const string OverflowParameterName = "ks_attributes_json";
+    public const string SourceHashParameterName = "ks_source_hash";
+    public const string SnapshotHashParameterName = "ks_snapshot_hash";
+
+    /// <summary>Deterministic UUIDv5 GUID for the per-element <c>ks_source_hash</c> incremental refresh digest.</summary>
+    public static readonly Guid SourceHashParameterGuid =
+        ComputeParameterGuid(ShowcaseBuiltInScope, "source_hash", ShowcaseParameterDataType.Text);
+
+    /// <summary>Deterministic UUIDv5 GUID for the Project Information <c>ks_snapshot_hash</c> refresh ledger digest.</summary>
+    public static readonly Guid SnapshotHashParameterGuid =
+        ComputeParameterGuid(ShowcaseBuiltInScope, "snapshot_hash", ShowcaseParameterDataType.Text);
 
     private const string ShowcaseBuiltInScope = "showcase";
     private const string SharedAttributeScope = "shared";
@@ -458,6 +468,12 @@ public sealed class ShowcaseParameterRegistry
             isOverflowContainer: true);
         usedParameterNames.Add(OverflowParameterName);
         usedGuids.Add(overflowParameter.Guid);
+
+        // Also reserve companion incremental-refresh tracking parameters so user GIS columns cannot collide with them.
+        usedParameterNames.Add(SourceHashParameterName);
+        usedGuids.Add(SourceHashParameterGuid);
+        usedParameterNames.Add(SnapshotHashParameterName);
+        usedGuids.Add(SnapshotHashParameterGuid);
 
         // Collect all (layerKind, fieldName) candidates deterministically across EVERY layer and EVERY feature value
         // so mixed-type declared or undeclared columns widen losslessly to Text instead of staying pinned to feature 0.
@@ -686,10 +702,13 @@ public sealed class ShowcaseParameterRegistry
 
     /// <summary>
     /// Generates standard Revit shared-parameter file text (<c>*META</c>, <c>*GROUP</c>, <c>*PARAM</c>)
-    /// with deterministic UUIDv5 GUIDs, LF line endings, and optional inclusion of the frozen
-    /// <c>gis_model_role</c> parameter so a companion builder can bind everything in a single pass.
+    /// with deterministic UUIDv5 GUIDs, LF line endings, optional inclusion of the frozen
+    /// <c>gis_model_role</c> parameter, and optional companion refresh tracking parameters
+    /// (<c>ks_source_hash</c>, <c>ks_snapshot_hash</c>) so a companion builder can bind everything in one pass.
     /// </summary>
-    public string ToSharedParameterFileText(bool includeGisModelRoleParameter = false)
+    public string ToSharedParameterFileText(
+        bool includeGisModelRoleParameter = false,
+        bool includeCompanionTrackingParameters = false)
     {
         StringBuilder builder = new();
         builder.Append("# This is a Revit shared parameter file.\n");
@@ -707,17 +726,13 @@ public sealed class ShowcaseParameterRegistry
 
         foreach (ShowcaseParameterDefinition def in AllParameters)
         {
-            int hideWhenNoValue = def.IsBuiltIn ? 0 : 1;
-            builder
-                .Append("PARAM\t")
-                .Append(def.Guid.ToString("D"))
-                .Append('\t').Append(def.Name)
-                .Append('\t').Append(def.RevitDataTypeToken)
-                .Append("\t\t1\t1\t")
-                .Append(SanitizeTsvDescription(def.Description))
-                .Append("\t0\t")
-                .Append(hideWhenNoValue)
-                .Append('\n');
+            AppendShowcaseParamLine(builder, def);
+        }
+
+        if (includeCompanionTrackingParameters)
+        {
+            AppendShowcaseParamLine(builder, CreateSourceHashDefinition());
+            AppendShowcaseParamLine(builder, CreateSnapshotHashDefinition());
         }
 
         if (includeGisModelRoleParameter &&
@@ -735,6 +750,21 @@ public sealed class ShowcaseParameterRegistry
         }
 
         return builder.ToString();
+    }
+
+    private static void AppendShowcaseParamLine(StringBuilder builder, ShowcaseParameterDefinition def)
+    {
+        int hideWhenNoValue = def.IsBuiltIn ? 0 : 1;
+        builder
+            .Append("PARAM\t")
+            .Append(def.Guid.ToString("D"))
+            .Append('\t').Append(def.Name)
+            .Append('\t').Append(def.RevitDataTypeToken)
+            .Append("\t\t1\t1\t")
+            .Append(SanitizeTsvDescription(def.Description))
+            .Append("\t0\t")
+            .Append(hideWhenNoValue)
+            .Append('\n');
     }
 
     /// <summary>Sanitizes a source column name into a deterministic ASCII lowercase token suitable for <c>ks_&lt;token&gt;</c>.</summary>
@@ -868,6 +898,18 @@ public sealed class ShowcaseParameterRegistry
             GeometryProvenanceParameterName,
             "geometry_provenance",
             "Explicit geometry provenance ('surveyed' or 'schematic') recorded for showcase markers and network elements.");
+
+    public static ShowcaseParameterDefinition CreateSourceHashDefinition() =>
+        CreateBuiltInDefinition(
+            SourceHashParameterName,
+            "source_hash",
+            "Deterministic SHA-256 content digest of planned geometry and attributes for idempotent incremental refresh.");
+
+    public static ShowcaseParameterDefinition CreateSnapshotHashDefinition() =>
+        CreateBuiltInDefinition(
+            SnapshotHashParameterName,
+            "snapshot_hash",
+            "Last applied Kanizu showcase snapshot contentHash recorded on companion Project Information.");
 
     private static ShowcaseParameterDefinition CreateBuiltInDefinition(string name, string seedField, string description) =>
         new(

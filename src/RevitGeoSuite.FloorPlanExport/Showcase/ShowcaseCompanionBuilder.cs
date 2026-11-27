@@ -86,9 +86,38 @@ public sealed class ShowcaseCompanionBuilder
                 SaveAsOptions saveAsOptions = new()
                 {
                     OverwriteExistingFile = effectiveOptions.OverwriteExistingFile,
+                    Compact = true,
                 };
                 companionDocument.SaveAs(targetPath, saveAsOptions);
                 savedPath = targetPath;
+            }
+
+            ShowcaseBudgetReport? finalBudgetReport = buildResult.BudgetReport;
+            List<string> finalWarnings = new(buildResult.Warnings);
+            if (savedPath != null && File.Exists(savedPath) && finalBudgetReport != null)
+            {
+                long fileSizeBytes = new FileInfo(savedPath).Length;
+                ShowcaseBudgetReport postSaveBudget = EvaluatePostSaveFileSizeBudget(
+                    finalBudgetReport,
+                    fileSizeBytes,
+                    effectiveOptions.BudgetLimits);
+                ShowcaseBudgetEnforcementMode enforcementMode = effectiveOptions.ResolveEffectiveBudgetEnforcementMode();
+                if (enforcementMode == ShowcaseBudgetEnforcementMode.FailOnHardLimit && !postSaveBudget.Passed)
+                {
+                    throw new ShowcaseBudgetExceededException(postSaveBudget);
+                }
+
+                if (enforcementMode != ShowcaseBudgetEnforcementMode.ReportOnly)
+                {
+                    ShowcaseBudgetMetricResult? sizeMetric = postSaveBudget.Metrics
+                        .FirstOrDefault(m => string.Equals(m.MetricId, ShowcaseBudgetEvaluator.OutputFileSizeMetricId, StringComparison.Ordinal));
+                    if (sizeMetric != null && sizeMetric.Severity != ShowcaseBudgetSeverity.Ok)
+                    {
+                        finalWarnings.Add($"[Budget:{sizeMetric.Severity}] {sizeMetric.MessageEn}");
+                    }
+                }
+
+                finalBudgetReport = postSaveBudget;
             }
 
             Document? returnedDocument = companionDocument;
@@ -109,7 +138,7 @@ public sealed class ShowcaseCompanionBuilder
                 buildResult.BoundParameterCount,
                 buildResult.OverflowFeatureCount,
                 buildResult.CreatedApplicationDataIds,
-                buildResult.Warnings,
+                finalWarnings,
                 buildResult.UpdatedElementCount,
                 buildResult.ReplacedElementCount,
                 buildResult.DeletedElementCount,
@@ -118,7 +147,14 @@ public sealed class ShowcaseCompanionBuilder
                 buildResult.NetworkLinkCount,
                 buildResult.VerticalTubeCount,
                 buildResult.FindingPuckCount,
-                buildResult.EstimatedTriangleCount);
+                buildResult.EstimatedTriangleCount,
+                buildResult.UnchangedElementCount,
+                buildResult.RefreshSummary,
+                buildResult.ViewSetPlan,
+                buildResult.ConfiguredViewNames,
+                buildResult.DeletedStaleViewCount,
+                buildResult.PublishViewSetConfigured,
+                finalBudgetReport);
         }
         finally
         {
@@ -238,19 +274,49 @@ public sealed class ShowcaseCompanionBuilder
         allPlannedElements.AddRange(f3Plan.Elements);
         allPlannedElements.AddRange(f4Plan.Elements);
 
+        // Assert global ApplicationDataId uniqueness across F3 + F4 plans before mutating Revit.
+        ShowcaseElementReconciler.ValidateUniqueApplicationDataIds(allPlannedElements);
+
         List<string> warnings = new(f3Plan.Warnings.Count + f4Plan.Warnings.Count);
         warnings.AddRange(f3Plan.Warnings);
         warnings.AddRange(f4Plan.Warnings);
 
+        // Evaluate Forma triangle / element / marker / parameter budgets BEFORE opening a Revit transaction
+        // so FailOnHardLimit aborts cleanly without leaving partial mutations.
+        ShowcaseBudgetReport preBuildBudget = ShowcaseBudgetEvaluator.Evaluate(
+            allPlannedElements,
+            registry,
+            outputFileSizeBytes: null,
+            options.BudgetLimits);
+        ShowcaseBudgetEvaluator.ApplyEnforcement(
+            preBuildBudget,
+            options.ResolveEffectiveBudgetEnforcementMode(),
+            warnings);
+
+        FormaPublishViewSetPlan? viewSetPlan = options.ConfigureFormaPublishViews
+            ? ShowcaseViewPlanner.Plan(snapshot, transform, allPlannedElements, options.ViewOptions)
+            : null;
+        if (viewSetPlan != null && viewSetPlan.Warnings.Count > 0)
+        {
+            warnings.AddRange(viewSetPlan.Warnings);
+        }
+
         List<string> activeAppDataIds = new();
+        List<string> preservedUniqueIds = new();
+        List<ShowcaseReplacedUniqueIdEntry> replacedUniqueIds = new();
         int createdCount = 0;
+        int unchangedCount = 0;
         int updatedCount = 0;
-        int replacedCount = 0;
+        int replacedCategoryChangedCount = 0;
+        int replacedParametersClearedCount = 0;
+        int replacedRepresentationChangedCount = 0;
         int deletedCount = 0;
         int skippedCount = 0;
         int boundParamCount = 0;
         int overflowFeatureCount = 0;
         int totalEstimatedTriangles = allPlannedElements.Sum(e => e.EstimatedTriangleCount);
+        string? priorSnapshotHash = null;
+        ShowcaseViewBuildResult? viewBuildResult = null;
 
         ExecuteInTransaction(document, () =>
         {
@@ -258,6 +324,8 @@ public sealed class ShowcaseCompanionBuilder
             {
                 ConfigureLocalizedProjectPosition(document, transform);
             }
+
+            priorSnapshotHash = ReadSnapshotHash(document);
 
             boundParamCount = BindCompanionSharedParameters(document, registry, warnings);
             document.Regenerate();
@@ -285,7 +353,8 @@ public sealed class ShowcaseCompanionBuilder
                 .ToArray();
 
             // Reconcile existing Kanizu.Showcase DirectShapes & KNZ_FRM_PoiMarker FamilyInstances by ApplicationDataId
-            // so refreshes update in-place, replace when category/parameters changed, and delete stale features.
+            // so unchanged elements are skipped (zero writes), edits update in-place preserving Revit UniqueIds &
+            // Forma comments, category/parameter/representation changes recreate cleanly, and stale features are deleted.
             IReadOnlyList<ShowcaseExistingElementInfo> existingShowcase = CollectExistingShowcaseElements(document, registry);
             Dictionary<string, ElementId> resolvedCategoryIdsByPref = new(StringComparer.Ordinal);
             string ResolveCategoryKey(ShowcaseElementPlan p)
@@ -299,10 +368,16 @@ public sealed class ShowcaseCompanionBuilder
                 return FormatCategoryKey(resolvedId);
             }
 
+            ShowcaseElementRepresentationKind ResolveRepresentationKind(ShowcaseElementPlan p) =>
+                TryResolvePoiFamilySymbol(p, poiMarkerSymbols, out _)
+                    ? ShowcaseElementRepresentationKind.FamilyInstance
+                    : ShowcaseElementRepresentationKind.DirectShape;
+
             ShowcaseReconciliationPlan reconciliation = ShowcaseElementReconciler.BuildPlan(
                 allPlannedElements,
                 existingShowcase,
-                ResolveCategoryKey);
+                ResolveCategoryKey,
+                ResolveRepresentationKind);
 
             Dictionary<string, string> prototypeDefIdsByKey = new(StringComparer.Ordinal);
             DirectShapeLibrary directShapeLibrary = DirectShapeLibrary.GetDirectShapeLibrary(document);
@@ -312,6 +387,24 @@ public sealed class ShowcaseCompanionBuilder
             {
                 switch (step.Action)
                 {
+                    case ShowcaseReconciliationActionKind.SkipUnchanged:
+                    {
+                        ShowcaseElementPlan elementPlan = step.TargetPlan!;
+                        unchangedCount++;
+                        activeAppDataIds.Add(elementPlan.ApplicationDataId);
+                        if (!string.IsNullOrEmpty(step.ExistingUniqueId))
+                        {
+                            preservedUniqueIds.Add(step.ExistingUniqueId!);
+                        }
+
+                        if (!string.IsNullOrEmpty(elementPlan.OverflowAttributesJson))
+                        {
+                            overflowFeatureCount++;
+                        }
+
+                        break;
+                    }
+
                     case ShowcaseReconciliationActionKind.Create:
                     {
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
@@ -332,7 +425,8 @@ public sealed class ShowcaseCompanionBuilder
                                 directShapeLibrary,
                                 existingDirectShapeTypes,
                                 prototypeDefIdsByKey,
-                                warnings))
+                                warnings,
+                                out _))
                         {
                             skippedCount++;
                             continue;
@@ -371,7 +465,8 @@ public sealed class ShowcaseCompanionBuilder
                                 existingDirectShapeTypes,
                                 prototypeDefIdsByKey,
                                 warnings,
-                                out bool wasReplaced))
+                                out bool wasReplaced,
+                                out string? resultingUniqueId))
                         {
                             skippedCount++;
                             continue;
@@ -379,11 +474,21 @@ public sealed class ShowcaseCompanionBuilder
 
                         if (wasReplaced)
                         {
-                            replacedCount++;
+                            replacedRepresentationChangedCount++;
+                            replacedUniqueIds.Add(new ShowcaseReplacedUniqueIdEntry(
+                                elementPlan.ApplicationDataId,
+                                step.ExistingUniqueId,
+                                resultingUniqueId,
+                                ShowcaseReconciliationActionKind.ReplaceRepresentationChanged));
                         }
                         else
                         {
                             updatedCount++;
+                            string? preservedUid = resultingUniqueId ?? step.ExistingUniqueId;
+                            if (!string.IsNullOrEmpty(preservedUid))
+                            {
+                                preservedUniqueIds.Add(preservedUid!);
+                            }
                         }
 
                         activeAppDataIds.Add(elementPlan.ApplicationDataId);
@@ -397,6 +502,7 @@ public sealed class ShowcaseCompanionBuilder
 
                     case ShowcaseReconciliationActionKind.ReplaceCategoryChanged:
                     case ShowcaseReconciliationActionKind.ReplaceParametersCleared:
+                    case ShowcaseReconciliationActionKind.ReplaceRepresentationChanged:
                     {
                         ShowcaseElementPlan elementPlan = step.TargetPlan!;
                         ElementId existingId = new(step.ExistingElementId!.Value);
@@ -418,13 +524,32 @@ public sealed class ShowcaseCompanionBuilder
                                 directShapeLibrary,
                                 existingDirectShapeTypes,
                                 prototypeDefIdsByKey,
-                                warnings))
+                                warnings,
+                                out string? newUniqueId))
                         {
                             skippedCount++;
                             continue;
                         }
 
-                        replacedCount++;
+                        if (step.Action == ShowcaseReconciliationActionKind.ReplaceCategoryChanged)
+                        {
+                            replacedCategoryChangedCount++;
+                        }
+                        else if (step.Action == ShowcaseReconciliationActionKind.ReplaceParametersCleared)
+                        {
+                            replacedParametersClearedCount++;
+                        }
+                        else
+                        {
+                            replacedRepresentationChangedCount++;
+                        }
+
+                        replacedUniqueIds.Add(new ShowcaseReplacedUniqueIdEntry(
+                            elementPlan.ApplicationDataId,
+                            step.ExistingUniqueId,
+                            newUniqueId,
+                            step.Action));
+
                         activeAppDataIds.Add(elementPlan.ApplicationDataId);
                         if (!string.IsNullOrEmpty(elementPlan.OverflowAttributesJson))
                         {
@@ -459,7 +584,33 @@ public sealed class ShowcaseCompanionBuilder
                     warnings.Add($"Failed to delete {staleIdsToDelete.Count} stale showcase element(s): {ex.Message}");
                 }
             }
+
+            StampSnapshotHash(document, snapshot.ContentHash, warnings);
+
+            if (viewSetPlan != null)
+            {
+                viewBuildResult = ShowcaseViewBuilder.ApplyPublishViews(document, viewSetPlan, warnings);
+            }
         });
+
+        int totalReplacedCount =
+            replacedCategoryChangedCount +
+            replacedParametersClearedCount +
+            replacedRepresentationChangedCount;
+
+        ShowcaseRefreshSummary refreshSummary = new(
+            priorSnapshotHash,
+            snapshot.ContentHash,
+            createdCount,
+            updatedCount,
+            unchangedCount,
+            replacedCategoryChangedCount,
+            replacedParametersClearedCount,
+            replacedRepresentationChangedCount,
+            deletedCount,
+            skippedCount,
+            preservedUniqueIds,
+            replacedUniqueIds);
 
         return new ShowcaseCompanionBuildResult(
             document,
@@ -473,14 +624,21 @@ public sealed class ShowcaseCompanionBuilder
             activeAppDataIds,
             warnings,
             updatedCount,
-            replacedCount,
+            totalReplacedCount,
             deletedCount,
             f4Plan.PoiMarkerCount,
             f4Plan.AttachmentMarkerCount,
             f4Plan.HorizontalLinkCount,
             f4Plan.VerticalTubeCount,
             f4Plan.FindingPuckCount,
-            totalEstimatedTriangles);
+            totalEstimatedTriangles,
+            unchangedCount,
+            refreshSummary,
+            viewSetPlan,
+            viewBuildResult?.ConfiguredViewNames ?? Array.Empty<string>(),
+            viewBuildResult?.DeletedStaleViewCount ?? 0,
+            viewBuildResult?.PublishViewSetConfigured ?? false,
+            preBuildBudget);
     }
 
     private static void ConfigureLocalizedProjectPosition(Document document, ShowcaseCoordinateTransform transform)
@@ -491,6 +649,57 @@ public sealed class ShowcaseCompanionBuilder
             transform.OriginElevationMeters * ShowcaseCoordinateTransform.MetersToFeetFactor,
             transform.RotationRadians);
         document.ActiveProjectLocation.SetProjectPosition(XYZ.Zero, projectPosition);
+    }
+
+    private static ShowcaseBudgetReport EvaluatePostSaveFileSizeBudget(
+        ShowcaseBudgetReport preSaveReport,
+        long fileSizeBytes,
+        ShowcaseBudgetLimits? limits) =>
+        ShowcaseBudgetEvaluator.WithOutputFileSize(preSaveReport, fileSizeBytes, limits);
+
+    private static string? ReadSnapshotHash(Document document)
+    {
+        Parameter? param = document.ProjectInformation?.get_Parameter(ShowcaseParameterRegistry.SnapshotHashParameterGuid);
+        if (param is null || !param.HasValue || param.StorageType != StorageType.String)
+        {
+            return null;
+        }
+
+        string? value = param.AsString();
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
+    }
+
+    private static void StampSnapshotHash(Document document, string snapshotContentHash, ICollection<string> warnings)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotContentHash))
+        {
+            return;
+        }
+
+        Parameter? param = document.ProjectInformation?.get_Parameter(ShowcaseParameterRegistry.SnapshotHashParameterGuid);
+        if (param is null || param.IsReadOnly || param.StorageType != StorageType.String)
+        {
+            warnings.Add(
+                $"Parameter '{ShowcaseParameterRegistry.SnapshotHashParameterName}' is not bound on Project Information; snapshot ledger hash was not persisted.");
+            return;
+        }
+
+        if (!param.Set(snapshotContentHash))
+        {
+            warnings.Add($"Revit refused to write '{ShowcaseParameterRegistry.SnapshotHashParameterName}' on Project Information.");
+        }
+    }
+
+    private static string? ReadElementSourceHash(Element element)
+    {
+        Parameter? param = element.get_Parameter(ShowcaseParameterRegistry.SourceHashParameterGuid);
+        if (param is null || !param.HasValue || param.StorageType != StorageType.String)
+        {
+            return null;
+        }
+
+        string? value = param.AsString();
+        return string.IsNullOrWhiteSpace(value) ? null : value!.Trim();
     }
 
     private static IReadOnlyList<ShowcaseExistingElementInfo> CollectExistingShowcaseElements(
@@ -507,11 +716,15 @@ public sealed class ShowcaseCompanionBuilder
 
             string categoryKey = ds.Category != null ? FormatCategoryKey(ds.Category.Id) : string.Empty;
             List<Guid> populatedKsGuids = CollectPopulatedShowcaseParameterGuids(ds);
+            string? sourceHash = ReadElementSourceHash(ds);
             existing.Add(new ShowcaseExistingElementInfo(
                 ds.Id.Value,
                 ds.ApplicationDataId ?? string.Empty,
                 categoryKey,
-                populatedKsGuids));
+                populatedKsGuids,
+                ds.UniqueId,
+                sourceHash,
+                ShowcaseElementRepresentationKind.DirectShape));
         }
 
         Guid? layerGuid = registry.FindByName(ShowcaseParameterRegistry.LayerParameterName)?.Guid;
@@ -527,11 +740,15 @@ public sealed class ShowcaseCompanionBuilder
             string appDataId = ReconstructFamilyInstanceApplicationDataId(fi, layerGuid, keyGuid);
             string categoryKey = fi.Category != null ? FormatCategoryKey(fi.Category.Id) : string.Empty;
             List<Guid> populatedKsGuids = CollectPopulatedShowcaseParameterGuids(fi);
+            string? sourceHash = ReadElementSourceHash(fi);
             existing.Add(new ShowcaseExistingElementInfo(
                 fi.Id.Value,
                 appDataId,
                 categoryKey,
-                populatedKsGuids));
+                populatedKsGuids,
+                fi.UniqueId,
+                sourceHash,
+                ShowcaseElementRepresentationKind.FamilyInstance));
         }
 
         return existing;
@@ -563,6 +780,12 @@ public sealed class ShowcaseCompanionBuilder
 
             string? name = param.Definition?.Name;
             if (!ShowcaseExportGuard.IsShowcaseParameterName(name))
+            {
+                continue;
+            }
+
+            if (param.GUID == ShowcaseParameterRegistry.SourceHashParameterGuid ||
+                param.GUID == ShowcaseParameterRegistry.SnapshotHashParameterGuid)
             {
                 continue;
             }
@@ -700,7 +923,9 @@ public sealed class ShowcaseCompanionBuilder
         ICollection<string> warnings)
     {
         Application application = document.Application;
-        string sharedParamText = registry.ToSharedParameterFileText(includeGisModelRoleParameter: true);
+        string sharedParamText = registry.ToSharedParameterFileText(
+            includeGisModelRoleParameter: true,
+            includeCompanionTrackingParameters: true);
         string tempFilePath = Path.Combine(
             Path.GetTempPath(),
             $"KanizuShowcase.SharedParameters.{Guid.NewGuid():N}.txt");
@@ -744,12 +969,29 @@ public sealed class ShowcaseCompanionBuilder
                 }
             }
 
-            // 2. Bind all deterministic UUIDv5 ks_* parameters (+ ks_attributes_json) onto DirectShape target categories.
+            // 2. Bind all deterministic UUIDv5 ks_* parameters (+ ks_attributes_json + ks_source_hash) onto DirectShape/marker categories,
+            //    and ks_snapshot_hash onto Project Information for the companion refresh ledger.
             DefinitionGroup? showcaseGroup = defFile.Groups.get_Item(ShowcaseParameterRegistry.ParameterGroupName);
             if (showcaseGroup is null)
             {
                 throw new InvalidOperationException(
                     $"Generated shared parameter file is missing group '{ShowcaseParameterRegistry.ParameterGroupName}'.");
+            }
+
+            if (projectInfoCategory != null && projectInfoCategory.AllowsBoundParameters)
+            {
+                ExternalDefinition? snapshotHashDef = showcaseGroup.Definitions.get_Item(ShowcaseParameterRegistry.SnapshotHashParameterName) as ExternalDefinition;
+                if (snapshotHashDef != null && snapshotHashDef.GUID == ShowcaseParameterRegistry.SnapshotHashParameterGuid)
+                {
+                    if (BindInstanceDefinition(document, application, snapshotHashDef, projectInfoCategories, GroupTypeId.Data))
+                    {
+                        boundCount++;
+                    }
+                    else
+                    {
+                        warnings.Add($"Revit could not bind '{ShowcaseParameterRegistry.SnapshotHashParameterName}' onto Project Information.");
+                    }
+                }
             }
 
             CategorySet directShapeCategories = BuildCompanionDirectShapeCategorySet(document, application);
@@ -759,7 +1001,7 @@ public sealed class ShowcaseCompanionBuilder
                 return boundCount;
             }
 
-            foreach (ShowcaseParameterDefinition paramDef in registry.AllParameters)
+            foreach (ShowcaseParameterDefinition paramDef in registry.AllParameters.Concat(new[] { ShowcaseParameterRegistry.CreateSourceHashDefinition() }))
             {
                 ExternalDefinition? externalDefinition = showcaseGroup.Definitions.get_Item(paramDef.Name) as ExternalDefinition;
                 if (externalDefinition is null || externalDefinition.GUID != paramDef.Guid)
@@ -1290,11 +1532,13 @@ public sealed class ShowcaseCompanionBuilder
         DirectShapeLibrary directShapeLibrary,
         Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes,
         Dictionary<string, string> prototypeDefIdsByKey,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        out string? createdUniqueId)
     {
+        createdUniqueId = null;
         if (TryResolvePoiFamilySymbol(plan, poiMarkerSymbols, out FamilySymbol symbol))
         {
-            return TryCreatePoiFamilyInstance(document, plan, symbol, documentLevels, registry, warnings);
+            return TryCreatePoiFamilyInstance(document, plan, symbol, documentLevels, registry, warnings, out createdUniqueId);
         }
 
         if (!TryBuildGeometryObjects(
@@ -1325,6 +1569,7 @@ public sealed class ShowcaseCompanionBuilder
 
             PopulateElementParameters(directShape, plan, registry, warnings);
             subTransaction.Commit();
+            createdUniqueId = directShape.UniqueId;
             return true;
         }
         catch (Exception ex)
@@ -1473,8 +1718,10 @@ public sealed class ShowcaseCompanionBuilder
         FamilySymbol symbol,
         IReadOnlyList<Level> documentLevels,
         ShowcaseParameterRegistry registry,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        out string? createdUniqueId)
     {
+        createdUniqueId = null;
         using SubTransaction subTransaction = new(document);
         subTransaction.Start();
         try
@@ -1496,6 +1743,7 @@ public sealed class ShowcaseCompanionBuilder
 
             PopulateElementParameters(instance, plan, registry, warnings);
             subTransaction.Commit();
+            createdUniqueId = instance.UniqueId;
             return true;
         }
         catch (Exception ex)
@@ -1525,9 +1773,11 @@ public sealed class ShowcaseCompanionBuilder
         Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes,
         Dictionary<string, string> prototypeDefIdsByKey,
         ICollection<string> warnings,
-        out bool wasReplaced)
+        out bool wasReplaced,
+        out string? resultingUniqueId)
     {
         wasReplaced = false;
+        resultingUniqueId = null;
         Element? existingElement = document.GetElement(existingElementId);
         if (existingElement is null)
         {
@@ -1580,6 +1830,7 @@ public sealed class ShowcaseCompanionBuilder
 
                 PopulateElementParameters(existingFamilyInstance, plan, registry, warnings);
                 subTransaction.Commit();
+                resultingUniqueId = existingFamilyInstance.UniqueId;
                 return true;
             }
             catch (Exception ex)
@@ -1612,7 +1863,8 @@ public sealed class ShowcaseCompanionBuilder
                 directShapeLibrary,
                 existingDirectShapeTypes,
                 prototypeDefIdsByKey,
-                warnings);
+                warnings,
+                out resultingUniqueId);
         }
 
         if (!TryBuildGeometryObjects(
@@ -1642,6 +1894,7 @@ public sealed class ShowcaseCompanionBuilder
 
             PopulateElementParameters(directShape, plan, registry, warnings);
             dsTx.Commit();
+            resultingUniqueId = directShape.UniqueId;
             return true;
         }
         catch (Exception ex)
@@ -1670,8 +1923,10 @@ public sealed class ShowcaseCompanionBuilder
         DirectShapeLibrary directShapeLibrary,
         Dictionary<(string Name, long CategoryId), DirectShapeType> existingDirectShapeTypes,
         Dictionary<string, string> prototypeDefIdsByKey,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        out string? newUniqueId)
     {
+        newUniqueId = null;
         if (TryResolvePoiFamilySymbol(plan, poiMarkerSymbols, out FamilySymbol symbol))
         {
             using SubTransaction famTx = new(document);
@@ -1696,6 +1951,7 @@ public sealed class ShowcaseCompanionBuilder
                 PopulateElementParameters(instance, plan, registry, warnings);
                 document.Delete(existingElementId);
                 famTx.Commit();
+                newUniqueId = instance.UniqueId;
                 return true;
             }
             catch (Exception ex)
@@ -1739,6 +1995,7 @@ public sealed class ShowcaseCompanionBuilder
             PopulateElementParameters(directShape, plan, registry, warnings);
             document.Delete(existingElementId);
             subTransaction.Commit();
+            newUniqueId = directShape.UniqueId;
             return true;
         }
         catch (Exception ex)
@@ -1941,6 +2198,19 @@ public sealed class ShowcaseCompanionBuilder
                     warnings.Add(
                         $"Could not set overflow parameter '{registry.OverflowParameter.Name}' on '{plan.ApplicationDataId}': {ex.Message}");
                 }
+            }
+        }
+        Parameter? sourceHashParam = element.get_Parameter(ShowcaseParameterRegistry.SourceHashParameterGuid);
+        if (sourceHashParam != null && !sourceHashParam.IsReadOnly && sourceHashParam.StorageType == StorageType.String)
+        {
+            try
+            {
+                sourceHashParam.Set(plan.ComputeContentDigest());
+            }
+            catch (Exception ex)
+            {
+                warnings.Add(
+                    $"Could not write '{ShowcaseParameterRegistry.SourceHashParameterName}' on '{plan.ApplicationDataId}': {ex.Message}");
             }
         }
     }
