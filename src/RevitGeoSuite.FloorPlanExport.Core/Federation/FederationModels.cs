@@ -171,7 +171,8 @@ public sealed class FederationLevelSnapshot
         int? ordinal,
         string? shortName,
         double? projectElevationMeters,
-        bool hasFloors = true)
+        bool hasFloors = true,
+        bool isExportLevel = false)
     {
         ElementId = elementId;
         UniqueId = (uniqueId ?? string.Empty).Trim();
@@ -183,6 +184,7 @@ public sealed class FederationLevelSnapshot
             ? projectElevationMeters.Value
             : (double?)null;
         HasFloors = hasFloors;
+        IsExportLevel = isExportLevel;
         TilesLevelKey = LevelKey.Build(Name);
     }
 
@@ -207,6 +209,12 @@ public sealed class FederationLevelSnapshot
     public bool HasElevation => ProjectElevationMeters.HasValue;
 
     public bool HasFloors { get; }
+
+    /// <summary>
+    /// The level of a plan view the model's station GIS export takes, so units carry it as their
+    /// level. Only these levels can lose a <c>to_level</c> match to near-miss drift (KZ-FED-004).
+    /// </summary>
+    public bool IsExportLevel { get; }
 
     /// <summary>Normalized 3D Tiles level group key matching <c>Tiles3DLevelGrouper</c>.</summary>
     public string TilesLevelKey { get; }

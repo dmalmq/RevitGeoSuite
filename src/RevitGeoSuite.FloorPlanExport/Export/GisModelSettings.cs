@@ -298,7 +298,12 @@ public sealed class GisModelSettings
         if (views.Count > 0)
         {
             file.Views = views
-                .Select(view => new GisModelView { UniqueId = view.UniqueId, Name = view.Name ?? string.Empty })
+                .Select(view => new GisModelView
+                {
+                    UniqueId = view.UniqueId,
+                    Name = view.Name ?? string.Empty,
+                    LevelUniqueId = view.GenLevel?.UniqueId,
+                })
                 .ToList();
         }
 

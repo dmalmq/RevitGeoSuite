@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Federation;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.FloorPlanExport.Core.StarterKit;
@@ -69,6 +70,37 @@ public sealed class FederationStampAndSamplerTests
         Assert.Equal("spoke", GisModelFederation.Resolve("spoke", "hub-9", fileBlock)!.Mode);
         Assert.Null(GisModelFederation.Resolve("standalone", null, fileBlock));
         Assert.Equal("satellite", GisModelFederation.FromStamp("satellite", null)!.Mode);
+    }
+
+    [Fact]
+    public void StationExportViewsAreTheListedViewsElseTheGisViewsElseNone()
+    {
+        (string Id, string Name)[] views = { ("v1", "GIS_1FL"), ("v2", "GIS_2FL"), ("v3", "Structural 2SL") };
+        GisModelFile listing = GisModelFile.CreateFromTemplate();
+        listing.Views = new List<GisModelView> { new() { UniqueId = "v2", Name = "GIS_2FL" } };
+
+        Assert.Equal(new[] { "v2" }, Ids(GisModelFile.ChooseStationExportViews(views, v => v.Id, v => v.Name, listing)));
+        Assert.Equal(new[] { "v1", "v2" }, Ids(GisModelFile.ChooseStationExportViews(views, v => v.Id, v => v.Name, null)));
+        Assert.Empty(GisModelFile.ChooseStationExportViews(new[] { views[2] }, v => v.Id, v => v.Name, null));
+        Assert.Equal(new[] { "v3" }, Ids(GisModelFile.ChooseDefaultViews(new[] { views[2] }, v => v.Id, v => v.Name, null)));
+
+        static string[] Ids(IEnumerable<(string Id, string Name)> chosen) => chosen.Select(v => v.Id).ToArray();
+    }
+
+    [Fact]
+    public void ExportLevelsComeFromTheListedViewsLevels()
+    {
+        GisModelFile file = GisModelFile.CreateFromTemplate();
+        file.Views = new List<GisModelView>
+        {
+            new() { UniqueId = "v1", Name = "GIS_1FL", LevelUniqueId = "level-1fl" },
+            new() { UniqueId = "v0", Name = "GIS_old" },
+        };
+
+        GisModelFile reloaded = GisModelFile.Parse(Serialize(file), "test");
+
+        Assert.Equal(new[] { "level-1fl" }, reloaded.ExportLevelUniqueIds().ToArray());
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(Serialize(file), "levelUniqueId"));
     }
 
     [Fact]
@@ -165,5 +197,19 @@ public sealed class FederationStampAndSamplerTests
         double cos = Math.Cos(radians);
         double sin = Math.Sin(radians);
         return p => new FederationPoint3D((p.X * cos) - (p.Y * sin) + dxFeet, (p.X * sin) + (p.Y * cos) + dyFeet, p.Z);
+    }
+
+    private static string Serialize(GisModelFile file)
+    {
+        string path = Path.Combine(Path.GetTempPath(), "kz-gis-model-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            file.Save(path);
+            return File.ReadAllText(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

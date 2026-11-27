@@ -498,6 +498,7 @@ public static class StationFolderFederationCheck
 
         List<FederationLevelSnapshot> result = new();
         HashSet<string> seenLevelIds = new(StringComparer.OrdinalIgnoreCase);
+        ISet<string> exportLevelUniqueIds = gisFile?.ExportLevelUniqueIds() ?? new HashSet<string>();
 
         if (gisFile?.Levels != null && gisFile.Levels.Count > 0)
         {
@@ -529,7 +530,8 @@ public static class StationFolderFederationCheck
                     ordinal: level.Ordinal,
                     shortName: level.ShortName,
                     projectElevationMeters: elevation,
-                    hasFloors: true);
+                    hasFloors: true,
+                    isExportLevel: !string.IsNullOrWhiteSpace(level.UniqueId) && exportLevelUniqueIds.Contains(level.UniqueId.Trim()));
                 result.Add(snap);
                 if (snap.LevelId.Length > 0)
                 {

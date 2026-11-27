@@ -932,7 +932,8 @@ public static class FederationChecker
         RuleCatalogEntry rule = RuleCatalog.Lookup(RuleNearMissLevelDrift);
         List<FederationIssue> issues = new();
         HashSet<string> reportedPairs = new(StringComparer.OrdinalIgnoreCase);
-        List<ModelLevelScope> scopes = CollectModelLevelScopes(snapshot, loadedAuthoringLinks, stationAuthoringModels, isStationOnly);
+        List<FederationLinkSnapshot> exportedLinks = loadedAuthoringLinks.Where(link => link.IsIncludedInHubExport).ToList();
+        List<ModelLevelScope> scopes = CollectModelLevelScopes(snapshot, exportedLinks, stationAuthoringModels, isStationOnly);
 
         for (int i = 0; i < scopes.Count; i++)
         {
@@ -1004,11 +1005,12 @@ public static class FederationChecker
     }
 
     /// <summary>
-    /// Only levels that carry floors or a <c>level_id</c> are ones UnitExtractor matches across models.
-    /// Reference levels such as GL or a structural SL sit 100-150 mm off a floor level by convention.
+    /// Only export levels carry units whose <c>to_level</c> can fail to match across models. Datum
+    /// levels such as GL or a structural SL sit 100-150 mm off a floor level by design, and they carry
+    /// slabs and a <c>level_id</c> like any other level, so only the export's own views tell them apart.
     /// </summary>
     private static bool IsDriftComparable(FederationLevelSnapshot level) =>
-        level.HasElevation && (level.HasFloors || level.LevelId.Length > 0);
+        level.HasElevation && level.IsExportLevel;
 
     private static void CheckNearestLevelAgainstSet(
         string ruleId,
@@ -1692,8 +1694,15 @@ public static class FederationChecker
 
         if (!isStationOnly)
         {
+            HashSet<string> reportedNestedFiles = new(StringComparer.OrdinalIgnoreCase);
             foreach (FederationLinkSnapshot link in allLinks.Where(l => l.IsLoaded && !IsShowcaseLink(l) && l.NestedLinkNames.Count > 0))
             {
+                string fileKey = NormalizePath(link.SourcePath);
+                if (!reportedNestedFiles.Add(fileKey.Length > 0 ? fileKey : LinkLabel(link)))
+                {
+                    continue;
+                }
+
                 string label = LinkLabel(link);
                 string nested = DescribeList(link.NestedLinkNames);
                 issues.Add(new FederationIssue(

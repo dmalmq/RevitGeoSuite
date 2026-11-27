@@ -8,6 +8,7 @@ using RevitGeoSuite.CesiumHandoff;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.Core.Storage;
+using RevitGeoSuite.FloorPlanExport.Core;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Federation;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
@@ -59,7 +60,8 @@ public static class RevitFederationSnapshotCollector
         List<FederationLevelSnapshot> hostLevels = CollectDocumentLevels(
             hostDocument,
             hostLocation,
-            linkToHostTransform: null);
+            linkToHostTransform: null,
+            ReadExportLevelIds(hostDocument, hostGisModel));
 
         List<FederationLinkSnapshot> links = CollectLinkedModels(
             hostDocument,
@@ -145,7 +147,8 @@ public static class RevitFederationSnapshotCollector
             List<FederationLevelSnapshot> linkLevels = CollectDocumentLevels(
                 linkedDoc,
                 hostLocation,
-                linkToHostTransform: totalTransform);
+                linkToHostTransform: totalTransform,
+                ReadExportLevelIds(linkedDoc, linkGisModel));
 
             result.Add(new FederationLinkSnapshot(
                 linkInstanceElementId: linkInstance.Id.Value,
@@ -227,10 +230,20 @@ public static class RevitFederationSnapshotCollector
         return names;
     }
 
+    /// <summary>The levels of the plan views the model's station export takes.</summary>
+    private static HashSet<long> ReadExportLevelIds(Document document, GisModelFile? gisModel) =>
+        new(GisModelFile.ChooseStationExportViews(
+                new ViewCollector().GetExportablePlanViews(document),
+                view => view.UniqueId,
+                view => view.Name ?? string.Empty,
+                gisModel)
+            .Select(view => view.GenLevel.Id.Value));
+
     private static List<FederationLevelSnapshot> CollectDocumentLevels(
         Document document,
         ProjectLocation? hostLocation,
-        Transform? linkToHostTransform)
+        Transform? linkToHostTransform,
+        HashSet<long> exportLevelIds)
     {
         HashSet<long> levelsWithFloors = new();
         foreach (Floor floor in new FilteredElementCollector(document)
@@ -269,7 +282,8 @@ public static class RevitFederationSnapshotCollector
                 ordinal: ordinal,
                 shortName: shortName,
                 projectElevationMeters: elevationMeters,
-                hasFloors: levelsWithFloors.Contains(level.Id.Value)));
+                hasFloors: levelsWithFloors.Contains(level.Id.Value),
+                isExportLevel: exportLevelIds.Contains(level.Id.Value)));
         }
 
         return levels;

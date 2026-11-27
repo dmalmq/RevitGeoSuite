@@ -55,7 +55,10 @@ public static class GeoProjectInfoExtensions
         if (string.IsNullOrWhiteSpace(info.FederationMode))
         {
             info.FederationMode = previous.FederationMode;
-            info.FederationHubModelId = previous.FederationHubModelId;
+            if (string.IsNullOrWhiteSpace(info.FederationHubModelId))
+            {
+                info.FederationHubModelId = previous.FederationHubModelId;
+            }
         }
     }
 

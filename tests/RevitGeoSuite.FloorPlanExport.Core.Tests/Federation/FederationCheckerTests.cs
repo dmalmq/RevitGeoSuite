@@ -231,7 +231,7 @@ public sealed class FederationCheckerTests : IDisposable
                 "east-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(601, "l-e-1", "1F", levelId: "host-level-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0),
+                    new FederationLevelSnapshot(601, "l-e-1", "1F", levelId: "host-level-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0, isExportLevel: true),
                 }),
         };
         FederationRuleResult crossRule = FederationChecker.Evaluate(crossDup).GetRule(FederationChecker.RuleUniqueLevelId);
@@ -246,8 +246,8 @@ public sealed class FederationCheckerTests : IDisposable
         FederationCheckSnapshot intraDup = CreateCleanHubSnapshot();
         intraDup.HostLevels = new[]
         {
-            new FederationLevelSnapshot(501, "h-1", "1F", levelId: "dup-id", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0),
-            new FederationLevelSnapshot(502, "h-2", "2F", levelId: "dup-id", ordinal: 1, shortName: "2F", projectElevationMeters: 4.5),
+            new FederationLevelSnapshot(501, "h-1", "1F", levelId: "dup-id", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0, isExportLevel: true),
+            new FederationLevelSnapshot(502, "h-2", "2F", levelId: "dup-id", ordinal: 1, shortName: "2F", projectElevationMeters: 4.5, isExportLevel: true),
         };
         FederationRuleResult intraRule = FederationChecker.Evaluate(intraDup).GetRule(FederationChecker.RuleUniqueLevelId);
         Assert.Equal(ReadinessCheckStatus.Fail, intraRule.Status);
@@ -271,7 +271,7 @@ public sealed class FederationCheckerTests : IDisposable
         FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
         snapshot.HostLevels = new[]
         {
-            new FederationLevelSnapshot(501, "h-1", "1F", levelId: "host-1f", ordinal: 0, shortName: "1F", projectElevationMeters: hostTpElevationMeters),
+            new FederationLevelSnapshot(501, "h-1", "1F", levelId: "host-1f", ordinal: 0, shortName: "1F", projectElevationMeters: hostTpElevationMeters, isExportLevel: true),
         };
         string linkLevelName = deltaMm > 150.0 ? "M1F" : "1F";
         int linkOrdinal = deltaMm > 150.0 ? 1 : 0;
@@ -283,7 +283,7 @@ public sealed class FederationCheckerTests : IDisposable
                 "east-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(601, "l-1", linkLevelName, levelId: "east-1f", ordinal: linkOrdinal, shortName: linkShortName, projectElevationMeters: linkTpElevationMeters),
+                    new FederationLevelSnapshot(601, "l-1", linkLevelName, levelId: "east-1f", ordinal: linkOrdinal, shortName: linkShortName, projectElevationMeters: linkTpElevationMeters, isExportLevel: true),
                 }),
         };
 
@@ -306,12 +306,12 @@ public sealed class FederationCheckerTests : IDisposable
         FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
         snapshot.HostLevels = new[]
         {
-            new FederationLevelSnapshot(501, "h-1", "1F", levelId: "host-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 37.710),
+            new FederationLevelSnapshot(501, "h-1", "1F", levelId: "host-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 37.710, isExportLevel: true),
         };
         snapshot.LinkedModels = Array.Empty<FederationLinkSnapshot>();
         FederationLevelSnapshot[] hostMirror =
         {
-            new FederationLevelSnapshot(0, "h-1", "1F", levelId: "host-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 37.710),
+            new FederationLevelSnapshot(0, "h-1", "1F", levelId: "host-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 37.710, isExportLevel: true),
         };
         snapshot.StationFolder = new StationFolderSnapshot(
             @"D:\Station",
@@ -325,7 +325,7 @@ public sealed class FederationCheckerTests : IDisposable
                     heightDatum: "TP",
                     levels: new[]
                     {
-                        new FederationLevelSnapshot(0, "w-1", "1F", levelId: "west-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 37.745),
+                        new FederationLevelSnapshot(0, "w-1", "1F", levelId: "west-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 37.745, isExportLevel: true),
                     }),
             });
 
@@ -339,24 +339,23 @@ public sealed class FederationCheckerTests : IDisposable
     }
 
     [Fact]
-    public void KzFed004_IgnoresStructuralReferenceLevelOneHundredMmBelowFloorLevel()
+    public void KzFed004_IgnoresStructuralSlabLevelWithLevelIdThatNoExportViewUses()
     {
         FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
         snapshot.HostLevels = new[]
         {
-            new FederationLevelSnapshot(501, "h-1", "1FL", levelId: "host-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.000),
-            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "host-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000),
+            new FederationLevelSnapshot(501, "h-1", "1FL", levelId: "arch-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.000, isExportLevel: true),
+            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "arch-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000, isExportLevel: true),
         };
         snapshot.LinkedModels = new[]
         {
             BuildLink(
-                "EastWing.rvt",
-                "east-002",
+                "Structure.rvt",
+                "struct-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(601, "l-1", "1FL", levelId: "east-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.000),
-                    new FederationLevelSnapshot(602, "l-2", "2FL", levelId: "east-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000),
-                    new FederationLevelSnapshot(603, "l-3", "2SL", levelId: null, ordinal: null, shortName: null, projectElevationMeters: 3.900, hasFloors: false),
+                    new FederationLevelSnapshot(601, "s-1", "1SL", levelId: "struct-1sl", ordinal: 0, shortName: "1S", projectElevationMeters: -0.100, hasFloors: true),
+                    new FederationLevelSnapshot(602, "s-2", "2SL", levelId: "struct-2sl", ordinal: 1, shortName: "2S", projectElevationMeters: 3.900, hasFloors: true),
                 }),
         };
 
@@ -366,13 +365,13 @@ public sealed class FederationCheckerTests : IDisposable
     }
 
     [Fact]
-    public void KzFed004_IgnoresGroundReferenceLevelOneHundredFiftyMmBelowFirstFloor()
+    public void KzFed004_IgnoresGroundLevelWithLevelIdThatNoExportViewUses()
     {
         FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
         snapshot.HostLevels = new[]
         {
-            new FederationLevelSnapshot(500, "h-0", "GL", levelId: null, ordinal: null, shortName: null, projectElevationMeters: 0.000, hasFloors: false),
-            new FederationLevelSnapshot(501, "h-1", "1FL", levelId: "host-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.150),
+            new FederationLevelSnapshot(500, "h-0", "GL", levelId: "arch-gl", ordinal: null, shortName: "GL", projectElevationMeters: 0.000, hasFloors: true),
+            new FederationLevelSnapshot(501, "h-1", "1FL", levelId: "arch-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.150, isExportLevel: true),
         };
         snapshot.LinkedModels = new[]
         {
@@ -381,8 +380,34 @@ public sealed class FederationCheckerTests : IDisposable
                 "east-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(601, "l-1", "1FL", levelId: "east-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.150),
+                    new FederationLevelSnapshot(600, "l-0", "GL", levelId: "east-gl", ordinal: null, shortName: "GL", projectElevationMeters: 0.000, hasFloors: true),
+                    new FederationLevelSnapshot(601, "l-1", "1FL", levelId: "east-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.150, isExportLevel: true),
                 }),
+        };
+
+        FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
+
+        Assert.Equal(ReadinessCheckStatus.Pass, rule.Status);
+    }
+
+    [Fact]
+    public void KzFed004_SkipsLinksTheHubExportLeavesOut()
+    {
+        FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
+        snapshot.HostLevels = new[]
+        {
+            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "arch-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000, isExportLevel: true),
+        };
+        snapshot.LinkedModels = new[]
+        {
+            BuildLink(
+                "EastWing.rvt",
+                "east-002",
+                levels: new[]
+                {
+                    new FederationLevelSnapshot(602, "l-2", "2F", levelId: "east-2f", ordinal: 1, shortName: "2F", projectElevationMeters: 3.900, isExportLevel: true),
+                },
+                isIncludedInHubExport: false),
         };
 
         FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
@@ -396,7 +421,7 @@ public sealed class FederationCheckerTests : IDisposable
         FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
         snapshot.HostLevels = new[]
         {
-            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "host-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000),
+            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "host-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000, isExportLevel: true),
         };
         snapshot.LinkedModels = new[]
         {
@@ -405,7 +430,7 @@ public sealed class FederationCheckerTests : IDisposable
                 "east-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(602, "l-2", "2F", levelId: "east-2f", ordinal: 1, shortName: "2F", projectElevationMeters: 3.900),
+                    new FederationLevelSnapshot(602, "l-2", "2F", levelId: "east-2f", ordinal: 1, shortName: "2F", projectElevationMeters: 3.900, isExportLevel: true),
                 }),
         };
 
@@ -425,7 +450,7 @@ public sealed class FederationCheckerTests : IDisposable
                 "east-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(601, "l-1", "1F", levelId: "east-1f", ordinal: 1, shortName: "G1", projectElevationMeters: 0.005),
+                    new FederationLevelSnapshot(601, "l-1", "1F", levelId: "east-1f", ordinal: 1, shortName: "G1", projectElevationMeters: 0.005, isExportLevel: true),
                 }),
         };
 
@@ -453,7 +478,7 @@ public sealed class FederationCheckerTests : IDisposable
         FederationCheckSnapshot punctuationCollision = CreateCleanHubSnapshot();
         punctuationCollision.HostLevels = new[]
         {
-            new FederationLevelSnapshot(501, "h-1", "1F-North", levelId: "host-1f-n", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0),
+            new FederationLevelSnapshot(501, "h-1", "1F-North", levelId: "host-1f-n", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0, isExportLevel: true),
         };
         punctuationCollision.LinkedModels = new[]
         {
@@ -462,7 +487,7 @@ public sealed class FederationCheckerTests : IDisposable
                 "east-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(601, "l-1", "1F North", levelId: "east-1f-n", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0),
+                    new FederationLevelSnapshot(601, "l-1", "1F North", levelId: "east-1f-n", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0, isExportLevel: true),
                 }),
         };
         FederationRuleResult punctRule = FederationChecker.Evaluate(punctuationCollision).GetRule(FederationChecker.RuleTilesLevelKeyCollision);
@@ -472,7 +497,7 @@ public sealed class FederationCheckerTests : IDisposable
         FederationCheckSnapshot elevCollision = CreateCleanHubSnapshot();
         elevCollision.HostLevels = new[]
         {
-            new FederationLevelSnapshot(501, "h-1", "1F", levelId: "host-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0),
+            new FederationLevelSnapshot(501, "h-1", "1F", levelId: "host-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0, isExportLevel: true),
         };
         elevCollision.LinkedModels = new[]
         {
@@ -481,7 +506,7 @@ public sealed class FederationCheckerTests : IDisposable
                 "east-002",
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(601, "l-1", "1F", levelId: "east-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 3.5),
+                    new FederationLevelSnapshot(601, "l-1", "1F", levelId: "east-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 3.5, isExportLevel: true),
                 }),
         };
         FederationRuleResult elevRule = FederationChecker.Evaluate(elevCollision).GetRule(FederationChecker.RuleTilesLevelKeyCollision);
@@ -491,8 +516,8 @@ public sealed class FederationCheckerTests : IDisposable
         FederationCheckSnapshot intraCollision = CreateCleanHubSnapshot();
         intraCollision.HostLevels = new[]
         {
-            new FederationLevelSnapshot(501, "h-1", "1F-A", levelId: "host-1fa", ordinal: 0, shortName: "1FA", projectElevationMeters: 0.0),
-            new FederationLevelSnapshot(502, "h-2", "1F A", levelId: "host-1fb", ordinal: 1, shortName: "1FB", projectElevationMeters: 4.0),
+            new FederationLevelSnapshot(501, "h-1", "1F-A", levelId: "host-1fa", ordinal: 0, shortName: "1FA", projectElevationMeters: 0.0, isExportLevel: true),
+            new FederationLevelSnapshot(502, "h-2", "1F A", levelId: "host-1fb", ordinal: 1, shortName: "1FB", projectElevationMeters: 4.0, isExportLevel: true),
         };
         FederationRuleResult intraRule = FederationChecker.Evaluate(intraCollision).GetRule(FederationChecker.RuleTilesLevelKeyCollision);
         Assert.Equal(ReadinessCheckStatus.Fail, intraRule.Status);
@@ -541,6 +566,47 @@ public sealed class FederationCheckerTests : IDisposable
         Assert.True(report.IsPassed, report.ToJson());
         Assert.Equal(ReadinessCheckStatus.Pass, report.GetRule(FederationChecker.RuleStationFolderFederation).Status);
         Assert.Equal(ReadinessCheckStatus.Pass, report.GetRule(FederationChecker.RuleNoDoublePublishing).Status);
+    }
+
+    [Fact]
+    public void KzFed006_StationFolderCheck_IgnoresLevelsNoExportViewUses()
+    {
+        string station = Path.Combine(_tempDir, "datum-levels-station");
+        Directory.CreateDirectory(station);
+        WriteStationBuilding(
+            station,
+            "arch-01",
+            "Arch",
+            "Arch.rvt",
+            "doc-arch",
+            6677,
+            "TP",
+            "EGM2008",
+            36.70,
+            KanizuFederationMode.Independent,
+            levels: new[] { ("u-a-2", "2FL", "arch-2fl", 2, "2F", 4.000) });
+        WriteStationBuilding(
+            station,
+            "annex-02",
+            "Annex",
+            "Annex.rvt",
+            "doc-annex",
+            6677,
+            "TP",
+            "EGM2008",
+            36.70,
+            KanizuFederationMode.Independent,
+            levels: new[]
+            {
+                ("u-n-2s", "2SL", "annex-2sl", 1, "2S", 3.900),
+                ("u-n-2", "2FL", "annex-2fl", 2, "2F", 4.000),
+            },
+            levelsWithoutExportView: new[] { "u-n-2s" });
+
+        FederationCheckReport report = StationFolderFederationCheck.EvaluateFolder(station);
+
+        Assert.True(report.GetRule(FederationChecker.RuleStationFolderFederation).Status == ReadinessCheckStatus.Pass, report.ToJson());
+        Assert.Equal(ReadinessCheckStatus.Pass, report.GetRule(FederationChecker.RuleNearMissLevelDrift).Status);
     }
 
     [Theory]
@@ -794,7 +860,7 @@ public sealed class FederationCheckerTests : IDisposable
                 crsEpsg: 4326, // would fail KZ-FED-001 if not excluded
                 levels: new[]
                 {
-                    new FederationLevelSnapshot(998, "sc-1", "1F", levelId: "host-level-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.050),
+                    new FederationLevelSnapshot(998, "sc-1", "1F", levelId: "host-level-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.050, isExportLevel: true),
                 }),
         };
 
@@ -858,18 +924,17 @@ public sealed class FederationCheckerTests : IDisposable
     // Readiness + HandoverReceipt Integration (Zero Duplicate RuleIds)
 
     [Fact]
-    public void KzFed008_WarnsAboutAttachedNestedLinksItCannotCheck()
+    public void KzFed008_WarnsOncePerFileAboutAttachedNestedLinksItCannotCheck()
     {
         FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
         FederationLinkSnapshot clean = BuildLink("EastWing.rvt", "east-002");
-        snapshot.LinkedModels = new[]
-        {
+        FederationLinkSnapshot Instance(long elementId, string uniqueId) =>
             new FederationLinkSnapshot(
-                clean.LinkInstanceElementId,
-                clean.LinkInstanceUniqueId,
+                elementId,
+                uniqueId,
                 clean.Name,
                 isLoaded: true,
-                sourcePath: clean.SourcePath,
+                sourcePath: @"D:\Station\EastWing.rvt",
                 modelId: clean.ModelId,
                 modelRole: clean.ModelRole,
                 federationMode: clean.FederationMode,
@@ -881,8 +946,8 @@ public sealed class FederationCheckerTests : IDisposable
                 geoidOffsetMeters: clean.GeoidOffsetMeters,
                 controlPoints: clean.ControlPoints,
                 levels: clean.Levels,
-                nestedLinkNames: new[] { "EastAnnex.rvt" }),
-        };
+                nestedLinkNames: new[] { "EastAnnex.rvt" });
+        snapshot.LinkedModels = new[] { Instance(701, "link-uid-1"), Instance(702, "link-uid-2") };
 
         FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleLinkAndRoleHygiene);
 
@@ -970,8 +1035,8 @@ public sealed class FederationCheckerTests : IDisposable
             HostGeoidOffsetMeters = 36.70,
             HostLevels = new[]
             {
-                new FederationLevelSnapshot(501, "h-1", "1F", levelId: "host-level-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0),
-                new FederationLevelSnapshot(502, "h-2", "2F", levelId: "host-level-2f", ordinal: 1, shortName: "2F", projectElevationMeters: 4.5),
+                new FederationLevelSnapshot(501, "h-1", "1F", levelId: "host-level-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0, isExportLevel: true),
+                new FederationLevelSnapshot(502, "h-2", "2F", levelId: "host-level-2f", ordinal: 1, shortName: "2F", projectElevationMeters: 4.5, isExportLevel: true),
             },
             LinkedModels = new[]
             {
@@ -1029,7 +1094,8 @@ public sealed class FederationCheckerTests : IDisposable
         string linkUniqueId = "link-uid-1",
         string? sourcePath = null,
         IReadOnlyList<ControlPointPair>? controlPoints = null,
-        IReadOnlyList<FederationLevelSnapshot>? levels = null)
+        IReadOnlyList<FederationLevelSnapshot>? levels = null,
+        bool isIncludedInHubExport = true)
     {
         IReadOnlyList<ControlPointPair> defaultPoints = controlPoints ?? new[]
         {
@@ -1039,8 +1105,8 @@ public sealed class FederationCheckerTests : IDisposable
         };
         IReadOnlyList<FederationLevelSnapshot> defaultLevels = levels ?? new[]
         {
-            new FederationLevelSnapshot(601, "l-1", "1F", levelId: $"{modelId}-level-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0),
-            new FederationLevelSnapshot(602, "l-2", "2F", levelId: $"{modelId}-level-2f", ordinal: 1, shortName: "2F", projectElevationMeters: 4.5),
+            new FederationLevelSnapshot(601, "l-1", "1F", levelId: $"{modelId}-level-1f", ordinal: 0, shortName: "1F", projectElevationMeters: 0.0, isExportLevel: true),
+            new FederationLevelSnapshot(602, "l-2", "2F", levelId: $"{modelId}-level-2f", ordinal: 1, shortName: "2F", projectElevationMeters: 4.5, isExportLevel: true),
         };
 
         return new FederationLinkSnapshot(
@@ -1059,7 +1125,8 @@ public sealed class FederationCheckerTests : IDisposable
             geoidModel: geoidModel,
             geoidOffsetMeters: geoidOffset,
             controlPoints: defaultPoints,
-            levels: defaultLevels);
+            levels: defaultLevels,
+            isIncludedInHubExport: isIncludedInHubExport);
     }
 
     private static void WriteStationBuilding(
@@ -1077,7 +1144,8 @@ public sealed class FederationCheckerTests : IDisposable
         IEnumerable<(string UniqueId, string Name, string ModelId)>? includedLinks = null,
         IEnumerable<(string UniqueId, string Name, string LevelId, int Ordinal, string ShortName, double ElevationMeters)>? levels = null,
         double anchorOrthometricMeters = 0.0,
-        bool legacyGisModelWithoutElevations = false)
+        bool legacyGisModelWithoutElevations = false,
+        IEnumerable<string>? levelsWithoutExportView = null)
     {
         GisModelFile gisModel = GisModelFile.CreateDefault();
         gisModel.Identity.ModelId = modelId;
@@ -1108,6 +1176,12 @@ public sealed class FederationCheckerTests : IDisposable
                 ElevationMeters = legacyGisModelWithoutElevations ? null : lvl.ElevationMeters,
             });
         }
+
+        HashSet<string> noView = new(levelsWithoutExportView ?? Array.Empty<string>(), StringComparer.Ordinal);
+        gisModel.Views = levelList
+            .Where(l => !noView.Contains(l.UniqueId))
+            .Select(l => new GisModelView { UniqueId = "view-" + l.UniqueId, Name = "GIS_" + l.Name, LevelUniqueId = l.UniqueId })
+            .ToList();
 
         gisModel.Save(GisModelFile.PathFor(stationRoot, modelId));
 

@@ -153,4 +153,16 @@ public sealed class GeoProjectInfoTests
         Assert.Null(restamped.FederationHubModelId);
         Assert.Equal("model-1", restamped.ModelId);
     }
+
+    [Fact]
+    public void CarryForwardIdentity_keeps_a_hub_id_the_caller_set_without_a_mode()
+    {
+        GeoProjectInfo previous = new GeoProjectInfo { FederationMode = "spoke", FederationHubModelId = "hub-old" };
+        GeoProjectInfo fresh = new GeoProjectInfo { FederationHubModelId = "hub-new" };
+
+        fresh.CarryForwardIdentity(previous);
+
+        Assert.Equal("spoke", fresh.FederationMode);
+        Assert.Equal("hub-new", fresh.FederationHubModelId);
+    }
 }

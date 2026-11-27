@@ -252,20 +252,34 @@ public sealed class GisModelFile
         GisModelFile? file)
     {
         List<T> candidates = available.ToList();
-        if (file != null)
-        {
-            IReadOnlyList<T> listed = file.MatchViews(candidates, uniqueId, name);
-            if (listed.Count > 0)
-            {
-                return listed;
-            }
-        }
-
-        List<T> gisViews = candidates
-            .Where(candidate => (name(candidate) ?? string.Empty).StartsWith(GisViewPrefix, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        return gisViews.Count > 0 ? gisViews : candidates;
+        IReadOnlyList<T> stationViews = ChooseStationExportViews(candidates, uniqueId, name, file);
+        return stationViews.Count > 0 ? stationViews : candidates;
     }
+
+    /// <summary>
+    /// The views a station export takes: those <paramref name="file"/> lists that still exist,
+    /// else the <c>GIS_</c> views. Empty when the model has neither, as no station export set exists.
+    /// </summary>
+    public static IReadOnlyList<T> ChooseStationExportViews<T>(
+        IEnumerable<T> available,
+        Func<T, string> uniqueId,
+        Func<T, string> name,
+        GisModelFile? file)
+    {
+        List<T> candidates = available.ToList();
+        IReadOnlyList<T> listed = file?.MatchViews(candidates, uniqueId, name) ?? Array.Empty<T>();
+        return listed.Count > 0
+            ? listed
+            : candidates.Where(candidate => (name(candidate) ?? string.Empty).StartsWith(GisViewPrefix, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    /// <summary>The levels of the views the file lists, by level <c>UniqueId</c>. Empty for a file written before views carried their level.</summary>
+    public ISet<string> ExportLevelUniqueIds() =>
+        new HashSet<string>(
+            (Views ?? new List<GisModelView>())
+                .Select(view => view?.LevelUniqueId?.Trim() ?? string.Empty)
+                .Where(id => id.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// The views the file lists that <paramref name="available"/> still holds, by UniqueId and
@@ -366,6 +380,10 @@ public sealed class GisModelView
 
     [JsonProperty("name")]
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The <c>UniqueId</c> of the view's level (<c>ViewPlan.GenLevel</c>); absent in files written before it existed.</summary>
+    [JsonProperty("levelUniqueId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? LevelUniqueId { get; set; }
 }
 
 public sealed class GisModelLink
