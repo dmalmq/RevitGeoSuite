@@ -4,6 +4,8 @@ using System.Linq;
 using Autodesk.Revit.UI;
 using RevitGeoSuite.Core.Modules;
 using RevitGeoSuite.Core.Text;
+using RevitGeoSuite.FloorPlanExport.Core.StarterKit;
+using RevitGeoSuite.FloorPlanExport.StarterKit;
 using RevitGeoSuite.Shell.Commands;
 using RevitGeoSuite.Shell.Standards;
 
@@ -47,6 +49,15 @@ public sealed class App : IExternalApplication
             // Separators between the three large buttons give a little horizontal breathing
             // room (Revit has no per-button margin API) while keeping the single "Kanizu Revit"
             // panel label.
+            panel.AddItem(CreateButton(
+                "NewKanizuProject",
+                NewKanizuProjectStrings.RibbonButtonLabel,
+                typeof(NewKanizuProjectCommand),
+                RibbonIconKind.WebNewProject,
+                NewKanizuProjectStrings.RibbonTooltip));
+
+            panel.AddSeparator();
+
             panel.AddItem(CreateButton(
                 "GeoreferenceSetup",
                 "Georeference",

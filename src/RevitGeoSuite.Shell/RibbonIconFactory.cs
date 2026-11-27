@@ -38,7 +38,7 @@ internal static class RibbonIconFactory
 
         using (DrawingContext context = drawing.Open())
         {
-            bool known = iconKind is RibbonIconKind.WebGeoreference or RibbonIconKind.WebImport or RibbonIconKind.WebExport or RibbonIconKind.WebSend;
+            bool known = iconKind is RibbonIconKind.WebGeoreference or RibbonIconKind.WebImport or RibbonIconKind.WebExport or RibbonIconKind.WebSend or RibbonIconKind.WebNewProject;
             context.DrawRoundedRectangle(CreateBrush(known ? Pine : Slate), null, new Rect(1d, 1d, 30d, 30d), 7d, 7d);
 
             TransformGroup glyphTransform = new TransformGroup();
@@ -95,6 +95,15 @@ internal static class RibbonIconFactory
                 {
                     Parse("M14.536 21.686a0.5 0.5 0 0 0 0.937 -0.024l6.5 -19a0.496 0.496 0 0 0 -0.635 -0.635l-19 6.5a0.5 0.5 0 0 0 -0.024 0.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"),
                     Parse("M21.854 2.147l-10.94 10.939")
+                };
+            case RibbonIconKind.WebNewProject:
+                // file-plus
+                return new[]
+                {
+                    Parse("M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"),
+                    Parse("M14 2v4a2 2 0 0 0 2 2h4"),
+                    Parse("M9 15h6"),
+                    Parse("M12 18v-6")
                 };
             default:
                 // x
