@@ -4,6 +4,8 @@ using System.Linq;
 using Autodesk.Revit.UI;
 using RevitGeoSuite.Core.Modules;
 using RevitGeoSuite.Core.Text;
+using RevitGeoSuite.FloorPlanExport.Core.StarterKit;
+using RevitGeoSuite.FloorPlanExport.StarterKit;
 using RevitGeoSuite.Shell.Commands;
 using RevitGeoSuite.Shell.Standards;
 
@@ -47,6 +49,16 @@ public sealed class App : IExternalApplication
             // Separators between the three large buttons give a little horizontal breathing
             // room (Revit has no per-button margin API) while keeping the single "Kanizu Revit"
             // panel label.
+            panel.AddItem(CreateButton(
+                "NewKanizuProject",
+                NewKanizuProjectStrings.RibbonButtonLabel,
+                typeof(NewKanizuProjectCommand),
+                RibbonIconKind.WebNewProject,
+                NewKanizuProjectStrings.RibbonTooltip,
+                typeof(ZeroDocumentCommandAvailability)));
+
+            panel.AddSeparator();
+
             panel.AddItem(CreateButton(
                 "GeoreferenceSetup",
                 "Georeference",
@@ -100,9 +112,10 @@ public sealed class App : IExternalApplication
         string buttonText,
         Type commandType,
         RibbonIconKind iconKind,
-        string toolTip)
+        string toolTip,
+        Type? availabilityType = null)
     {
-        return new PushButtonData(
+        PushButtonData data = new PushButtonData(
             commandId,
             buttonText,
             commandType.Assembly.Location,
@@ -112,6 +125,13 @@ public sealed class App : IExternalApplication
             Image = RibbonIconFactory.CreateSmall(iconKind),
             LargeImage = RibbonIconFactory.CreateLarge(iconKind)
         };
+
+        if (availabilityType != null)
+        {
+            data.AvailabilityClassName = availabilityType.FullName;
+        }
+
+        return data;
     }
 
     private static RibbonPanel GetOrCreatePanel(UIControlledApplication application, string panelName)

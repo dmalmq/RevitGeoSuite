@@ -9,5 +9,6 @@ public enum RibbonIconKind
     WebGeoreference,
     WebImport,
     WebExport,
-    WebSend
+    WebSend,
+    WebNewProject
 }
