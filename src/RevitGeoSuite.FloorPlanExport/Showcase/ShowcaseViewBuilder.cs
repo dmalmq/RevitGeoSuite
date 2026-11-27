@@ -99,16 +99,24 @@ public static class ShowcaseViewBuilder
                 case ShowcaseViewReconciliationActionKind.Create:
                 {
                     ShowcaseView3DPlan target = step.TargetView!;
+                    using SubTransaction subTx = new(document);
+                    subTx.Start();
                     try
                     {
                         View3D created = View3D.CreateIsometric(document, threeDTypeId);
                         ConfigureView3D(document, created, target, isNewlyCreated: true, warnings);
+                        subTx.Commit();
                         publishViews.Add(created);
                         configuredNames.Add(created.Name);
                         createdCount++;
                     }
                     catch (Exception ex)
                     {
+                        if (subTx.GetStatus() == TransactionStatus.Started)
+                        {
+                            subTx.RollBack();
+                        }
+
                         warnings.Add($"Failed to create Forma 3D view '{target.Name}': {ex.Message}");
                     }
 
@@ -121,15 +129,23 @@ public static class ShowcaseViewBuilder
                     if (step.ExistingViewId.HasValue &&
                         existingById.TryGetValue(step.ExistingViewId.Value, out View3D? existingView))
                     {
+                        using SubTransaction subTx = new(document);
+                        subTx.Start();
                         try
                         {
                             ConfigureView3D(document, existingView, target, isNewlyCreated: false, warnings);
+                            subTx.Commit();
                             publishViews.Add(existingView);
                             configuredNames.Add(existingView.Name);
                             updatedCount++;
                         }
                         catch (Exception ex)
                         {
+                            if (subTx.GetStatus() == TransactionStatus.Started)
+                            {
+                                subTx.RollBack();
+                            }
+
                             warnings.Add($"Failed to update Forma 3D view '{target.Name}' in-place: {ex.Message}");
                         }
                     }
@@ -299,50 +315,83 @@ public static class ShowcaseViewBuilder
             return false;
         }
 
+        PrintManager? printManager;
         try
         {
-            PrintManager? printManager = document.PrintManager;
+            printManager = document.PrintManager;
             if (printManager == null)
             {
                 warnings.Add($"PrintManager is unavailable; skipped creating Forma Publish ViewSheetSet '{viewSetName}'.");
                 return false;
             }
-
-            printManager.PrintRange = PrintRange.Select;
-            ViewSheetSetting viewSheetSetting = printManager.ViewSheetSetting;
-
-            ViewSet viewSet = new();
-            for (int i = 0; i < views.Count; i++)
-            {
-                viewSet.Insert(views[i]);
-            }
-
-            ViewSheetSet? existingSet = new FilteredElementCollector(document)
-                .OfClass(typeof(ViewSheetSet))
-                .Cast<ViewSheetSet>()
-                .FirstOrDefault(s => string.Equals(s.Name, viewSetName, StringComparison.OrdinalIgnoreCase));
-
-            if (existingSet != null)
-            {
-                viewSheetSetting.CurrentViewSheetSet = existingSet;
-                existingSet.Views = viewSet;
-                viewSheetSetting.Save();
-            }
-            else
-            {
-                viewSheetSetting.CurrentViewSheetSet = viewSheetSetting.InSession;
-                viewSheetSetting.CurrentViewSheetSet.Views = viewSet;
-                viewSheetSetting.SaveAs(viewSetName);
-            }
-
-            printManager.Apply();
-            return true;
         }
         catch (Exception ex)
         {
             warnings.Add(
-                $"Could not save Forma Publish ViewSheetSet '{viewSetName}' (likely headless or no printer configured): {ex.Message}");
+                $"PrintManager is unavailable for Forma Publish ViewSheetSet '{viewSetName}' (likely headless or no printer configured): {ex.Message}");
             return false;
         }
+
+        using (SubTransaction subTx = new(document))
+        {
+            subTx.Start();
+            try
+            {
+                printManager.PrintRange = PrintRange.Select;
+                ViewSheetSetting viewSheetSetting = printManager.ViewSheetSetting;
+
+                ViewSet viewSet = new();
+                for (int i = 0; i < views.Count; i++)
+                {
+                    viewSet.Insert(views[i]);
+                }
+
+                ViewSheetSet? existingSet = new FilteredElementCollector(document)
+                    .OfClass(typeof(ViewSheetSet))
+                    .Cast<ViewSheetSet>()
+                    .FirstOrDefault(s => string.Equals(s.Name, viewSetName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingSet != null)
+                {
+                    viewSheetSetting.CurrentViewSheetSet = existingSet;
+                    existingSet.Views = viewSet;
+                    viewSheetSetting.Save();
+                }
+                else
+                {
+                    viewSheetSetting.CurrentViewSheetSet = viewSheetSetting.InSession;
+                    viewSheetSetting.CurrentViewSheetSet.Views = viewSet;
+                    viewSheetSetting.SaveAs(viewSetName);
+                }
+
+                subTx.Commit();
+            }
+            catch (Exception ex)
+            {
+                if (subTx.GetStatus() == TransactionStatus.Started)
+                {
+                    subTx.RollBack();
+                }
+
+                warnings.Add(
+                    $"Could not save Forma Publish ViewSheetSet '{viewSetName}' (likely headless or no printer configured): {ex.Message}");
+                return false;
+            }
+        }
+
+        // Best-effort PrintManager.Apply() AFTER the ViewSheetSet has already committed:
+        // Forma/ACC Publish Settings reads the saved ViewSheetSet element, whereas Apply() can throw
+        // on printer-less Windows machines (CI runners, Design Automation, VMs) without affecting persistence.
+        try
+        {
+            printManager.Apply();
+        }
+        catch (Exception ex)
+        {
+            warnings.Add(
+                $"Saved Forma Publish ViewSheetSet '{viewSetName}', but PrintManager.Apply() failed (no active printer): {ex.Message}");
+        }
+
+        return true;
     }
 }

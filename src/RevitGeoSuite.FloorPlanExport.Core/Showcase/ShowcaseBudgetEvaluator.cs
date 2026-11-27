@@ -348,10 +348,14 @@ public static class ShowcaseBudgetEvaluator
             BuildRangeMessageJa("推定総三角形数", totalTriangles.ToString("N0", CultureInfo.InvariantCulture), effective.SoftTriangleLimit.ToString("N0", CultureInfo.InvariantCulture), effective.HardTriangleLimit.ToString("N0", CultureInfo.InvariantCulture), triSeverity)));
         if (triSeverity != ShowcaseBudgetSeverity.Ok)
         {
-            string topLayerHint = breakdowns.Count > 0 ? $" Top contributor: '{breakdowns[0].LayerName}' ({breakdowns[0].EstimatedTriangles:N0} tris)." : string.Empty;
-            string topLayerHintJa = breakdowns.Count > 0 ? $" 最大寄与レイヤ: '{breakdowns[0].LayerName}' ({breakdowns[0].EstimatedTriangles:N0} 三角形)。" : string.Empty;
-            recEn.Add($"Simplify high-vertex polygons or increase network chevron spacing to keep Forma viewer triangles below {effective.SoftTriangleLimit:N0}.{topLayerHint}");
-            recJa.Add($"Forma ビューアの軽快さを維持するため、頂点数が多いポリゴンの簡略化やシェブロン間隔の拡大で三角形数を {effective.SoftTriangleLimit:N0} 未満に抑えてください。{topLayerHintJa}");
+            string topLayerHint = breakdowns.Count > 0
+                ? FormattableString.Invariant($" Top contributor: '{breakdowns[0].LayerName}' ({breakdowns[0].EstimatedTriangles:N0} tris).")
+                : string.Empty;
+            string topLayerHintJa = breakdowns.Count > 0
+                ? FormattableString.Invariant($" 最大寄与レイヤ: '{breakdowns[0].LayerName}' ({breakdowns[0].EstimatedTriangles:N0} 三角形)。")
+                : string.Empty;
+            recEn.Add(FormattableString.Invariant($"Simplify high-vertex polygons or increase network chevron spacing to keep Forma viewer triangles below {effective.SoftTriangleLimit:N0}.{topLayerHint}"));
+            recJa.Add(FormattableString.Invariant($"Forma ビューアの軽快さを維持するため、頂点数が多いポリゴンの簡略化やシェブロン間隔の拡大で三角形数を {effective.SoftTriangleLimit:N0} 未満に抑えてください。{topLayerHintJa}"));
         }
 
         // 2. Total showcase elements
@@ -369,8 +373,8 @@ public static class ShowcaseBudgetEvaluator
             BuildRangeMessageJa("ショーケース総要素数", totalElements.ToString("N0", CultureInfo.InvariantCulture), effective.SoftElementLimit.ToString("N0", CultureInfo.InvariantCulture), effective.HardElementLimit.ToString("N0", CultureInfo.InvariantCulture), elemSeverity)));
         if (elemSeverity != ShowcaseBudgetSeverity.Ok)
         {
-            recEn.Add($"Split oversized station scopes into per-building or per-zone companion snapshots to stay under {effective.SoftElementLimit:N0} elements.");
-            recJa.Add($"大規模ステーションは建物単位・ゾーン単位でショーケーススナップショットを分割し、要素数を {effective.SoftElementLimit:N0} 未満に収めてください。");
+            recEn.Add(FormattableString.Invariant($"Split oversized station scopes into per-building or per-zone companion snapshots to stay under {effective.SoftElementLimit:N0} elements."));
+            recJa.Add(FormattableString.Invariant($"大規模ステーションは建物単位・ゾーン単位でショーケーススナップショットを分割し、要素数を {effective.SoftElementLimit:N0} 未満に収めてください。"));
         }
 
         // 3. Per-marker max triangles (hard cap <= 48)
@@ -387,15 +391,15 @@ public static class ShowcaseBudgetEvaluator
             "triangles",
             markerSeverity,
             markerSeverity == ShowcaseBudgetSeverity.Exceeded
-                ? $"Marker '{heaviestMarkerElementId}' uses {maxMarkerTriangles} triangles, exceeding the hard cap of {effective.MaxPoiMarkerTriangles} triangles per marker."
-                : $"Max marker triangle count is {maxMarkerTriangles} (limit <= {effective.MaxPoiMarkerTriangles}).",
+                ? FormattableString.Invariant($"Marker '{heaviestMarkerElementId}' uses {maxMarkerTriangles} triangles, exceeding the hard cap of {effective.MaxPoiMarkerTriangles} triangles per marker.")
+                : FormattableString.Invariant($"Max marker triangle count is {maxMarkerTriangles} (limit <= {effective.MaxPoiMarkerTriangles})."),
             markerSeverity == ShowcaseBudgetSeverity.Exceeded
-                ? $"マーカー '{heaviestMarkerElementId}' の三角形数 ({maxMarkerTriangles}) が上限 ({effective.MaxPoiMarkerTriangles}) を超過しています。"
-                : $"マーカー最大三角形数は {maxMarkerTriangles} です（上限 {effective.MaxPoiMarkerTriangles} 以下）。"));
+                ? FormattableString.Invariant($"マーカー '{heaviestMarkerElementId}' の三角形数 ({maxMarkerTriangles}) が上限 ({effective.MaxPoiMarkerTriangles}) を超過しています。")
+                : FormattableString.Invariant($"マーカー最大三角形数は {maxMarkerTriangles} です（上限 {effective.MaxPoiMarkerTriangles} 以下）。")));
         if (markerSeverity == ShowcaseBudgetSeverity.Exceeded)
         {
-            recEn.Add($"Keep instanced POI/node/finding marker prototypes at or below {effective.MaxPoiMarkerTriangles} planar triangles.");
-            recJa.Add($"POI・ノード・検出マーカーのインスタンス形状は平面多角形 {effective.MaxPoiMarkerTriangles} 三角形以下に抑えてください。");
+            recEn.Add(FormattableString.Invariant($"Keep instanced POI/node/finding marker prototypes at or below {effective.MaxPoiMarkerTriangles} planar triangles."));
+            recJa.Add(FormattableString.Invariant($"POI・ノード・検出マーカーのインスタンス形状は平面多角形 {effective.MaxPoiMarkerTriangles} 三角形以下に抑えてください。"));
         }
 
         // 4. Single-element max triangles (soft warning > 5,000)
@@ -412,15 +416,15 @@ public static class ShowcaseBudgetEvaluator
             "triangles",
             singleElemSeverity,
             singleElemSeverity == ShowcaseBudgetSeverity.Warning
-                ? $"Element '{heaviestElementId}' has {maxSingleElementTriangles:N0} estimated triangles (warning threshold: {effective.SingleElementTriangleWarningLimit:N0})."
-                : $"Heaviest single element has {maxSingleElementTriangles:N0} estimated triangles (warning threshold: {effective.SingleElementTriangleWarningLimit:N0}).",
+                ? FormattableString.Invariant($"Element '{heaviestElementId}' has {maxSingleElementTriangles:N0} estimated triangles (warning threshold: {effective.SingleElementTriangleWarningLimit:N0}).")
+                : FormattableString.Invariant($"Heaviest single element has {maxSingleElementTriangles:N0} estimated triangles (warning threshold: {effective.SingleElementTriangleWarningLimit:N0})."),
             singleElemSeverity == ShowcaseBudgetSeverity.Warning
-                ? $"要素 '{heaviestElementId}' の推定三角形数 ({maxSingleElementTriangles:N0}) が警告しきい値 ({effective.SingleElementTriangleWarningLimit:N0}) を超過しています。"
-                : $"単一要素の最大推定三角形数は {maxSingleElementTriangles:N0} です（警告しきい値: {effective.SingleElementTriangleWarningLimit:N0}）。"));
+                ? FormattableString.Invariant($"要素 '{heaviestElementId}' の推定三角形数 ({maxSingleElementTriangles:N0}) が警告しきい値 ({effective.SingleElementTriangleWarningLimit:N0}) を超過しています。")
+                : FormattableString.Invariant($"単一要素の最大推定三角形数は {maxSingleElementTriangles:N0} です（警告しきい値: {effective.SingleElementTriangleWarningLimit:N0}）。")));
         if (singleElemSeverity == ShowcaseBudgetSeverity.Warning)
         {
-            recEn.Add($"Inspect complex geometry on '{heaviestElementId}' ({maxSingleElementTriangles:N0} tris) and simplify overly dense vertices before publishing to Forma.");
-            recJa.Add($"複雑な形状を持つ '{heaviestElementId}' ({maxSingleElementTriangles:N0} 三角形) の頂点密度を見直してください。");
+            recEn.Add(FormattableString.Invariant($"Inspect complex geometry on '{heaviestElementId}' ({maxSingleElementTriangles:N0} tris) and simplify overly dense vertices before publishing to Forma."));
+            recJa.Add(FormattableString.Invariant($"複雑な形状を持つ '{heaviestElementId}' ({maxSingleElementTriangles:N0} 三角形) の頂点密度を見直してください。"));
         }
 
         // 5. Unique ks_* direct shared parameters
@@ -438,8 +442,8 @@ public static class ShowcaseBudgetEvaluator
             BuildRangeMessageJa("一意な ks_* 共有パラメータ数", uniqueParameterCount.ToString(CultureInfo.InvariantCulture), effective.SoftUniqueParameterLimit.ToString(CultureInfo.InvariantCulture), effective.HardUniqueParameterLimit.ToString(CultureInfo.InvariantCulture), paramSeverity)));
         if (paramSeverity != ShowcaseBudgetSeverity.Ok)
         {
-            recEn.Add($"Keep direct ks_* shared parameters lean (<= {effective.SoftUniqueParameterLimit}); low-priority attributes overflow automatically into ks_attributes_json.");
-            recJa.Add($"直接バインドする ks_* 共有パラメータ数は {effective.SoftUniqueParameterLimit} 以下を推奨します（余剰属性は自動的に ks_attributes_json に格納されます）。");
+            recEn.Add(FormattableString.Invariant($"Keep direct ks_* shared parameters lean (<= {effective.SoftUniqueParameterLimit}); low-priority attributes overflow automatically into ks_attributes_json."));
+            recJa.Add(FormattableString.Invariant($"直接バインドする ks_* 共有パラメータ数は {effective.SoftUniqueParameterLimit} 以下を推奨します（余剰属性は自動的に ks_attributes_json に格納されます）。"));
         }
 
         // 6. Optional saved .rvt file size in MiB
@@ -456,12 +460,22 @@ public static class ShowcaseBudgetEvaluator
                 effective.HardFileSizeMiB,
                 "MiB",
                 sizeSeverity,
-                BuildRangeMessageEn("Companion .rvt size", $"{sizeMiB:F2} MiB", $"{effective.SoftFileSizeMiB:F0} MiB", $"{effective.HardFileSizeMiB:F0} MiB", sizeSeverity),
-                BuildRangeMessageJa("コンパニオン .rvt サイズ", $"{sizeMiB:F2} MiB", $"{effective.SoftFileSizeMiB:F0} MiB", $"{effective.HardFileSizeMiB:F0} MiB", sizeSeverity)));
+                BuildRangeMessageEn(
+                    "Companion .rvt size",
+                    FormattableString.Invariant($"{sizeMiB:F2} MiB"),
+                    FormattableString.Invariant($"{effective.SoftFileSizeMiB:F0} MiB"),
+                    FormattableString.Invariant($"{effective.HardFileSizeMiB:F0} MiB"),
+                    sizeSeverity),
+                BuildRangeMessageJa(
+                    "コンパニオン .rvt サイズ",
+                    FormattableString.Invariant($"{sizeMiB:F2} MiB"),
+                    FormattableString.Invariant($"{effective.SoftFileSizeMiB:F0} MiB"),
+                    FormattableString.Invariant($"{effective.HardFileSizeMiB:F0} MiB"),
+                    sizeSeverity)));
             if (sizeSeverity != ShowcaseBudgetSeverity.Ok)
             {
-                recEn.Add($"Compact the companion .rvt on SaveAs and verify instanced markers/DirectShapeTypes are not duplicated to stay under {effective.SoftFileSizeMiB:F0} MiB.");
-                recJa.Add($"SaveAs 時の圧縮 (Compact) とマーカーのインスタンス共有を確認し、.rvt サイズを {effective.SoftFileSizeMiB:F0} MiB 未満に抑えてください。");
+                recEn.Add(FormattableString.Invariant($"Compact the companion .rvt on SaveAs and verify instanced markers/DirectShapeTypes are not duplicated to stay under {effective.SoftFileSizeMiB:F0} MiB."));
+                recJa.Add(FormattableString.Invariant($"SaveAs 時の圧縮 (Compact) とマーカーのインスタンス共有を確認し、.rvt サイズを {effective.SoftFileSizeMiB:F0} MiB 未満に抑えてください。"));
             }
         }
 
@@ -518,15 +532,25 @@ public static class ShowcaseBudgetEvaluator
             effective.HardFileSizeMiB,
             "MiB",
             sizeSeverity,
-            BuildRangeMessageEn("Companion .rvt size", $"{sizeMiB:F2} MiB", $"{effective.SoftFileSizeMiB:F0} MiB", $"{effective.HardFileSizeMiB:F0} MiB", sizeSeverity),
-            BuildRangeMessageJa("コンパニオン .rvt サイズ", $"{sizeMiB:F2} MiB", $"{effective.SoftFileSizeMiB:F0} MiB", $"{effective.HardFileSizeMiB:F0} MiB", sizeSeverity)));
+            BuildRangeMessageEn(
+                "Companion .rvt size",
+                FormattableString.Invariant($"{sizeMiB:F2} MiB"),
+                FormattableString.Invariant($"{effective.SoftFileSizeMiB:F0} MiB"),
+                FormattableString.Invariant($"{effective.HardFileSizeMiB:F0} MiB"),
+                sizeSeverity),
+            BuildRangeMessageJa(
+                "コンパニオン .rvt サイズ",
+                FormattableString.Invariant($"{sizeMiB:F2} MiB"),
+                FormattableString.Invariant($"{effective.SoftFileSizeMiB:F0} MiB"),
+                FormattableString.Invariant($"{effective.HardFileSizeMiB:F0} MiB"),
+                sizeSeverity)));
 
         List<string> recEn = new(baseReport.RecommendationsEn);
         List<string> recJa = new(baseReport.RecommendationsJa);
         if (sizeSeverity != ShowcaseBudgetSeverity.Ok)
         {
-            string en = $"Compact the companion .rvt on SaveAs and verify instanced markers/DirectShapeTypes are not duplicated to stay under {effective.SoftFileSizeMiB:F0} MiB.";
-            string ja = $"SaveAs 時の圧縮 (Compact) とマーカーのインスタンス共有を確認し、.rvt サイズを {effective.SoftFileSizeMiB:F0} MiB 未満に抑えてください。";
+            string en = FormattableString.Invariant($"Compact the companion .rvt on SaveAs and verify instanced markers/DirectShapeTypes are not duplicated to stay under {effective.SoftFileSizeMiB:F0} MiB.");
+            string ja = FormattableString.Invariant($"SaveAs 時の圧縮 (Compact) とマーカーのインスタンス共有を確認し、.rvt サイズを {effective.SoftFileSizeMiB:F0} MiB 未満に抑えてください。");
             if (!recEn.Contains(en, StringComparer.Ordinal))
             {
                 recEn.Add(en);

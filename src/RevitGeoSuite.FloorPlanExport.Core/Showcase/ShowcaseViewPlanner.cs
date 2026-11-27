@@ -127,8 +127,8 @@ public sealed class ShowcaseViewPlanOptions
     /// <summary>Horizontal XY section-box margin (metres) around per-floor geometry.</summary>
     public double PerFloorXyMarginMeters { get; set; } = 2.0d;
 
-    /// <summary>Downward Z pad (metres) below each floor's base elevation so floor slabs and level bands stay cleanly visible.</summary>
-    public double PerFloorBottomPadMeters { get; set; } = 0.30d;
+    /// <summary>Downward Z pad (metres) below each floor's base elevation so floor slabs and level bands stay cleanly visible without overlapping lower floors.</summary>
+    public double PerFloorBottomPadMeters { get; set; } = 0.20d;
 
     /// <summary>Clearance (metres) below the next upper level's base elevation so upper floors never occlude the active floor.</summary>
     public double PerFloorTopClearanceMeters { get; set; } = 0.25d;
@@ -303,6 +303,9 @@ public sealed class ShowcaseViewReconciliationPlan
 /// </summary>
 public static class ShowcaseViewPlanner
 {
+    /// <summary>Deterministic maximum character length enforced on generated Revit 3D view names (including collision suffixes).</summary>
+    public const int MaxRevitViewNameLength = 128;
+
     private static readonly char[] ForbiddenRevitViewNameChars =
     {
         '\\', ':', '{', '}', '[', ']', '|', ';', '<', '>', '?', '`', '~',
@@ -437,11 +440,12 @@ public static class ShowcaseViewPlanner
             }
         }
 
-        // Ensure station bounds also encompass level elevations if elements were sparse.
-        if (orderedLevels.Count > 0)
+        // Ensure station bounds also encompass level elevations if elements were sparse
+        // (using Min/Max across resolved Zs rather than assuming Ordinal order matches TpM order).
+        if (levelBaseZFeetById.Count > 0)
         {
-            double lowestLevelZ = levelBaseZFeetById[orderedLevels[0].LevelId];
-            double highestLevelTopZ = levelBaseZFeetById[orderedLevels[orderedLevels.Count - 1].LevelId] + defaultFloorHeightFeet;
+            double lowestLevelZ = levelBaseZFeetById.Values.Min();
+            double highestLevelTopZ = levelBaseZFeetById.Values.Max() + defaultFloorHeightFeet;
             if (!stationBounds.HasData)
             {
                 stationBounds.IncludePoint(-fallbackHalfExtentFeet, -fallbackHalfExtentFeet, lowestLevelZ);
@@ -496,33 +500,74 @@ public static class ShowcaseViewPlanner
         }
 
         // 5. Per-floor section-box 3D views ordered deterministically by ordinal.
+        string sanitizedManagedPrefix = SanitizeManagedViewPrefix(effective.ManagedViewPrefix);
         double perFloorXyMarginFeet = ShowcaseCoordinateTransform.MetersToFeet(Math.Max(0d, effective.PerFloorXyMarginMeters));
         double perFloorBottomPadFeet = ShowcaseCoordinateTransform.MetersToFeet(Math.Max(0d, effective.PerFloorBottomPadMeters));
         double perFloorTopClearanceFeet = ShowcaseCoordinateTransform.MetersToFeet(Math.Max(0d, effective.PerFloorTopClearanceMeters));
         double minSliceThicknessFeet = ShowcaseCoordinateTransform.MetersToFeet(0.25d);
         double minLevelSeparationFeet = ShowcaseCoordinateTransform.MetersToFeet(0.10d);
 
-        // Compute distinct strictly ascending level Z elevations so adjacent floors never overlap.
-        List<double> sortedDistinctBaseZs = orderedLevels
+        // Build strictly ascending distinct elevation bands (clustered within minLevelSeparationFeet) and
+        // precompute non-overlapping (MinZ, MaxZ) bounds per band so Floor[m].MaxZ <= Floor[m+1].MinZ ALWAYS holds,
+        // even for tight mezzanines or custom options where PerFloorBottomPadMeters > PerFloorTopClearanceMeters.
+        List<double> sortedAllBaseZs = orderedLevels
             .Select(l => levelBaseZFeetById[l.LevelId])
             .OrderBy(z => z)
             .ToList();
+        List<double> distinctBandBaseZs = new();
+        for (int i = 0; i < sortedAllBaseZs.Count; i++)
+        {
+            double z = sortedAllBaseZs[i];
+            if (distinctBandBaseZs.Count == 0 || z > distinctBandBaseZs[distinctBandBaseZs.Count - 1] + minLevelSeparationFeet)
+            {
+                distinctBandBaseZs.Add(z);
+            }
+        }
+
+        double[] bandMinZs = new double[distinctBandBaseZs.Count];
+        double[] bandMaxZs = new double[distinctBandBaseZs.Count];
+        for (int b = 0; b < distinctBandBaseZs.Count; b++)
+        {
+            double bandBaseZ = distinctBandBaseZs[b];
+            double idealMinZ = bandBaseZ - perFloorBottomPadFeet;
+            double minZ = b > 0 ? Math.Max(idealMinZ, bandMaxZs[b - 1]) : idealMinZ;
+
+            double maxZ;
+            if (b + 1 < distinctBandBaseZs.Count)
+            {
+                double nextBandBaseZ = distinctBandBaseZs[b + 1];
+                double span = nextBandBaseZ - bandBaseZ;
+                double idealMaxZ = nextBandBaseZ - perFloorTopClearanceFeet;
+                if (idealMaxZ >= bandBaseZ + minSliceThicknessFeet)
+                {
+                    maxZ = idealMaxZ;
+                }
+                else
+                {
+                    // Tightly spaced mezzanine: stop strictly below next floor's base while staying above this floor's base.
+                    maxZ = bandBaseZ + (span * 0.85d);
+                }
+
+                if (minZ >= maxZ)
+                {
+                    minZ = Math.Min(bandBaseZ, maxZ - Math.Max(span * 0.10d, 1e-3d));
+                }
+            }
+            else
+            {
+                maxZ = bandBaseZ + defaultFloorHeightFeet;
+            }
+
+            bandMinZs[b] = minZ;
+            bandMaxZs[b] = maxZ;
+        }
 
         for (int i = 0; i < orderedLevels.Count; i++)
         {
             ShowcaseLevel level = orderedLevels[i];
             double baseZFeet = levelBaseZFeetById[level.LevelId];
 
-            // Find the next strictly higher level base Z above this level.
-            double? nextBaseZFeet = null;
-            for (int j = 0; j < sortedDistinctBaseZs.Count; j++)
-            {
-                if (sortedDistinctBaseZs[j] > baseZFeet + minLevelSeparationFeet)
-                {
-                    nextBaseZFeet = sortedDistinctBaseZs[j];
-                    break;
-                }
-            }
+            int bandIndex = FindElevationBandIndex(distinctBandBaseZs, baseZFeet, minLevelSeparationFeet);
 
             // Look up elements assigned to this floor (LevelId first, then FloorKey).
             BoundsAccumulator? floorAcc = null;
@@ -554,34 +599,12 @@ public static class ShowcaseViewPlanner
                 maxYFeet += 1.0d;
             }
 
-            // Compute tight monotonic Z slice for this floor without occluding from upper floors.
-            double minZFeet = baseZFeet - perFloorBottomPadFeet;
-            double maxZFeet;
-            if (nextBaseZFeet.HasValue)
+            double minZFeet = bandMinZs[bandIndex];
+            double maxZFeet = bandMaxZs[bandIndex];
+            if (bandIndex == distinctBandBaseZs.Count - 1 && floorAcc != null && floorAcc.HasData)
             {
-                double idealMaxZ = nextBaseZFeet.Value - perFloorTopClearanceFeet;
-                if (idealMaxZ >= baseZFeet + minSliceThicknessFeet)
-                {
-                    maxZFeet = idealMaxZ;
-                }
-                else
-                {
-                    // Tightly spaced mezzanine: stop strictly below next floor's base while staying above this floor's base.
-                    double span = nextBaseZFeet.Value - baseZFeet;
-                    maxZFeet = baseZFeet + Math.Max(span * 0.85d, Math.Min(minSliceThicknessFeet, span * 0.95d));
-                    if (minZFeet >= maxZFeet)
-                    {
-                        minZFeet = baseZFeet - Math.Min(perFloorBottomPadFeet, span * 0.10d);
-                    }
-                }
-            }
-            else
-            {
-                double defaultTopZ = baseZFeet + defaultFloorHeightFeet;
-                double contentTopZ = floorAcc != null && floorAcc.HasData
-                    ? floorAcc.MaxZ + ShowcaseCoordinateTransform.MetersToFeet(0.50d)
-                    : defaultTopZ;
-                maxZFeet = Math.Max(defaultTopZ, contentTopZ);
+                double contentTopZ = floorAcc.MaxZ + ShowcaseCoordinateTransform.MetersToFeet(0.50d);
+                maxZFeet = Math.Max(maxZFeet, contentTopZ);
             }
 
             ShowcaseBoundingBox3D floorBox = new(
@@ -592,7 +615,7 @@ public static class ShowcaseViewPlanner
                 maxYFeet + perFloorXyMarginFeet,
                 maxZFeet);
 
-            string rawFloorViewName = BuildPerFloorRawViewName(effective.ManagedViewPrefix, level);
+            string rawFloorViewName = BuildPerFloorRawViewName(sanitizedManagedPrefix, level);
             string safeFloorViewName = EnsureUniqueViewName(SanitizeRevitViewName(rawFloorViewName), usedViewNames);
 
             views.Add(new ShowcaseView3DPlan(
@@ -610,7 +633,7 @@ public static class ShowcaseViewPlanner
         string safeSetName = SanitizeRevitViewName(effective.PublishViewSetName, fallback: "Kanizu Forma Publish");
         return new FormaPublishViewSetPlan(
             safeSetName,
-            effective.ManagedViewPrefix ?? "Forma - ",
+            sanitizedManagedPrefix,
             views,
             rawStationBox,
             warnings);
@@ -682,12 +705,15 @@ public static class ShowcaseViewPlanner
             }
         }
 
-        if (!string.IsNullOrEmpty(plan.ManagedViewPrefix))
+        string managedPrefix = string.IsNullOrEmpty(plan.ManagedViewPrefix)
+            ? string.Empty
+            : SanitizeManagedViewPrefix(plan.ManagedViewPrefix);
+        if (!string.IsNullOrEmpty(managedPrefix))
         {
             foreach (ShowcaseExistingViewInfo existing in existingByName.Values
                          .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase))
             {
-                if (existing.Name.StartsWith(plan.ManagedViewPrefix, StringComparison.OrdinalIgnoreCase) &&
+                if (existing.Name.StartsWith(managedPrefix, StringComparison.OrdinalIgnoreCase) &&
                     !plannedNames.Contains(existing.Name))
                 {
                     steps.Add(new ShowcaseViewReconciliationStep(
@@ -705,14 +731,38 @@ public static class ShowcaseViewPlanner
     }
 
     /// <summary>
-    /// Sanitizes a candidate view name against all Revit forbidden characters
-    /// (<c>\ : { } [ ] | ; &lt; &gt; ? ` ~</c> and control characters), collapsing duplicate spaces cleanly.
+    /// Sanitizes a managed view prefix (preserving a single trailing space when present, e.g. <c>"Forma - "</c>
+    /// or <c>"Forma: "</c> -&gt; <c>"Forma_ "</c>) so generated view names and stale-view reconciliation stay aligned.
     /// </summary>
-    public static string SanitizeRevitViewName(string? rawName, string fallback = "Forma - View")
+    public static string SanitizeManagedViewPrefix(string? rawPrefix, string fallback = "Forma - ")
     {
-        if (string.IsNullOrWhiteSpace(rawName))
+        if (string.IsNullOrWhiteSpace(rawPrefix))
         {
             return fallback;
+        }
+
+        bool hadTrailingSpace = rawPrefix!.Length > 0 &&
+            char.IsWhiteSpace(rawPrefix[rawPrefix.Length - 1]) &&
+            !char.IsControl(rawPrefix[rawPrefix.Length - 1]);
+        int maxPrefixLength = MaxRevitViewNameLength / 2;
+        string core = SanitizeRevitViewName(rawPrefix, fallback.Trim(), hadTrailingSpace ? maxPrefixLength - 1 : maxPrefixLength);
+        return hadTrailingSpace ? core + " " : core;
+    }
+
+    /// <summary>
+    /// Sanitizes a candidate view name against all Revit forbidden characters
+    /// (<c>\ : { } [ ] | ; &lt; &gt; ? ` ~</c> and control characters including <c>0x7F..0x9F</c>),
+    /// collapses duplicate whitespace, and enforces <paramref name="maxLength"/> (default <see cref="MaxRevitViewNameLength"/>).
+    /// </summary>
+    public static string SanitizeRevitViewName(
+        string? rawName,
+        string fallback = "Forma - View",
+        int maxLength = MaxRevitViewNameLength)
+    {
+        int effectiveMax = Math.Max(8, maxLength);
+        if (string.IsNullOrWhiteSpace(rawName))
+        {
+            return TruncateAndTrim(fallback, effectiveMax, "Forma - View");
         }
 
         StringBuilder sb = new(rawName!.Length);
@@ -720,7 +770,7 @@ public static class ShowcaseViewPlanner
         for (int i = 0; i < rawName.Length; i++)
         {
             char c = rawName[i];
-            if (c < 32 || Array.IndexOf(ForbiddenRevitViewNameChars, c) >= 0)
+            if (char.IsControl(c) || Array.IndexOf(ForbiddenRevitViewNameChars, c) >= 0)
             {
                 c = '_';
             }
@@ -741,27 +791,68 @@ public static class ShowcaseViewPlanner
         }
 
         string cleaned = sb.ToString().Trim();
-        return cleaned.Length == 0 ? fallback : cleaned;
+        return cleaned.Length == 0
+            ? TruncateAndTrim(fallback, effectiveMax, "Forma - View")
+            : TruncateAndTrim(cleaned, effectiveMax, fallback);
     }
 
-    /// <summary>Returns <c>true</c> when <paramref name="viewName"/> contains zero Revit-forbidden characters.</summary>
+    /// <summary>Returns <c>true</c> when <paramref name="viewName"/> contains zero Revit-forbidden/control characters and fits within <see cref="MaxRevitViewNameLength"/>.</summary>
     public static bool IsValidRevitViewName(string? viewName)
     {
-        if (string.IsNullOrWhiteSpace(viewName))
+        if (string.IsNullOrWhiteSpace(viewName) || viewName!.Length > MaxRevitViewNameLength)
         {
             return false;
         }
 
-        for (int i = 0; i < viewName!.Length; i++)
+        for (int i = 0; i < viewName.Length; i++)
         {
             char c = viewName[i];
-            if (c < 32 || Array.IndexOf(ForbiddenRevitViewNameChars, c) >= 0)
+            if (char.IsControl(c) || Array.IndexOf(ForbiddenRevitViewNameChars, c) >= 0)
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private static int FindElevationBandIndex(IReadOnlyList<double> distinctBandBaseZs, double baseZFeet, double toleranceFeet)
+    {
+        int bestIndex = 0;
+        double bestDist = Math.Abs(distinctBandBaseZs[0] - baseZFeet);
+        for (int i = 1; i < distinctBandBaseZs.Count; i++)
+        {
+            double dist = Math.Abs(distinctBandBaseZs[i] - baseZFeet);
+            if (dist <= toleranceFeet)
+            {
+                return i;
+            }
+
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    private static string TruncateAndTrim(string value, int maxLength, string fallback)
+    {
+        string trimmed = (value ?? string.Empty).Trim();
+        if (trimmed.Length > maxLength)
+        {
+            trimmed = trimmed.Substring(0, maxLength).TrimEnd();
+        }
+
+        if (trimmed.Length == 0)
+        {
+            string fb = (fallback ?? "Forma - View").Trim();
+            return fb.Length > maxLength ? fb.Substring(0, maxLength).TrimEnd() : fb;
+        }
+
+        return trimmed;
     }
 
     private static string BuildPerFloorRawViewName(string managedPrefix, ShowcaseLevel level)
@@ -792,15 +883,19 @@ public static class ShowcaseViewPlanner
 
     private static string EnsureUniqueViewName(string baseName, HashSet<string> usedNames)
     {
-        if (usedNames.Add(baseName))
+        string cappedBase = TruncateAndTrim(baseName, MaxRevitViewNameLength, "Forma - View");
+        if (usedNames.Add(cappedBase))
         {
-            return baseName;
+            return cappedBase;
         }
 
         int suffix = 2;
         while (true)
         {
-            string candidate = $"{baseName} ({suffix.ToString(CultureInfo.InvariantCulture)})";
+            string suffixText = $" ({suffix.ToString(CultureInfo.InvariantCulture)})";
+            int maxBaseLen = Math.Max(1, MaxRevitViewNameLength - suffixText.Length);
+            string stem = TruncateAndTrim(cappedBase, maxBaseLen, "Forma");
+            string candidate = stem + suffixText;
             if (usedNames.Add(candidate))
             {
                 return candidate;

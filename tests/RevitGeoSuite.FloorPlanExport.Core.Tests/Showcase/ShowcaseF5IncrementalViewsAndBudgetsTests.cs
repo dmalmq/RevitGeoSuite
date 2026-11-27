@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Showcase;
@@ -345,10 +346,13 @@ public sealed class ShowcaseF5IncrementalViewsAndBudgetsTests
 
             if (i + 1 < floorViews.Length)
             {
-                // Strictly below next floor's base elevation -> zero upper-floor ceiling/slab occlusion!
+                // Strictly below next floor's base elevation AND non-overlapping with next floor's MinZ!
                 Assert.True(
                     box.MaxZFeet < levelBaseZsFeet[i + 1],
                     $"Floor '{floorViews[i].Name}' MaxZ ({box.MaxZFeet:F2}) must stay strictly below next floor base ({levelBaseZsFeet[i + 1]:F2}).");
+                Assert.True(
+                    box.MaxZFeet <= floorViews[i + 1].SectionBoxFeet.MinZFeet,
+                    $"Floor '{floorViews[i].Name}' MaxZ ({box.MaxZFeet:F4}) must not overlap next floor '{floorViews[i + 1].Name}' MinZ ({floorViews[i + 1].SectionBoxFeet.MinZFeet:F4}).");
                 Assert.True(
                     box.MinZFeet < floorViews[i + 1].SectionBoxFeet.MinZFeet,
                     "Per-floor MinZ must be strictly monotonic.");
@@ -409,6 +413,144 @@ public sealed class ShowcaseF5IncrementalViewsAndBudgetsTests
         Assert.Equal("Forma - B3F (removed)", deleteStep.ViewName);
         Assert.DoesNotContain(rec.Steps, s => s.ViewName == "{3D}");
         Assert.DoesNotContain(rec.Steps, s => s.ViewName == "Forma - Template");
+    }
+
+    [Fact]
+    public void ViewPlannerClampsTightMezzaninesCustomPadsAndNonMonotonicTpMWithoutOverlap()
+    {
+        // Tight mezzanine (0.0 m and 0.25 m) + normal upper level (4.5 m), tested with BOTH defaults
+        // and an aggressive custom bottom pad exceeding top clearance.
+        ShowcaseLevel[] mezzLevels =
+        {
+            new("level:0", "0", 0, "1F", 0.0d, ShowcaseElevationSource.Surveyed),
+            new("level:0m", "0M", 1, "M1F", 0.25d, ShowcaseElevationSource.Surveyed),
+            new("level:1", "1", 2, "2F", 4.5d, ShowcaseElevationSource.Surveyed),
+        };
+        ShowcaseSnapshot mezzSnap = BuildSnapshot("tight_mezz", mezzLevels, Array.Empty<ShowcaseLayer>());
+
+        ShowcaseViewPlanOptions[] optionSets =
+        {
+            ShowcaseViewPlanOptions.Default,
+            new ShowcaseViewPlanOptions { PerFloorBottomPadMeters = 0.60d, PerFloorTopClearanceMeters = 0.20d },
+        };
+
+        foreach (ShowcaseViewPlanOptions opts in optionSets)
+        {
+            FormaPublishViewSetPlan plan = ShowcaseViewPlanner.Plan(mezzSnap, ShowcaseCoordinateTransform.Identity, Array.Empty<ShowcaseElementPlan>(), opts);
+            ShowcaseView3DPlan[] floors = plan.Views.Where(v => v.Kind == ShowcaseViewKind.PerFloor).ToArray();
+            Assert.Equal(3, floors.Length);
+
+            double z0 = ShowcaseCoordinateTransform.MetersToFeet(0.0d);
+            double z1 = ShowcaseCoordinateTransform.MetersToFeet(0.25d);
+            double z2 = ShowcaseCoordinateTransform.MetersToFeet(4.5d);
+
+            Assert.All(floors, f => Assert.True(f.SectionBoxFeet.IsValid));
+            // Adjacent floors NEVER overlap and upper mezzanine never dips below Floor 0's base slab!
+            Assert.True(floors[0].SectionBoxFeet.MaxZFeet <= floors[1].SectionBoxFeet.MinZFeet);
+            Assert.True(floors[1].SectionBoxFeet.MinZFeet > z0);
+            Assert.True(floors[1].SectionBoxFeet.MinZFeet < z1);
+            Assert.True(floors[1].SectionBoxFeet.MaxZFeet < z2);
+            Assert.True(floors[1].SectionBoxFeet.MaxZFeet <= floors[2].SectionBoxFeet.MinZFeet);
+            Assert.True(floors[2].SectionBoxFeet.MinZFeet < z2);
+            Assert.True(floors[2].SectionBoxFeet.MaxZFeet > z2);
+        }
+
+        // Non-monotonic TpM vs Ordinal: ordinal 0 sits at +20 m while ordinal 1 sits at -10 m ->
+        // overview station bounds must encompass [-10 m, +20 m + 4.5 m], never clipping either extreme!
+        ShowcaseLevel[] nonMonotonicLevels =
+        {
+            new("level:high", "HIGH", 0, "Upper", 20.0d, ShowcaseElevationSource.Surveyed),
+            new("level:low", "LOW", 1, "Lower", -10.0d, ShowcaseElevationSource.Surveyed),
+        };
+        ShowcaseSnapshot nonMonoSnap = BuildSnapshot("non_mono_tpm", nonMonotonicLevels, Array.Empty<ShowcaseLayer>());
+        FormaPublishViewSetPlan nonMonoPlan = ShowcaseViewPlanner.Plan(nonMonoSnap, ShowcaseCoordinateTransform.Identity, Array.Empty<ShowcaseElementPlan>());
+
+        Assert.True(nonMonoPlan.StationBoundsFeet.MinZFeet <= ShowcaseCoordinateTransform.MetersToFeet(-10.0d) + 1e-6d);
+        Assert.True(nonMonoPlan.StationBoundsFeet.MaxZFeet >= ShowcaseCoordinateTransform.MetersToFeet(24.5d) - 1e-6d);
+    }
+
+    [Fact]
+    public void ViewPlannerSanitizesControlCharsCapsLongNamesWithSuffixesAndReconcilesUnsanitizedCustomPrefix()
+    {
+        // Control chars including DEL (\u007F) and C1 (\u0085, \u009F) + overlong colliding names (> 128 chars)
+        string longStem = new string('A', 140) + "\u007F\u0085\u009F";
+        ShowcaseLevel[] levels =
+        {
+            new("level:1", "K1", 0, longStem, 0.0d, ShowcaseElevationSource.Surveyed),
+            new("level:2", "K2", 1, longStem, 4.5d, ShowcaseElevationSource.Surveyed),
+        };
+        ShowcaseSnapshot snap = BuildSnapshot("long_ctrl", levels, Array.Empty<ShowcaseLayer>());
+        ShowcaseViewPlanOptions customPrefixOpts = new()
+        {
+            ManagedViewPrefix = "Forma: ",
+            OverviewViewName = "Forma: 00 Overview",
+            NetworkAndPoisViewName = "Forma: 01 Network & POIs",
+        };
+
+        FormaPublishViewSetPlan plan = ShowcaseViewPlanner.Plan(snap, ShowcaseCoordinateTransform.Identity, Array.Empty<ShowcaseElementPlan>(), customPrefixOpts);
+
+        // Stored ManagedViewPrefix is sanitized to match generated view names ("Forma_ ")
+        Assert.Equal("Forma_ ", plan.ManagedViewPrefix);
+        Assert.All(plan.Views, v =>
+        {
+            Assert.True(ShowcaseViewPlanner.IsValidRevitViewName(v.Name), $"Invalid view name: '{v.Name}'");
+            Assert.True(v.Name.Length <= ShowcaseViewPlanner.MaxRevitViewNameLength, $"View name exceeded max length: {v.Name.Length}");
+            Assert.StartsWith("Forma_ ", v.Name, StringComparison.Ordinal);
+        });
+        Assert.Equal(plan.Views.Count, plan.Views.Select(v => v.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.False(ShowcaseViewPlanner.IsValidRevitViewName("Bad\u007FName"));
+        Assert.False(ShowcaseViewPlanner.IsValidRevitViewName("Bad\u0090Name"));
+        Assert.False(ShowcaseViewPlanner.IsValidRevitViewName(new string('X', ShowcaseViewPlanner.MaxRevitViewNameLength + 1)));
+
+        // ReconcileViews using the sanitized prefix deletes stale "Forma_ OldFloor" cleanly!
+        ShowcaseExistingViewInfo[] existing =
+        {
+            new(201L, "Forma_ OldFloor", "uid-stale-custom"),
+            new(202L, "{3D}", "uid-user-3d"),
+        };
+        ShowcaseViewReconciliationPlan rec = ShowcaseViewPlanner.ReconcileViews(plan, existing);
+        Assert.Equal(1, rec.DeleteStaleCount);
+        Assert.Equal("Forma_ OldFloor", rec.Steps.Single(s => s.Action == ShowcaseViewReconciliationActionKind.DeleteStale).ViewName);
+    }
+
+    [Fact]
+    public void BudgetEvaluatorFormatsDiagnosticsWithInvariantCultureRegardlessOfThreadLocale()
+    {
+        ShowcaseSnapshot snapshot = ShowcaseSnapshotReader.Parse(ShowcaseSnapshotReaderTests.BuildValidFullSnapshotJson());
+        ShowcaseParameterRegistry registry = ShowcaseParameterRegistry.Build(snapshot);
+        ShowcaseGeometryPlanResult f3 = ShowcaseGeometryPlanner.Plan(snapshot, ShowcaseCoordinateTransform.Identity, registry);
+
+        CultureInfo priorCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            // German locale swaps '.' and ',' — invariant formatting MUST still emit "12.50 MiB" and "1,000"
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            ShowcaseBudgetLimits limits = new()
+            {
+                SoftTriangleLimit = 1,
+                HardTriangleLimit = 10_000,
+                SoftElementLimit = 1,
+                HardElementLimit = 10_000,
+                SingleElementTriangleWarningLimit = 1,
+                SoftFileSizeMiB = 10.0d,
+                HardFileSizeMiB = 20.0d,
+            };
+
+            long twelvePointFiveMiB = (long)(12.5d * 1024d * 1024d);
+            ShowcaseBudgetReport report = ShowcaseBudgetEvaluator.Evaluate(f3.Elements, registry, twelvePointFiveMiB, limits);
+            ShowcaseBudgetMetricResult sizeMetric = report.Metrics.Single(m => m.MetricId == ShowcaseBudgetEvaluator.OutputFileSizeMetricId);
+            Assert.Contains("12.50 MiB", sizeMetric.MessageEn, StringComparison.Ordinal);
+            Assert.Contains("12.50 MiB", sizeMetric.MessageJa, StringComparison.Ordinal);
+
+            ShowcaseBudgetReport updated = ShowcaseBudgetEvaluator.WithOutputFileSize(report, twelvePointFiveMiB, limits);
+            ShowcaseBudgetMetricResult updatedSizeMetric = updated.Metrics.Single(m => m.MetricId == ShowcaseBudgetEvaluator.OutputFileSizeMetricId);
+            Assert.Contains("12.50 MiB", updatedSizeMetric.MessageEn, StringComparison.Ordinal);
+            Assert.Contains("10 MiB", updated.RecommendationsEn.Last(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = priorCulture;
+        }
     }
 
     [Fact]
