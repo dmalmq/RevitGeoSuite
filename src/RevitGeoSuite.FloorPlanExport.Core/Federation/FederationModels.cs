@@ -140,8 +140,9 @@ public sealed class PoseConsistencyResult
 /// <summary>Pose consistency report entry associated with one linked model instance.</summary>
 public sealed class LinkPoseCheckDetail
 {
-    public LinkPoseCheckDetail(string linkName, string linkModelId, string linkInstanceUniqueId, PoseConsistencyResult pose)
+    public LinkPoseCheckDetail(string linkName, string linkModelId, string linkInstanceUniqueId, PoseConsistencyResult pose, string? sharedPositionName = null)
     {
+        SharedPositionName = (sharedPositionName ?? string.Empty).Trim();
         LinkName = linkName ?? string.Empty;
         LinkModelId = linkModelId ?? string.Empty;
         LinkInstanceUniqueId = linkInstanceUniqueId ?? string.Empty;
@@ -155,6 +156,8 @@ public sealed class LinkPoseCheckDetail
     public string LinkInstanceUniqueId { get; }
 
     public PoseConsistencyResult Pose { get; }
+
+    public string SharedPositionName { get; }
 }
 
 /// <summary>Immutable snapshot of one Revit or exported level used across federation checks.</summary>
@@ -231,7 +234,9 @@ public sealed class FederationLinkSnapshot
         double? geoidOffsetMeters = null,
         IReadOnlyList<ControlPointPair>? controlPoints = null,
         IReadOnlyList<FederationLevelSnapshot>? levels = null,
-        bool isIncludedInHubExport = true)
+        bool isIncludedInHubExport = true,
+        string? sharedPositionName = null,
+        IReadOnlyList<string>? nestedLinkNames = null)
     {
         LinkInstanceElementId = linkInstanceElementId;
         LinkInstanceUniqueId = (linkInstanceUniqueId ?? string.Empty).Trim();
@@ -254,6 +259,8 @@ public sealed class FederationLinkSnapshot
         ControlPoints = Array.AsReadOnly((controlPoints ?? Array.Empty<ControlPointPair>()).Where(p => p != null).ToArray());
         Levels = Array.AsReadOnly((levels ?? Array.Empty<FederationLevelSnapshot>()).Where(l => l != null).ToArray());
         IsIncludedInHubExport = isIncludedInHubExport;
+        SharedPositionName = (sharedPositionName ?? string.Empty).Trim();
+        NestedLinkNames = Array.AsReadOnly((nestedLinkNames ?? Array.Empty<string>()).Where(n => !string.IsNullOrWhiteSpace(n)).ToArray());
     }
 
     public long LinkInstanceElementId { get; }
@@ -293,6 +300,12 @@ public sealed class FederationLinkSnapshot
     public IReadOnlyList<FederationLevelSnapshot> Levels { get; }
 
     public bool IsIncludedInHubExport { get; }
+
+    /// <summary>The link file's named shared position this instance matched for the pose check.</summary>
+    public string SharedPositionName { get; }
+
+    /// <summary>Attached links inside this linked model, which the federation checks do not open.</summary>
+    public IReadOnlyList<string> NestedLinkNames { get; }
 }
 
 /// <summary>One linked model entry recorded inside a station-folder <c>gis-model.json</c> or <c>cesium-package.json</c>.</summary>
@@ -761,6 +774,7 @@ public sealed class FederationCheckReport
                 ["linkName"] = p.LinkName,
                 ["linkModelId"] = p.LinkModelId,
                 ["linkInstanceUniqueId"] = p.LinkInstanceUniqueId,
+                ["sharedPositionName"] = p.SharedPositionName,
                 ["isEvaluated"] = p.Pose.IsEvaluated,
                 ["isAligned"] = p.Pose.IsAligned,
                 ["originTranslationMm"] = Math.Round(p.Pose.OriginTranslationMm, 3),

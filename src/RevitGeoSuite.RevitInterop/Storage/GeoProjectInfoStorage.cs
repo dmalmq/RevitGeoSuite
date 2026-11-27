@@ -24,20 +24,10 @@ public sealed class GeoProjectInfoStorage : IGeoProjectInfoStore
         }
 
         RevitDocumentHandle handle = RequireRevitDocumentHandle(document);
-        if (string.IsNullOrWhiteSpace(info.ModelId) || string.IsNullOrWhiteSpace(info.GisStationFolder))
+        if (info.NeedsIdentityCarriedForward())
         {
-            // Re-georeferencing builds a fresh GeoProjectInfo; the model's id and its station
-            // folder must survive it.
-            GeoProjectInfo? previous = Load(document);
-            if (string.IsNullOrWhiteSpace(info.ModelId))
-            {
-                info.ModelId = previous?.ModelId;
-            }
-
-            if (string.IsNullOrWhiteSpace(info.GisStationFolder))
-            {
-                info.GisStationFolder = previous?.GisStationFolder;
-            }
+            // Re-georeferencing builds a fresh GeoProjectInfo; the model's identity must survive it.
+            info.CarryForwardIdentity(Load(document));
         }
 
         Schema schema = GetOrCreateSchema();

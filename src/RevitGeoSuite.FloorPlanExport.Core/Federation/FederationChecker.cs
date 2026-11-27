@@ -272,7 +272,7 @@ public static class FederationChecker
                 if (link.ControlPoints.Count > 0)
                 {
                     PoseConsistencyResult pose = PoseConsistencyEvaluator.Evaluate(link.ControlPoints, options);
-                    poseDetails.Add(new LinkPoseCheckDetail(linkLabel, link.ModelId, link.LinkInstanceUniqueId, pose));
+                    poseDetails.Add(new LinkPoseCheckDetail(linkLabel, link.ModelId, link.LinkInstanceUniqueId, pose, link.SharedPositionName));
                     if (!pose.IsAligned)
                     {
                         string reasonEn = pose.IsDegenerateBaseline
@@ -285,8 +285,8 @@ public static class FederationChecker
                             RuleCrsAndPose,
                             ReadinessCheckStatus.Fail,
                             pose.IsDegenerateBaseline ? "LINK-POSE-DEGENERATE" : "LINK-POSE-MISMATCH",
-                            $"Link '{linkLabel}' shared-coordinate 3-point pose mismatch: {reasonEn}.",
-                            $"リンク '{linkLabel}' の 3 制御点共有座標姿勢不一致: {reasonJa}。",
+                            $"Link '{linkLabel}'{PositionSuffixEn(link)} shared-coordinate 3-point pose mismatch: {reasonEn}.",
+                            $"リンク '{linkLabel}'{PositionSuffixJa(link)} の 3 制御点共有座標姿勢不一致: {reasonJa}。",
                             modelA: snapshot.HostDisplayName,
                             modelB: linkLabel,
                             elementIds: ids,
@@ -985,8 +985,8 @@ public static class FederationChecker
         HashSet<string> reportedPairs,
         List<FederationIssue> issues)
     {
-        List<FederationLevelSnapshot> elevA = levelsA.Where(l => l.HasElevation).ToList();
-        List<FederationLevelSnapshot> elevB = levelsB.Where(l => l.HasElevation).ToList();
+        List<FederationLevelSnapshot> elevA = levelsA.Where(IsDriftComparable).ToList();
+        List<FederationLevelSnapshot> elevB = levelsB.Where(IsDriftComparable).ToList();
         if (elevA.Count == 0 || elevB.Count == 0)
         {
             return;
@@ -1002,6 +1002,13 @@ public static class FederationChecker
             CheckNearestLevelAgainstSet(ruleId, modelALabel, levelA, modelBLabel, elevB, options, reportedPairs, issues);
         }
     }
+
+    /// <summary>
+    /// Only levels that carry floors or a <c>level_id</c> are ones UnitExtractor matches across models.
+    /// Reference levels such as GL or a structural SL sit 100-150 mm off a floor level by convention.
+    /// </summary>
+    private static bool IsDriftComparable(FederationLevelSnapshot level) =>
+        level.HasElevation && (level.HasFloors || level.LevelId.Length > 0);
 
     private static void CheckNearestLevelAgainstSet(
         string ruleId,
@@ -1683,6 +1690,24 @@ public static class FederationChecker
             }
         }
 
+        if (!isStationOnly)
+        {
+            foreach (FederationLinkSnapshot link in allLinks.Where(l => l.IsLoaded && !IsShowcaseLink(l) && l.NestedLinkNames.Count > 0))
+            {
+                string label = LinkLabel(link);
+                string nested = DescribeList(link.NestedLinkNames);
+                issues.Add(new FederationIssue(
+                    RuleLinkAndRoleHygiene,
+                    ReadinessCheckStatus.Warn,
+                    "NESTED-LINK-NOT-CHECKED",
+                    $"Linked model '{label}' carries {link.NestedLinkNames.Count} attached nested link(s) ({nested}) that the federation checks do not open; link them into the host directly to check their CRS, pose, ModelId and levels.",
+                    $"リンクモデル '{label}' にネストされたアタッチリンク {link.NestedLinkNames.Count} 件（{nested}）があり、フェデレーションチェックの対象外です。CRS・姿勢・ModelId・レベルを検証するにはホストへ直接リンクしてください。",
+                    modelA: snapshot.HostDisplayName,
+                    modelB: label,
+                    elementIds: link.LinkInstanceElementId > 0 ? new[] { link.LinkInstanceElementId } : Array.Empty<long>()));
+            }
+        }
+
         List<FederationRoleRecord> roles = new();
         if (!isStationOnly)
         {
@@ -2146,6 +2171,12 @@ public static class FederationChecker
 
     private static string NormalizeGeoidModel(string? geoidModel) =>
         string.IsNullOrWhiteSpace(geoidModel) ? string.Empty : geoidModel!.Trim();
+
+    private static string PositionSuffixEn(FederationLinkSnapshot link) =>
+        link.SharedPositionName.Length > 0 ? $" (closest shared position '{link.SharedPositionName}')" : string.Empty;
+
+    private static string PositionSuffixJa(FederationLinkSnapshot link) =>
+        link.SharedPositionName.Length > 0 ? $"（最も近い共有位置 '{link.SharedPositionName}'）" : string.Empty;
 
     private static string LinkLabel(FederationLinkSnapshot link) =>
         !string.IsNullOrWhiteSpace(link.Name) ? link.Name.Trim()

@@ -48,7 +48,8 @@ public static class RevitFederationSnapshotCollector
             : (hostGeo?.GisStationFolder?.Trim() ?? string.Empty);
 
         GisModelFile? hostGisModel = TryLoadGisModelForDocument(stationFolder, hostGeo?.ModelId);
-        (KanizuFederationMode? hostMode, string? hostHubId, string? hostRawMode) = ParseFederation(hostGisModel?.Federation);
+        (KanizuFederationMode? hostMode, string? hostHubId, string? hostRawMode) = ParseFederation(
+            GisModelFederation.Resolve(hostGeo?.FederationMode, hostGeo?.FederationHubModelId, hostGisModel?.Federation));
 
         HashSet<string>? recordedExportLinkIds = hostGisModel?.Links != null
             ? new HashSet<string>(hostGisModel.Links.Where(l => !string.IsNullOrWhiteSpace(l.UniqueId)).Select(l => l.UniqueId.Trim()), StringComparer.OrdinalIgnoreCase)
@@ -105,7 +106,6 @@ public static class RevitFederationSnapshotCollector
         FederationCheckOptions options)
     {
         List<FederationLinkSnapshot> result = new();
-        double baselineFeet = Math.Max(1.0d, options.ControlPointBaselineMeters) / CrsTransformer.FeetToMetersFactor;
 
         foreach (RevitLinkInstance linkInstance in new FilteredElementCollector(hostDocument)
             .OfClass(typeof(RevitLinkInstance))
@@ -136,15 +136,11 @@ public static class RevitFederationSnapshotCollector
             string linkModelRole = GisStandardStateReader.ReadModelRoleText(linkedDoc);
 
             GisModelFile? linkGisModel = TryLoadGisModelForDocument(stationFolder, linkModelId);
-            (KanizuFederationMode? linkFedMode, string? linkHubId, string? linkRawMode) = ParseFederation(linkGisModel?.Federation);
+            (KanizuFederationMode? linkFedMode, string? linkHubId, string? linkRawMode) = ParseFederation(
+                GisModelFederation.Resolve(linkGeo?.FederationMode, linkGeo?.FederationHubModelId, linkGisModel?.Federation));
 
             Transform totalTransform = linkInstance.GetTotalTransform();
-            IReadOnlyList<ControlPointPair> controlPoints = SampleControlPoints(
-                hostLocation,
-                linkedDoc.ActiveProjectLocation,
-                totalTransform,
-                baselineFeet,
-                options.ControlPointBaselineMeters);
+            SampledLinkPose? pose = SamplePose(hostLocation, linkedDoc, totalTransform, options);
 
             List<FederationLevelSnapshot> linkLevels = CollectDocumentLevels(
                 linkedDoc,
@@ -168,54 +164,68 @@ public static class RevitFederationSnapshotCollector
                 heightDatum: NormalizeStoredDatum(linkTilesMeta?.LastHeightDatum),
                 geoidModel: string.Empty,
                 geoidOffsetMeters: linkTilesMeta != null && linkTilesMeta.HasGeoidOffset ? linkTilesMeta.LastGeoidHeightOffsetMeters : (double?)null,
-                controlPoints: controlPoints,
+                controlPoints: pose?.ControlPoints,
                 levels: linkLevels,
-                isIncludedInHubExport: isIncludedInExport));
+                isIncludedInHubExport: isIncludedInExport,
+                sharedPositionName: pose?.PositionName,
+                nestedLinkNames: ReadAttachedNestedLinkNames(linkedDoc)));
         }
 
         return result;
     }
 
-    private static IReadOnlyList<ControlPointPair> SampleControlPoints(
+    private static SampledLinkPose? SamplePose(
         ProjectLocation? hostLocation,
-        ProjectLocation? linkLocation,
+        Document linkedDocument,
         Transform linkToHostTransform,
-        double baselineFeet,
-        double baselineMeters)
+        FederationCheckOptions options)
     {
-        if (hostLocation is null || linkLocation is null)
+        if (hostLocation is null)
         {
-            return Array.Empty<ControlPointPair>();
+            return null;
         }
 
-        string bLabel = baselineMeters.ToString("0.#", CultureInfo.InvariantCulture);
-        (string Label, XYZ LinkPoint)[] samples =
+        List<SharedPositionCandidate> candidates = new();
+        foreach (ProjectLocation location in linkedDocument.ProjectLocations)
         {
-            ("Origin (0,0,0)", XYZ.Zero),
-            ($"+X Baseline ({bLabel}m,0,0)", new XYZ(baselineFeet, 0d, 0d)),
-            ($"+Y Baseline (0,{bLabel}m,0)", new XYZ(0d, baselineFeet, 0d)),
-        };
-
-        List<ControlPointPair> pairs = new(samples.Length);
-        foreach ((string label, XYZ linkPoint) in samples)
-        {
-            XYZ hostPoint = linkToHostTransform.OfPoint(linkPoint);
-            ProjectPosition hostPos = hostLocation.GetProjectPosition(hostPoint);
-            ProjectPosition linkPos = linkLocation.GetProjectPosition(linkPoint);
-            pairs.Add(new ControlPointPair(
-                label,
-                ToSharedMeters(hostPos),
-                ToSharedMeters(linkPos)));
+            ProjectLocation captured = location;
+            candidates.Add(new SharedPositionCandidate(
+                captured.Name ?? string.Empty,
+                point => SharedFeet(captured.GetProjectPosition(ToXyz(point)))));
         }
 
-        return pairs;
+        return ControlPointSampler.BestPosition(
+            options.ControlPointBaselineMeters,
+            point => ToPoint(linkToHostTransform.OfPoint(ToXyz(point))),
+            point => SharedFeet(hostLocation.GetProjectPosition(ToXyz(point))),
+            candidates,
+            options);
     }
 
-    private static FederationPoint3D ToSharedMeters(ProjectPosition position) =>
-        new(
-            position.EastWest * CrsTransformer.FeetToMetersFactor,
-            position.NorthSouth * CrsTransformer.FeetToMetersFactor,
-            position.Elevation * CrsTransformer.FeetToMetersFactor);
+    private static XYZ ToXyz(FederationPoint3D point) => new(point.X, point.Y, point.Z);
+
+    private static FederationPoint3D ToPoint(XYZ point) => new(point.X, point.Y, point.Z);
+
+    private static FederationPoint3D SharedFeet(ProjectPosition position) =>
+        new(position.EastWest, position.NorthSouth, position.Elevation);
+
+    private static List<string> ReadAttachedNestedLinkNames(Document linkedDocument)
+    {
+        List<string> names = new();
+        foreach (RevitLinkInstance nested in new FilteredElementCollector(linkedDocument)
+            .OfClass(typeof(RevitLinkInstance))
+            .WhereElementIsNotElementType()
+            .Cast<RevitLinkInstance>())
+        {
+            if (linkedDocument.GetElement(nested.GetTypeId()) is RevitLinkType type
+                && type.AttachmentType == AttachmentType.Attachment)
+            {
+                names.Add(nested.Name ?? $"Link {nested.Id.Value}");
+            }
+        }
+
+        return names;
+    }
 
     private static List<FederationLevelSnapshot> CollectDocumentLevels(
         Document document,

@@ -339,6 +339,82 @@ public sealed class FederationCheckerTests : IDisposable
     }
 
     [Fact]
+    public void KzFed004_IgnoresStructuralReferenceLevelOneHundredMmBelowFloorLevel()
+    {
+        FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
+        snapshot.HostLevels = new[]
+        {
+            new FederationLevelSnapshot(501, "h-1", "1FL", levelId: "host-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.000),
+            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "host-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000),
+        };
+        snapshot.LinkedModels = new[]
+        {
+            BuildLink(
+                "EastWing.rvt",
+                "east-002",
+                levels: new[]
+                {
+                    new FederationLevelSnapshot(601, "l-1", "1FL", levelId: "east-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.000),
+                    new FederationLevelSnapshot(602, "l-2", "2FL", levelId: "east-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000),
+                    new FederationLevelSnapshot(603, "l-3", "2SL", levelId: null, ordinal: null, shortName: null, projectElevationMeters: 3.900, hasFloors: false),
+                }),
+        };
+
+        FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
+
+        Assert.Equal(ReadinessCheckStatus.Pass, rule.Status);
+    }
+
+    [Fact]
+    public void KzFed004_IgnoresGroundReferenceLevelOneHundredFiftyMmBelowFirstFloor()
+    {
+        FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
+        snapshot.HostLevels = new[]
+        {
+            new FederationLevelSnapshot(500, "h-0", "GL", levelId: null, ordinal: null, shortName: null, projectElevationMeters: 0.000, hasFloors: false),
+            new FederationLevelSnapshot(501, "h-1", "1FL", levelId: "host-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.150),
+        };
+        snapshot.LinkedModels = new[]
+        {
+            BuildLink(
+                "EastWing.rvt",
+                "east-002",
+                levels: new[]
+                {
+                    new FederationLevelSnapshot(601, "l-1", "1FL", levelId: "east-1fl", ordinal: 0, shortName: "1F", projectElevationMeters: 0.150),
+                }),
+        };
+
+        FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
+
+        Assert.Equal(ReadinessCheckStatus.Pass, rule.Status);
+    }
+
+    [Fact]
+    public void KzFed004_StillFailsFloorLevelsOneHundredMmApart()
+    {
+        FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
+        snapshot.HostLevels = new[]
+        {
+            new FederationLevelSnapshot(502, "h-2", "2FL", levelId: "host-2fl", ordinal: 1, shortName: "2F", projectElevationMeters: 4.000),
+        };
+        snapshot.LinkedModels = new[]
+        {
+            BuildLink(
+                "EastWing.rvt",
+                "east-002",
+                levels: new[]
+                {
+                    new FederationLevelSnapshot(602, "l-2", "2F", levelId: "east-2f", ordinal: 1, shortName: "2F", projectElevationMeters: 3.900),
+                }),
+        };
+
+        FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleNearMissLevelDrift);
+
+        Assert.Equal(ReadinessCheckStatus.Fail, rule.Status);
+    }
+
+    [Fact]
     public void KzFed004_FailsWhenAlignedLevelsHaveMismatchedOrdinalOrShortName()
     {
         FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
@@ -782,45 +858,62 @@ public sealed class FederationCheckerTests : IDisposable
     // Readiness + HandoverReceipt Integration (Zero Duplicate RuleIds)
 
     [Fact]
+    public void KzFed008_WarnsAboutAttachedNestedLinksItCannotCheck()
+    {
+        FederationCheckSnapshot snapshot = CreateCleanHubSnapshot();
+        FederationLinkSnapshot clean = BuildLink("EastWing.rvt", "east-002");
+        snapshot.LinkedModels = new[]
+        {
+            new FederationLinkSnapshot(
+                clean.LinkInstanceElementId,
+                clean.LinkInstanceUniqueId,
+                clean.Name,
+                isLoaded: true,
+                sourcePath: clean.SourcePath,
+                modelId: clean.ModelId,
+                modelRole: clean.ModelRole,
+                federationMode: clean.FederationMode,
+                hubModelId: clean.HubModelId,
+                crsEpsg: clean.CrsEpsg,
+                isGeoreferenceVerified: true,
+                heightDatum: clean.HeightDatum,
+                geoidModel: clean.GeoidModel,
+                geoidOffsetMeters: clean.GeoidOffsetMeters,
+                controlPoints: clean.ControlPoints,
+                levels: clean.Levels,
+                nestedLinkNames: new[] { "EastAnnex.rvt" }),
+        };
+
+        FederationRuleResult rule = FederationChecker.Evaluate(snapshot).GetRule(FederationChecker.RuleLinkAndRoleHygiene);
+
+        Assert.Equal(ReadinessCheckStatus.Warn, rule.Status);
+        FederationIssue issue = Assert.Single(rule.Issues);
+        Assert.Equal("NESTED-LINK-NOT-CHECKED", issue.Code);
+        Assert.Contains("EastAnnex.rvt", issue.MessageEn);
+    }
+
+    [Fact]
+    public void ProjectReadinessEvaluator_WarnsWhenTheFederationCollectorFailed()
+    {
+        GisToolStandard standard = GisToolStandard.LoadEmbedded();
+        ReadinessCheckSnapshot readinessSnapshot = CreateReadyProjectSnapshot(standard);
+        readinessSnapshot.Federation = null;
+        readinessSnapshot.FederationUnavailableReason = "InvalidOperationException: link document is closing";
+
+        ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(readinessSnapshot, ReadinessMode.Project, standard);
+
+        ReadinessCheckGroup group = Assert.Single(report.Groups, g => g.Id == "federation");
+        ReadinessCheckItem item = Assert.Single(group.Items);
+        Assert.Equal(ReadinessCheckStatus.Warn, item.Status);
+        Assert.Contains("link document is closing", item.Detail);
+        Assert.Null(report.FederationReport);
+    }
+
+    [Fact]
     public void ProjectReadinessEvaluator_IntegratesFullFederationCheckerWithoutDuplicateRuleIdsAndProducesValidReceipt()
     {
         GisToolStandard standard = GisToolStandard.LoadEmbedded();
-        ReadinessCheckSnapshot readinessSnapshot = new()
-        {
-            DocumentTitle = "TokyoHub.rvt",
-            DocumentPath = @"D:\Station\TokyoHub.rvt",
-            IsEmptyModel = false,
-            StandardVersionText = standard.Version.ToString(),
-            BoundParameters = standard.Parameters.Select(p => new BoundParameterInfo(p.Name, p.Guid, p.Binding, p.Categories)).ToList(),
-            Materials = standard.Materials.Select((m, idx) => new MaterialInfo(100 + idx, m.Name, m.FillHex)).ToList(),
-            FloorTypes = standard.FloorTypes.Select((ft, idx) => new FloorTypeInfo(200 + idx, ft.Name, ft.GisCategory, ft.GisRestriction, ft.Material)).ToList(),
-            LoadedFamilies = new[]
-            {
-                new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true),
-            },
-            Schedules = TemplateStandardDefinitions.QaSchedules
-                .Select((s, idx) => new QaScheduleInfo(
-                    400 + idx,
-                    s.Name,
-                    s.RequiredFields,
-                    s.CategoryName,
-                    s.RequiredFields.Select(name => new QaScheduleFieldInfo(
-                        name,
-                        GisSharedParameters.TryGet(name, out GisParameterDefinition def) ? def.Guid : (Guid?)null))))
-                .ToList(),
-            ViewTemplateNames = new[] { TemplateStandardDefinitions.ExportPlanViewTemplateName },
-            ProjectCrsEpsgCode = 6677,
-            ProjectCrsName = "JGD2011 / Japan Plane Rectangular CS IX",
-            IsGeoreferenceVerified = true,
-            HostModelId = "hub-001",
-            HostModelRole = ShowcaseExportGuard.AuthoringModelRole,
-            Levels = new[]
-            {
-                new LevelInfo(501, "1F", ordinal: 0, shortName: "1F", hasFloors: true),
-                new LevelInfo(502, "2F", ordinal: 1, shortName: "2F", hasFloors: true),
-            },
-            Federation = CreateCleanHubSnapshot(),
-        };
+        ReadinessCheckSnapshot readinessSnapshot = CreateReadyProjectSnapshot(standard);
 
         ProjectReadinessReport report = ProjectReadinessEvaluator.Evaluate(readinessSnapshot, ReadinessMode.Project, standard);
 
@@ -886,6 +979,44 @@ public sealed class FederationCheckerTests : IDisposable
             },
         };
     }
+
+    private static ReadinessCheckSnapshot CreateReadyProjectSnapshot(GisToolStandard standard) =>
+        new()
+        {
+            DocumentTitle = "TokyoHub.rvt",
+            DocumentPath = @"D:\Station\TokyoHub.rvt",
+            IsEmptyModel = false,
+            StandardVersionText = standard.Version.ToString(),
+            BoundParameters = standard.Parameters.Select(p => new BoundParameterInfo(p.Name, p.Guid, p.Binding, p.Categories)).ToList(),
+            Materials = standard.Materials.Select((m, idx) => new MaterialInfo(100 + idx, m.Name, m.FillHex)).ToList(),
+            FloorTypes = standard.FloorTypes.Select((ft, idx) => new FloorTypeInfo(200 + idx, ft.Name, ft.GisCategory, ft.GisRestriction, ft.Material)).ToList(),
+            LoadedFamilies = new[]
+            {
+                new LoadedFamilyCheckInfo(304, "StationDoor", "Sliding_1800", "OST_Doors", gisDoor: "sliding", gisAccessCon: "none", hasGisDoorParameter: true, hasGisAccessConParameter: true),
+            },
+            Schedules = TemplateStandardDefinitions.QaSchedules
+                .Select((s, idx) => new QaScheduleInfo(
+                    400 + idx,
+                    s.Name,
+                    s.RequiredFields,
+                    s.CategoryName,
+                    s.RequiredFields.Select(name => new QaScheduleFieldInfo(
+                        name,
+                        GisSharedParameters.TryGet(name, out GisParameterDefinition def) ? def.Guid : (Guid?)null))))
+                .ToList(),
+            ViewTemplateNames = new[] { TemplateStandardDefinitions.ExportPlanViewTemplateName },
+            ProjectCrsEpsgCode = 6677,
+            ProjectCrsName = "JGD2011 / Japan Plane Rectangular CS IX",
+            IsGeoreferenceVerified = true,
+            HostModelId = "hub-001",
+            HostModelRole = ShowcaseExportGuard.AuthoringModelRole,
+            Levels = new[]
+            {
+                new LevelInfo(501, "1F", ordinal: 0, shortName: "1F", hasFloors: true),
+                new LevelInfo(502, "2F", ordinal: 1, shortName: "2F", hasFloors: true),
+            },
+            Federation = CreateCleanHubSnapshot(),
+        };
 
     private static FederationLinkSnapshot BuildLink(
         string name,

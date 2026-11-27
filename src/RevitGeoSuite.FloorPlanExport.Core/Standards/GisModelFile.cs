@@ -90,6 +90,18 @@ public sealed class GisModelFile
     [JsonExtensionData]
     private IDictionary<string, JToken>? UnknownFields { get; set; }
 
+    /// <summary>
+    /// Writes the model's stored federation stamp into <see cref="Federation"/>. A model that never
+    /// chose a role (<paramref name="modeText"/> empty) keeps whatever the file already says.
+    /// </summary>
+    public void ApplyFederationStamp(string? modeText, string? hubModelId)
+    {
+        if (!string.IsNullOrWhiteSpace(modeText))
+        {
+            Federation = GisModelFederation.FromStamp(modeText, hubModelId);
+        }
+    }
+
     /// <summary>The name of the station profile this model exports with.</summary>
     [JsonIgnore]
     public string ProfileName => string.IsNullOrWhiteSpace(Profile) ? DefaultProfileName : Profile!.Trim();
@@ -420,6 +432,34 @@ public sealed class GisModelFederation
             Mode = FormatMode(mode),
             HubModelId = string.IsNullOrWhiteSpace(hubModelId) ? null : hubModelId!.Trim(),
         };
+
+    /// <summary>
+    /// The role that counts for a model: its stored stamp when it has one, else what its
+    /// <c>gis-model.json</c> says (models exported before the stamp existed).
+    /// </summary>
+    public static GisModelFederation? Resolve(string? stampMode, string? stampHubModelId, GisModelFederation? fileFederation) =>
+        string.IsNullOrWhiteSpace(stampMode) ? fileFederation : FromStamp(stampMode, stampHubModelId);
+
+    /// <summary>
+    /// The block for a model's stored federation stamp (<c>GeoProjectInfo.FederationMode</c> and
+    /// <c>FederationHubModelId</c>): null for standalone without a hub id, so a standalone model's
+    /// file carries no <c>federation</c> key. Unrecognized mode text is kept for KZ-FED-008 to report.
+    /// </summary>
+    public static GisModelFederation? FromStamp(string? modeText, string? hubModelId)
+    {
+        string? hub = string.IsNullOrWhiteSpace(hubModelId) ? null : hubModelId!.Trim();
+        if (string.IsNullOrWhiteSpace(modeText))
+        {
+            return null;
+        }
+
+        if (TryParseMode(modeText, out KanizuFederationMode mode))
+        {
+            return mode == KanizuFederationMode.Standalone && hub == null ? null : Create(mode, hub);
+        }
+
+        return new GisModelFederation { Mode = modeText!.Trim(), HubModelId = hub };
+    }
 }
 
 public sealed class GisModelDrawingRules

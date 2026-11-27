@@ -106,4 +106,51 @@ public sealed class GeoProjectInfoTests
 
         Assert.Equal("53394611", info.PrimaryMeshCode!.Value);
     }
+
+    [Fact]
+    public void Federation_stamp_is_absent_from_legacy_payloads_and_round_trips_when_set()
+    {
+        string legacy = JsonConvert.SerializeObject(new GeoProjectInfo { ModelId = "model-1" });
+        Assert.DoesNotContain("Federation", legacy);
+
+        GeoProjectInfo stamped = new GeoProjectInfo { ModelId = "model-1", FederationMode = "spoke", FederationHubModelId = "hub-1" };
+        GeoProjectInfo? reloaded = JsonConvert.DeserializeObject<GeoProjectInfo>(JsonConvert.SerializeObject(stamped));
+
+        Assert.Equal("spoke", reloaded?.FederationMode);
+        Assert.Equal("hub-1", reloaded?.FederationHubModelId);
+    }
+
+    [Fact]
+    public void CarryForwardIdentity_keeps_the_federation_role_when_a_fresh_info_replaces_the_stored_one()
+    {
+        GeoProjectInfo previous = new GeoProjectInfo
+        {
+            ModelId = "model-1",
+            GisStationFolder = @"C:\station",
+            FederationMode = "spoke",
+            FederationHubModelId = "hub-1",
+        };
+        GeoProjectInfo fresh = new GeoProjectInfo();
+
+        Assert.True(fresh.NeedsIdentityCarriedForward());
+        fresh.CarryForwardIdentity(previous);
+
+        Assert.Equal("model-1", fresh.ModelId);
+        Assert.Equal(@"C:\station", fresh.GisStationFolder);
+        Assert.Equal("spoke", fresh.FederationMode);
+        Assert.Equal("hub-1", fresh.FederationHubModelId);
+    }
+
+    [Fact]
+    public void CarryForwardIdentity_does_not_resurrect_an_old_role_over_an_explicit_standalone()
+    {
+        GeoProjectInfo previous = new GeoProjectInfo { ModelId = "model-1", FederationMode = "spoke", FederationHubModelId = "hub-1" };
+        GeoProjectInfo restamped = new GeoProjectInfo { FederationMode = "standalone" };
+
+        restamped.CarryForwardIdentity(previous);
+
+        Assert.Equal("standalone", restamped.FederationMode);
+        Assert.Null(restamped.FederationHubModelId);
+        Assert.Equal("model-1", restamped.ModelId);
+    }
 }

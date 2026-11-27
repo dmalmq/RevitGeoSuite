@@ -289,6 +289,9 @@ public sealed class ReadinessCheckSnapshot
     /// </summary>
     public FederationCheckSnapshot? Federation { get; set; }
 
+    /// <summary>Why <see cref="Federation"/> could not be collected; empty when it was or was not attempted.</summary>
+    public string FederationUnavailableReason { get; set; } = string.Empty;
+
     public ReadinessMode SuggestedMode => SuggestMode(DocumentPath, DocumentTitle, IsEmptyModel);
 
     public static ReadinessMode SuggestMode(string? documentPath, string? documentTitle, bool isEmptyModel)
@@ -933,6 +936,20 @@ public static class ProjectReadinessEvaluator
         if (federationReport != null)
         {
             groups.Add(EvaluateFederationGroup(federationReport));
+        }
+        else if (mode == ReadinessMode.Project && !string.IsNullOrWhiteSpace(snapshot.FederationUnavailableReason))
+        {
+            groups.Add(new ReadinessCheckGroup(
+                "federation",
+                "Multi-building federation checks",
+                new[]
+                {
+                    new ReadinessCheckItem(
+                        FederationChecker.ItemLinkAndRoleHygiene,
+                        "Federation checks could not run",
+                        ReadinessCheckStatus.Warn,
+                        $"The federation checks (KZ-FED-001..009) could not read this model and its links ({snapshot.FederationUnavailableReason}). Only the basic CRS, ModelId and level checks ran."),
+                }));
         }
 
         return new ProjectReadinessReport(

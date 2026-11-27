@@ -8,7 +8,6 @@ using RevitGeoSuite.Core.ProjectMetadata;
 using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
-using RevitGeoSuite.FloorPlanExport.Core.StarterKit;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.Storage;
 
@@ -145,15 +144,11 @@ public sealed class GisModelSettings
     }
 
     /// <summary>
-    /// Persists optional additive <c>federation: { mode, hubModelId }</c> metadata into the model's
-    /// <c>gis-model.json</c> inside its station folder. Returns false, writing nothing, when the model
-    /// has no station folder yet or the file could not be written.
+    /// Writes the federation role stored in the model (<see cref="GeoProjectInfo.FederationMode"/>)
+    /// into its <c>gis-model.json</c> now. Returns false, writing nothing, when the model has no
+    /// station folder yet; the next export into a station folder writes it then. Never throws.
     /// </summary>
-    public static bool SaveFederationMetadata(
-        Document document,
-        KanizuFederationMode mode,
-        string? hubModelId = null,
-        ICollection<string>? warnings = null)
+    public static bool RecordFederation(Document document, ICollection<string>? warnings)
     {
         (string? path, string stationFolder, string modelId) = ResolvePath(document);
         if (path == null)
@@ -179,7 +174,7 @@ public sealed class GisModelSettings
                 file.Identity.Building = DocumentProjectKeyBuilder.CreateDisplayName(document);
             }
 
-            file.Federation = GisModelFederation.Create(mode, hubModelId);
+            ApplyStoredFederation(file, document);
             file.Save(path);
             return true;
         }
@@ -187,6 +182,24 @@ public sealed class GisModelSettings
         {
             warnings?.Add($"Could not save federation metadata to {path} ({ex.Message}).");
             return false;
+        }
+    }
+
+    private static void ApplyStoredFederation(GisModelFile file, Document document)
+    {
+        GeoProjectInfo? info = TryLoadGeoProjectInfo(document);
+        file.ApplyFederationStamp(info?.FederationMode, info?.FederationHubModelId);
+    }
+
+    private static GeoProjectInfo? TryLoadGeoProjectInfo(Document document)
+    {
+        try
+        {
+            return new GeoProjectInfoStorage().Load(new RevitDocumentHandle(document));
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 
@@ -293,6 +306,7 @@ public sealed class GisModelSettings
         // file already lists, so such an export does not drop the station export's levels.
         IReadOnlyList<ViewPlan> levelViews = views.Count > 0 ? views : ListedViews(document, file);
         file.Levels = ReadLevels(document, levelViews);
+        ApplyStoredFederation(file, document);
         file.Versions.Standard = ReadStandardVersion(document);
         file.Versions.LastExportRevitGeoSuite = typeof(GisModelSettings).Assembly.GetName().Version?.ToString() ?? string.Empty;
         file.Versions.LastExportUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);

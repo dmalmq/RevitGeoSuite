@@ -505,13 +505,10 @@ public static class NewKanizuProjectBootstrapper
             }
         }
 
-        if (plan.FederationMode != KanizuFederationMode.Standalone)
-        {
-            string federationMode = GisModelFederation.FormatMode(plan.FederationMode);
-            log.Add(GisModelSettings.SaveFederationMetadata(doc, plan.FederationMode, plan.HubModelId, warnings)
-                ? $"Recorded federation.mode = '{federationMode}' in gis-model.json."
-                : $"No station folder yet; federation.mode = '{federationMode}' is recorded once a station folder is set.");
-        }
+        string federationMode = GisModelFederation.FormatMode(plan.FederationMode);
+        log.Add(GisModelSettings.RecordFederation(doc, warnings)
+            ? $"Recorded federation.mode = '{federationMode}' in gis-model.json."
+            : $"Stored federation.mode = '{federationMode}' in the model; the first export into a station folder writes it to gis-model.json.");
 
         // Step 3: Post-initialization readiness verification (TemplateReadinessCheck + T9 identity checks).
         // Re-read persisted Level elements directly from doc after commit so T9-POST-LEVELIDS verifies real Revit state.
@@ -610,6 +607,8 @@ public static class NewKanizuProjectBootstrapper
             };
 
         updated.ModelId = plan.ModelId;
+        updated.FederationMode = GisModelFederation.FormatMode(plan.FederationMode);
+        updated.FederationHubModelId = plan.FederationMode == KanizuFederationMode.Spoke ? plan.HubModelId : null;
         storage.Save(handle, updated);
         log.Add($"Stamped GeoProjectInfo.ModelId = '{plan.ModelId}' (existing schema preserved).");
     }
