@@ -284,4 +284,42 @@ public sealed class GisKeepTests : IDisposable
         Assert.Contains("same value", skipped[1]);
         Assert.Contains("no element key", skipped[2]);
     }
+
+    [Fact]
+    public void TheConformanceFileIsWhatMergeWritesAndAnswersTheDriftFixturesConflict()
+    {
+        string conformance = Path.Combine(Path.GetDirectoryName(SourceFile())!, "..", "..", "Fixtures", "Conformance");
+        string keepPath = Path.Combine(conformance, "gis-keep", "8d7f3c1e-0000.gis-keep.json");
+        byte[] bytes = File.ReadAllBytes(keepPath);
+
+        // Kanizu's reader test (kanizu-core/src/revit/keep.rs) pins the same bytes: change both together.
+        using (var sha = System.Security.Cryptography.SHA256.Create())
+        {
+            Assert.Equal(
+                "b99fca804d09014d81aa06b99619d8907262d6c8c757f2dc70f9b0f08af4b9d0",
+                BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", string.Empty).ToLowerInvariant());
+        }
+
+        IReadOnlyList<GisKeepEntry> entries = GisKeep.Read(keepPath, "8d7f3c1e-0000");
+        Assert.Equal(new[] { "category", "ordinal" }, entries.Select(entry => entry.Field));
+        Assert.Equal(GisKeep.FileName("8d7f3c1e-0000"), Path.GetFileName(keepPath));
+
+        // The category entry answers the drift fixture's one conflict, value for value.
+        GisDriftFile drift = GisDrift.Read(Path.Combine(conformance, "gis-drift", "8d7f3c1e-0000.gis-drift.json"));
+        GisDriftRow conflict = drift.Rows.Single(row => row.Conflict);
+        GisKeepEntry answer = Assert.Single(entries, entry => entry.RevitKey == conflict.RevitKey && entry.Field == conflict.Field);
+        Assert.Equal(conflict.Revit, answer.Revit);
+        Assert.Equal(conflict.Gdb, answer.Gdb);
+
+        // The ordinal entry was kept against GDB 3; the drift file's row now holds another value, so the entry is stale.
+        GisKeepEntry ordinal = entries.Single(entry => entry.Field == "ordinal");
+        GisDriftRow level = drift.Rows.Single(row => row.RevitKey == ordinal.RevitKey && row.Field == ordinal.Field);
+        Assert.Equal("3", ordinal.Gdb);
+        Assert.NotEqual(ordinal.Gdb, level.Gdb);
+
+        // RevitGeoSuite writes exactly these bytes.
+        Assert.Equal(Encoding.UTF8.GetString(bytes), GisKeep.Merge(null, "8d7f3c1e-0000", entries));
+    }
+
+    private static string SourceFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
 }
