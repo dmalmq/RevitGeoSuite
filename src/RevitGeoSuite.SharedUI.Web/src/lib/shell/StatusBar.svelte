@@ -2,17 +2,26 @@
   import { t } from '$lib/i18n'
   import { Icon } from '$lib/kit'
   import { mapCursor } from './cursor'
-  import { findingHintKey, findingTitleKey, goToProblem, problems, readiness } from './readiness'
+  import { findingHintKey, findingTitleKey, goToProblem, problems, readiness, targetFor } from './readiness'
   import type { ReadinessStatus } from './status'
 
   // 28 px status bar on the frame: document, CRS, mesh code, the map position under the pointer,
-  // and readiness at the right: the status, then the first problem as a link to where it is fixed.
+  // and readiness at the right. Every readiness finding is about the georeference, so the line names
+  // it: "Georeference: Confidence not recorded", the first problem as a link to where it is fixed,
+  // or "Georeference: Ready" when there is none. The status itself is the dot, its tooltip and a
+  // screen-reader word. GIS-standard audit findings are not readiness findings: they stay on the
+  // GIS standard page and its problems pill. A read-only or unsupported document is about the
+  // model, not its georeference, and has nowhere to be fixed, so it shows without the subject. The subject keeps its own spacing ("Georeference: "
+  // ends in a space, the Japanese full-width colon needs none), so no gap follows it.
   let { documentName = '', crs = '', meshCode = '' }: { documentName?: string; crs?: string; meshCode?: string } = $props()
 
   const status = $derived<ReadinessStatus>($readiness.status)
   const first = $derived($problems[0] ?? null)
   const firstTitle = $derived(first ? $t(...findingTitleKey(first.code)) : '')
   const firstHint = $derived(first ? $t(findingHintKey(first.code), first.message) : '')
+  // With no problem to show, a model finding of any severity (read-only is only info) still keeps the
+  // subject off: the status is then about the model, not its georeference.
+  const showSubject = $derived(first ? first.target != null : !$readiness.findings.some((f) => targetFor(f.code) == null))
 
   const DOT: Record<ReadinessStatus, string> = {
     ready: 'bg-success',
@@ -48,21 +57,25 @@
     </span>
   {/if}
   <span class="ml-auto flex min-w-0 shrink items-center gap-1.5" role="status">
-    <span class="h-2 w-2 shrink-0 rounded-full {DOT[status]}" aria-hidden="true"></span>
-    <span class="shrink-0">{label}</span>
-    {#if first}
-      <span aria-hidden="true">·</span>
-      {#if first.target}
-        {@const target = first.target}
-        <button
-          type="button"
-          class="min-w-0 truncate rounded-chip text-foreground underline-offset-2 hover:underline"
-          title={firstHint}
-          onclick={() => goToProblem(target)}
-        >{firstTitle}</button>
+    <span class="h-2 w-2 shrink-0 rounded-full {DOT[status]}" aria-hidden="true" title={label}></span>
+    <span class="flex min-w-0 items-center">
+      {#if showSubject}<span class="shrink-0 whitespace-pre">{$t('Status.Subject', 'Georeference: ')}</span>{/if}
+      {#if first}
+        {#if first.target}
+          {@const target = first.target}
+          <button
+            type="button"
+            class="min-w-0 truncate rounded-chip text-foreground underline-offset-2 hover:underline"
+            title={firstHint}
+            onclick={() => goToProblem(target)}
+          >{firstTitle}</button>
+        {:else}
+          <span class="min-w-0 truncate text-foreground" title={firstHint}>{firstTitle}</span>
+        {/if}
       {:else}
-        <span class="min-w-0 truncate text-foreground" title={firstHint}>{firstTitle}</span>
+        <span class="shrink-0">{label}</span>
       {/if}
-    {/if}
+    </span>
+    {#if first}<span class="sr-only">{label}</span>{/if}
   </span>
 </footer>
