@@ -1,14 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.ProjectMetadata;
+using RevitGeoSuite.FloorPlanExport.Core.Federation;
 using RevitGeoSuite.FloorPlanExport.Core.GisTools;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
+using RevitGeoSuite.FloorPlanExport.Federation;
 using RevitGeoSuite.FloorPlanExport.GisTools;
 using RevitGeoSuite.RevitInterop;
 using RevitGeoSuite.RevitInterop.Storage;
@@ -217,6 +220,9 @@ public static class GisStandardStateReader
         (int elementBakedCount, List<long> elementBakedSample) = effectiveMode == ReadinessMode.Template
             ? ReadElementsWithBakedInIds(document)
             : (0, new List<long>());
+        (FederationCheckSnapshot? federation, string federationError) = effectiveMode == ReadinessMode.Project
+            ? TryReadFederationSnapshot(document)
+            : (null, string.Empty);
 
         return new ReadinessCheckSnapshot
         {
@@ -248,7 +254,22 @@ public static class GisStandardStateReader
             LinkedModels = ReadLinkedModels(document),
             HostModelRole = ReadModelRoleText(document),
             ShowcaseElements = ReadShowcaseElements(document),
+            Federation = federation,
+            FederationUnavailableReason = federationError,
         };
+    }
+
+    private static (FederationCheckSnapshot? Snapshot, string Error) TryReadFederationSnapshot(Document document)
+    {
+        try
+        {
+            return (RevitFederationSnapshotCollector.Collect(document), string.Empty);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Federation snapshot failed: {ex}");
+            return (null, $"{ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private const int BakedInSampleLimit = 8;

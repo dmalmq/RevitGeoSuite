@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoSuite.Core.ProjectMetadata;
+using RevitGeoSuite.FloorPlanExport.Core.Coordinates;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
 using RevitGeoSuite.FloorPlanExport.Core.Standards;
 using RevitGeoSuite.RevitInterop;
@@ -125,7 +126,12 @@ public sealed class GisModelSettings
                     .Distinct()
                     .Select(id => document.GetElement(new ElementId(id)) as RevitLinkInstance)
                     .Where(instance => instance != null && !RevitShowcaseElementFilter.IsShowcaseDocument(instance.GetLinkDocument()))
-                    .Select(instance => new GisModelLink { UniqueId = instance!.UniqueId, Name = instance.Name ?? string.Empty })
+                    .Select(instance => new GisModelLink
+                    {
+                        UniqueId = instance!.UniqueId,
+                        Name = instance.Name ?? string.Empty,
+                        ModelId = TryReadLinkModelId(instance.GetLinkDocument()),
+                    })
                     .ToList();
             }
 
@@ -134,6 +140,66 @@ public sealed class GisModelSettings
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException)
         {
             warnings?.Add($"The model's GIS settings file {path} could not be written ({ex.Message}).");
+        }
+    }
+
+    /// <summary>
+    /// Writes the federation role stored in the model (<see cref="GeoProjectInfo.FederationMode"/>)
+    /// into its <c>gis-model.json</c> now. Returns false, writing nothing, when the model has no
+    /// station folder yet; the next export into a station folder writes it then. Never throws.
+    /// </summary>
+    public static bool RecordFederation(Document document, ICollection<string>? warnings)
+    {
+        (string? path, string stationFolder, string modelId) = ResolvePath(document);
+        if (path == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            GisModelFile file = GisModelFile.TryLoad(path) ?? GisModelFile.CreateFromTemplate();
+            if (string.IsNullOrWhiteSpace(file.Identity.ModelId))
+            {
+                file.Identity.ModelId = modelId;
+            }
+
+            if (string.IsNullOrWhiteSpace(file.Identity.Station))
+            {
+                file.Identity.Station = new DirectoryInfo(stationFolder.TrimEnd('\\', '/')).Name;
+            }
+
+            if (string.IsNullOrWhiteSpace(file.Identity.Building))
+            {
+                file.Identity.Building = DocumentProjectKeyBuilder.CreateDisplayName(document);
+            }
+
+            ApplyStoredFederation(file, document);
+            file.Save(path);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException)
+        {
+            warnings?.Add($"Could not save federation metadata to {path} ({ex.Message}).");
+            return false;
+        }
+    }
+
+    private static void ApplyStoredFederation(GisModelFile file, Document document)
+    {
+        GeoProjectInfo? info = TryLoadGeoProjectInfo(document);
+        file.ApplyFederationStamp(info?.FederationMode, info?.FederationHubModelId);
+    }
+
+    private static GeoProjectInfo? TryLoadGeoProjectInfo(Document document)
+    {
+        try
+        {
+            return new GeoProjectInfoStorage().Load(new RevitDocumentHandle(document));
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 
@@ -232,7 +298,12 @@ public sealed class GisModelSettings
         if (views.Count > 0)
         {
             file.Views = views
-                .Select(view => new GisModelView { UniqueId = view.UniqueId, Name = view.Name ?? string.Empty })
+                .Select(view => new GisModelView
+                {
+                    UniqueId = view.UniqueId,
+                    Name = view.Name ?? string.Empty,
+                    LevelUniqueId = view.GenLevel?.UniqueId,
+                })
                 .ToList();
         }
 
@@ -240,6 +311,7 @@ public sealed class GisModelSettings
         // file already lists, so such an export does not drop the station export's levels.
         IReadOnlyList<ViewPlan> levelViews = views.Count > 0 ? views : ListedViews(document, file);
         file.Levels = ReadLevels(document, levelViews);
+        ApplyStoredFederation(file, document);
         file.Versions.Standard = ReadStandardVersion(document);
         file.Versions.LastExportRevitGeoSuite = typeof(GisModelSettings).Assembly.GetName().Version?.ToString() ?? string.Empty;
         file.Versions.LastExportUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
@@ -261,6 +333,7 @@ public sealed class GisModelSettings
         HashSet<long> exportedLevelIds = new(views
             .Where(view => view.GenLevel != null)
             .Select(view => view.GenLevel.Id.Value));
+        ProjectLocation? projectLocation = document.ActiveProjectLocation;
         return new FilteredElementCollector(document)
             .OfClass(typeof(Level))
             .Cast<Level>()
@@ -270,7 +343,7 @@ public sealed class GisModelSettings
                 LevelId = ReadString(level, GisSharedParameters.LevelId),
             })
             .Where(entry => entry.LevelId.Length > 0 || exportedLevelIds.Contains(entry.Level.Id.Value))
-            .OrderBy(entry => entry.Level.Elevation)
+            .OrderBy(entry => entry.Level.ProjectElevation)
             .Select(entry => new GisModelLevel
             {
                 UniqueId = entry.Level.UniqueId,
@@ -278,8 +351,31 @@ public sealed class GisModelSettings
                 LevelId = entry.LevelId,
                 Ordinal = ReadInteger(entry.Level, GisSharedParameters.Ordinal),
                 ShortName = ReadString(entry.Level, GisSharedParameters.ShortName),
+                ElevationMeters = Math.Round(
+                    (projectLocation != null
+                        ? projectLocation.GetProjectPosition(new XYZ(0d, 0d, entry.Level.ProjectElevation)).Elevation
+                        : entry.Level.ProjectElevation) * CrsTransformer.FeetToMetersFactor,
+                    4),
             })
             .ToList();
+    }
+
+    private static string? TryReadLinkModelId(Document? linkedDocument)
+    {
+        if (linkedDocument is null || linkedDocument.IsFamilyDocument)
+        {
+            return null;
+        }
+
+        try
+        {
+            string? id = new GeoProjectInfoStorage().Load(new RevitDocumentHandle(linkedDocument))?.ModelId?.Trim();
+            return string.IsNullOrWhiteSpace(id) ? null : id;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static int? ReadStandardVersion(Document document)

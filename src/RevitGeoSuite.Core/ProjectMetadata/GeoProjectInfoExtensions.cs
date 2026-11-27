@@ -25,6 +25,48 @@ public static class GeoProjectInfoExtensions
         return true;
     }
 
+    /// <summary>
+    /// Keeps the model's identity when <paramref name="info"/> was built fresh, as re-georeferencing
+    /// does: the ModelId, the station folder and the federation role survive from
+    /// <paramref name="previous"/> unless <paramref name="info"/> sets its own.
+    /// </summary>
+    public static void CarryForwardIdentity(this GeoProjectInfo info, GeoProjectInfo? previous)
+    {
+        if (info is null)
+        {
+            throw new ArgumentNullException(nameof(info));
+        }
+
+        if (previous is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(info.ModelId))
+        {
+            info.ModelId = previous.ModelId;
+        }
+
+        if (string.IsNullOrWhiteSpace(info.GisStationFolder))
+        {
+            info.GisStationFolder = previous.GisStationFolder;
+        }
+
+        if (string.IsNullOrWhiteSpace(info.FederationMode))
+        {
+            info.FederationMode = previous.FederationMode;
+            if (string.IsNullOrWhiteSpace(info.FederationHubModelId))
+            {
+                info.FederationHubModelId = previous.FederationHubModelId;
+            }
+        }
+    }
+
+    public static bool NeedsIdentityCarriedForward(this GeoProjectInfo info) =>
+        string.IsNullOrWhiteSpace(info.ModelId)
+        || string.IsNullOrWhiteSpace(info.GisStationFolder)
+        || string.IsNullOrWhiteSpace(info.FederationMode);
+
     public static void ApplyCanonicalLocation(
         this GeoProjectInfo info,
         CrsReference? projectCrs,

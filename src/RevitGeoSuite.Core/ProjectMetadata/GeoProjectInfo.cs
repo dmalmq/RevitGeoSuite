@@ -1,4 +1,5 @@
 using System;
+using Newtonsoft.Json;
 using RevitGeoSuite.Core.Coordinates;
 using RevitGeoSuite.Core.Mesh;
 using RevitGeoSuite.Core.Versioning;
@@ -36,4 +37,16 @@ public sealed class GeoProjectInfo
     /// export into a station folder; empty until then.
     /// </summary>
     public string? GisStationFolder { get; set; }
+
+    /// <summary>
+    /// The federation role chosen in New Kanizu Project: <c>standalone</c>, <c>hub</c>, <c>spoke</c>
+    /// or <c>independent</c>. Kept in the model so the export can write it into
+    /// <c>gis-model.json</c> once a station folder exists. Absent on models that never chose one.
+    /// </summary>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public string? FederationMode { get; set; }
+
+    /// <summary>The hub's ModelId when <see cref="FederationMode"/> is <c>spoke</c>.</summary>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public string? FederationHubModelId { get; set; }
 }

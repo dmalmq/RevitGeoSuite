@@ -6,6 +6,7 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RevitGeoSuite.FloorPlanExport.Core.Models;
+using RevitGeoSuite.FloorPlanExport.Core.StarterKit;
 
 namespace RevitGeoSuite.FloorPlanExport.Core.Standards;
 
@@ -79,8 +80,27 @@ public sealed class GisModelFile
     [JsonProperty("versions")]
     public GisModelVersions Versions { get; set; } = new();
 
+    /// <summary>
+    /// Optional multi-building federation topology (<c>mode</c> and <c>hubModelId</c>).
+    /// Absent (null) on legacy v1/v2 exports so existing files and golden templates stay byte-identical.
+    /// </summary>
+    [JsonProperty("federation", NullValueHandling = NullValueHandling.Ignore)]
+    public GisModelFederation? Federation { get; set; }
+
     [JsonExtensionData]
     private IDictionary<string, JToken>? UnknownFields { get; set; }
+
+    /// <summary>
+    /// Writes the model's stored federation stamp into <see cref="Federation"/>. A model that never
+    /// chose a role (<paramref name="modeText"/> empty) keeps whatever the file already says.
+    /// </summary>
+    public void ApplyFederationStamp(string? modeText, string? hubModelId)
+    {
+        if (!string.IsNullOrWhiteSpace(modeText))
+        {
+            Federation = GisModelFederation.FromStamp(modeText, hubModelId);
+        }
+    }
 
     /// <summary>The name of the station profile this model exports with.</summary>
     [JsonIgnore]
@@ -232,20 +252,34 @@ public sealed class GisModelFile
         GisModelFile? file)
     {
         List<T> candidates = available.ToList();
-        if (file != null)
-        {
-            IReadOnlyList<T> listed = file.MatchViews(candidates, uniqueId, name);
-            if (listed.Count > 0)
-            {
-                return listed;
-            }
-        }
-
-        List<T> gisViews = candidates
-            .Where(candidate => (name(candidate) ?? string.Empty).StartsWith(GisViewPrefix, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        return gisViews.Count > 0 ? gisViews : candidates;
+        IReadOnlyList<T> stationViews = ChooseStationExportViews(candidates, uniqueId, name, file);
+        return stationViews.Count > 0 ? stationViews : candidates;
     }
+
+    /// <summary>
+    /// The views a station export takes: those <paramref name="file"/> lists that still exist,
+    /// else the <c>GIS_</c> views. Empty when the model has neither, as no station export set exists.
+    /// </summary>
+    public static IReadOnlyList<T> ChooseStationExportViews<T>(
+        IEnumerable<T> available,
+        Func<T, string> uniqueId,
+        Func<T, string> name,
+        GisModelFile? file)
+    {
+        List<T> candidates = available.ToList();
+        IReadOnlyList<T> listed = file?.MatchViews(candidates, uniqueId, name) ?? Array.Empty<T>();
+        return listed.Count > 0
+            ? listed
+            : candidates.Where(candidate => (name(candidate) ?? string.Empty).StartsWith(GisViewPrefix, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    /// <summary>The levels of the views the file lists, by level <c>UniqueId</c>. Empty for a file written before views carried their level.</summary>
+    public ISet<string> ExportLevelUniqueIds() =>
+        new HashSet<string>(
+            (Views ?? new List<GisModelView>())
+                .Select(view => view?.LevelUniqueId?.Trim() ?? string.Empty)
+                .Where(id => id.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// The views the file lists that <paramref name="available"/> still holds, by UniqueId and
@@ -333,6 +367,10 @@ public sealed class GisModelLevel
 
     [JsonProperty("shortName")]
     public string ShortName { get; set; } = string.Empty;
+
+    /// <summary>Optional elevation in meters (from <c>Level.ProjectElevation</c> in shared/T.P. frame); omitted when unset.</summary>
+    [JsonProperty("elevationMeters", NullValueHandling = NullValueHandling.Ignore)]
+    public double? ElevationMeters { get; set; }
 }
 
 public sealed class GisModelView
@@ -342,6 +380,10 @@ public sealed class GisModelView
 
     [JsonProperty("name")]
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The <c>UniqueId</c> of the view's level (<c>ViewPlan.GenLevel</c>); absent in files written before it existed.</summary>
+    [JsonProperty("levelUniqueId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? LevelUniqueId { get; set; }
 }
 
 public sealed class GisModelLink
@@ -352,6 +394,90 @@ public sealed class GisModelLink
 
     [JsonProperty("name")]
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>Optional stable <c>GeoProjectInfo.ModelId</c> of the linked model; omitted when unset.</summary>
+    [JsonProperty("modelId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? ModelId { get; set; }
+}
+
+/// <summary>
+/// Optional additive multi-building federation topology stored inside <c>gis-model.json</c>.
+/// Omitted when unset so legacy v1/v2 exports stay byte-identical.
+/// </summary>
+public sealed class GisModelFederation
+{
+    /// <summary>Federation mode: <c>"standalone"</c>, <c>"hub"</c>, <c>"spoke"</c>, or <c>"independent"</c>.</summary>
+    [JsonProperty("mode", NullValueHandling = NullValueHandling.Ignore)]
+    public string? Mode { get; set; }
+
+    /// <summary>Stable ModelId of the hub model when <see cref="Mode"/> is <c>"spoke"</c>.</summary>
+    [JsonProperty("hubModelId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? HubModelId { get; set; }
+
+    public static string FormatMode(KanizuFederationMode mode) => mode.ToString().ToLowerInvariant();
+
+    public static bool TryParseMode(string? modeText, out KanizuFederationMode mode)
+    {
+        if (string.IsNullOrWhiteSpace(modeText))
+        {
+            mode = KanizuFederationMode.Standalone;
+            return false;
+        }
+
+        switch (modeText!.Trim().ToLowerInvariant())
+        {
+            case "standalone":
+                mode = KanizuFederationMode.Standalone;
+                return true;
+            case "hub":
+                mode = KanizuFederationMode.Hub;
+                return true;
+            case "spoke":
+                mode = KanizuFederationMode.Spoke;
+                return true;
+            case "independent":
+                mode = KanizuFederationMode.Independent;
+                return true;
+            default:
+                mode = KanizuFederationMode.Standalone;
+                return false;
+        }
+    }
+
+    public static GisModelFederation Create(KanizuFederationMode mode, string? hubModelId = null) =>
+        new()
+        {
+            Mode = FormatMode(mode),
+            HubModelId = string.IsNullOrWhiteSpace(hubModelId) ? null : hubModelId!.Trim(),
+        };
+
+    /// <summary>
+    /// The role that counts for a model: its stored stamp when it has one, else what its
+    /// <c>gis-model.json</c> says (models exported before the stamp existed).
+    /// </summary>
+    public static GisModelFederation? Resolve(string? stampMode, string? stampHubModelId, GisModelFederation? fileFederation) =>
+        string.IsNullOrWhiteSpace(stampMode) ? fileFederation : FromStamp(stampMode, stampHubModelId);
+
+    /// <summary>
+    /// The block for a model's stored federation stamp (<c>GeoProjectInfo.FederationMode</c> and
+    /// <c>FederationHubModelId</c>): null for standalone without a hub id, so a standalone model's
+    /// file carries no <c>federation</c> key. Unrecognized mode text is kept for KZ-FED-008 to report.
+    /// </summary>
+    public static GisModelFederation? FromStamp(string? modeText, string? hubModelId)
+    {
+        string? hub = string.IsNullOrWhiteSpace(hubModelId) ? null : hubModelId!.Trim();
+        if (string.IsNullOrWhiteSpace(modeText))
+        {
+            return null;
+        }
+
+        if (TryParseMode(modeText, out KanizuFederationMode mode))
+        {
+            return mode == KanizuFederationMode.Standalone && hub == null ? null : Create(mode, hub);
+        }
+
+        return new GisModelFederation { Mode = modeText!.Trim(), HubModelId = hub };
+    }
 }
 
 public sealed class GisModelDrawingRules
