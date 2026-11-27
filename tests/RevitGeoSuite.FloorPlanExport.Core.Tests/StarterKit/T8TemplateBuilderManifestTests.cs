@@ -539,10 +539,11 @@ public sealed class T8TemplateBuilderManifestTests
         string scriptPath = Path.Combine(repoRoot, "scripts", "Build-StarterKit.ps1");
         Assert.True(File.Exists(scriptPath), $"Expected PowerShell packaging script at '{scriptPath}'.");
 
-        string content = File.ReadAllText(scriptPath, Encoding.UTF8);
+        string rawContent = File.ReadAllText(scriptPath, Encoding.UTF8);
+        string content = rawContent.Replace("\r\n", "\n");
 
-        // LF line endings and strict mode
-        Assert.DoesNotContain("\r\n", content, StringComparison.Ordinal);
+        // Consistent line endings (respects .gitattributes *.ps1 text eol=crlf on Windows CI and LF in repo)
+        Assert.DoesNotContain("\r", content, StringComparison.Ordinal);
         Assert.Contains("Set-StrictMode -Version Latest", content, StringComparison.Ordinal);
         Assert.Contains("$ErrorActionPreference = \"Stop\"", content, StringComparison.Ordinal);
 
