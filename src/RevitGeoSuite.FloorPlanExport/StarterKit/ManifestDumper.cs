@@ -116,6 +116,18 @@ public static class ManifestDumper
         List<ManifestSystemFamilyEntry> systemFamilies = InspectSystemFamilies(doc, spec);
         List<ManifestSharedParameterEntry> sharedParameters = InspectSharedParameters(doc, refStandards);
 
+        // Cross-check familyEntries against the Family elements ACTUALLY loaded in the reopened .rte
+        // so missing preloaded families always surface as ManifestDiffKind.Missing.
+        List<string> loadedFamilyNamesInDoc = new FilteredElementCollector(doc)
+            .OfClass(typeof(Family))
+            .Cast<Family>()
+            .Select(f => f.Name ?? string.Empty)
+            .Where(n => n.Length > 0)
+            .ToList();
+        IReadOnlyList<ManifestFamilyEntry> verifiedLoadedFamilies = TemplateManifestAuditHelpers.FilterLoadedFamilyEntries(
+            familyEntries,
+            loadedFamilyNamesInDoc);
+
         return new ExpectedManifest(
             kitVersion,
             gisStandardVersion,
@@ -135,7 +147,7 @@ public static class ManifestDumper
             materials,
             systemFamilies,
             sharedParameters,
-            familyEntries ?? Array.Empty<ManifestFamilyEntry>());
+            verifiedLoadedFamilies);
     }
 
     /// <summary>
@@ -382,10 +394,18 @@ public static class ManifestDumper
             {
                 if (doc.GetElement(fid) is ParameterFilterElement pfe)
                 {
-                    filterNames.Add(pfe.Name ?? string.Empty);
+                    string filterName = pfe.Name ?? string.Empty;
                     if (view.GetIsFilterEnabled(fid) && !view.GetFilterVisibility(fid))
                     {
                         hasHideFilter = true;
+                    }
+
+                    // Companion value-color filters (<base>__<value>) are inspected as part of their
+                    // base filter's ValueColors; exclude them from top-level FilterNames so the
+                    // canonical template filter list stays aligned with ExpectedManifest.
+                    if (!TemplateManifestAuditHelpers.TryParseCompanionFilterName(filterName, out _, out _))
+                    {
+                        filterNames.Add(filterName);
                     }
                 }
             }
@@ -439,7 +459,7 @@ public static class ManifestDumper
 
     private static List<string> ReadHiddenKanizuSubcategories(Document doc, View view)
     {
-        HashSet<string> hidden = new(StringComparer.Ordinal);
+        List<SubcategoryVisibilityObservation> observations = new();
         foreach (Category parent in doc.Settings.Categories)
         {
             if (parent?.SubCategories is null)
@@ -451,15 +471,17 @@ public static class ManifestDumper
             {
                 if (sub != null &&
                     string.Equals(sub.Name, CoarseGeometrySpec.FootprintSubcategory, StringComparison.Ordinal) &&
-                    view.CanCategoryBeHidden(sub.Id) &&
-                    view.GetCategoryHidden(sub.Id))
+                    view.CanCategoryBeHidden(sub.Id))
                 {
-                    hidden.Add(sub.Name);
+                    observations.Add(new SubcategoryVisibilityObservation(
+                        parent.Name ?? string.Empty,
+                        sub.Name,
+                        view.GetCategoryHidden(sub.Id)));
                 }
             }
         }
 
-        return hidden.ToList();
+        return TemplateManifestAuditHelpers.ResolveFullyHiddenSubcategories(observations).ToList();
     }
 
     private static List<ManifestQaFilterEntry> InspectQaFilters(
@@ -470,25 +492,53 @@ public static class ManifestDumper
         Dictionary<string, QaViewFilterSpec> specByName = spec.Rte.QaViewFilters
             .ToDictionary(f => f.Name, f => f, StringComparer.Ordinal);
 
-        // Read filter overrides & visibility from the QA plan / 3D templates where they are applied.
+        // Inspect filter visibility and overrides across ALL QA view templates (never stopping at the first).
         List<View> qaTemplates = new FilteredElementCollector(doc)
             .OfClass(typeof(View))
             .Cast<View>()
             .Where(v => v.IsTemplate && (string.Equals(v.Name, "GIS QA Plan", StringComparison.Ordinal)
                                       || string.Equals(v.Name, "GIS QA 3D", StringComparison.Ordinal)
                                       || string.Equals(v.Name, "GIS Working Plan", StringComparison.Ordinal)))
+            .OrderBy(v => v.Name ?? string.Empty, StringComparer.Ordinal)
             .ToList();
 
-        List<ManifestQaFilterEntry> entries = new();
-        foreach (ParameterFilterElement filter in new FilteredElementCollector(doc)
+        List<ParameterFilterElement> allFilters = new FilteredElementCollector(doc)
             .OfClass(typeof(ParameterFilterElement))
-            .Cast<ParameterFilterElement>())
+            .Cast<ParameterFilterElement>()
+            .ToList();
+
+        // Group companion value-color filters (<base>__<value>) under their base filter name.
+        Dictionary<string, List<(string ValueKey, ParameterFilterElement Filter)>> companionsByBase = new(StringComparer.Ordinal);
+        List<ParameterFilterElement> baseFilters = new();
+
+        foreach (ParameterFilterElement filter in allFilters)
         {
             string name = filter.Name ?? string.Empty;
             if (!name.StartsWith(QaFilterPrefix, StringComparison.Ordinal) && !specByName.ContainsKey(name))
             {
                 continue;
             }
+
+            if (TemplateManifestAuditHelpers.TryParseCompanionFilterName(name, out string baseName, out string valueKey))
+            {
+                if (!companionsByBase.TryGetValue(baseName, out List<(string ValueKey, ParameterFilterElement Filter)>? list))
+                {
+                    list = new List<(string ValueKey, ParameterFilterElement Filter)>();
+                    companionsByBase[baseName] = list;
+                }
+
+                list.Add((valueKey, filter));
+            }
+            else
+            {
+                baseFilters.Add(filter);
+            }
+        }
+
+        List<ManifestQaFilterEntry> entries = new();
+        foreach (ParameterFilterElement filter in baseFilters)
+        {
+            string name = filter.Name ?? string.Empty;
 
             List<string> categories = new();
             foreach (ElementId catId in filter.GetCategories())
@@ -501,39 +551,40 @@ public static class ManifestDumper
             }
 
             List<ManifestFilterRuleEntry> rules = ExtractFilterRules(filter.GetElementFilter(), sharedParamNameById);
+            (AggregatedQaFilterObservation aggregated, HashSet<long> baseTemplateIds) =
+                InspectFilterAcrossTemplates(filter.Id, qaTemplates);
 
-            bool visible = true;
-            string overrideHex = string.Empty;
-            foreach (View vt in qaTemplates)
+            List<(string ValueKey, string OverrideHex, bool Visible, bool AppliedOnAllBaseTemplates)> inspectedCompanions = new();
+            if (companionsByBase.TryGetValue(name, out List<(string ValueKey, ParameterFilterElement Filter)>? compList))
             {
-                if (!vt.IsFilterApplied(filter.Id))
+                foreach ((string valueKey, ParameterFilterElement compFilter) in compList)
                 {
-                    continue;
-                }
+                    List<ManifestFilterRuleEntry> compRules = ExtractFilterRules(compFilter.GetElementFilter(), sharedParamNameById);
+                    string actualValueKey = compRules.FirstOrDefault(r =>
+                        string.Equals(r.Operator, "equals", StringComparison.Ordinal))?.Value ?? valueKey;
 
-                visible = vt.GetFilterVisibility(filter.Id);
-                OverrideGraphicSettings ogs = vt.GetFilterOverrides(filter.Id);
-                Color? color = ogs.SurfaceForegroundPatternColor != null && ogs.SurfaceForegroundPatternColor.IsValid
-                    ? ogs.SurfaceForegroundPatternColor
-                    : (ogs.ProjectionLineColor != null && ogs.ProjectionLineColor.IsValid ? ogs.ProjectionLineColor : null);
-                if (color != null && color.IsValid)
-                {
-                    overrideHex = GisToolStandard.RgbToHex(color.Red, color.Green, color.Blue);
-                }
+                    (AggregatedQaFilterObservation compAgg, HashSet<long> compTemplateIds) =
+                        InspectFilterAcrossTemplates(compFilter.Id, qaTemplates);
+                    bool appliedOnAll = baseTemplateIds.Count > 0 && baseTemplateIds.All(id => compTemplateIds.Contains(id));
 
-                break;
+                    inspectedCompanions.Add((actualValueKey, compAgg.OverrideColorHex, compAgg.Visible, appliedOnAll));
+                }
             }
+
+            (string? secondaryHex, IReadOnlyDictionary<string, string> valueColors) =
+                TemplateManifestAuditHelpers.ReconstructInspectedValueColors(
+                    rules,
+                    aggregated.OverrideColorHex,
+                    inspectedCompanions);
 
             specByName.TryGetValue(name, out QaViewFilterSpec? specFilter);
             string severity = specFilter?.Severity ?? InferSeverityFromName(name);
-            string? secondaryHex = specFilter?.SecondaryColorHex;
-            IReadOnlyDictionary<string, string>? valueColors = specFilter?.ValueColors;
 
             entries.Add(new ManifestQaFilterEntry(
                 name,
                 severity,
-                visible,
-                overrideHex,
+                aggregated.Visible,
+                aggregated.OverrideColorHex,
                 categories,
                 secondaryHex,
                 rules,
@@ -541,6 +592,36 @@ public static class ManifestDumper
         }
 
         return entries;
+    }
+
+    private static (AggregatedQaFilterObservation Aggregated, HashSet<long> AppliedTemplateIds) InspectFilterAcrossTemplates(
+        ElementId filterId,
+        IReadOnlyList<View> qaTemplates)
+    {
+        List<QaFilterTemplateObservation> observations = new();
+        HashSet<long> appliedIds = new();
+
+        foreach (View vt in qaTemplates)
+        {
+            if (!vt.IsFilterApplied(filterId))
+            {
+                continue;
+            }
+
+            appliedIds.Add(vt.Id.Value);
+            bool visible = vt.GetFilterVisibility(filterId);
+            OverrideGraphicSettings ogs = vt.GetFilterOverrides(filterId);
+            Color? color = ogs.SurfaceForegroundPatternColor != null && ogs.SurfaceForegroundPatternColor.IsValid
+                ? ogs.SurfaceForegroundPatternColor
+                : (ogs.ProjectionLineColor != null && ogs.ProjectionLineColor.IsValid ? ogs.ProjectionLineColor : null);
+            string hex = color != null && color.IsValid
+                ? GisToolStandard.RgbToHex(color.Red, color.Green, color.Blue)
+                : string.Empty;
+
+            observations.Add(new QaFilterTemplateObservation(vt.Name ?? string.Empty, visible, hex));
+        }
+
+        return (TemplateManifestAuditHelpers.AggregateFilterAcrossTemplates(observations), appliedIds);
     }
 
     private static List<ManifestFilterRuleEntry> ExtractFilterRules(
@@ -868,12 +949,37 @@ public static class ManifestDumper
     {
         if (stair.RunType != ElementId.InvalidElementId && doc.GetElement(stair.RunType) is StairsRunType run)
         {
-            if (run.MaterialId != ElementId.InvalidElementId)
+            if (run.IsMonolithic)
             {
-                string? name = doc.GetElement(run.MaterialId)?.Name;
-                if (!string.IsNullOrWhiteSpace(name))
+                try
                 {
-                    return name!;
+                    ElementId matId = run.MaterialId;
+                    if (matId != ElementId.InvalidElementId)
+                    {
+                        string? name = doc.GetElement(matId)?.Name;
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            return name!;
+                        }
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // Fall through to built-in material parameters when MaterialId is unavailable.
+                }
+
+                Parameter? structParam = run.get_Parameter(BuiltInParameter.STRUCTURAL_MATERIAL_PARAM);
+                if (structParam != null && structParam.StorageType == StorageType.ElementId)
+                {
+                    ElementId id = structParam.AsElementId();
+                    if (id != ElementId.InvalidElementId)
+                    {
+                        string? name = doc.GetElement(id)?.Name;
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            return name!;
+                        }
+                    }
                 }
             }
 
@@ -928,7 +1034,7 @@ public static class ManifestDumper
                 : Guid.Empty;
             string bindingKind = binding is TypeBinding ? "type" : "instance";
             ForgeTypeId dataTypeId = def.GetDataType();
-            string dataType = dataTypeId == SpecTypeId.Int.Integer ? "integer" : "text";
+            string dataType = MapSharedParameterDataType(dataTypeId);
 
             List<string> categories = new();
             foreach (Category cat in binding.Categories)
@@ -943,6 +1049,31 @@ public static class ManifestDumper
         }
 
         return entries;
+    }
+
+    private static string MapSharedParameterDataType(ForgeTypeId? dataTypeId)
+    {
+        if (dataTypeId is null)
+        {
+            return "unknown";
+        }
+
+        if (dataTypeId == SpecTypeId.Int.Integer)
+        {
+            return "integer";
+        }
+
+        if (dataTypeId == SpecTypeId.String.Text)
+        {
+            return "text";
+        }
+
+        if (dataTypeId == SpecTypeId.Boolean.YesNo)
+        {
+            return "yesno";
+        }
+
+        return string.IsNullOrWhiteSpace(dataTypeId.TypeId) ? "unknown" : dataTypeId.TypeId;
     }
 
     private static Dictionary<long, string> MapSharedParameterNamesById(Document doc)

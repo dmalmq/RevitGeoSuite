@@ -287,6 +287,43 @@ public sealed class T8TemplateBuilderManifestTests
                 Path.GetFullPath(nestedJpFile),
                 StarterKitProjectTemplateResolver.ResolveProjectTemplatePath(nestedRoot, preferJapanese: true));
 
+            // Standard Revit Windows US Metric and Japan template directories + Imperial English_I rejection
+            string standardInstallRoot = Path.Combine(tempRoot, "revit-std-install");
+            string imperialDir = Path.Combine(standardInstallRoot, "English_I");
+            string usMetricDir = Path.Combine(standardInstallRoot, "US Metric");
+            string japanDir = Path.Combine(standardInstallRoot, "Japan");
+            Directory.CreateDirectory(imperialDir);
+            Directory.CreateDirectory(usMetricDir);
+            Directory.CreateDirectory(japanDir);
+            string imperialSeed = Path.Combine(imperialDir, "Default.rte");
+            string usMetricSeed = Path.Combine(usMetricDir, "DefaultMetric.rte");
+            string japanSeed = Path.Combine(japanDir, "意匠(メートル単位).rte");
+            File.WriteAllText(imperialSeed, "imperial");
+            File.WriteAllText(usMetricSeed, "metric");
+            File.WriteAllText(japanSeed, "japan-metric");
+
+            Assert.Equal(
+                Path.GetFullPath(usMetricSeed),
+                StarterKitProjectTemplateResolver.ResolveProjectTemplatePath(standardInstallRoot, preferJapanese: false));
+            Assert.Equal(
+                Path.GetFullPath(japanSeed),
+                StarterKitProjectTemplateResolver.ResolveProjectTemplatePath(standardInstallRoot, preferJapanese: true));
+
+            // Imperial-only install must NEVER silently select English_I/Default.rte or US Imperial/Default.rte
+            string imperialOnlyRoot = Path.Combine(tempRoot, "imperial-only");
+            string imperialOnlyEnI = Path.Combine(imperialOnlyRoot, "English_I");
+            string imperialOnlyUsImp = Path.Combine(imperialOnlyRoot, "US Imperial");
+            Directory.CreateDirectory(imperialOnlyEnI);
+            Directory.CreateDirectory(imperialOnlyUsImp);
+            File.WriteAllText(Path.Combine(imperialOnlyEnI, "Default.rte"), "imperial");
+            File.WriteAllText(Path.Combine(imperialOnlyUsImp, "Default.rte"), "imperial");
+            File.WriteAllText(Path.Combine(imperialOnlyRoot, "Default.rte"), "ambiguous-imperial");
+
+            Assert.Throws<FileNotFoundException>(() =>
+                StarterKitProjectTemplateResolver.ResolveProjectTemplatePath(imperialOnlyRoot, preferJapanese: false));
+            Assert.Throws<FileNotFoundException>(() =>
+                StarterKitProjectTemplateResolver.ResolveProjectTemplatePath(imperialOnlyRoot, preferJapanese: true));
+
             // Explicit override takes precedence
             string explicitFile = Path.Combine(tempRoot, "CustomSeed.rte");
             File.WriteAllText(explicitFile, "seed");
@@ -313,6 +350,200 @@ public sealed class T8TemplateBuilderManifestTests
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public void TemplateManifestAuditHelpers_MissingLoadedFamilyProducesManifestDiff()
+    {
+        StarterKitSpec spec = StarterKitSpecLoaderTests.LoadShippedSpec();
+        TemplateBuildPlan plan = TemplateBuildPlanBuilder.Build(spec);
+        StarterKitCatalogPlanResult catalog = StarterKitCatalogSelector.CompileAndLintCatalog(spec, includeOptionalFamilies: true);
+        ExpectedManifest expected = StarterKitCatalogSelector.BuildExpectedManifestForSelection(spec, includeOptionalFamilies: true);
+
+        // Simulate a reopened .rte where one required family (KNZ_CIRC_Escalator) failed to load / was not saved.
+        List<string> loadedNamesInDoc = catalog.ManifestEntries
+            .Select(f => f.FamilyName)
+            .Where(name => !string.Equals(name, "KNZ_CIRC_Escalator", StringComparison.Ordinal))
+            .ToList();
+
+        IReadOnlyList<ManifestFamilyEntry> filtered = TemplateManifestAuditHelpers.FilterLoadedFamilyEntries(
+            catalog.ManifestEntries,
+            loadedNamesInDoc);
+
+        Assert.Equal(catalog.ManifestEntries.Count - 1, filtered.Count);
+        Assert.DoesNotContain(filtered, f => f.FamilyName == "KNZ_CIRC_Escalator");
+
+        ExpectedManifest actualWithMissingFamily = plan.ToSimulatedManifest(filtered);
+        ManifestComparisonResult comparison = StarterKitManifestComparer.Compare(expected, actualWithMissingFamily);
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(
+            comparison.Findings,
+            f => f.Kind == ManifestDiffKind.Missing &&
+                 f.Section == "families" &&
+                 string.Equals(f.Key, "KNZ_CIRC_Escalator", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TemplateManifestAuditHelpers_PartialSubcategoryHidingFailsVerification()
+    {
+        // Hidden on 4 of 5 categories -> must NOT be reported as hidden
+        SubcategoryVisibilityObservation[] partialObservations =
+        {
+            new("OST_GenericModel", "K_Footprint", isHidden: true),
+            new("OST_SpecialityEquipment", "K_Footprint", isHidden: true),
+            new("OST_Furniture", "K_Footprint", isHidden: true),
+            new("OST_PlumbingFixtures", "K_Footprint", isHidden: true),
+            new("OST_Doors", "K_Footprint", isHidden: false),
+        };
+
+        IReadOnlyList<string> partialResult = TemplateManifestAuditHelpers.ResolveFullyHiddenSubcategories(partialObservations);
+        Assert.Empty(partialResult);
+
+        // Hidden on all 5 of 5 categories -> reported as hidden
+        SubcategoryVisibilityObservation[] fullObservations =
+        {
+            new("OST_GenericModel", "K_Footprint", isHidden: true),
+            new("OST_SpecialityEquipment", "K_Footprint", isHidden: true),
+            new("OST_Furniture", "K_Footprint", isHidden: true),
+            new("OST_PlumbingFixtures", "K_Footprint", isHidden: true),
+            new("OST_Doors", "K_Footprint", isHidden: true),
+        };
+
+        IReadOnlyList<string> fullResult = TemplateManifestAuditHelpers.ResolveFullyHiddenSubcategories(fullObservations);
+        Assert.Equal(new[] { "K_Footprint" }, fullResult.ToArray());
+
+        // Verify partial hiding surfaces as a manifest diff on 3D view templates
+        StarterKitSpec spec = StarterKitSpecLoaderTests.LoadShippedSpec();
+        TemplateBuildPlan plan = TemplateBuildPlanBuilder.Build(spec);
+        StarterKitCatalogPlanResult catalog = StarterKitCatalogSelector.CompileAndLintCatalog(spec, includeOptionalFamilies: true);
+        ExpectedManifest expected = StarterKitCatalogSelector.BuildExpectedManifestForSelection(spec, includeOptionalFamilies: true);
+        ExpectedManifest baseline = plan.ToSimulatedManifest(catalog.ManifestEntries);
+
+        List<ManifestViewTemplateEntry> patchedTemplates = baseline.ViewTemplates
+            .Select(vt => vt.Name == "Kanizu 3D Export"
+                ? new ManifestViewTemplateEntry(
+                    vt.Name,
+                    vt.ViewType,
+                    vt.DetailLevel,
+                    vt.IsCanonical2DExport,
+                    vt.HasVisibilityHidingFilters,
+                    vt.FilterNames,
+                    vt.HideNonGisLineStyles,
+                    partialResult)
+                : vt)
+            .ToList();
+
+        ExpectedManifest partialManifest = new(
+            baseline.KitVersion,
+            baseline.GisStandardVersion,
+            baseline.SupportedRevitVersions,
+            baseline.CanonicalExportViewTemplate,
+            baseline.StartingViewName,
+            baseline.StartingViewType,
+            baseline.StartingViewBilingual,
+            baseline.ZeroIdentityEnforced,
+            baseline.ZeroWorksetsEnforced,
+            baseline.HasProjectIdentity,
+            baseline.WorksetCount,
+            patchedTemplates,
+            baseline.QaViewFilters,
+            baseline.Schedules,
+            baseline.LineStyles,
+            baseline.Materials,
+            baseline.SystemFamilies,
+            baseline.SharedParameters,
+            baseline.Families);
+
+        ManifestComparisonResult comparison = StarterKitManifestComparer.Compare(expected, partialManifest);
+        Assert.False(comparison.IsMatch);
+        Assert.Contains(
+            comparison.Findings,
+            f => f.Section == "viewTemplates" &&
+                 f.Key == "Kanizu 3D Export" &&
+                 f.Property == "hideSubcategories");
+    }
+
+    [Fact]
+    public void TemplateManifestAuditHelpers_InspectsCompanionGateSideColorsAndMultiTemplateDrift()
+    {
+        StarterKitSpec spec = StarterKitSpecLoaderTests.LoadShippedSpec();
+        TemplateBuildPlan plan = TemplateBuildPlanBuilder.Build(spec);
+        TemplateQaFilterPlan gateSidePlan = Assert.Single(plan.QaViewFilters, f => f.Name == "KNZ_QA_INFO_GateSide_Check");
+
+        // Companion descriptor expands rachi_gai (#FFF3CD) deterministically
+        IReadOnlyList<CompanionQaFilterDescriptor> companions = TemplateManifestAuditHelpers.BuildCompanionFilters(gateSidePlan);
+        CompanionQaFilterDescriptor rachiGai = Assert.Single(companions);
+        Assert.Equal("KNZ_QA_INFO_GateSide_Check", rachiGai.BaseFilterName);
+        Assert.Equal("KNZ_QA_INFO_GateSide_Check__rachi_gai", rachiGai.CompanionFilterName);
+        Assert.Equal(GisSharedParameters.GisRestriction, rachiGai.ParameterName);
+        Assert.Equal("rachi_gai", rachiGai.Value);
+        Assert.Equal("#FFF3CD", rachiGai.OverrideColorHex);
+        Assert.Equal(0xFF, rachiGai.Red);
+        Assert.Equal(0xF3, rachiGai.Green);
+        Assert.Equal(0xCD, rachiGai.Blue);
+
+        Assert.True(TemplateManifestAuditHelpers.TryParseCompanionFilterName(
+            rachiGai.CompanionFilterName,
+            out string parsedBase,
+            out string parsedValue));
+        Assert.Equal("KNZ_QA_INFO_GateSide_Check", parsedBase);
+        Assert.Equal("rachi_gai", parsedValue);
+        Assert.False(TemplateManifestAuditHelpers.TryParseCompanionFilterName("KNZ_QA_INFO_GateSide_Check", out _, out _));
+
+        // Reconstructing from valid live companion yields exact rachi_nai + rachi_gai ValueColors
+        (string? secondaryHex, IReadOnlyDictionary<string, string> valueColors) =
+            TemplateManifestAuditHelpers.ReconstructInspectedValueColors(
+                gateSidePlan.Rules,
+                "#1E88E5",
+                new[] { ("rachi_gai", "#FFF3CD", true, true) });
+        Assert.Equal("#FFF3CD", secondaryHex);
+        Assert.Equal("#1E88E5", valueColors["rachi_nai"]);
+        Assert.Equal("#FFF3CD", valueColors["rachi_gai"]);
+
+        // Missing or unapplied companion MUST NOT echo spec SecondaryColorHex/ValueColors
+        (string? missingSecondary, IReadOnlyDictionary<string, string> missingValueColors) =
+            TemplateManifestAuditHelpers.ReconstructInspectedValueColors(
+                gateSidePlan.Rules,
+                "#1E88E5",
+                Array.Empty<(string, string, bool, bool)>());
+        Assert.Null(missingSecondary);
+        Assert.Empty(missingValueColors);
+
+        // Hidden companion or companion missing on one template must not be accepted
+        (string? hiddenSecondary, IReadOnlyDictionary<string, string> hiddenValueColors) =
+            TemplateManifestAuditHelpers.ReconstructInspectedValueColors(
+                gateSidePlan.Rules,
+                "#1E88E5",
+                new[] { ("rachi_gai", "#FFF3CD", false, true) });
+        Assert.Null(hiddenSecondary);
+        Assert.DoesNotContain("rachi_gai", hiddenValueColors.Keys);
+
+        // Multi-template aggregation catches visibility hiding or color drift on a second QA template
+        AggregatedQaFilterObservation consistent = TemplateManifestAuditHelpers.AggregateFilterAcrossTemplates(new[]
+        {
+            new QaFilterTemplateObservation("GIS Working Plan", visible: true, overrideColorHex: "#1E88E5"),
+            new QaFilterTemplateObservation("GIS QA Plan", visible: true, overrideColorHex: "#1E88E5"),
+            new QaFilterTemplateObservation("GIS QA 3D", visible: true, overrideColorHex: "#1E88E5"),
+        });
+        Assert.True(consistent.Visible);
+        Assert.False(consistent.HasColorDrift);
+        Assert.Equal("#1E88E5", consistent.OverrideColorHex);
+
+        AggregatedQaFilterObservation hiddenOnSecond = TemplateManifestAuditHelpers.AggregateFilterAcrossTemplates(new[]
+        {
+            new QaFilterTemplateObservation("GIS Working Plan", visible: true, overrideColorHex: "#1E88E5"),
+            new QaFilterTemplateObservation("GIS QA Plan", visible: false, overrideColorHex: "#1E88E5"),
+            new QaFilterTemplateObservation("GIS QA 3D", visible: true, overrideColorHex: "#1E88E5"),
+        });
+        Assert.False(hiddenOnSecond.Visible);
+
+        AggregatedQaFilterObservation colorDrift = TemplateManifestAuditHelpers.AggregateFilterAcrossTemplates(new[]
+        {
+            new QaFilterTemplateObservation("GIS Working Plan", visible: true, overrideColorHex: "#1E88E5"),
+            new QaFilterTemplateObservation("GIS QA Plan", visible: true, overrideColorHex: "#E53935"),
+        });
+        Assert.True(colorDrift.HasColorDrift);
+        Assert.StartsWith("INCONSISTENT:", colorDrift.OverrideColorHex, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -552,6 +783,16 @@ public sealed class T8TemplateBuilderManifestTests
         Assert.Contains("2027", content, StringComparison.Ordinal);
         Assert.Contains("SkipRevitLaunch", content, StringComparison.Ordinal);
         Assert.Contains("ArtifactsDir", content, StringComparison.Ordinal);
+        Assert.Contains("StandardsDir", content, StringComparison.Ordinal);
+        Assert.Contains("Resolve-StandardsDirectory", content, StringComparison.Ordinal);
+        Assert.Contains("RequirePerYearSubdirectory", content, StringComparison.Ordinal);
+        Assert.Contains("Sort-StringsOrdinal", content, StringComparison.Ordinal);
+        Assert.Contains("[System.StringComparer]::Ordinal", content, StringComparison.Ordinal);
+        Assert.Contains("Remove-Item -LiteralPath $StagingDirectory", content, StringComparison.Ordinal);
+        Assert.Contains("zeroIdentityVerified", content, StringComparison.Ordinal);
+        Assert.Contains("zeroWorksetsVerified", content, StringComparison.Ordinal);
+        Assert.Contains("fileSizeBudgetPassed", content, StringComparison.Ordinal);
+        Assert.Contains("revitYear", content, StringComparison.Ordinal);
         Assert.Contains("GIS Export", content, StringComparison.Ordinal);
         Assert.Contains("OST_Levels", content, StringComparison.Ordinal);
         Assert.Contains("diffCount", content, StringComparison.Ordinal);

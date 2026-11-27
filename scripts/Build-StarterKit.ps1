@@ -6,11 +6,13 @@
     1. Validates declarative specifications under standards/starter-kit/ (kit.json, rte.json,
        materials-3d.json, and families/*.family.json), asserting canonical "GIS Export" template
        and zero OST_Levels schedules.
-    2. Invokes the Revit Starter Kit builder (StarterKitBuildCommand) or consumes pre-built
-       artifacts when -SkipRevitLaunch and -ArtifactsDir are supplied (CI / dry-run staging).
-    3. Verifies manifest.json parity (diffCount == 0), RfaLinter (rfaLintErrorCount == 0),
-       zero-identity / zero-workset hygiene, and .rte/.rfa file-size budgets.
-    4. Writes deterministic SHA256SUMS.txt and creates versioned zip archive(s):
+    2. Invokes the Revit Starter Kit builder (StarterKitBuildCommand) into a clean staging
+       directory or consumes pre-built artifacts when -SkipRevitLaunch and -ArtifactsDir are
+       supplied (requiring per-year subdirectories when packaging multiple Revit years).
+    3. Verifies manifest.json and manifest-diff.json parity (revitYear, kitVersion, rfaCount,
+       diffCount == 0, rfaLintErrorCount == 0, zeroIdentityVerified, zeroWorksetsVerified,
+       fileSizeBudgetPassed), and .rte/.rfa file-size budgets.
+    4. Writes culture-invariant ordinal-sorted SHA256SUMS.txt and creates versioned zip archive(s):
        Kanizu-Revit-StarterKit-v<kitVersion>-Revit<year>.zip.
 .EXAMPLE
     pwsh scripts/Build-StarterKit.ps1 -RevitYears 2024,2027 -SkipRevitLaunch -ArtifactsDir ./staging
@@ -20,6 +22,8 @@ param(
     [string[]]$RevitYears = @("2024", "2027"),
 
     [string]$SpecDir = "",
+
+    [string]$StandardsDir = "",
 
     [string]$OutputDir = "",
 
@@ -65,6 +69,56 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
 
 $specDirFull = [System.IO.Path]::GetFullPath($SpecDir)
 $outputDirFull = [System.IO.Path]::GetFullPath($OutputDir)
+
+function Resolve-StandardsDirectory {
+    param(
+        [string]$ExplicitStandardsDir,
+        [Parameter(Mandatory = $true)][string]$KitSpecDirectory,
+        [Parameter(Mandatory = $true)][string]$RepositoryRoot
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitStandardsDir)) {
+        $fullExplicit = [System.IO.Path]::GetFullPath($ExplicitStandardsDir)
+        $marker = Join-Path $fullExplicit "KanizuGIS.SharedParameters.txt"
+        if (-not (Test-Path -LiteralPath $marker)) {
+            throw "Configured -StandardsDir '$fullExplicit' does not contain KanizuGIS.SharedParameters.txt."
+        }
+        return $fullExplicit
+    }
+
+    # Walk up from SpecDir looking for KanizuGIS.SharedParameters.txt
+    $current = Split-Path -Parent $KitSpecDirectory
+    for ($depth = 0; $depth -lt 4 -and -not [string]::IsNullOrWhiteSpace($current); $depth++) {
+        $directMarker = Join-Path $current "KanizuGIS.SharedParameters.txt"
+        if (Test-Path -LiteralPath $directMarker) {
+            return $current
+        }
+        $standardsChild = Join-Path $current "standards"
+        if (Test-Path -LiteralPath (Join-Path $standardsChild "KanizuGIS.SharedParameters.txt")) {
+            return $standardsChild
+        }
+        $parent = Split-Path -Parent $current
+        if ($parent -eq $current) {
+            break
+        }
+        $current = $parent
+    }
+
+    $repoStandards = Join-Path $RepositoryRoot "standards"
+    if (Test-Path -LiteralPath (Join-Path $repoStandards "KanizuGIS.SharedParameters.txt")) {
+        return $repoStandards
+    }
+
+    return ""
+}
+
+function Sort-StringsOrdinal {
+    param([Parameter(Mandatory = $true)][string[]]$Items)
+
+    $copy = [string[]]@($Items)
+    [System.Array]::Sort($copy, [System.StringComparer]::Ordinal)
+    return ,$copy
+}
 
 function Read-JsonFile {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -205,7 +259,8 @@ function Resolve-DefaultTemplatesRoot {
 function Invoke-RevitStarterKitBuild {
     param(
         [Parameter(Mandatory = $true)][string]$Year,
-        [Parameter(Mandatory = $true)][string]$StagingDirectory
+        [Parameter(Mandatory = $true)][string]$StagingDirectory,
+        [Parameter(Mandatory = $true)][string]$ResolvedStandardsDir
     )
 
     $revitExe = Resolve-DefaultRevitExe -Year $Year
@@ -225,22 +280,28 @@ function Invoke-RevitStarterKitBuild {
         Resolve-DefaultTemplatesRoot -Year $Year -SubFolder "Templates"
     }
 
+    # Always clean the staging directory before launching Revit so stale passing artifacts from
+    # an earlier build can never mask a silent Revit no-op or aborted command.
+    if (Test-Path -LiteralPath $StagingDirectory) {
+        Remove-Item -LiteralPath $StagingDirectory -Recurse -Force
+    }
     New-Item -ItemType Directory -Path $StagingDirectory -Force | Out-Null
-    $configPath = Join-Path $StagingDirectory "starter-kit-build-config.json"
+
+    $configPath = Join-Path $outputDirFull "starter-kit-build-config-Revit$Year.json"
 
     $configObj = [ordered]@{
-        revitYear                    = $Year
-        starterKitSpecDirectory      = $specDirFull
-        standardsDirectory           = (Split-Path -Parent $specDirFull)
-        familySeedTemplatesDirectory = $famTplDir
-        projectSeedTemplatePath      = $ProjectSeedTemplatePath
+        revitYear                     = $Year
+        starterKitSpecDirectory       = $specDirFull
+        standardsDirectory            = $ResolvedStandardsDir
+        familySeedTemplatesDirectory  = $famTplDir
+        projectSeedTemplatePath       = $ProjectSeedTemplatePath
         projectSeedTemplatesDirectory = $projTplDir
-        outputDirectory              = $StagingDirectory
-        sharedParametersFilePath     = $SharedParametersFilePath
-        includeOptionalFamilies      = (-not $ExcludeOptionalFamilies)
-        overwriteExisting            = $true
-        preferJapaneseSeedTemplates  = [bool]$PreferJapaneseSeedTemplates
-        triangleComparisonMode       = $TriangleComparisonMode
+        outputDirectory               = $StagingDirectory
+        sharedParametersFilePath      = $SharedParametersFilePath
+        includeOptionalFamilies       = (-not $ExcludeOptionalFamilies)
+        overwriteExisting             = $true
+        preferJapaneseSeedTemplates   = [bool]$PreferJapaneseSeedTemplates
+        triangleComparisonMode        = $TriangleComparisonMode
     }
 
     Write-Utf8NoBomLf -Path $configPath -Content ($configObj | ConvertTo-Json -Depth 6)
@@ -273,7 +334,8 @@ function Copy-PrebuiltArtifacts {
     param(
         [Parameter(Mandatory = $true)][string]$Year,
         [Parameter(Mandatory = $true)][string]$SourceBase,
-        [Parameter(Mandatory = $true)][string]$StagingDirectory
+        [Parameter(Mandatory = $true)][string]$StagingDirectory,
+        [Parameter(Mandatory = $true)][bool]$RequirePerYearSubdirectory
     )
 
     if ([string]::IsNullOrWhiteSpace($SourceBase)) {
@@ -282,7 +344,16 @@ function Copy-PrebuiltArtifacts {
 
     $sourceFull = [System.IO.Path]::GetFullPath($SourceBase)
     $perYearDir = Join-Path $sourceFull $Year
-    $effectiveSource = if (Test-Path -LiteralPath $perYearDir) { $perYearDir } else { $sourceFull }
+
+    if (Test-Path -LiteralPath $perYearDir) {
+        $effectiveSource = $perYearDir
+    }
+    elseif ($RequirePerYearSubdirectory) {
+        throw "Multi-year packaging requires per-year artifact subdirectory '$perYearDir'. Refusing to reuse flat '$sourceFull' across multiple Revit years."
+    }
+    else {
+        $effectiveSource = $sourceFull
+    }
 
     if (-not (Test-Path -LiteralPath $effectiveSource)) {
         throw "Pre-built artifacts directory was not found at '$effectiveSource'."
@@ -411,13 +482,34 @@ function Assert-StagedPackageValid {
     }
 
     $diffReport = Read-JsonFile -Path $diffPath
-    if ([int]$diffReport.diffCount -ne 0 -or (-not $diffReport.isMatch)) {
+    if ($diffReport.schema -ne "kanizu.starter-kit.verification-report") {
+        throw "Invalid manifest-diff.json schema '$($diffReport.schema)' in '$diffPath'."
+    }
+    if ("$($diffReport.revitYear)" -ne $Year) {
+        throw "manifest-diff.json revitYear '$($diffReport.revitYear)' does not match target Revit year '$Year' ($diffPath)."
+    }
+    if ("$($diffReport.kitVersion)" -ne "$($kit.kitVersion)") {
+        throw "manifest-diff.json kitVersion '$($diffReport.kitVersion)' does not match kit.json '$($kit.kitVersion)' ($diffPath)."
+    }
+    if ([int]$diffReport.rfaCount -ne $SpecBundle.Families.Count) {
+        throw "manifest-diff.json rfaCount ($($diffReport.rfaCount)) does not match expected family count ($($SpecBundle.Families.Count)) in $diffPath."
+    }
+    if (-not [bool]$diffReport.zeroIdentityVerified) {
+        throw "manifest-diff.json reports zeroIdentityVerified=false for Revit $Year ($diffPath)."
+    }
+    if (-not [bool]$diffReport.zeroWorksetsVerified) {
+        throw "manifest-diff.json reports zeroWorksetsVerified=false for Revit $Year ($diffPath)."
+    }
+    if (-not [bool]$diffReport.fileSizeBudgetPassed) {
+        throw "manifest-diff.json reports fileSizeBudgetPassed=false for Revit $Year ($diffPath)."
+    }
+    if ([int]$diffReport.diffCount -ne 0 -or (-not [bool]$diffReport.isMatch)) {
         throw "Manifest parity check failed for Revit $Year ($($diffReport.diffCount) diff(s) in $diffPath)."
     }
     if ([int]$diffReport.rfaLintErrorCount -ne 0) {
         throw "RfaLinter check failed for Revit $Year ($($diffReport.rfaLintErrorCount) error(s) in $diffPath)."
     }
-    if (-not $diffReport.succeeded) {
+    if (-not [bool]$diffReport.succeeded) {
         throw "Starter Kit verification report did not succeed for Revit $Year ($diffPath)."
     }
 }
@@ -430,7 +522,6 @@ function Write-DeterministicZipPackage {
         [Parameter(Mandatory = $true)][string]$ZipOutputPath
     )
 
-    $kit = $SpecBundle.Kit
     $rte = $SpecBundle.Rte
     $rteFileName = "$($rte.templateName).rte"
 
@@ -445,7 +536,7 @@ function Write-DeterministicZipPackage {
         $packageRelPaths.Add("Families/$($fam.familyName).rfa") | Out-Null
     }
 
-    $sortedChecksumPaths = $packageRelPaths | Sort-Object -CaseSensitive
+    $sortedChecksumPaths = Sort-StringsOrdinal -Items $packageRelPaths.ToArray()
     $checksumLines = New-Object System.Collections.Generic.List[string]
     foreach ($relPath in $sortedChecksumPaths) {
         $absPath = Join-Path $StagingDirectory $relPath
@@ -456,7 +547,7 @@ function Write-DeterministicZipPackage {
     $checksumPath = Join-Path $StagingDirectory "SHA256SUMS.txt"
     Write-Utf8NoBomLf -Path $checksumPath -Content (($checksumLines -join "`n") + "`n")
 
-    $allArchiveEntries = ($sortedChecksumPaths + @("SHA256SUMS.txt")) | Sort-Object -CaseSensitive
+    $allArchiveEntries = Sort-StringsOrdinal -Items ($sortedChecksumPaths + @("SHA256SUMS.txt"))
 
     $zipParent = Split-Path -Parent $ZipOutputPath
     if (-not (Test-Path -LiteralPath $zipParent)) {
@@ -497,10 +588,12 @@ function Write-DeterministicZipPackage {
 Write-Host "Validating Kanizu Starter Kit specs in '$specDirFull'..." -ForegroundColor Cyan
 $specBundle = Test-StarterKitSpecs -KitSpecDirectory $specDirFull
 $kitVersion = $specBundle.Kit.kitVersion
+$resolvedStandardsDir = Resolve-StandardsDirectory -ExplicitStandardsDir $StandardsDir -KitSpecDirectory $specDirFull -RepositoryRoot $repoRoot
 Write-Host "Validated Starter Kit v$kitVersion ($($specBundle.Families.Count) families, canonical template '$($specBundle.Rte.canonicalExportViewTemplate)')." -ForegroundColor Green
 
 New-Item -ItemType Directory -Path $outputDirFull -Force | Out-Null
 $createdZips = New-Object System.Collections.Generic.List[string]
+$requirePerYear = ($RevitYears.Count -gt 1)
 
 foreach ($year in $RevitYears) {
     if (-not ($specBundle.Kit.supportedRevitVersions -contains $year)) {
@@ -509,10 +602,10 @@ foreach ($year in $RevitYears) {
 
     $stagingDir = Join-Path $outputDirFull "staging-Revit$year"
     if ($SkipRevitLaunch) {
-        Copy-PrebuiltArtifacts -Year $year -SourceBase $ArtifactsDir -StagingDirectory $stagingDir
+        Copy-PrebuiltArtifacts -Year $year -SourceBase $ArtifactsDir -StagingDirectory $stagingDir -RequirePerYearSubdirectory $requirePerYear
     }
     else {
-        Invoke-RevitStarterKitBuild -Year $year -StagingDirectory $stagingDir
+        Invoke-RevitStarterKitBuild -Year $year -StagingDirectory $stagingDir -ResolvedStandardsDir $resolvedStandardsDir
     }
 
     Ensure-BilingualDocs -SpecBundle $specBundle -Year $year -StagingDirectory $stagingDir

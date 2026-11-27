@@ -235,6 +235,7 @@ public static class TemplateBuilder
                     RunTransaction(templateDoc, LoadFamiliesTransactionName, () =>
                     {
                         OverwriteFamilyLoadOptions loadOptions = new();
+                        List<string> failedLoads = new();
                         foreach (string rfaPath in familyPaths)
                         {
                             if (templateDoc.LoadFamily(rfaPath, loadOptions, out Family? loaded) && loaded != null)
@@ -256,9 +257,15 @@ public static class TemplateBuilder
                                 }
                                 else
                                 {
-                                    warnings.Add($"Could not load family '{rfaPath}' into template.");
+                                    failedLoads.Add(Path.GetFileName(rfaPath));
                                 }
                             }
+                        }
+
+                        if (failedLoads.Count > 0)
+                        {
+                            throw new InvalidOperationException(
+                                $"Failed to load {failedLoads.Count} Starter Kit family file(s) into template '{plan.TemplateName}': {string.Join(", ", failedLoads)}.");
                         }
                     });
 
@@ -646,20 +653,31 @@ public static class TemplateBuilder
 
         if (colorScheme is null)
         {
+            List<ColorFillScheme> allSchemes = new FilteredElementCollector(doc)
+                .OfClass(typeof(ColorFillScheme))
+                .Cast<ColorFillScheme>()
+                .ToList();
+
             ColorFillScheme? baseScheme = null;
             if (areaScheme != null)
             {
-                baseScheme = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ColorFillScheme))
-                    .Cast<ColorFillScheme>()
-                    .FirstOrDefault(s => s.AreaSchemeId == areaScheme.Id);
+                baseScheme = allSchemes.FirstOrDefault(s =>
+                    s.AreaSchemeId == areaScheme.Id && s.StorageType == StorageType.String);
             }
 
-            baseScheme ??= new FilteredElementCollector(doc)
-                .OfClass(typeof(ColorFillScheme))
-                .Cast<ColorFillScheme>()
-                .FirstOrDefault(s => s.CategoryId == new ElementId(BuiltInCategory.OST_Rooms)
-                                  || s.CategoryId == new ElementId(BuiltInCategory.OST_Areas));
+            baseScheme ??= allSchemes.FirstOrDefault(s =>
+                (s.CategoryId == new ElementId(BuiltInCategory.OST_Areas)
+                 || s.CategoryId == new ElementId(BuiltInCategory.OST_Rooms))
+                && s.StorageType == StorageType.String);
+
+            if (areaScheme != null)
+            {
+                baseScheme ??= allSchemes.FirstOrDefault(s => s.AreaSchemeId == areaScheme.Id);
+            }
+
+            baseScheme ??= allSchemes.FirstOrDefault(s =>
+                s.CategoryId == new ElementId(BuiltInCategory.OST_Rooms)
+                || s.CategoryId == new ElementId(BuiltInCategory.OST_Areas));
 
             if (baseScheme != null)
             {
@@ -670,6 +688,11 @@ public static class TemplateBuilder
                     if (colorScheme != null)
                     {
                         colorScheme.Title = plan.ColorSchemeName;
+                        if (colorScheme.StorageType != StorageType.String)
+                        {
+                            TrySwitchColorSchemeToStringParameter(colorScheme);
+                        }
+
                         log.Add($"Created ColorFillScheme '{plan.ColorSchemeName}'.");
                     }
                 }
@@ -879,17 +902,10 @@ public static class TemplateBuilder
             target = (StairsType)baseStair.Duplicate(sf.TypeName);
         }
 
-        // Remove side/middle supports for minimal triangle count where supported.
-        try
-        {
-            target.HasMiddleSupports = false;
-            target.LeftSideSupportType = ElementId.InvalidElementId;
-            target.RightSideSupportType = ElementId.InvalidElementId;
-        }
-        catch (Exception)
-        {
-            // Ignore if stair construction method locks supports.
-        }
+        // Remove side/middle supports independently so one unsupported setter never skips the others.
+        TrySetProperty(() => target.HasMiddleSupports = false);
+        TrySetProperty(() => target.LeftSideSupportType = ElementId.InvalidElementId);
+        TrySetProperty(() => target.RightSideSupportType = ElementId.InvalidElementId);
 
         if (materialId != null && materialId != ElementId.InvalidElementId)
         {
@@ -906,13 +922,21 @@ public static class TemplateBuilder
                     runType = (StairsRunType)currentRun.Duplicate(runTypeName);
                 }
 
-                try
+                if (runType.IsMonolithic)
                 {
-                    runType.MaterialId = materialId;
+                    try
+                    {
+                        runType.MaterialId = materialId;
+                    }
+                    catch (Exception)
+                    {
+                        SetElementIdBuiltInParameter(runType, BuiltInParameter.STRUCTURAL_MATERIAL_PARAM, materialId);
+                        SetElementIdBuiltInParameter(runType, BuiltInParameter.STAIRS_TRISERTYPE_TREAD_MATERIAL, materialId);
+                        SetElementIdBuiltInParameter(runType, BuiltInParameter.STAIRS_TRISERTYPE_RISER_MATERIAL, materialId);
+                    }
                 }
-                catch (Exception)
+                else
                 {
-                    // Non-monolithic run types use tread/riser material parameters instead.
                     SetElementIdBuiltInParameter(runType, BuiltInParameter.STAIRS_TRISERTYPE_TREAD_MATERIAL, materialId);
                     SetElementIdBuiltInParameter(runType, BuiltInParameter.STAIRS_TRISERTYPE_RISER_MATERIAL, materialId);
                 }
@@ -931,6 +955,11 @@ public static class TemplateBuilder
                 if (landingType is null)
                 {
                     landingType = (StairsLandingType)currentLanding.Duplicate(landingTypeName);
+                }
+
+                if (landingType.IsMonolithic)
+                {
+                    SetElementIdBuiltInParameter(landingType, BuiltInParameter.STRUCTURAL_MATERIAL_PARAM, materialId);
                 }
 
                 SetElementIdBuiltInParameter(landingType, BuiltInParameter.STAIRS_TRISERTYPE_TREAD_MATERIAL, materialId);
@@ -1059,6 +1088,44 @@ public static class TemplateBuilder
             }
 
             result[filterPlan.Name] = filterElement.Id;
+
+            // Create companion Revit ParameterFilterElements for any secondary valueColors entries
+            // (e.g., KNZ_QA_INFO_GateSide_Check__rachi_gai -> #FFF3CD Cream) so Revit renders every
+            // configured value color and ManifestDumper can inspect them directly from the .rte.
+            foreach (CompanionQaFilterDescriptor companion in TemplateManifestAuditHelpers.BuildCompanionFilters(filterPlan))
+            {
+                IReadOnlyList<ManifestFilterRuleEntry> companionRules = Array.AsReadOnly(new[]
+                {
+                    new ManifestFilterRuleEntry(companion.ParameterName, "equals", companion.Value),
+                });
+                ElementFilter? companionElementFilter = BuildElementFilter(
+                    companionRules,
+                    sharedParamIds,
+                    companion.CompanionFilterName,
+                    warnings);
+
+                if (!existingByName.TryGetValue(companion.CompanionFilterName, out ParameterFilterElement? compElement))
+                {
+                    compElement = companionElementFilter != null
+                        ? ParameterFilterElement.Create(doc, companion.CompanionFilterName, categoryIds, companionElementFilter)
+                        : ParameterFilterElement.Create(doc, companion.CompanionFilterName, categoryIds);
+                    existingByName[companion.CompanionFilterName] = compElement;
+                }
+                else
+                {
+                    compElement.SetCategories(categoryIds);
+                    if (companionElementFilter != null)
+                    {
+                        compElement.SetElementFilter(companionElementFilter);
+                    }
+                    else
+                    {
+                        compElement.ClearRules();
+                    }
+                }
+
+                result[companion.CompanionFilterName] = compElement.Id;
+            }
         }
 
         log.Add($"Ensured {result.Count} QA ParameterFilterElements.");
@@ -1296,6 +1363,17 @@ public static class TemplateBuilder
             {
                 desiredIds.Add(id.Value);
             }
+
+            if (qaByName.TryGetValue(filterName, out TemplateQaFilterPlan? basePlan) && basePlan != null)
+            {
+                foreach (CompanionQaFilterDescriptor companion in TemplateManifestAuditHelpers.BuildCompanionFilters(basePlan))
+                {
+                    if (qaFilterIds.TryGetValue(companion.CompanionFilterName, out ElementId? compId) && compId != null)
+                    {
+                        desiredIds.Add(compId.Value);
+                    }
+                }
+            }
         }
 
         // Remove any extraneous filters so the template matches rte.json deterministically.
@@ -1318,31 +1396,115 @@ public static class TemplateBuilder
                 continue;
             }
 
-            if (!currentSet.Contains(filterId.Value))
-            {
-                template.AddFilter(filterId);
-                currentSet.Add(filterId.Value);
-            }
-
             TemplateQaFilterPlan filterPlan = qaByName[filterName];
-            // Enforce KZ-VIEW-004: QA filters never hide elements.
-            template.SetFilterVisibility(filterId, filterPlan.Visible);
-            template.SetIsFilterEnabled(filterId, true);
+            ApplySingleFilterOverride(
+                template,
+                filterId,
+                currentSet,
+                filterPlan.Visible,
+                filterPlan.Red,
+                filterPlan.Green,
+                filterPlan.Blue,
+                solidFillId);
 
-            Color color = new(filterPlan.Red, filterPlan.Green, filterPlan.Blue);
-            if (color.IsValid)
+            foreach (CompanionQaFilterDescriptor companion in TemplateManifestAuditHelpers.BuildCompanionFilters(filterPlan))
             {
-                OverrideGraphicSettings ogs = new();
-                ogs.SetProjectionLineColor(color);
-                if (solidFillId != ElementId.InvalidElementId)
+                if (!qaFilterIds.TryGetValue(companion.CompanionFilterName, out ElementId? compId) || compId is null)
                 {
-                    ogs.SetSurfaceForegroundPatternId(solidFillId);
-                    ogs.SetSurfaceForegroundPatternColor(color);
-                    ogs.SetSurfaceForegroundPatternVisible(true);
+                    warnings.Add($"View template '{vtPlan.Name}' references missing companion QA filter '{companion.CompanionFilterName}'.");
+                    continue;
                 }
 
-                template.SetFilterOverrides(filterId, ogs);
+                ApplySingleFilterOverride(
+                    template,
+                    compId,
+                    currentSet,
+                    filterPlan.Visible,
+                    companion.Red,
+                    companion.Green,
+                    companion.Blue,
+                    solidFillId);
             }
+        }
+    }
+
+    private static void ApplySingleFilterOverride(
+        View template,
+        ElementId filterId,
+        HashSet<long> currentSet,
+        bool visible,
+        byte red,
+        byte green,
+        byte blue,
+        ElementId solidFillId)
+    {
+        if (!currentSet.Contains(filterId.Value))
+        {
+            template.AddFilter(filterId);
+            currentSet.Add(filterId.Value);
+        }
+
+        // Enforce KZ-VIEW-004: QA filters never hide elements.
+        template.SetFilterVisibility(filterId, visible);
+        template.SetIsFilterEnabled(filterId, true);
+
+        Color color = new(red, green, blue);
+        if (color.IsValid)
+        {
+            OverrideGraphicSettings ogs = new();
+            ogs.SetProjectionLineColor(color);
+            if (solidFillId != ElementId.InvalidElementId)
+            {
+                ogs.SetSurfaceForegroundPatternId(solidFillId);
+                ogs.SetSurfaceForegroundPatternColor(color);
+                ogs.SetSurfaceForegroundPatternVisible(true);
+            }
+
+            template.SetFilterOverrides(filterId, ogs);
+        }
+    }
+
+    private static void TrySwitchColorSchemeToStringParameter(ColorFillScheme colorScheme)
+    {
+        BuiltInParameter[] preferredStringParams =
+        {
+            BuiltInParameter.ROOM_NAME,
+            BuiltInParameter.ROOM_DEPARTMENT,
+            BuiltInParameter.AREA_SCHEME_NAME,
+        };
+
+        ICollection<ElementId> supported = colorScheme.GetSupportedParameterIds();
+        HashSet<long> supportedIds = new(supported.Select(id => id.Value));
+        foreach (BuiltInParameter bip in preferredStringParams)
+        {
+            ElementId candidateId = new(bip);
+            if (supportedIds.Contains(candidateId.Value) && colorScheme.IsValidParameterDefinitionId(candidateId))
+            {
+                try
+                {
+                    colorScheme.ParameterDefinition = candidateId;
+                    if (colorScheme.StorageType == StorageType.String)
+                    {
+                        return;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Try next candidate parameter.
+                }
+            }
+        }
+    }
+
+    private static void TrySetProperty(Action setter)
+    {
+        try
+        {
+            setter();
+        }
+        catch (Exception)
+        {
+            // Ignore when a specific Revit seed stair construction method locks this property.
         }
     }
 
@@ -1583,19 +1745,37 @@ public static class TemplateBuilder
         List<string> paths = new();
         if (builtFamilies != null && builtFamilies.Count > 0)
         {
+            List<string> missingOutputs = new();
             foreach (FamilyBuildResult result in builtFamilies)
             {
                 if (!string.IsNullOrWhiteSpace(result.OutputPath) && File.Exists(result.OutputPath))
                 {
                     paths.Add(Path.GetFullPath(result.OutputPath));
                 }
+                else
+                {
+                    missingOutputs.Add(string.IsNullOrWhiteSpace(result.OutputPath) ? result.FamilyName : result.OutputPath);
+                }
+            }
+
+            if (missingOutputs.Count > 0)
+            {
+                throw new FileNotFoundException(
+                    $"Missing built Starter Kit family file(s) required for template '{plan.TemplateName}': {string.Join(", ", missingOutputs)}.");
             }
 
             return paths;
         }
 
-        if (!string.IsNullOrWhiteSpace(options.BuiltFamiliesDirectory) && Directory.Exists(options.BuiltFamiliesDirectory))
+        if (!string.IsNullOrWhiteSpace(options.BuiltFamiliesDirectory))
         {
+            if (!Directory.Exists(options.BuiltFamiliesDirectory))
+            {
+                throw new DirectoryNotFoundException(
+                    $"Configured BuiltFamiliesDirectory '{options.BuiltFamiliesDirectory}' does not exist.");
+            }
+
+            List<string> missingPlanned = new();
             foreach (TemplateLoadedFamilyPlan fam in plan.LoadedFamilies)
             {
                 string candidate = Path.Combine(options.BuiltFamiliesDirectory!, fam.RfaFileName);
@@ -1603,6 +1783,16 @@ public static class TemplateBuilder
                 {
                     paths.Add(Path.GetFullPath(candidate));
                 }
+                else
+                {
+                    missingPlanned.Add(fam.RfaFileName);
+                }
+            }
+
+            if (missingPlanned.Count > 0)
+            {
+                throw new FileNotFoundException(
+                    $"Missing {missingPlanned.Count} planned Starter Kit family file(s) in '{options.BuiltFamiliesDirectory}': {string.Join(", ", missingPlanned)}.");
             }
         }
 

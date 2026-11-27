@@ -1230,3 +1230,310 @@ public static class TemplateBuildPlanBuilder
             Array.AsReadOnly(sections.ToArray()));
     }
 }
+
+/// <summary>One observed hideable subcategory status on a parent category inside a Revit view template.</summary>
+public sealed class SubcategoryVisibilityObservation
+{
+    public SubcategoryVisibilityObservation(string parentCategoryName, string subcategoryName, bool isHidden)
+    {
+        ParentCategoryName = parentCategoryName ?? string.Empty;
+        SubcategoryName = subcategoryName ?? string.Empty;
+        IsHidden = isHidden;
+    }
+
+    public string ParentCategoryName { get; }
+
+    public string SubcategoryName { get; }
+
+    public bool IsHidden { get; }
+}
+
+/// <summary>One observed QA view filter state on a single Revit view template.</summary>
+public sealed class QaFilterTemplateObservation
+{
+    public QaFilterTemplateObservation(string templateName, bool visible, string overrideColorHex)
+    {
+        TemplateName = templateName ?? string.Empty;
+        Visible = visible;
+        OverrideColorHex = (overrideColorHex ?? string.Empty).Trim().ToUpperInvariant();
+    }
+
+    public string TemplateName { get; }
+
+    public bool Visible { get; }
+
+    public string OverrideColorHex { get; }
+}
+
+/// <summary>Aggregated QA filter state across all view templates where the filter is applied.</summary>
+public sealed class AggregatedQaFilterObservation
+{
+    public AggregatedQaFilterObservation(bool visible, string overrideColorHex, bool hasColorDrift)
+    {
+        Visible = visible;
+        OverrideColorHex = overrideColorHex ?? string.Empty;
+        HasColorDrift = hasColorDrift;
+    }
+
+    public bool Visible { get; }
+
+    public string OverrideColorHex { get; }
+
+    public bool HasColorDrift { get; }
+}
+
+/// <summary>Companion Revit parameter filter definition synthesized for secondary <c>valueColors</c> entries.</summary>
+public sealed class CompanionQaFilterDescriptor
+{
+    public CompanionQaFilterDescriptor(
+        string baseFilterName,
+        string companionFilterName,
+        string parameterName,
+        string value,
+        string overrideColorHex,
+        byte red,
+        byte green,
+        byte blue)
+    {
+        BaseFilterName = baseFilterName ?? string.Empty;
+        CompanionFilterName = companionFilterName ?? string.Empty;
+        ParameterName = parameterName ?? string.Empty;
+        Value = value ?? string.Empty;
+        OverrideColorHex = (overrideColorHex ?? string.Empty).Trim().ToUpperInvariant();
+        Red = red;
+        Green = green;
+        Blue = blue;
+    }
+
+    public string BaseFilterName { get; }
+
+    public string CompanionFilterName { get; }
+
+    public string ParameterName { get; }
+
+    public string Value { get; }
+
+    public string OverrideColorHex { get; }
+
+    public byte Red { get; }
+
+    public byte Green { get; }
+
+    public byte Blue { get; }
+}
+
+/// <summary>
+/// Pure-C# verification &amp; aggregation helpers shared by Revit's <c>TemplateBuilder</c>,
+/// <c>ManifestDumper</c>, and Linux CI unit tests.
+/// </summary>
+public static class TemplateManifestAuditHelpers
+{
+    public const string CompanionFilterSeparator = "__";
+
+    /// <summary>
+    /// Filters standalone built <see cref="ManifestFamilyEntry"/> items against the actual <c>Family</c> names
+    /// loaded inside the reopened <c>.rte</c> document. Families absent from the reopened <c>.rte</c> are
+    /// omitted so <see cref="StarterKitManifestComparer.Compare"/> catches missing preloaded families as diffs.
+    /// </summary>
+    public static IReadOnlyList<ManifestFamilyEntry> FilterLoadedFamilyEntries(
+        IEnumerable<ManifestFamilyEntry>? builtEntries,
+        IEnumerable<string>? loadedFamilyNamesInDocument)
+    {
+        if (builtEntries is null)
+        {
+            return Array.AsReadOnly(Array.Empty<ManifestFamilyEntry>());
+        }
+
+        HashSet<string> loadedSet = new(
+            (loadedFamilyNamesInDocument ?? Array.Empty<string>())
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+
+        List<ManifestFamilyEntry> present = new();
+        foreach (ManifestFamilyEntry entry in builtEntries)
+        {
+            if (entry != null && loadedSet.Contains(entry.FamilyName))
+            {
+                present.Add(entry);
+            }
+        }
+
+        return Array.AsReadOnly(present.ToArray());
+    }
+
+    /// <summary>
+    /// Returns only subcategory names that are hidden on EVERY hideable parent category that defines them.
+    /// Partial hiding (e.g. hidden on 1 of 5 categories) returns empty so manifest verification fails.
+    /// </summary>
+    public static IReadOnlyList<string> ResolveFullyHiddenSubcategories(
+        IEnumerable<SubcategoryVisibilityObservation>? observations)
+    {
+        if (observations is null)
+        {
+            return Array.AsReadOnly(Array.Empty<string>());
+        }
+
+        Dictionary<string, (int Total, int Hidden)> counts = new(StringComparer.Ordinal);
+        foreach (SubcategoryVisibilityObservation obs in observations)
+        {
+            if (obs is null || string.IsNullOrWhiteSpace(obs.SubcategoryName))
+            {
+                continue;
+            }
+
+            string key = obs.SubcategoryName;
+            counts.TryGetValue(key, out (int Total, int Hidden) current);
+            counts[key] = (current.Total + 1, current.Hidden + (obs.IsHidden ? 1 : 0));
+        }
+
+        return Array.AsReadOnly(
+            counts
+                .Where(kv => kv.Value.Total > 0 && kv.Value.Hidden == kv.Value.Total)
+                .Select(kv => kv.Key)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    /// <summary>Builds the deterministic Revit companion filter name for a secondary value-color override.</summary>
+    public static string GetCompanionFilterName(string baseFilterName, string value) =>
+        $"{baseFilterName}{CompanionFilterSeparator}{value}";
+
+    /// <summary>
+    /// Parses a companion filter name (<c>&lt;BaseFilterName&gt;__&lt;value&gt;</c>) back into its base filter
+    /// name and secondary value key.
+    /// </summary>
+    public static bool TryParseCompanionFilterName(string? filterName, out string baseFilterName, out string value)
+    {
+        if (!string.IsNullOrWhiteSpace(filterName))
+        {
+            int idx = filterName!.IndexOf(CompanionFilterSeparator, StringComparison.Ordinal);
+            if (idx > 0 && idx + CompanionFilterSeparator.Length < filterName.Length)
+            {
+                baseFilterName = filterName.Substring(0, idx);
+                value = filterName.Substring(idx + CompanionFilterSeparator.Length);
+                return true;
+            }
+        }
+
+        baseFilterName = string.Empty;
+        value = string.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Expands any secondary entries in <see cref="TemplateQaFilterPlan.ValueColors"/> (whose value differs
+    /// from the primary <c>equals</c> rule value) into concrete Revit companion filter descriptors.
+    /// </summary>
+    public static IReadOnlyList<CompanionQaFilterDescriptor> BuildCompanionFilters(TemplateQaFilterPlan filterPlan)
+    {
+        if (filterPlan is null || filterPlan.ValueColors.Count <= 1)
+        {
+            return Array.AsReadOnly(Array.Empty<CompanionQaFilterDescriptor>());
+        }
+
+        ManifestFilterRuleEntry? primaryEquals = filterPlan.Rules.FirstOrDefault(r =>
+            string.Equals(r.Operator, "equals", StringComparison.Ordinal));
+        if (primaryEquals is null || string.IsNullOrWhiteSpace(primaryEquals.Parameter))
+        {
+            return Array.AsReadOnly(Array.Empty<CompanionQaFilterDescriptor>());
+        }
+
+        List<CompanionQaFilterDescriptor> companions = new();
+        foreach (KeyValuePair<string, string> kv in filterPlan.ValueColors.OrderBy(e => e.Key, StringComparer.Ordinal))
+        {
+            if (string.Equals(kv.Key, primaryEquals.Value, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            (byte r, byte g, byte b) = GisToolStandard.HexToRgb(kv.Value);
+            companions.Add(new CompanionQaFilterDescriptor(
+                filterPlan.Name,
+                GetCompanionFilterName(filterPlan.Name, kv.Key),
+                primaryEquals.Parameter,
+                kv.Key,
+                kv.Value,
+                r,
+                g,
+                b));
+        }
+
+        return Array.AsReadOnly(companions.ToArray());
+    }
+
+    /// <summary>
+    /// Aggregates a QA filter's visibility and override color across ALL view templates where it is applied.
+    /// Visibility is <c>false</c> if ANY template hides the filter; color drift across templates is flagged
+    /// explicitly so <see cref="StarterKitManifestComparer"/> catches drift on secondary templates.
+    /// </summary>
+    public static AggregatedQaFilterObservation AggregateFilterAcrossTemplates(
+        IEnumerable<QaFilterTemplateObservation>? observations)
+    {
+        List<QaFilterTemplateObservation> list = (observations ?? Array.Empty<QaFilterTemplateObservation>())
+            .Where(o => o != null)
+            .ToList();
+        if (list.Count == 0)
+        {
+            return new AggregatedQaFilterObservation(visible: true, overrideColorHex: string.Empty, hasColorDrift: false);
+        }
+
+        bool allVisible = list.All(o => o.Visible);
+        List<string> distinctColors = list
+            .Select(o => o.OverrideColorHex)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+
+        if (distinctColors.Count == 1)
+        {
+            return new AggregatedQaFilterObservation(allVisible, distinctColors[0], hasColorDrift: false);
+        }
+
+        string driftReport = "INCONSISTENT:" + string.Join("|",
+            list.OrderBy(o => o.TemplateName, StringComparer.Ordinal)
+                .Select(o => $"{o.TemplateName}={(o.OverrideColorHex.Length > 0 ? o.OverrideColorHex : "<none>")}"));
+        return new AggregatedQaFilterObservation(allVisible, driftReport, hasColorDrift: true);
+    }
+
+    /// <summary>
+    /// Reconstructs <c>secondaryColorHex</c> and <c>valueColors</c> purely from inspected Revit filter rules
+    /// and overrides (primary filter + any inspected companion filters), with zero echoing from <c>rte.json</c>.
+    /// </summary>
+    public static (string? SecondaryColorHex, IReadOnlyDictionary<string, string> ValueColors) ReconstructInspectedValueColors(
+        IReadOnlyList<ManifestFilterRuleEntry> primaryRules,
+        string primaryOverrideHex,
+        IReadOnlyList<(string ValueKey, string OverrideHex, bool Visible, bool AppliedOnAllBaseTemplates)> inspectedCompanions)
+    {
+        Dictionary<string, string> valueColors = new(StringComparer.Ordinal);
+        string? secondaryHex = null;
+
+        if (inspectedCompanions != null && inspectedCompanions.Count > 0)
+        {
+            ManifestFilterRuleEntry? primaryEquals = primaryRules.FirstOrDefault(r =>
+                string.Equals(r.Operator, "equals", StringComparison.Ordinal));
+            if (primaryEquals != null && !string.IsNullOrWhiteSpace(primaryEquals.Value) && !string.IsNullOrWhiteSpace(primaryOverrideHex))
+            {
+                valueColors[primaryEquals.Value] = primaryOverrideHex.Trim().ToUpperInvariant();
+            }
+
+            foreach ((string valueKey, string overrideHex, bool visible, bool appliedOnAll) in inspectedCompanions
+                .OrderBy(c => c.ValueKey, StringComparer.Ordinal))
+            {
+                if (!appliedOnAll || !visible || string.IsNullOrWhiteSpace(overrideHex))
+                {
+                    continue;
+                }
+
+                string normalizedHex = overrideHex.Trim().ToUpperInvariant();
+                valueColors[valueKey] = normalizedHex;
+                if (secondaryHex is null)
+                {
+                    secondaryHex = normalizedHex;
+                }
+            }
+        }
+
+        return (secondaryHex, new ReadOnlyDictionary<string, string>(valueColors));
+    }
+}
